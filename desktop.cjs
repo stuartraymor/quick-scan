@@ -1,4 +1,6 @@
-const { app, BrowserWindow, protocol, net, dialog } = require('electron');
+const { app, BrowserWindow, protocol, net, dialog, ipcMain } = require('electron');
+const { spawn } = require('node:child_process');
+const updater = require('./updater.cjs');
 const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
@@ -19,8 +21,9 @@ else {
       if (url.host !== 'app' || !file.startsWith(root + path.sep)) return new Response('Forbidden', { status: 403 });
       return net.fetch(pathToFileURL(file).href);
     });
-    win = new BrowserWindow({ width: 1500, height: 960, minWidth: 1000, minHeight: 650, title: `Quick Scan v${app.getVersion()}`, backgroundColor: '#e7e6e1', autoHideMenuBar: true, webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, backgroundThrottling: !smoke } });
+    win = new BrowserWindow({ width: 1500, height: 960, minWidth: 1000, minHeight: 650, title: `Quick Scan v${app.getVersion()}`, backgroundColor: '#e7e6e1', autoHideMenuBar: true, webPreferences: { preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true, backgroundThrottling: !smoke } });
     win.setMenu(null);
+    wireUpdater();
     win.webContents.on('will-navigate', (event, url) => { if (!url.startsWith('scanruler://app/')) event.preventDefault(); });
     win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     win.webContents.session.on('will-download', (event, item) => {
@@ -76,4 +79,31 @@ else {
     }
   }).catch(error => { dialog.showErrorBox('Quick Scan could not start', error.stack); app.exit(1); });
   app.on('window-all-closed', () => app.quit());
+}
+
+// In-app updates from the latest GitHub release (updater.cjs verifies SHA-256).
+function wireUpdater() {
+  let found = null, installer = null;
+  const ours = event => event.senderFrame?.url?.startsWith('scanruler://app/');
+  ipcMain.handle('updater:check', async event => {
+    if (!ours(event)) return { status: 'error', detail: 'Refused.' };
+    try {
+      const result = await updater.checkForUpdate({ fetch: net.fetch.bind(net), current: app.getVersion() });
+      found = result.status === 'available' ? result.release : null; installer = null;
+      const { release, ...safe } = result; return safe;
+    } catch (error) { return { status: 'error', detail: `Could not check for updates: ${error.message}` }; }
+  });
+  ipcMain.handle('updater:download', async event => {
+    if (!ours(event) || !found) return { status: 'error', detail: 'Check for updates first.' };
+    try {
+      installer = await updater.downloadUpdate({ fetch: net.fetch.bind(net), release: found, dir: path.join(app.getPath('temp'), 'QuickScanUpdate'), onProgress: p => win?.webContents.send('updater:progress', p) });
+      return { status: 'ready' };
+    } catch (error) { installer = null; return { status: 'error', detail: error.message }; }
+  });
+  ipcMain.handle('updater:install', async event => {
+    if (!ours(event) || !installer) return { status: 'error', detail: 'Nothing downloaded.' };
+    spawn(installer, ['/SILENT', '/CLOSEAPPLICATIONS', '/RESTARTAPPLICATIONS'], { detached: true, stdio: 'ignore' }).unref();
+    setTimeout(() => app.quit(), 300);
+    return { status: 'installing' };
+  });
 }
