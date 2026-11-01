@@ -350,6 +350,7 @@ export function TopBar({
           { tab: 'surfacing', label: 'Surfacing', workspace: 'reverse' },
           { tab: 'cad', label: 'CAD', workspace: 'reverse' },
           { tab: 'analysis', label: 'Analysis', workspace: 'deviation' },
+          { tab: 'ai', label: 'AI', workspace: undefined },
           { tab: 'settings', label: 'Settings', workspace: undefined },
           { tab: 'thickness', label: 'Wall Thickness', workspace: 'thickness' },
           { tab: 'flat', label: '2D Measure', workspace: 'flat' },

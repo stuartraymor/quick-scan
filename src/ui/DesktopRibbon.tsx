@@ -9,6 +9,8 @@ import type { ElementKind } from '../core/types'
 import type { PluginRuntime } from '../plugins/api'
 import { CREATION_METHODS } from '../core/elements/construct'
 import { Icon, type IconName } from './icons'
+import { AiWizard } from './AiWizard'
+import { AGENT_STATUS, useAgentLink } from '../commands/agentLink'
 
 type Props = {
   onFit: (kind: ElementKind) => void
@@ -40,6 +42,9 @@ export function DesktopRibbon({ onFit, onSection, onAlign, onAutoAlign, onFineAl
   const wireframe = useStore(s => s.wireframe)
   const translucent = useStore(s => s.translucent)
   const [pending, setPending] = useState<string | null>(null)
+  const [aiWizard, setAiWizard] = useState(false)
+  const agentLink = usePrefs(s => s.agentLink)
+  const agent = useAgentLink()
   const locked = busy || picking || drafting
   const needsScan = locked || !file
   const go = (id: string) => useShell.getState().setWorkspace(id)
@@ -191,7 +196,7 @@ export function DesktopRibbon({ onFit, onSection, onAlign, onAutoAlign, onFineAl
     {tool('Automatic alignment (Quick Scan)', 'scan', () => { go('elements'); onAutoAlign() }, needsScan, 'Not in QUICKSURFACE: propose datums from the scan and review before applying')}
   </div></details>
   const surfacingMenu = <details className="ribbon-dropdown"><summary className="desktop-ribbon-tool" title="Surface creation and editing"><Icon name="loft" size={25}/><span>Surfacing ▾</span></summary><div className="ribbon-menu">
-    {cad('surface','Fit Surface','surface',true)}{cad('sheet','Extruded surface','sheet')}{cad('loft','Loft','loft')}{cad('sweep','Sweep','spline')}{cad('network','Patch network','surface',true)}{cad('thicken','Thicken surface','shell')}
+    {cad('surface','Fit Surface','surface',true)}{cad('sheet','Extruded surface','sheet')}{cad('loft','Loft','loft')}{cad('sweep','Sweep','spline')}{cad('network','Patch network','surface',true)}{cad('thicken','Thicken surface','shell')}{cad('thread','Helix','spline')}
   </div></details>
   const patternMenu = <details className="ribbon-dropdown"><summary className="desktop-ribbon-tool" title="Patterns and mirror"><Icon name="pattern" size={25}/><span>Pattern ▾</span></summary><div className="ribbon-menu">{cad('pattern','Linear / circular pattern','pattern')}{cad('mirror','Mirror','mirror')}</div></details>
   const fileGroup = <Group label="File">{tool('Open', 'load', onOpen, busy || picking, 'Open a scan or project')}{tool('Save', 'save', onSave, busy || !savable, 'Save the entire Quick Scan project')}</Group>
@@ -205,7 +210,7 @@ export function DesktopRibbon({ onFit, onSection, onAlign, onAutoAlign, onFineAl
     <Group label="Cross sections">{cad('sketch', '2D Sketch', 'sketch')}{tool('Multiple sections', 'section', () => { go('elements'); onSection() }, needsScan, 'Create planar cross sections; stacked sections are not yet implemented')}</Group>
     <Group label="Surfacing">{cad('surface', 'Fit Surface', 'surface', true)}{surfacingMenu}</Group>
     <Group label="Freeform">{tool('New Freeform', 'surface', () => {}, true, 'Quad-based freeform surfacing is not implemented in Quick Scan yet')}{tool('Auto Freeform', 'spline', () => {}, true, 'Automatic freeform surfacing is not implemented in Quick Scan yet')}</Group>
-    <Group label="Part Design">{cad('extrude', 'Extrude', 'extrude')}{cad('revolve', 'Revolve', 'revolve')}{cad('moveFace', 'Move face', 'moveFace')}{tool('Trim', 'trim', () => {}, true, 'Mutual trimming is not implemented in Quick Scan yet')}{patternMenu}{cad('fillet', 'Fillet / Chamfer', 'fillet')}</Group>
+    <Group label="Part Design">{cad('extrude', 'Extrude', 'extrude')}{cad('revolve', 'Revolve', 'revolve')}{cad('moveFace', 'Move face', 'moveFace')}{cad('trim', 'Trim', 'trim', true)}{patternMenu}{cad('fillet', 'Fillet / Chamfer', 'fillet')}</Group>
     {analysis}{exportGroup}
   </>
   return <div className="desktop-ribbon" aria-label="Workspace tools">
@@ -215,10 +220,16 @@ export function DesktopRibbon({ onFit, onSection, onAlign, onAutoAlign, onFineAl
     </> : tab === 'scan' ? <>{fileGroup}{scanGroup}<Group label="Cross sections">{tool('Multiple sections', 'section', () => { go('elements'); onSection() }, needsScan)}</Group>{analysis}</>
       : tab === 'construct' ? <>{fileGroup}<Group label="Extract primitives">{primitives}{(['plane','cylinder','sphere','cone'] as ElementKind[]).map(kind => tool(kind[0].toUpperCase()+kind.slice(1), ({plane:'elPlane',cylinder:'elCylinder',sphere:'elSphere',cone:'elCone'} as Record<string,IconName>)[kind], () => { go('elements'); onFit(kind) }, needsScan))}</Group><Group label="Alignment">{tool('Align', 'alignSheet', () => { go('elements'); onAlign() }, needsScan)}</Group></>
       : ['cad','surfacing','freeform'].includes(tab) ? <>{fileGroup}{pluginTools}{analysis}{exportGroup}</>
+      : tab === 'ai' ? <>{fileGroup}
+        <Group label="Connection">{tool(agentLink ? 'Disconnect AI' : 'Connect AI', 'navigate', () => usePrefs.getState().setAgentLink(!agentLink), busy, agentLink ? `${AGENT_STATUS[agent.status]} — click to switch the AI connection off` : 'Let an AI app on this computer drive Quick Scan (scanruler connector)')}{tool('AI settings', 'settings', () => usePrefs.getState().openSettings(true), false, 'Port, token and data permissions (Settings → Agents)')}</Group>
+        <Group label="Rebuild">{tool('Rebuild with AI', 'model', () => setAiWizard(true), false, 'Step by step: connect, add the connector to your AI app, leave notes, ask it to rebuild')}</Group>
+        <Group label="Notes">{agentLink ? <>{cad('note', 'Add note', 'note')}{cad('notes', 'Notes', 'labels')}</> : <>{tool('Add note', 'note', () => {}, true, 'Switch the AI connection on first')}{tool('Notes', 'labels', () => {}, true, 'Switch the AI connection on first')}</>}</Group>
+        <div className="desktop-ribbon-group ai-status" data-test="ai-ribbon-status"><span>{agentLink ? `AI: ${AGENT_STATUS[agent.status]}` : 'AI connection off'}</span></div></>
       : tab === 'analysis' ? <>{fileGroup}
         <Group label="Tools">{tool('Measure', 'wsMeasure', () => go('elements'), locked, 'Measure distances between fitted elements in 3D Measure')}{tool('Surface Area', 'mesh', () => {}, true, 'Not implemented yet')}{tool('Volume', 'mesh', () => {}, true, 'Not implemented yet')}{tool('Zebra Stripes', 'mesh', () => {}, true, 'Not implemented yet')}{tool('Environment Map', 'eye', () => {}, true, 'Not implemented yet')}{tool('Draft', 'transparent', () => {}, true, 'Not implemented yet')}{tool('Snapshot', 'save', () => {}, true, 'Not implemented yet')}</Group>
         <Group label="Control">{tool('Compare', 'compare', () => go('deviation'), locked, 'Compare scan data with CAD or fitted geometry')}{tool('Compare to other meshes', 'compare', () => go('deviation'), locked, 'Compare the scan with a second mesh in Surface Deviation')}</Group></>
       : <>{fileGroup}<Group label="Inspection">{tool('Compare', 'compare', () => go('deviation'), locked)}{tool('Wall thickness', 'wsThickness', () => go('thickness'), locked)}{tool('2D Measure', 'wsFlat', () => go('flat'), locked)}</Group>{exportGroup}</>}
-    <div className="desktop-ribbon-group desktop-ribbon-assistant"><div className="desktop-ribbon-tools">{tool('AI connection', 'settings', () => usePrefs.getState().openSettings(true), busy, 'Configure the existing AI agent connection in Settings')}</div><span className="desktop-ribbon-label">Assistant</span></div>
+    <AiWizard open={aiWizard} onClose={() => setAiWizard(false)} onAddNote={cadActions?.note && !cadActions.note.disabled ? () => { go('reverse'); cadActions.note?.run() } : null} noteDisabledReason={cadActions?.note?.title} />
+    <div className="desktop-ribbon-group desktop-ribbon-assistant"><div className="desktop-ribbon-tools">{tool('AI', 'model', () => useShell.getState().setRibbonTab('ai'), false, 'AI tab: connect an AI app, leave notes for it, rebuild with AI')}</div><span className="desktop-ribbon-label">Assistant</span></div>
   </div>
 }

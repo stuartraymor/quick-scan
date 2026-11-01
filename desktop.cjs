@@ -107,7 +107,7 @@ function wireUpdater() {
   });
   ipcMain.handle('updater:install', async event => {
     if (!ours(event) || !installer) return { status: 'error', detail: 'Nothing downloaded.' };
-    spawn(installer, ['/SILENT', '/CLOSEAPPLICATIONS', '/RESTARTAPPLICATIONS'], { detached: true, stdio: 'ignore' }).unref();
+    spawn(installer, ['/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/RELAUNCH'], { detached: true, stdio: 'ignore' }).unref();
     setTimeout(() => app.quit(), 300);
     return { status: 'installing' };
   });

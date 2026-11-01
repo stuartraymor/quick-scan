@@ -55,7 +55,9 @@ ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 DisableProgramGroupPage=yes
-CloseApplications=yes
+; Quick Scan is closed by PrepareToInstall below (gently, then forced); the
+; Restart Manager alone does not close an Electron app in a silent install.
+CloseApplications=force
 RestartApplications=no
 MinVersion=10.0
 #ifdef Sign
@@ -90,8 +92,72 @@ Root: HKA; Subkey: "Software\Classes\QuickScan.Project"; ValueType: string; Valu
 Root: HKA; Subkey: "Software\Classes\QuickScan.Project\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#AppExe},0"; Tasks: associate
 Root: HKA; Subkey: "Software\Classes\QuickScan.Project\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExe}"" ""%1"""; Tasks: associate
 
+[InstallDelete]
+; Install over the previous version cleanly: the old program files go first.
+Type: filesandordirs; Name: "{app}\resources"
+Type: filesandordirs; Name: "{app}\locales"
+
 [UninstallDelete]
 Type: files; Name: "{app}\Quick Scan source code.url"
 
 [Run]
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#StringChange(AppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+; An in-app update runs Setup silently with /RELAUNCH: open Quick Scan again afterwards.
+Filename: "{app}\{#AppExe}"; Flags: nowait; Check: IsRelaunch
+
+[Code]
+function QuickScanRunning(): Boolean;
+var
+  Code: Integer;
+begin
+  Exec(ExpandConstant('{cmd}'), '/C tasklist /FI "IMAGENAME eq {#AppExe}" /NH | find /I "{#AppExe}" >nul', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  Result := Code = 0;
+end;
+
+// Close every running Quick Scan: first as a window close would (it keeps its
+// recovery checkpoint), then, after 8 s, forced. Never /T: Setup itself may have
+// been started by Quick Scan (in-app update) and must not be closed with it.
+procedure CloseQuickScan();
+var
+  Code, I: Integer;
+begin
+  if not QuickScanRunning() then exit;
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM "{#AppExe}"', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  for I := 1 to 16 do
+  begin
+    if not QuickScanRunning() then exit;
+    Sleep(500);
+  end;
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM "{#AppExe}"', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  for I := 1 to 10 do
+  begin
+    if not QuickScanRunning() then exit;
+    Sleep(500);
+  end;
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  Result := '';
+  if not QuickScanRunning() then exit;
+  if not WizardSilent() then
+    if MsgBox('Quick Scan is open. Setup will close it before installing (work since your last save is kept in its recovery checkpoint).' + #13#10#13#10 + 'Close Quick Scan and continue?', mbConfirmation, MB_OKCANCEL) <> IDOK then
+    begin
+      Result := 'Quick Scan is still open. Close it, then run Setup again.';
+      exit;
+    end;
+  CloseQuickScan();
+  if QuickScanRunning() then
+    Result := 'Quick Scan could not be closed. Close it, then run Setup again.';
+end;
+
+function InitializeUninstall(): Boolean;
+begin
+  CloseQuickScan();
+  Result := True;
+end;
+
+function IsRelaunch(): Boolean;
+begin
+  Result := Pos('/RELAUNCH', Uppercase(GetCmdTail)) > 0;
+end;

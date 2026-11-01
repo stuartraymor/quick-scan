@@ -7,6 +7,8 @@ import { useDeviation } from '../../../src/state/deviationStore'
 import { reEditorOpen, useReverse } from '../state/reStore'
 import type { PluginRuntime } from '../../../src/plugins/api'
 import { bodyMaker } from '../core/features'
+import { useNotes } from '../state/noteStore'
+import { usePrefs } from '../../../src/state/prefsStore'
 
 /** Shared workflow buttons still call plugin-owned verbs and prerequisites. */
 export function useReverseRibbonActions(onExport: () => void): NonNullable<PluginRuntime['ribbonActions']> {
@@ -40,6 +42,11 @@ export function useReverseRibbonActions(onExport: () => void): NonNullable<Plugi
     fillet: action(() => state.startFeature('fillet'), state.bodies.length > 0, 'Create or import a body first.'),
     chamfer: action(() => state.startFeature('chamfer'), state.bodies.length > 0, 'Create or import a body first.'),
     moveFace: action(() => state.startFeature('moveFace'), state.bodies.length > 0, 'Create or import a body first.'),
+    note: action(() => { useNotes.getState().setPinsShown(true); useNotes.getState().setPlacing(true) }, usePrefs.getState().agentLink, 'Switch the AI connection on first (AI tab).'),
+    notes: action(() => { useNotes.getState().setPinsShown(true); useStore.getState().setStatus('Notes for the AI are listed in the CAD panel, under Notes; their pins are on the part.') }, usePrefs.getState().agentLink, 'Switch the AI connection on first (AI tab).'),
+    trim: action(() => state.startFeature('trim'), !!fileName && (state.bodies.some((b) => b.surface) || useStore.getState().elements.some((e) => ['plane', 'cylinder', 'cone', 'sphere'].includes(e.fit?.kind ?? ''))), 'Fit surfaces or primitives first.'),
+    deleteFace: action(() => state.startFeature('deleteFace'), state.bodies.length > 0, 'Create or import a body first.'),
+    thread: action(() => state.startFeature('thread'), state.bodies.length > 0, 'Create or import a body first.'),
     loft: action(() => state.startFeature('loft'), sketches >= 2, 'Create at least two sketches first.'),
     sweep: action(() => state.startFeature('sweep'), sketches >= 2, 'Create at least two sketches first.'),
     sheet: action(() => state.startFeature('sheet'), sketches > 0, 'Create a sketch first.'),
@@ -96,6 +103,9 @@ export function ReverseRibbon() {
       {tool('chamfer', 'Chamfer', 'chamfer', () => state.startFeature('chamfer'), hasBody, 'Create or import a body first.')}
       {tool('move-face', 'Move face', 'moveFace', () => state.startFeature('moveFace'), hasBody, 'Create or import a body first.')}
       {tool('combine', 'Combine', 'combine', () => state.startFeature('boolean'), state.bodies.length >= 2, 'Create or import at least two bodies first.')}
+      {tool('trim', 'Trim', 'trim', () => state.startFeature('trim'), !!fileName, 'Import a scan and fit surfaces or primitives first.', 'Trim fitted surfaces and primitives against each other into a solid.')}
+      {tool('delete-faces', 'Delete Faces', 'erase', () => state.startFeature('deleteFace'), hasBody, 'Create or import a body first.', 'Click faces of a body to delete them; the faces around heal over.')}
+      {tool('helix', 'Helix / Thread', 'spline', () => state.startFeature('thread'), hasBody, 'Create or import a body first.', 'A modelled screw thread on a round face.')}
       {tool('pattern', 'Pattern', 'pattern', () => state.startFeature('pattern'), hasBody, 'Create or import a body first.')}
     </Group>
   </>
