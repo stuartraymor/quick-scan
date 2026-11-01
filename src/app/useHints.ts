@@ -38,6 +38,7 @@ function useLadder(): HintResult {
   const draftOpen = useStore((s) => s.draft !== null)
   const dimDraftOpen = useStore((s) => s.dimDraft !== null)
   const alignDraftOpen = useStore((s) => s.alignDraft !== null)
+  const extractOpen = useShell((s) => s.extractOpen)
   const sectionDraftOpen = useStore((s) => s.sectionDraft !== null)
 
   const onElement = useDeviation((s) => s.source === 'element')
@@ -69,6 +70,7 @@ function useLadder(): HintResult {
     draftOpen,
     dimDraftOpen,
     alignDraftOpen,
+    extractOpen,
     sectionDraftOpen,
     onElement,
     referenceLoaded,
@@ -111,6 +113,7 @@ export function hintNow(): HintResult {
     draftOpen: s.draft !== null,
     dimDraftOpen: s.dimDraft !== null,
     alignDraftOpen: s.alignDraft !== null,
+    extractOpen: useShell.getState().extractOpen,
     sectionDraftOpen: s.sectionDraft !== null,
     onElement: d.source === 'element',
     referenceLoaded: d.nominalName !== null,

@@ -9,6 +9,7 @@
 // The selection is the app's shared marking (markStore / viewer/marking); the
 // fit is the element fit a hand-marked element uses.
 
+import { useEffect, useState } from 'react'
 import { useMark, WAND_MAX_DEG, WAND_MIN_DEG, type MarkGesture } from '../state/markStore'
 import { useStore } from '../state/store'
 import { useShell } from '../state/shellStore'
@@ -48,6 +49,21 @@ export function ExtractPrimitives({ onType, onClose, onClear, fitting, onHide, o
   const m = useMark()
   const labels = useStore((s) => s.showLabels)
   const hidden = useShell((s) => s.hiddenTriangles)
+  // The quick tools float where the last wand click landed, while that pick is
+  // the selection: a release on the viewport with the wand armed places them.
+  const [quickAt, setQuickAt] = useState<{ x: number; y: number } | null>(null)
+  useEffect(() => {
+    if (!open) return
+    const up = (e: PointerEvent) => {
+      const onView = (e.target as Element | null)?.closest?.('.viewport')
+      if (onView && e.button === 0 && useMark.getState().gesture === 'wand') setQuickAt({ x: e.clientX, y: e.clientY })
+    }
+    window.addEventListener('pointerup', up, true)
+    return () => window.removeEventListener('pointerup', up, true)
+  }, [open])
+  useEffect(() => {
+    if (m.count === 0 || m.gesture !== 'wand' || !open) setQuickAt(null)
+  }, [m.count, m.gesture, open])
   if (!open) return null
   const toolOn = (t: Tool) => (t.id === 'through' ? m.backfaces : m.gesture === t.id)
   const pick = (t: Tool) => {
@@ -56,6 +72,24 @@ export function ExtractPrimitives({ onType, onClose, onClear, fitting, onHide, o
   }
   const none = m.count === 0
   return (
+    <>
+    {m.quickTools && quickAt && !none && (
+      <div className="qs-quick" data-test="extract-quick" role="toolbar" aria-label="Quick tools"
+        style={{ left: Math.min(quickAt.x + 36, window.innerWidth - 300), top: Math.max(8, Math.min(quickAt.y - 40, window.innerHeight - 110)) }}>
+        <span className="qs-quick-bar" aria-hidden />
+        <div className="qs-quick-body">
+          <div className="qs-quick-types">
+            {TYPES.map((t) => (
+              <button key={t.kind} data-test={`extract-quick-${t.kind}`} disabled={fitting} title={`Fit a ${t.label.toLowerCase()} to the selection`} onClick={() => { setQuickAt(null); onType(t.kind) }}>
+                <Icon name={t.icon} size={22} />
+              </button>
+            ))}
+          </div>
+          <input type="range" min={WAND_MIN_DEG} max={WAND_MAX_DEG} step={0.01} value={m.wandDegrees} disabled={m.wandConnected}
+            aria-label="Sensitivity in degrees" data-test="extract-quick-degrees" onChange={(e) => m.setWandDegrees(Number(e.target.value))} />
+        </div>
+      </div>
+    )}
     <section className="qs-dialog extract-dialog" data-test="extract-dialog" aria-label="Extract primitives">
       <header>
         <b>Extract primitives</b>
@@ -104,7 +138,7 @@ export function ExtractPrimitives({ onType, onClose, onClear, fitting, onHide, o
       <div className="qs-spacer" />
       <hr />
       <label className="checkrow">
-        <input type="checkbox" disabled checked={false} title="The quick toolbar on click is not built in Quick Scan yet" readOnly />
+        <input type="checkbox" checked={m.quickTools} data-test="extract-quick-tools" onChange={(e) => m.setQuickTools(e.target.checked)} />
         <span>Show quick tools dialog</span>
       </label>
       <label className="checkrow">
@@ -117,5 +151,6 @@ export function ExtractPrimitives({ onType, onClose, onClear, fitting, onHide, o
         <button data-test="extract-close" onClick={onClose}>Close</button>
       </footer>
     </section>
+    </>
   )
 }

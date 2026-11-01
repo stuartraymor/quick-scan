@@ -52,6 +52,9 @@ interface MarkState {
   wandDegrees: number
   /** "Select all connected triangles": the wand takes the whole connected piece. */
   wandConnected: boolean
+  /** "Show quick tools dialog": after a wand pick, the primitive types and the
+   *  degrees slider float beside the cursor (QUICKSURFACE photo). */
+  quickTools: boolean
   /** Enlarge / Shrink requests, like inverts: a counter and the last direction. */
   resizes: { n: number; direction: 1 | -1 }
 
@@ -62,6 +65,7 @@ interface MarkState {
   setCount: (n: number) => void
   setWandDegrees: (d: number) => void
   setWandConnected: (on: boolean) => void
+  setQuickTools: (on: boolean) => void
   resize: (direction: 1 | -1) => void
   /** Mark what is bare and rub out what is marked. */
   invert: () => void
@@ -85,6 +89,7 @@ export const useMark = create<MarkState>((set) => ({
   inverts: 0,
   wandDegrees: 2,
   wandConnected: false,
+  quickTools: true,
   resizes: { n: 0, direction: 1 },
 
   setGesture: (gesture) => set({ gesture }),
@@ -93,6 +98,7 @@ export const useMark = create<MarkState>((set) => ({
   setDiameter: (diameter) => set({ diameter: Math.max(diameter, 2e-4) }),
   setCount: (count) => set({ count }),
   setWandConnected: (wandConnected) => set({ wandConnected }),
+  setQuickTools: (quickTools) => set({ quickTools }),
   setWandDegrees: (d) => set({ wandDegrees: Number.isFinite(d) ? Math.min(Math.max(d, WAND_MIN_DEG), WAND_MAX_DEG) : 2 }),
   resize: (direction) => set((s) => ({ resizes: { n: s.resizes.n + 1, direction } })),
   invert: () => set((s) => ({ inverts: s.inverts + 1 })),

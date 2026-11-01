@@ -278,3 +278,12 @@ button.desktop-ribbon-tool:disabled { opacity: .4; cursor: default; }
 .strip .navhint { font-size: 11px; opacity: .7; white-space: nowrap; padding: 0 10px; }
 @media (max-width: 1100px) { .strip .navhint { display: none; } }
 .modal.about-quick-scan { max-width: 480px; padding: 18px 22px; }
+
+/* Quick tools beside a wand pick (Extract primitives) */
+.qs-quick { position: fixed; z-index: 45; display: flex; gap: 8px; padding: 8px 10px 8px 6px; background: var(--panel); border: 1px solid var(--line-strong); border-radius: 4px; box-shadow: 0 6px 20px #0004; }
+.qs-quick-bar { width: 6px; border-radius: 2px; background: var(--accent); }
+.qs-quick-body { display: flex; flex-direction: column; gap: 8px; }
+.qs-quick-types { display: flex; gap: 6px; }
+.qs-quick-types button { width: 38px; height: 34px; padding: 0; display: grid; place-items: center; border: 1px solid transparent; background: transparent; }
+.qs-quick-types button:hover:not(:disabled) { border-color: var(--line-strong); background: var(--accent-soft); }
+.qs-quick input[type=range] { width: 100%; }

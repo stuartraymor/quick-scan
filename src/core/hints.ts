@@ -45,6 +45,8 @@ export interface HintInput {
   draftOpen: boolean
   dimDraftOpen: boolean
   alignDraftOpen: boolean
+  /** The Extract primitives dialog is open (it selects first, then fits). */
+  extractOpen?: boolean
   /** A section being made — its box narrates itself, like the alignment's. */
   sectionDraftOpen?: boolean
 
@@ -105,6 +107,7 @@ function elementsLadder(m: HintInput): HintResult {
   // instruction of its own; a second voice over it would only compete. The
   // section editor is the same kind of box.
   if (m.alignDraftOpen || m.sectionDraftOpen) return null
+  if (m.extractOpen && !m.draftOpen) return { target: 'extract-dialog', text: 'Select the area with the tools in step 1 — then click the type of primitive to fit' }
   if (m.dimensions > 0) return 'done'
   if (m.draftOpen) {
     return { target: 'create-element', text: 'Create the element once the fit looks right' }
