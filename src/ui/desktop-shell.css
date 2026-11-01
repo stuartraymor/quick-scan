@@ -255,3 +255,22 @@ button.desktop-ribbon-tool:disabled { opacity: .4; cursor: default; }
 .modal.ai-wizard ol { padding-left: 20px; display: flex; flex-direction: column; gap: 14px; }
 .modal.ai-wizard code { display: block; white-space: pre-wrap; word-break: break-word; margin: 6px 0; padding: 6px 8px; background: var(--accent-soft); border-radius: 4px; font-size: 12px; }
 .modal.ai-wizard .ai-steps { list-style: none; padding: 0; margin: 6px 0; display: flex; flex-direction: column; gap: 8px; }
+
+/* QUICKSURFACE-style floating tool dialog (Extract primitives) */
+.qs-dialog { position: fixed; z-index: 40; top: 200px; left: 250px; width: 300px; max-height: calc(100vh - 220px); overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding: 0 12px 10px; background: var(--panel); border: 1px solid var(--line-strong); border-radius: 6px; box-shadow: 0 10px 30px #0005; font-size: 12px; }
+.qs-dialog header { display: flex; justify-content: space-between; align-items: center; padding: 8px 0 4px; }
+.qs-dialog header b { font-weight: 500; font-size: 13px; opacity: .85; }
+.qs-dialog .qs-x { border: 0; background: transparent; font-size: 16px; line-height: 1; padding: 2px 6px; }
+.qs-dialog .qs-step { margin: 4px 0 2px; }
+.qs-dialog .qs-iconrow, .qs-dialog .qs-typerow { display: flex; gap: 4px; flex-wrap: wrap; }
+.qs-dialog .qs-iconrow button { width: 30px; height: 30px; padding: 0; display: grid; place-items: center; border: 1px solid transparent; background: transparent; }
+.qs-dialog .qs-iconrow button.on { border-color: var(--line-strong); background: var(--accent-soft); }
+.qs-dialog .qs-typerow button { width: 46px; height: 46px; padding: 0; display: grid; place-items: center; border: 1px solid var(--line-strong); background: transparent; }
+.qs-dialog button:disabled { opacity: .4; }
+.qs-dialog .qs-degrees { display: grid; grid-template-columns: 1fr 64px auto; gap: 6px; align-items: center; }
+.qs-dialog .qs-count { margin: 0; opacity: .7; }
+.qs-dialog hr { width: 100%; border: 0; border-top: 1px solid var(--line-strong); margin: 4px 0; }
+.qs-dialog .qs-spacer { min-height: 12px; }
+.qs-dialog footer { display: flex; justify-content: space-between; align-items: center; }
+.qs-dialog .qs-help { width: 26px; height: 26px; border-radius: 50%; padding: 0; }
+.qs-dialog footer button:last-child { min-width: 110px; }

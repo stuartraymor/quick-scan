@@ -145,9 +145,9 @@ export function DesktopRibbon({ onFit, onSection, onAlign, onAutoAlign, onFineAl
       else action?.run()
     }, disabled, action?.title || `${label} — open its contextual editor`)
   }
-  const primitives = <details className="ribbon-dropdown"><summary className="desktop-ribbon-tool" title="Extract fitted geometry from scan data"><Icon name="extract" size={25} /><span>Extract<br/>primitives ▾</span></summary><div className="ribbon-menu">
-    {(['plane', 'cylinder', 'cone', 'sphere', 'circle', 'torus', 'line', 'point'] as ElementKind[]).map(kind => <button key={kind} disabled={needsScan} onClick={e => { e.currentTarget.closest('details')?.removeAttribute('open'); go('elements'); onFit(kind) }}>{kind[0].toUpperCase() + kind.slice(1)}</button>)}
-  </div></details>
+  // A plain button, as in QUICKSURFACE: it opens the Extract primitives dialog
+  // (select the area, then click the primitive type).
+  const primitives = tool('Extract primitives', 'extract', () => { go('elements'); useShell.getState().setExtractOpen(true) }, needsScan, 'Select an area of the scan, then click the primitive type to fit')
   const used = new Set<string>()
   const method = (id: string) => {
     const m = CREATION_METHODS.find((x) => x.id === id)

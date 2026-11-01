@@ -27,6 +27,9 @@ interface ShellState {
   inspectorOpen: boolean
   /** The application menu opened from the Quick Scan mark (ui/AppMenu). */
   appMenuOpen: boolean
+  /** The Extract primitives dialog (ui/ExtractPrimitives) is open. */
+  extractOpen: boolean
+  setExtractOpen: (open: boolean) => void
   setAppMenuOpen: (open: boolean) => void
   inspectorMode: 'floating' | 'docked'
   setInspectorOpen: (open: boolean) => void
@@ -38,6 +41,8 @@ export const useShell = create<ShellState>()((set) => ({
   ribbonTab: 'main',
   inspectorOpen: true,
   appMenuOpen: false,
+  extractOpen: false,
+  setExtractOpen: (extractOpen) => set({ extractOpen, ...(extractOpen ? { inspectorOpen: true } : {}) }),
   setAppMenuOpen: (appMenuOpen) => set({ appMenuOpen }),
   inspectorMode: 'floating',
   setInspectorOpen: (inspectorOpen) => set({ inspectorOpen }),

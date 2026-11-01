@@ -43,6 +43,8 @@ interface MarkState {
   inverts: number
   /** Magic Wand sensitivity in degrees (the manual's "degrees slider"). */
   wandDegrees: number
+  /** "Select all connected triangles": the wand takes the whole connected piece. */
+  wandConnected: boolean
   /** Enlarge / Shrink requests, like inverts: a counter and the last direction. */
   resizes: { n: number; direction: 1 | -1 }
 
@@ -52,6 +54,7 @@ interface MarkState {
   setDiameter: (mm: number) => void
   setCount: (n: number) => void
   setWandDegrees: (d: number) => void
+  setWandConnected: (on: boolean) => void
   resize: (direction: 1 | -1) => void
   /** Mark what is bare and rub out what is marked. */
   invert: () => void
@@ -74,6 +77,7 @@ export const useMark = create<MarkState>((set) => ({
   count: 0,
   inverts: 0,
   wandDegrees: 20,
+  wandConnected: false,
   resizes: { n: 0, direction: 1 },
 
   setGesture: (gesture) => set({ gesture }),
@@ -81,6 +85,7 @@ export const useMark = create<MarkState>((set) => ({
   setBackfaces: (backfaces) => set({ backfaces }),
   setDiameter: (diameter) => set({ diameter: Math.max(diameter, 2e-4) }),
   setCount: (count) => set({ count }),
+  setWandConnected: (wandConnected) => set({ wandConnected }),
   setWandDegrees: (d) => set({ wandDegrees: Math.min(Math.max(d, 1), 90) }),
   resize: (direction) => set((s) => ({ resizes: { n: s.resizes.n + 1, direction } })),
   invert: () => set((s) => ({ inverts: s.inverts + 1 })),

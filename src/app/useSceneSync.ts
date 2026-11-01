@@ -168,7 +168,9 @@ export function useSceneSync({
   const markErase = useMark((s) => s.erase)
   const markBackfaces = useMark((s) => s.backfaces)
   const brushDiameter = useMark((s) => s.diameter)
-  const wandDegrees = useMark((s) => s.wandDegrees)
+  const wandDegrees = useMark((s) => (s.wandConnected ? 180 : s.wandDegrees))
+  // The Extract primitives dialog marks the area before a primitive is chosen.
+  const extractSession = useShell((s) => s.extractOpen && s.workspace === 'elements')
   const paintSession = painting && paintWorkspace
   const markSession = marking && markWorkspace
   // A plugin's workspace marks with the same tools, in a colour of its own —
@@ -184,7 +186,7 @@ export function useSceneSync({
   useEffect(() => {
     const scene = sceneRef.current
     if (!scene || picking) return
-    if (!paintSession && !markSession && pluginMarkColor === null) {
+    if (!paintSession && !markSession && !extractSession && pluginMarkColor === null) {
       scene.setPaintBrush(null)
       if (useMark.getState().count !== 0) useMark.getState().setCount(0)
       return
@@ -201,6 +203,7 @@ export function useSceneSync({
     picking,
     paintSession,
     markSession,
+    extractSession,
     pluginMarkColor,
     pluginGestures,
     draftColor,

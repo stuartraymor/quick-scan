@@ -8,7 +8,7 @@
 // its edges, project files, each plugin's hook (called in the same order
 // every render) and the agent connection.
 
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useProjectHistory } from './app/useProjectHistory'
 import { clearHistory, historyAction } from './state/historyStore'
 import { MeshWorkerClient } from './core/workerClient'
@@ -84,6 +84,7 @@ import { boundLength, useLength } from './app/useUnits'
 import { lengthInputText, unitWord, type DisplayUnits } from './core/units'
 import { useShell } from './state/shellStore'
 import { useMark } from './state/markStore'
+import { ExtractPrimitives } from './ui/ExtractPrimitives'
 import { useThickness } from './state/thicknessStore'
 import { imageScaleX, useFlat } from './state/flatStore'
 import { sectionViewFrames, useSectionView } from './state/sectionViewStore'
@@ -952,6 +953,39 @@ export default function App() {
   /** Switch between clicking a point and marking the surface by hand. Both
    *  start the fit over: what one of them collected means nothing to the
    *  other. */
+  /** Extract primitives, step 2: the type clicked is fitted to the area
+   *  selected in step 1 and created at once, as QUICKSURFACE does; the dialog
+   *  stays open for the next area. */
+  const [extractFitting, setExtractFitting] = useState(false)
+  const handleExtractType = async (kind: ElementKind) => {
+    const selection = sceneRef.current?.paintedVertices() ?? new Uint32Array(0)
+    const store = useStore.getState()
+    if (selection.length === 0 || store.draft || extractFitting) return
+    setExtractFitting(true)
+    try {
+      store.startDraft(kind)
+      store.setSelectMode('paint')
+      await runDraftPaintFit(kind, selection)
+      const d = useStore.getState().draft
+      if (d && d.status !== 'failed' && handleConfirmDraft() !== null) {
+        useStore.getState().setStatus(`${kind[0].toUpperCase() + kind.slice(1)} extracted — select the next area, or Close.`)
+      } else {
+        const why = d && 'message' in d ? String((d as { message?: string }).message ?? '') : ''
+        useStore.getState().cancelDraft()
+        useStore.getState().setStatus(`Could not fit a ${kind} to the selection${why ? `: ${why}` : '.'} The selection is kept — adjust it and try again.`)
+        sceneRef.current?.setPaintedVertices(selection, MARK_COLOR)
+        useMark.getState().setCount(selection.length)
+      }
+    } finally {
+      setExtractFitting(false)
+    }
+  }
+  const closeExtract = () => {
+    useShell.getState().setExtractOpen(false)
+    clearPaint()
+    useMark.getState().setGesture(null)
+  }
+
   const handleSelectMode = (mode: SelectMode) => {
     const store = useStore.getState()
     if (mode === store.selectMode) return
@@ -1577,6 +1611,7 @@ export default function App() {
       />
       <RecoveryBar recovery={recovery} />
       <ConnectorBar />
+      <ExtractPrimitives onType={(k) => void handleExtractType(k)} onClose={closeExtract} onClear={clearPaint} fitting={extractFitting} />
       <div className="mid desktop-mid">
         <ObjectExplorer
           pluginObjects={active?.explorerObjects}
