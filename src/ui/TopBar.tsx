@@ -350,16 +350,18 @@ export function TopBar({
           { tab: 'surfacing', label: 'Surfacing', workspace: 'reverse' },
           { tab: 'cad', label: 'CAD', workspace: 'reverse' },
           { tab: 'analysis', label: 'Analysis', workspace: 'deviation' },
+          { tab: 'settings', label: 'Settings', workspace: undefined },
           { tab: 'thickness', label: 'Wall Thickness', workspace: 'thickness' },
           { tab: 'flat', label: '2D Measure', workspace: 'flat' },
-        ].filter(w => !['mesh','reverse'].includes(w.workspace ?? '') || workspaceTabs().some(t => t.id === w.workspace)).map(w => (
+        ].filter(w => !['mesh','reverse'].includes(w.workspace ?? '') || workspaceTabs().some(t => t.id === w.workspace)).map(w => w.tab === 'settings' ? (
+          <button key="settings" data-test="ribbon-tab-settings" onClick={() => openSettings(true)} disabled={picking}><span>Settings</span></button>
+        ) : (
           <button key={w.tab} role="tab" aria-selected={ribbonTab === w.tab}
             className={ribbonTab === w.tab ? 'on' : undefined}
             data-test={['main','scan','cad','analysis','thickness','flat'].includes(w.tab) ? `workspace-${w.workspace}` : `ribbon-tab-${w.tab}`}
             disabled={picking}
             onClick={() => setRibbonTab(w.tab, w.workspace)}><span>{w.label}</span></button>
         ))}
-        <button onClick={() => openSettings(true)} disabled={picking}>Settings</button>
       </div>
 
     </>

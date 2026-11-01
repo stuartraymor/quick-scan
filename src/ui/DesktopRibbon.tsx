@@ -147,10 +147,12 @@ export function DesktopRibbon({ onFit, onSection, onAlign, onAutoAlign, onFineAl
     {CREATION_METHODS.filter(method => method.mode === 'construct' && ['plane-coords','plane-three-points','plane-midplane','plane-offset','point-coords','line-two-points','plane-symmetry'].includes(method.id)).map(method => <button key={method.id} disabled={needsScan} title={method.hint} onClick={event => { event.currentTarget.closest('details')?.removeAttribute('open'); go('elements'); onFit(method.kind); useStore.getState().setDraftMethod(method.id) }}>{method.label}</button>)}
   </div></details>
   const alignMenu = <details className="ribbon-dropdown"><summary className="desktop-ribbon-tool" title="Choose an alignment method"><Icon name="alignSheet" size={25}/><span>Align ▾</span></summary><div className="ribbon-menu">
-    {tool('By coordinate system', 'alignSheet', () => { go('elements'); onAlign() }, needsScan, 'Pick primary, secondary and tertiary datums, preview, then Apply')}
-    {tool('Automatic alignment', 'scan', () => { go('elements'); onAutoAlign() }, needsScan, 'Propose datums from the scan and review before applying')}
-    {tool('By N points', 'pickPoints', () => { go('deviation'); onPointAlign() }, needsScan || !hasReference, 'Requires a loaded scan and reference model; pick corresponding points')}
-    {tool('Fine alignment', 'compare', () => { go('deviation'); onFineAlign() }, needsScan || !hasReference, 'Requires a loaded scan and reference model; run the existing best fit')}
+    {tool('Align by Coordinate System …', 'alignSheet', () => { go('elements'); onAlign() }, needsScan, 'Pick primary, secondary and tertiary features, preview, then Apply')}
+    {tool('Align Interactive…', 'navigate', () => { go('elements'); setTimeout(() => document.querySelector<HTMLButtonElement>('[data-test="start-manual"]')?.click(), 50) }, needsScan, 'Reposition the scan by hand. Quick Scan opens its move / rotate-by-numbers editor here; a draggable gizmo is not built yet')}
+    {tool('By N points …', 'pickPoints', () => { go('deviation'); onPointAlign() }, needsScan || !hasReference, 'Requires a loaded scan and reference model; pick corresponding points')}
+    {tool('Fine-align reference mesh …', 'compare', () => { go('deviation'); onFineAlign() }, needsScan || !hasReference, 'Requires a loaded scan and reference model; run the existing best fit')}
+    <hr />
+    {tool('Automatic alignment (Quick Scan)', 'scan', () => { go('elements'); onAutoAlign() }, needsScan, 'Not in QUICKSURFACE: propose datums from the scan and review before applying')}
   </div></details>
   const surfacingMenu = <details className="ribbon-dropdown"><summary className="desktop-ribbon-tool" title="Surface creation and editing"><Icon name="loft" size={25}/><span>Surfacing ▾</span></summary><div className="ribbon-menu">
     {cad('surface','Fit surface','surface',true)}{cad('sheet','Extruded surface','sheet')}{cad('loft','Loft','loft')}{cad('sweep','Sweep','spline')}{cad('network','Patch network','surface',true)}{cad('thicken','Thicken surface','shell')}
@@ -164,9 +166,9 @@ export function DesktopRibbon({ onFit, onSection, onAlign, onAutoAlign, onFineAl
     {fileGroup}{scanGroup}
     <Group label="Primitives">{primitives}{construct}</Group>
     <Group label="Align">{alignMenu}</Group>
-    <Group label="Cross sections">{cad('sketch', '2D Sketch', 'sketch')}{tool('Section', 'section', () => { go('elements'); onSection() }, needsScan, 'Create a planar cross section; stacked sections are not yet implemented')}</Group>
+    <Group label="Cross sections">{cad('sketch', '2D Sketch', 'sketch')}{tool('Multiple sections', 'section', () => { go('elements'); onSection() }, needsScan, 'Create planar cross sections; stacked sections are not yet implemented')}</Group>
     <Group label="Surfacing">{cad('surface', 'Fit surface', 'surface', true)}{surfacingMenu}</Group>
-    <Group label="Freeform">{cad('network', 'Patch network', 'spline', true)}{tool('Auto freeform', 'surface', () => {}, true, 'Automatic quad-based freeform surfacing is not implemented in Quick Scan yet')}</Group>
+    <Group label="Freeform">{cad('network', 'Patch network', 'spline', true)}{tool('New Freeform', 'surface', () => {}, true, 'Quad-based freeform surfacing is not implemented in Quick Scan yet')}</Group>
     <Group label="Part design">{cad('extrude', 'Extrude', 'extrude')}{cad('revolve', 'Revolve', 'revolve')}{patternMenu}{cad('fillet', 'Fillet', 'fillet')}</Group>
     {analysis}{exportGroup}
   </>
@@ -174,7 +176,7 @@ export function DesktopRibbon({ onFit, onSection, onAlign, onAutoAlign, onFineAl
     {tab === 'main' ? main : tab === 'view' ? <>
       {fileGroup}<Group label="Display">{tool(wireframe ? 'Solid view' : 'Wireframe', 'mesh', () => useStore.getState().setWireframe(!wireframe), !file)}{tool(translucent ? 'Opaque' : 'Transparent', 'transparent', () => useStore.getState().setTranslucent(!translucent), !file)}{tool('Show scan', 'eye', () => useStore.getState().setScanHidden(false), !file)}{tool('Hide scan', 'eyeOff', () => useStore.getState().setScanHidden(true), !file)}</Group>
       <Group label="Navigation">{tool('Mouse controls', 'navigate', () => usePrefs.getState().openSettings(true), false, 'Configure navigation and display preferences')}</Group>
-    </> : tab === 'scan' ? <>{fileGroup}{scanGroup}<Group label="Cross sections">{tool('Section', 'section', () => { go('elements'); onSection() }, needsScan)}</Group>{analysis}</>
+    </> : tab === 'scan' ? <>{fileGroup}{scanGroup}<Group label="Cross sections">{tool('Multiple sections', 'section', () => { go('elements'); onSection() }, needsScan)}</Group>{analysis}</>
       : tab === 'construct' ? <>{fileGroup}<Group label="Extract primitives">{primitives}{(['plane','cylinder','sphere','cone'] as ElementKind[]).map(kind => tool(kind[0].toUpperCase()+kind.slice(1), ({plane:'elPlane',cylinder:'elCylinder',sphere:'elSphere',cone:'elCone'} as Record<string,IconName>)[kind], () => { go('elements'); onFit(kind) }, needsScan))}</Group><Group label="Alignment">{tool('Align', 'alignSheet', () => { go('elements'); onAlign() }, needsScan)}</Group></>
       : ['cad','surfacing','freeform'].includes(tab) ? <>{fileGroup}{pluginTools}{analysis}{exportGroup}</>
       : <>{fileGroup}<Group label="Inspection">{tool('Compare', 'compare', () => go('deviation'), locked)}{tool('Wall thickness', 'wsThickness', () => go('thickness'), locked)}{tool('2D Measure', 'wsFlat', () => go('flat'), locked)}</Group>{exportGroup}</>}
