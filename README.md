@@ -152,6 +152,8 @@ corresponding source of every release is this repository.
 
 ## Contributing
 
+Reviewing Quick Scan against QUICKSURFACE? Start with [docs/REVIEWER_HANDOVER.md](docs/REVIEWER_HANDOVER.md).
+
 Issues and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md)
 and the [Code of Conduct](CODE_OF_CONDUCT.md). Report security problems
 privately as described in [SECURITY.md](SECURITY.md).
