@@ -215,3 +215,31 @@ button.desktop-ribbon-tool:disabled { opacity: .4; cursor: default; }
 
 .ribbon-menu .desktop-ribbon-tool { width: 100%; min-height: 32px; flex-direction: row; justify-content: flex-start; text-align: left; gap: 9px; padding: 6px 10px; font-size: 12px; }
 .ribbon-menu .desktop-ribbon-tool .icon { width: 18px; height: 18px; }
+
+/* Application menu: commands left, recent documents right */
+.brandbtn { display: flex; align-items: center; gap: 3px; padding: 3px 5px; border: 1px solid transparent; border-radius: 5px; background: transparent; cursor: pointer; color: inherit; }
+.brandbtn:hover, .brandbtn.on { background: var(--accent-soft); border-color: var(--line-strong); }
+.brandcaret { font-size: 9px; opacity: .7; }
+.appmenu { position: fixed; z-index: 60; top: 44px; left: 8px; display: grid; grid-template-columns: 250px minmax(280px, 360px); width: min(660px, calc(100vw - 16px)); max-height: calc(100vh - 60px); background: var(--panel); border: 1px solid var(--line-strong); border-radius: 8px; box-shadow: 0 12px 36px #0006; overflow: hidden; }
+.appmenu-commands { display: flex; flex-direction: column; padding: 8px; border-right: 1px solid var(--line); gap: 1px; overflow-y: auto; }
+.appmenu-commands hr { width: 100%; border: 0; border-top: 1px solid var(--line); margin: 5px 0; }
+.appmenu-item { display: flex; align-items: center; gap: 11px; width: 100%; padding: 9px 11px; border: 0; border-radius: 5px; background: transparent; text-align: left; font-size: 13px; cursor: pointer; color: inherit; }
+.appmenu-item .icon { color: var(--accent); flex: none; }
+.appmenu-item span { flex: 1; }
+.appmenu-item kbd { font: 11px/1 inherit; opacity: .55; }
+.appmenu-item:hover:not(:disabled), .appmenu-item:focus-visible { background: var(--accent-soft); outline: none; }
+.appmenu-item:disabled { opacity: .4; cursor: default; }
+.appmenu-export { display: flex; align-items: center; gap: 11px; padding: 0 11px; }
+.appmenu-export .icon { color: var(--accent); flex: none; }
+.appmenu-export .exportmesh { flex: 1; }
+.appmenu-export button { width: 100%; text-align: left; border: 0; background: transparent; padding: 9px 0; font-size: 13px; }
+.appmenu-recent { display: flex; flex-direction: column; padding: 10px 8px 8px; min-width: 0; overflow-y: auto; }
+.appmenu-recent-head { display: flex; justify-content: space-between; align-items: center; padding: 0 8px 6px; font-size: 12px; }
+.appmenu-recent ul { list-style: none; margin: 0; padding: 0; }
+.appmenu-doc { display: grid; grid-template-columns: 1fr auto; width: 100%; padding: 7px 8px; border: 0; border-radius: 5px; background: transparent; text-align: left; cursor: pointer; color: inherit; row-gap: 1px; }
+.appmenu-doc b { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.appmenu-doc span { grid-column: 1; font-size: 11px; opacity: .6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.appmenu-doc small { grid-column: 2; grid-row: 1; font-size: 11px; opacity: .6; }
+.appmenu-doc:hover:not(:disabled), .appmenu-doc:focus-visible { background: var(--accent-soft); outline: none; }
+.appmenu-doc:disabled { opacity: .45; cursor: default; }
+@media (max-width: 720px) { .appmenu { grid-template-columns: 1fr; } .appmenu-commands { border-right: 0; border-bottom: 1px solid var(--line); } }

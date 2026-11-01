@@ -9,6 +9,7 @@ await cp(root+'dist', stage+'/dist', {recursive:true});
 await cp(root+'desktop.cjs', stage+'/desktop.cjs');
 await cp(root+'updater.cjs', stage+'/updater.cjs');
 await cp(root+'preload.cjs', stage+'/preload.cjs');
+await cp(root+'recents.cjs', stage+'/recents.cjs');
 await cp(root+'LICENSE', stage+'/LICENSE');
 await writeFile(stage+'/package.json', JSON.stringify({name:'quick-scan', productName:'Quick Scan', version:sourcePackage.version, main:'desktop.cjs', author:'CNC Kitchen; local desktop packaging', license:'AGPL-3.0-only'}));
 const electronVersion = JSON.parse(await readFile(root+'node_modules/electron/package.json','utf8')).version;

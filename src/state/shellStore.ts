@@ -25,6 +25,9 @@ interface ShellState {
   setRibbonTab: (tab: string, workspace?: Workspace) => void
   setWorkspace: (w: Workspace) => void
   inspectorOpen: boolean
+  /** The application menu opened from the Quick Scan mark (ui/AppMenu). */
+  appMenuOpen: boolean
+  setAppMenuOpen: (open: boolean) => void
   inspectorMode: 'floating' | 'docked'
   setInspectorOpen: (open: boolean) => void
   setInspectorMode: (mode: 'floating' | 'docked') => void
@@ -34,6 +37,8 @@ export const useShell = create<ShellState>()((set) => ({
   workspace: 'elements',
   ribbonTab: 'main',
   inspectorOpen: true,
+  appMenuOpen: false,
+  setAppMenuOpen: (appMenuOpen) => set({ appMenuOpen }),
   inspectorMode: 'floating',
   setInspectorOpen: (inspectorOpen) => set({ inspectorOpen }),
   setInspectorMode: (inspectorMode) => set({ inspectorMode, inspectorOpen: true }),

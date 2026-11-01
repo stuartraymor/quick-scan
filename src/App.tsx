@@ -1556,6 +1556,8 @@ export default function App() {
         onOpenProject={openProject}
         onOpenScan={openFile}
         onOpenImage={openImage}
+        onExportModel={() => { const cad = runtimes.find((r) => r.ribbonActions)?.ribbonActions?.export; if (cad) cad.run(); else handleExportStep() }}
+        onExportMesh={handleExportMesh}
         savable={(fileName !== null && vertexCountLoaded) || flatImageName !== null || runtimes.some((r) => r.canSave)}
       />
       <DesktopRibbon

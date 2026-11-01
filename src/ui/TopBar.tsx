@@ -21,7 +21,8 @@ import { bundleFiles } from '../app/scanFiles'
 import { PROJECT_EXTENSION, projectStem } from '../core/project/manifest'
 import { isProjectFile } from '../app/useProject'
 import { APP_VERSION } from '../version'
-import { UpdateButton } from './UpdateButton'
+import { AppMenu } from './AppMenu'
+import type { MeshFormat } from '../core/exportMesh'
 import type { RecoveryStatus } from '../app/useRecovery'
 
 const GITHUB_URL = 'https://github.com/CNCKitchen/scanruler'
@@ -154,6 +155,8 @@ export function TopBar({
   onOpenProject,
   onOpenScan,
   onOpenImage,
+  onExportModel,
+  onExportMesh,
   savable,
   recovery,
 }: {
@@ -162,6 +165,8 @@ export function TopBar({
   onOpenProject: (file: File) => void
   onOpenScan: (file: File) => void
   onOpenImage: (file: File) => void
+  onExportModel: () => void
+  onExportMesh: (format: MeshFormat) => void
   savable: boolean
   recovery: RecoveryStatus
 }) {
@@ -176,11 +181,18 @@ export function TopBar({
   const agentLink = usePrefs((s) => s.agentLink)
   const agent = useAgentLink()
   const openRef = useRef<HTMLInputElement>(null)
+  const scanRef = useRef<HTMLInputElement>(null)
+  const cadRef = useRef<HTMLInputElement>(null)
+  const appMenuOpen = useShell((s) => s.appMenuOpen)
+  const setAppMenuOpen = useShell((s) => s.setAppMenuOpen)
   const barRef = useRef<HTMLElement>(null)
   useFit(barRef)
 
-  const onLoad = (file: File | undefined) => {
+  const onLoad = (file: File | undefined, fromRecent = false) => {
     if (file) {
+      // The desktop app keeps the list of recent documents; a file opened from
+      // that list is already on it.
+      if (!fromRecent) void (window as unknown as { quickScanFiles?: { remember(f: File): Promise<unknown> } }).quickScanFiles?.remember(file)
       if (isProjectFile(file.name)) onOpenProject(file)
       else if (isImageFile(file.name)) {
         onOpenImage(file)
@@ -195,13 +207,16 @@ export function TopBar({
           )
     }
     // Allow re-picking the same file.
-    if (openRef.current) openRef.current.value = ''
+    for (const ref of [openRef, scanRef, cadRef]) if (ref.current) ref.current.value = ''
   }
 
   return (
     <>
     <header className="top" ref={barRef}>
-      <img className="brandmark" src="/quick-scan-mark.svg" alt="" />
+      <button className={appMenuOpen ? 'brandbtn on' : 'brandbtn'} data-test="app-menu-button" data-app-menu-button aria-haspopup="dialog" aria-expanded={appMenuOpen} title="Quick Scan menu — new, open, import, save, export and recent documents" onClick={() => setAppMenuOpen(!appMenuOpen)}>
+        <img className="brandmark" src="/quick-scan-mark.svg" alt="" />
+        <span aria-hidden className="brandcaret">▾</span>
+      </button>
       {/* The version rides in the caption, and in the tooltip for the narrow
           layouts that drop the caption: a bug report needs the number, and
           the imprint carries it too. */}
@@ -257,6 +272,8 @@ export function TopBar({
         data-test="project-input"
         onChange={(e) => onLoad(bundleFiles(Array.from(e.target.files ?? [])) ?? undefined)}
       />
+      <input ref={scanRef} type="file" accept={SCAN_ACCEPT} multiple hidden data-test="import-scan-input" onChange={(e) => onLoad(bundleFiles(Array.from(e.target.files ?? [])) ?? undefined)} />
+      <input ref={cadRef} type="file" accept=".step,.stp" hidden data-test="import-cad-input" onChange={(e) => onLoad(bundleFiles(Array.from(e.target.files ?? [])) ?? undefined)} />
       <button
         className="ghost withicon"
         data-test="new-project"
@@ -299,7 +316,6 @@ export function TopBar({
         <Icon name="settings" size={16} />
         <span className="btxt"> Settings</span>
       </button>
-      <UpdateButton />
       <a
         className="iconbtn"
         href={GITHUB_URL}
@@ -313,6 +329,17 @@ export function TopBar({
         </svg>
       </a>
     </header>
+    <AppMenu
+      savable={savable}
+      onNew={onNewProject}
+      onSave={onSaveProject}
+      onOpen={() => openRef.current?.click()}
+      onImportScan={() => scanRef.current?.click()}
+      onImportCad={() => cadRef.current?.click()}
+      onExportModel={onExportModel}
+      onExportMesh={onExportMesh}
+      onOpenFile={(file) => onLoad(file, true)}
+    />
           <div className="modeswitch desktop-workspaces" role="tablist" aria-label="Workspaces">
         {[
           { tab: 'main', label: 'Main', workspace: 'elements' },

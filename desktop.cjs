@@ -1,6 +1,7 @@
 const { app, BrowserWindow, protocol, net, dialog, ipcMain } = require('electron');
 const { spawn } = require('node:child_process');
 const updater = require('./updater.cjs');
+const recents = require('./recents.cjs');
 const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
@@ -24,11 +25,15 @@ else {
     win = new BrowserWindow({ width: 1500, height: 960, minWidth: 1000, minHeight: 650, title: `Quick Scan v${app.getVersion()}`, backgroundColor: '#e7e6e1', autoHideMenuBar: true, webPreferences: { preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true, backgroundThrottling: !smoke } });
     win.setMenu(null);
     wireUpdater();
+    wireFiles();
     win.webContents.on('will-navigate', (event, url) => { if (!url.startsWith('scanruler://app/')) event.preventDefault(); });
     win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     win.webContents.session.on('will-download', (event, item) => {
       if (smoke) item.setSavePath(path.join(app.getPath('userData'), 'desktop-smoke.scanruler'));
-      else item.setSaveDialogOptions({ title: 'Save Quick Scan file', defaultPath: path.join(app.getPath('downloads'), item.getFilename()) });
+      else {
+        item.setSaveDialogOptions({ title: 'Save Quick Scan file', defaultPath: path.join(app.getPath('downloads'), item.getFilename()) });
+        item.once('done', (e, state) => { if (state === 'completed') { recents.remember(recentFile(), item.getSavePath()); win?.webContents.send('files:changed'); } });
+      }
     });
     await win.loadURL('scanruler://app/');
     if (smoke) {
@@ -46,7 +51,7 @@ else {
           await wait(()=>document.querySelector('.file-info')?.textContent.includes('1 triangles'));
           await wait(()=>!document.querySelector('[data-test="save-project"]').disabled);
           document.querySelector('[data-test="save-project"]').click();
-          return {title:document.title, mesh:document.querySelector('.file-info').textContent};
+          return {title:document.title, mesh:document.querySelector('.file-info').textContent, bridges:[typeof window.quickScanFiles, typeof window.quickScanUpdater], recent:Array.isArray(await window.quickScanFiles.recent())};
         })()`);
         const saved = path.join(app.getPath('userData'), 'desktop-smoke.scanruler');
         for (let i=0; i<80 && !fs.existsSync(saved); i++) await new Promise(r=>setTimeout(r,250));
@@ -105,5 +110,20 @@ function wireUpdater() {
     spawn(installer, ['/SILENT', '/CLOSEAPPLICATIONS', '/RESTARTAPPLICATIONS'], { detached: true, stdio: 'ignore' }).unref();
     setTimeout(() => app.quit(), 300);
     return { status: 'installing' };
+  });
+}
+
+// Recent documents: remembered in one file shared by all versions.
+const recentFile = () => path.join(app.getPath('appData'), 'QuickScan-shared', 'recent-documents.json');
+function wireFiles() {
+  const ours = event => event.senderFrame?.url?.startsWith('scanruler://app/');
+  ipcMain.handle('files:recent', event => (ours(event) ? recents.describe(recentFile()) : []));
+  ipcMain.handle('files:remember', (event, p) => { if (ours(event)) recents.remember(recentFile(), p); return recents.describe(recentFile()); });
+  ipcMain.handle('files:clear', event => { if (ours(event)) recents.clear(recentFile()); return []; });
+  ipcMain.handle('files:open', (event, p) => {
+    if (!ours(event)) throw new Error('Refused.');
+    const { name, data } = recents.read(recentFile(), p);
+    recents.remember(recentFile(), p);
+    return { name, data: new Uint8Array(data) };
   });
 }
