@@ -41,12 +41,18 @@ interface MarkState {
    *  viewport that holds the marking: whichever does — the main one, or the
    *  split-screen picker's while it is open — watches this and does it. */
   inverts: number
+  /** Magic Wand sensitivity in degrees (the manual's "degrees slider"). */
+  wandDegrees: number
+  /** Enlarge / Shrink requests, like inverts: a counter and the last direction. */
+  resizes: { n: number; direction: 1 | -1 }
 
   setGesture: (g: MarkGesture | null) => void
   setErase: (v: boolean) => void
   setBackfaces: (v: boolean) => void
   setDiameter: (mm: number) => void
   setCount: (n: number) => void
+  setWandDegrees: (d: number) => void
+  resize: (direction: 1 | -1) => void
   /** Mark what is bare and rub out what is marked. */
   invert: () => void
   /** Put the tools back in their opening state — no gesture live, nothing
@@ -67,12 +73,16 @@ export const useMark = create<MarkState>((set) => ({
   diameter: 2,
   count: 0,
   inverts: 0,
+  wandDegrees: 20,
+  resizes: { n: 0, direction: 1 },
 
   setGesture: (gesture) => set({ gesture }),
   setErase: (erase) => set({ erase }),
   setBackfaces: (backfaces) => set({ backfaces }),
   setDiameter: (diameter) => set({ diameter: Math.max(diameter, 2e-4) }),
   setCount: (count) => set({ count }),
+  setWandDegrees: (d) => set({ wandDegrees: Math.min(Math.max(d, 1), 90) }),
+  resize: (direction) => set((s) => ({ resizes: { n: s.resizes.n + 1, direction } })),
   invert: () => set((s) => ({ inverts: s.inverts + 1 })),
   reset: () => set({ gesture: null, erase: false, count: 0 }),
   sizeToModel: (modelSize) => set({ diameter: Math.max(modelSize * 0.08, 2e-3) }),

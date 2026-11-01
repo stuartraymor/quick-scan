@@ -1872,6 +1872,11 @@ export class SceneManager {
     this.marking.invertPaint()
   }
 
+  /** Enlarge (+1) or Shrink (-1) the marking by one ring of triangles. */
+  resizePaint(direction: 1 | -1): void {
+    this.marking.resizePaint(direction)
+  }
+
   /** How far along the pick ray the scan is met, or null off it. */
   private scanDistanceAt(clientX: number, clientY: number): number | null {
     if (!this.mesh?.visible) return null

@@ -33,6 +33,12 @@ const GESTURES: { id: MarkGesture | null; icon: IconName; label: string; title: 
     label: 'Window',
     title: 'Drag a rectangle: every triangle inside it is marked',
   },
+  {
+    id: 'wand',
+    icon: 'markWand',
+    label: 'Magic Wand',
+    title: 'Click a well-defined area: it spreads over neighbouring triangles until the surface turns more than the sensitivity',
+  },
   { id: 'brush', icon: 'markBrush', label: 'Brush', title: 'Drag over the surface with a round brush' },
   { id: 'lasso', icon: 'markLasso', label: 'Lasso', title: 'Draw a free outline: everything inside it is marked' },
 ]
@@ -132,6 +138,23 @@ export function MarkTools({
         </InfoDot>
       </p>
 
+      {m.gesture === 'wand' && (
+        <label className="field">
+          <span>Sensitivity ({m.wandDegrees}°)</span>
+          <input
+            className="slider"
+            type="range"
+            min={1}
+            max={90}
+            step={1}
+            value={m.wandDegrees}
+            data-test="mark-wand-degrees"
+            aria-label="Magic Wand sensitivity in degrees"
+            onChange={(e) => m.setWandDegrees(Number(e.target.value))}
+          />
+        </label>
+      )}
+
       {m.gesture === 'brush' && (
         <>
           <label className="field">
@@ -172,6 +195,26 @@ export function MarkTools({
         >
           <Icon name="erase" size={16} />
           {m.erase ? 'Erasing' : 'Erase'}
+        </button>
+        <button
+          className="withicon"
+          data-test="mark-enlarge"
+          disabled={m.count === 0}
+          onClick={() => m.resize(1)}
+          title="Enlarge the marking by one ring of triangles"
+        >
+          <Icon name="markWindow" size={16} />
+          Enlarge
+        </button>
+        <button
+          className="withicon"
+          data-test="mark-shrink"
+          disabled={m.count === 0}
+          onClick={() => m.resize(-1)}
+          title="Shrink the marking by one ring of triangles"
+        >
+          <Icon name="markBrush" size={16} />
+          Shrink
         </button>
         <button
           className="withicon"
@@ -219,8 +262,10 @@ export function markChipText(
   const verb =
     gesture === 'window'
       ? `Drag a window over ${target}`
-      : gesture === 'lasso'
-        ? `Draw a lasso around ${target}`
+      : gesture === 'wand'
+        ? `Click ${target} to select it with the Magic Wand`
+        : gesture === 'lasso'
+          ? `Draw a lasso around ${target}`
         : `Drag the brush over ${target}`
   return `${verb}${tally} · right-drag rubs out · Shift-drag orbits · ${escape.live}`
 }

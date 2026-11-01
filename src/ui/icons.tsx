@@ -705,6 +705,13 @@ const ICONS = {
       <path className="i-a i-ds" d="M4 21.5h16" />
     </>
   ),
+  markWand: (
+    <>
+      <path className="i-g" d="M4 20 15 9" />
+      <path className="i-f" d="M17 3l.9 2.1L20 6l-2.1.9L17 9l-.9-2.1L14 6l2.1-.9Z" />
+      <path className="i-g" d="M19.5 12v3M18 13.5h3" />
+    </>
+  ),
   markInvert: (
     <>
       <circle className="i-g" cx="12" cy="12" r="8.5" />

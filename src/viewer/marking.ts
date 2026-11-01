@@ -12,13 +12,14 @@
 import * as THREE from 'three'
 import { INTERSECTED, NOT_INTERSECTED } from 'three-mesh-bvh'
 import type { RegionColors } from './regionColors'
+import { enlargeVertices, shrinkVertices, wandSelect } from '../core/geometry/wand'
 import { DEFAULT_THEME, type ViewTheme } from './viewThemes'
 
 /** How a marking gesture takes surface: dragged over it with a round brush,
  *  swept with a rectangular window, or ringed with a freehand lasso. The last
  *  two are screen-space and take everything they enclose in one go, which is
  *  what makes excluding a whole riser or a run of spray practical. */
-export type MarkGesture = 'brush' | 'window' | 'lasso'
+export type MarkGesture = 'brush' | 'window' | 'lasso' | 'wand'
 
 /** The surface marking: a fit is measured on exactly what it covers, instead
  *  of on a region grown from a click or on the whole scan. */
@@ -44,6 +45,9 @@ export interface PaintBrush {
    *  wall along with the near one — and on a scan the far wall is usually the
    *  one that cannot be seen to judge. */
   backfaces?: boolean
+  /** Magic Wand sensitivity: the most a neighbouring triangle may turn, in
+   *  degrees, and still be taken with the one clicked. */
+  wandDegrees?: number
 }
 
 /** A window or lasso being dragged: where it started, the outline so far, and
@@ -276,6 +280,10 @@ export class SurfaceMarking {
     if (!gesture) return false
     if ((e.button !== 0 && e.button !== 2) || e.shiftKey || e.ctrlKey || e.metaKey) return false
     const erase = this.eraseFor(e.button === 2, e.altKey)
+    if (gesture === 'wand') {
+      this.wandAt(e.clientX, e.clientY, erase)
+      return true
+    }
     this.painting = true
     if (gesture === 'brush') {
       this.paintLast = null
@@ -373,6 +381,42 @@ export class SurfaceMarking {
     const attr = this.ctx.paintAttr()
     if (attr) attr.needsUpdate = true
     this.ctx.invalidate()
+  }
+
+  /** Magic Wand: take (or, erasing, give back) the smoothly turning patch
+   *  under the cursor — see core/geometry/wand. Reported like a gesture's. */
+  private wandAt(clientX: number, clientY: number, erase: boolean): void {
+    const mesh = this.ctx.mesh()
+    const attr = this.ctx.paintAttr()
+    if (!this.paint || !mesh || !attr) return
+    this.ctx.setPickRay(clientX, clientY)
+    const hit = this.ctx.raycaster.intersectObject(mesh, false)[0]
+    const geometry = mesh.geometry as THREE.BufferGeometry
+    const index = geometry.getIndex()
+    if (!hit || typeof hit.faceIndex !== 'number' || !index) return
+    const pos = (geometry.getAttribute('position') as THREE.BufferAttribute).array as Float32Array
+    const patch = wandSelect(index.array, pos, hit.faceIndex, this.paint.wandDegrees ?? 20, this.ctx.graphVertex)
+    for (const v of patch) this.ctx.regions.markVertex(v, erase)
+    attr.needsUpdate = true
+    this.ctx.invalidate()
+    this.ctx.onPaintChange(this.ctx.regions.paintCount)
+  }
+
+  /** Enlarge (+1) or Shrink (-1) the marking by one ring of triangles. */
+  resizePaint(direction: 1 | -1): void {
+    const mesh = this.ctx.mesh()
+    const attr = this.ctx.paintAttr()
+    const index = (mesh?.geometry as THREE.BufferGeometry | undefined)?.getIndex()
+    if (!this.paint || !attr || !index) return
+    const now = this.ctx.regions.paintedVertices()
+    const next =
+      direction > 0
+        ? enlargeVertices(index.array, now, this.ctx.graphVertex)
+        : shrinkVertices(index.array, now, this.ctx.graphVertex)
+    if (!this.ctx.regions.setPaintedVertices(next)) return
+    attr.needsUpdate = true
+    this.ctx.invalidate()
+    this.ctx.onPaintChange(this.ctx.regions.paintCount)
   }
 
   /** Turn the marking inside out — see RegionColors.invertPaint. Reported like

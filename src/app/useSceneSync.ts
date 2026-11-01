@@ -168,6 +168,7 @@ export function useSceneSync({
   const markErase = useMark((s) => s.erase)
   const markBackfaces = useMark((s) => s.backfaces)
   const brushDiameter = useMark((s) => s.diameter)
+  const wandDegrees = useMark((s) => s.wandDegrees)
   const paintSession = painting && paintWorkspace
   const markSession = marking && markWorkspace
   // A plugin's workspace marks with the same tools, in a colour of its own —
@@ -194,6 +195,7 @@ export function useSceneSync({
       erase: markErase,
       gesture: pluginMarkColor !== null && !pluginGestures ? null : markGesture,
       backfaces: markBackfaces,
+      wandDegrees,
     })
   }, [
     picking,
@@ -206,6 +208,7 @@ export function useSceneSync({
     markErase,
     markGesture,
     markBackfaces,
+    wandDegrees,
   ])
 
   // Inverting is asked for in a panel and done here — unless the split-screen
@@ -217,6 +220,16 @@ export function useSceneSync({
       useMark.subscribe((s, prev) => {
         if (s.inverts === prev.inverts || useDeviation.getState().picking) return
         sceneRef.current?.invertPaint()
+      }),
+    [sceneRef],
+  )
+
+  // Enlarge / Shrink, asked for the same way as Invert.
+  useEffect(
+    () =>
+      useMark.subscribe((s, prev) => {
+        if (s.resizes.n === prev.resizes.n || useDeviation.getState().picking) return
+        sceneRef.current?.resizePaint(s.resizes.direction)
       }),
     [sceneRef],
   )
