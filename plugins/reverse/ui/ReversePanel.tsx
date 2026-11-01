@@ -382,7 +382,7 @@ export function ReversePanel({ onOpenScan, onExportStep, onCompare, chainsOf }: 
 
       <ContextChips />
       <div ref={editorRef} data-test="re-editor">
-        <PlaceSketch />
+        <PlaceSketch chainsOf={chainsOf} />
         {!sketchDraft?.placing && <SketchEditor chainsOf={chainsOf} />}
         <ExtrudeEditor />
         <RevolveEditor />

@@ -2135,6 +2135,16 @@ export class SceneManager {
     this.applyPlaneHandles()
   }
 
+  /** A cut outlined on the part with no section being made and no handles —
+   *  what a sketch plane being placed cuts through the scan. Null takes it
+   *  away. Shares the section preview's drawing, so it is never shown while a
+   *  section is being made. */
+  setCutPreview(frame: SectionFrame | null, cut: SectionCut | null, color: string): void {
+    if (this.draftHandles) return
+    this.sections.setPreview(frame, cut, color, false)
+    this.invalidate()
+  }
+
   /** The coordinate planes offered to a section that has nothing to cut
    *  across yet, through `centre`; null takes them away. */
   setWorldPlanes(centre: Vec3 | null): void {

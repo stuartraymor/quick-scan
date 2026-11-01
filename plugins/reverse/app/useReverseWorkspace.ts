@@ -10,6 +10,7 @@
 // and does the rest of the asynchronous work.
 
 import { reSceneOf } from '../viewer/reScene'
+import { commandHost } from '../../../src/commands/host'
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { EDGE_MIN_FEATURE_MM, type EdgeChains } from '../../../src/core/flat/edges'
 import type { Vec2 } from '../../../src/core/flat/types'
@@ -486,6 +487,36 @@ export function useReverseWorkspace({
   const sketchOpen = onReverse && sketchFrameKey !== null
   // Placing the plane (Create Sketch): the 3D view stays as it is, with the slicing arrow.
   const sketchPlacing = useReverse((s) => s.sketchDraft?.placing === true)
+  // The scan cut where the plane being placed lies, outlined in yellow and
+  // following the arrow (QUICKSURFACE's Create Sketch). Each move asks the
+  // worker for the cut a moment after the plane settles; a cut that arrives
+  // for a plane already moved on is dropped.
+  const placingKey = useReverse((s) => (s.sketchDraft?.placing ? frameKey(s.sketchDraft.frame) : null))
+  useEffect(() => {
+    const scene = sceneRef.current
+    if (!scene) return
+    if (!placingKey || !onReverse || !useStore.getState().fileName) {
+      scene.setCutPreview(null, null, '')
+      return
+    }
+    let stale = false
+    const timer = setTimeout(() => {
+      const d = useReverse.getState().sketchDraft
+      const worker = commandHost().session.clientRef.current
+      if (!d || !worker) return
+      worker
+        .section(d.frame.origin, d.frame.normal, EDGE_MIN_FEATURE_MM)
+        .then((cut) => {
+          if (!stale) sceneRef.current?.setCutPreview(d.frame, cut, '#ffd400')
+        })
+        .catch(() => {})
+    }, 40)
+    return () => {
+      stale = true
+      clearTimeout(timer)
+    }
+  }, [placingKey, onReverse, sceneRef])
+  useEffect(() => () => sceneRef.current?.setCutPreview(null, null, ''), [sceneRef])
   const dark = usePrefs((s) => s.dark)
   const unitsShown = usePrefs((s) => s.units)
   useEffect(() => {
