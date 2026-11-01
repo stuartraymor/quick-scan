@@ -221,6 +221,9 @@ export interface BodyInfo {
  *  one, with the editor's own state around it. */
 export interface SketchDraft {
   featureId?: number
+  /** The plane is still being placed (Create Sketch): the part and the plane
+   *  are in the 3D view with the slicing arrow, and no sheet is up yet. */
+  placing?: boolean
   name: string
   plane: PlaneRef
   frame: SectionFrame

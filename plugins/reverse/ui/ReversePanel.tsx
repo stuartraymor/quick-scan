@@ -24,6 +24,7 @@ import { Icon } from '../../../src/ui/icons'
 import { InfoDot } from '../../../src/ui/InfoDot'
 import { ModelSlot } from '../../../src/ui/ModelSlot'
 import { SketchEditor } from './SketchEditor'
+import { PlaceSketch } from './PlaceSketch'
 import { ParameterList } from './ParameterList'
 import { featureExpressionErrors } from '../core/parameters'
 import { ContextChips, SKETCH_STARTED } from './ContextChips'
@@ -381,7 +382,8 @@ export function ReversePanel({ onOpenScan, onExportStep, onCompare, chainsOf }: 
 
       <ContextChips />
       <div ref={editorRef} data-test="re-editor">
-        <SketchEditor chainsOf={chainsOf} />
+        <PlaceSketch />
+        {!sketchDraft?.placing && <SketchEditor chainsOf={chainsOf} />}
         <ExtrudeEditor />
         <RevolveEditor />
         <FeatureEditor />

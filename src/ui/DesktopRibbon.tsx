@@ -143,8 +143,44 @@ export function DesktopRibbon({ onFit, onSection, onAlign, onAutoAlign, onFineAl
   const primitives = <details className="ribbon-dropdown"><summary className="desktop-ribbon-tool" title="Extract fitted geometry from scan data"><Icon name="extract" size={25} /><span>Extract<br/>primitives ▾</span></summary><div className="ribbon-menu">
     {(['plane', 'cylinder', 'cone', 'sphere', 'circle', 'torus', 'line', 'point'] as ElementKind[]).map(kind => <button key={kind} disabled={needsScan} onClick={e => { e.currentTarget.closest('details')?.removeAttribute('open'); go('elements'); onFit(kind) }}>{kind[0].toUpperCase() + kind.slice(1)}</button>)}
   </div></details>
+  const used = new Set<string>()
+  const method = (id: string) => {
+    const m = CREATION_METHODS.find((x) => x.id === id)
+    if (!m) return null
+    used.add(id)
+    return () => { go('elements'); onFit(m.kind); useStore.getState().setDraftMethod(m.id) }
+  }
+  const fitKind = (kind: ElementKind) => () => { go('elements'); onFit(kind) }
+  const constructItem = (label: string, run: (() => void) | null, title = label) => (
+    <button key={label} disabled={needsScan || !run} title={run ? title : 'Not available in Quick Scan yet'} onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); run?.() }}>{label}</button>
+  )
+  const constructEntries = [
+    constructItem('Plane ...', method('plane-coords'), 'Type in a plane'),
+    constructItem('Middle plane ...', method('plane-midplane'), 'A plane midway between two'),
+    constructItem('Plane from current view', null),
+    constructItem('Plane along path ...', null),
+    constructItem('Plane through sketch line ...', null),
+    constructItem('Plane from 2D sketch', null),
+    constructItem('Plane from selected CAD face', null),
+    constructItem('Symmetry Plane ...', method('plane-symmetry'), 'The plane a part mirrors across'),
+    <hr key="h1" />,
+    constructItem('Cylinder ...', fitKind('cylinder'), 'Opens the cylinder editor (fit to the scan); typed-in construction is not built yet'),
+    constructItem('Cylinder from selected CAD face', null),
+    <hr key="h2" />,
+    constructItem('Cone ...', fitKind('cone'), 'Opens the cone editor (fit to the scan); typed-in construction is not built yet'),
+    constructItem('Cone from selected CAD face', null),
+    <hr key="h3" />,
+    constructItem('Sphere ...', fitKind('sphere'), 'Opens the sphere editor (fit to the scan); typed-in construction is not built yet'),
+    <hr key="h4" />,
+    constructItem('Reference Line ...', method('line-two-points'), 'A reference line through two points'),
+    constructItem('Reference Point ...', method('point-coords'), 'A reference point at typed coordinates'),
+  ]
+  // The construction methods QUICKSURFACE's list has no entry for stay reachable, below a divider.
+  const moreMethods = CREATION_METHODS.filter((m) => m.mode === 'construct' && ['plane-three-points', 'plane-offset', 'point-centroid', 'point-midpoint', 'point-line-plane', 'line-axis', 'line-plane-plane'].includes(m.id) && !used.has(m.id))
   const construct = <details className="ribbon-dropdown"><summary className="desktop-ribbon-tool" title="Construct reference geometry"><Icon name="construction" size={25}/><span>Construct ▾</span></summary><div className="ribbon-menu">
-    {CREATION_METHODS.filter(method => method.mode === 'construct' && ['plane-coords','plane-three-points','plane-midplane','plane-offset','point-coords','line-two-points','plane-symmetry'].includes(method.id)).map(method => <button key={method.id} disabled={needsScan} title={method.hint} onClick={event => { event.currentTarget.closest('details')?.removeAttribute('open'); go('elements'); onFit(method.kind); useStore.getState().setDraftMethod(method.id) }}>{method.label}</button>)}
+    {constructEntries}
+    <hr />
+    {moreMethods.map((m) => constructItem(m.label, method(m.id), m.hint))}
   </div></details>
   const alignMenu = <details className="ribbon-dropdown"><summary className="desktop-ribbon-tool" title="Choose an alignment method"><Icon name="alignSheet" size={25}/><span>Align ▾</span></summary><div className="ribbon-menu">
     {tool('Align by Coordinate System …', 'alignSheet', () => { go('elements'); onAlign() }, needsScan, 'Pick primary, secondary and tertiary features, preview, then Apply')}
@@ -155,21 +191,21 @@ export function DesktopRibbon({ onFit, onSection, onAlign, onAutoAlign, onFineAl
     {tool('Automatic alignment (Quick Scan)', 'scan', () => { go('elements'); onAutoAlign() }, needsScan, 'Not in QUICKSURFACE: propose datums from the scan and review before applying')}
   </div></details>
   const surfacingMenu = <details className="ribbon-dropdown"><summary className="desktop-ribbon-tool" title="Surface creation and editing"><Icon name="loft" size={25}/><span>Surfacing ▾</span></summary><div className="ribbon-menu">
-    {cad('surface','Fit surface','surface',true)}{cad('sheet','Extruded surface','sheet')}{cad('loft','Loft','loft')}{cad('sweep','Sweep','spline')}{cad('network','Patch network','surface',true)}{cad('thicken','Thicken surface','shell')}
+    {cad('surface','Fit Surface','surface',true)}{cad('sheet','Extruded surface','sheet')}{cad('loft','Loft','loft')}{cad('sweep','Sweep','spline')}{cad('network','Patch network','surface',true)}{cad('thicken','Thicken surface','shell')}
   </div></details>
   const patternMenu = <details className="ribbon-dropdown"><summary className="desktop-ribbon-tool" title="Patterns and mirror"><Icon name="pattern" size={25}/><span>Pattern ▾</span></summary><div className="ribbon-menu">{cad('pattern','Linear / circular pattern','pattern')}{cad('mirror','Mirror','mirror')}</div></details>
   const fileGroup = <Group label="File">{tool('Open', 'load', onOpen, busy || picking, 'Open a scan or project')}{tool('Save', 'save', onSave, busy || !savable, 'Save the entire Quick Scan project')}</Group>
   const analysis = <Group label="Analysis">{tool('Compare', 'compare', () => go('deviation'), locked, 'Compare scan data with CAD or fitted geometry')}</Group>
-  const exportGroup = <Group label="Export model">{cadActions ? cad('export', 'Export', 'exportStep') : tool('Export', 'exportStep', onExport, needsScan)}</Group>
-  const scanGroup = <Group label="Scan data">{tool('Prepare scan', 'reduceMesh', () => mesh && go(mesh.id), locked || !mesh, 'Open scan preparation and polygon reduction')}{tool('Edit scan', 'wsMesh', () => mesh && go(mesh.id), locked || !mesh, 'Open mesh selection, repair and editing')}{tool('Deselect all', 'select', onDeselect, needsScan, 'Clear the painted scan selection')}</Group>
+  const exportGroup = <Group label="Export Model">{cadActions ? cad('export', 'Export', 'exportStep') : tool('Export', 'exportStep', onExport, needsScan)}</Group>
+  const scanGroup = <Group label="Scan Data">{tool('Prepare Scan', 'reduceMesh', () => mesh && go(mesh.id), locked || !mesh, 'Open scan preparation and polygon reduction')}{tool('Edit Scan', 'wsMesh', () => mesh && go(mesh.id), locked || !mesh, 'Open mesh selection, repair and editing')}{tool('Deselect All', 'select', onDeselect, needsScan, 'Clear the painted scan selection')}</Group>
   const main = <>
     {fileGroup}{scanGroup}
     <Group label="Primitives">{primitives}{construct}</Group>
     <Group label="Align">{alignMenu}</Group>
     <Group label="Cross sections">{cad('sketch', '2D Sketch', 'sketch')}{tool('Multiple sections', 'section', () => { go('elements'); onSection() }, needsScan, 'Create planar cross sections; stacked sections are not yet implemented')}</Group>
-    <Group label="Surfacing">{cad('surface', 'Fit surface', 'surface', true)}{surfacingMenu}</Group>
-    <Group label="Freeform">{cad('network', 'Patch network', 'spline', true)}{tool('New Freeform', 'surface', () => {}, true, 'Quad-based freeform surfacing is not implemented in Quick Scan yet')}</Group>
-    <Group label="Part design">{cad('extrude', 'Extrude', 'extrude')}{cad('revolve', 'Revolve', 'revolve')}{patternMenu}{cad('fillet', 'Fillet', 'fillet')}</Group>
+    <Group label="Surfacing">{cad('surface', 'Fit Surface', 'surface', true)}{surfacingMenu}</Group>
+    <Group label="Freeform">{tool('New Freeform', 'surface', () => {}, true, 'Quad-based freeform surfacing is not implemented in Quick Scan yet')}{tool('Auto Freeform', 'spline', () => {}, true, 'Automatic freeform surfacing is not implemented in Quick Scan yet')}</Group>
+    <Group label="Part Design">{cad('extrude', 'Extrude', 'extrude')}{cad('revolve', 'Revolve', 'revolve')}{cad('moveFace', 'Move face', 'moveFace')}{tool('Trim', 'trim', () => {}, true, 'Mutual trimming is not implemented in Quick Scan yet')}{patternMenu}{cad('fillet', 'Fillet / Chamfer', 'fillet')}</Group>
     {analysis}{exportGroup}
   </>
   return <div className="desktop-ribbon" aria-label="Workspace tools">
@@ -179,6 +215,9 @@ export function DesktopRibbon({ onFit, onSection, onAlign, onAutoAlign, onFineAl
     </> : tab === 'scan' ? <>{fileGroup}{scanGroup}<Group label="Cross sections">{tool('Multiple sections', 'section', () => { go('elements'); onSection() }, needsScan)}</Group>{analysis}</>
       : tab === 'construct' ? <>{fileGroup}<Group label="Extract primitives">{primitives}{(['plane','cylinder','sphere','cone'] as ElementKind[]).map(kind => tool(kind[0].toUpperCase()+kind.slice(1), ({plane:'elPlane',cylinder:'elCylinder',sphere:'elSphere',cone:'elCone'} as Record<string,IconName>)[kind], () => { go('elements'); onFit(kind) }, needsScan))}</Group><Group label="Alignment">{tool('Align', 'alignSheet', () => { go('elements'); onAlign() }, needsScan)}</Group></>
       : ['cad','surfacing','freeform'].includes(tab) ? <>{fileGroup}{pluginTools}{analysis}{exportGroup}</>
+      : tab === 'analysis' ? <>{fileGroup}
+        <Group label="Tools">{tool('Measure', 'wsMeasure', () => go('elements'), locked, 'Measure distances between fitted elements in 3D Measure')}{tool('Surface Area', 'mesh', () => {}, true, 'Not implemented yet')}{tool('Volume', 'mesh', () => {}, true, 'Not implemented yet')}{tool('Zebra Stripes', 'mesh', () => {}, true, 'Not implemented yet')}{tool('Environment Map', 'eye', () => {}, true, 'Not implemented yet')}{tool('Draft', 'transparent', () => {}, true, 'Not implemented yet')}{tool('Snapshot', 'save', () => {}, true, 'Not implemented yet')}</Group>
+        <Group label="Control">{tool('Compare', 'compare', () => go('deviation'), locked, 'Compare scan data with CAD or fitted geometry')}{tool('Compare to other meshes', 'compare', () => go('deviation'), locked, 'Compare the scan with a second mesh in Surface Deviation')}</Group></>
       : <>{fileGroup}<Group label="Inspection">{tool('Compare', 'compare', () => go('deviation'), locked)}{tool('Wall thickness', 'wsThickness', () => go('thickness'), locked)}{tool('2D Measure', 'wsFlat', () => go('flat'), locked)}</Group>{exportGroup}</>}
     <div className="desktop-ribbon-group desktop-ribbon-assistant"><div className="desktop-ribbon-tools">{tool('AI connection', 'settings', () => usePrefs.getState().openSettings(true), busy, 'Configure the existing AI agent connection in Settings')}</div><span className="desktop-ribbon-label">Assistant</span></div>
   </div>

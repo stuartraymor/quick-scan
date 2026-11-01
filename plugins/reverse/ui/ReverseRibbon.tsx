@@ -5,7 +5,6 @@ import { Icon, type IconName } from '../../../src/ui/icons'
 import { useStore } from '../../../src/state/store'
 import { useDeviation } from '../../../src/state/deviationStore'
 import { reEditorOpen, useReverse } from '../state/reStore'
-import { SKETCH_STARTED } from './ContextChips'
 import type { PluginRuntime } from '../../../src/plugins/api'
 import { bodyMaker } from '../core/features'
 
@@ -29,7 +28,10 @@ export function useReverseRibbonActions(onExport: () => void): NonNullable<Plugi
   })
   return {
     sketch: action(() => {
-      if (state.startSketchOn({ kind: 'world', axis: 'z', offset: 0 })) useStore.getState().setStatus(SKETCH_STARTED)
+      if (state.startSketchOn({ kind: 'world', axis: 'z', offset: 0 })) {
+        useReverse.setState((s) => (s.sketchDraft ? { sketchDraft: { ...s.sketchDraft, placing: true } } : {}))
+        useStore.getState().setStatus('Create Sketch: pick the plane, drag the yellow arrow through the part, then Create.')
+      }
     }),
     surface: action(() => state.startFeature('surface'), !!fileName, 'Import a scan first.'),
     network: action(() => state.startFeature('network'), !!fileName, 'Import a scan first.'),
@@ -37,6 +39,7 @@ export function useReverseRibbonActions(onExport: () => void): NonNullable<Plugi
     revolve: action(() => state.startRevolve(), sketches > 0, 'Create a sketch first.'),
     fillet: action(() => state.startFeature('fillet'), state.bodies.length > 0, 'Create or import a body first.'),
     chamfer: action(() => state.startFeature('chamfer'), state.bodies.length > 0, 'Create or import a body first.'),
+    moveFace: action(() => state.startFeature('moveFace'), state.bodies.length > 0, 'Create or import a body first.'),
     loft: action(() => state.startFeature('loft'), sketches >= 2, 'Create at least two sketches first.'),
     sweep: action(() => state.startFeature('sweep'), sketches >= 2, 'Create at least two sketches first.'),
     sheet: action(() => state.startFeature('sheet'), sketches > 0, 'Create a sketch first.'),
@@ -71,8 +74,10 @@ export function ReverseRibbon() {
     </button>
   }
   const startSketch = () => {
-    if (useReverse.getState().startSketchOn({ kind: 'world', axis: 'z', offset: 0 })) useStore.getState().setStatus(SKETCH_STARTED)
-    else useStore.getState().setError('The XY sketch plane is not available.')
+    if (useReverse.getState().startSketchOn({ kind: 'world', axis: 'z', offset: 0 })) {
+      useReverse.setState((s) => (s.sketchDraft ? { sketchDraft: { ...s.sketchDraft, placing: true } } : {}))
+      useStore.getState().setStatus('Create Sketch: pick the plane, drag the yellow arrow through the part, then Create.')
+    } else useStore.getState().setError('The XY sketch plane is not available.')
   }
   return <>
     <Group label="Sketch & solids">

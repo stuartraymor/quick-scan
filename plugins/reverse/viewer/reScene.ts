@@ -8,6 +8,7 @@
 // lies behind them, the bodies, which come after, and the coordinate planes
 // at the origin, last.
 
+import { SliceArrow } from './sliceArrow'
 import * as THREE from 'three'
 import type { SectionFrame, WorldAxis } from '../../../src/core/section/frame'
 import type { Vec3 } from '../../../src/core/types'
@@ -151,7 +152,8 @@ export class ReScene {
       modelRadius: () => host.modelRadius(),
       invalidate: () => host.invalidate(),
     })
-    this.removeLayers.push(scene.addLayer(this.sketchLayer()), scene.addLayer(this.bodyLayer()), scene.addLayer(this.planesLayer()))
+    this.sliceArrow = new SliceArrow(host)
+    this.removeLayers.push(scene.addLayer(this.sliceArrow.layer()), scene.addLayer(this.sketchLayer()), scene.addLayer(this.bodyLayer()), scene.addLayer(this.planesLayer()))
   }
 
   // ---- the layers ------------------------------------------------------------
@@ -395,8 +397,26 @@ export class ReScene {
     return this.stepped ? this.stepped.items[this.stepped.index] : null
   }
 
+  /** The arrow on the sketch's plane, dragged to carry the plane through the
+   *  part. The arrow stands where the plane crosses the part's centre. */
+  private sliceArrow: SliceArrow
+  setSliceArrow(frame: SectionFrame | null, offset: number, onOffset?: (offset: number) => void): void {
+    if (!frame) {
+      this.sliceArrow.set(null)
+      return
+    }
+    const c = this.host.modelCenter()
+    const [nx, ny, nz] = frame.normal
+    const d = (c[0] - frame.origin[0]) * nx + (c[1] - frame.origin[1]) * ny + (c[2] - frame.origin[2]) * nz
+    // Stood to one side of the centre, clear of the sketch's name tag.
+    const side = this.host.modelRadius() * 0.55
+    const [ux, uy, uz] = frame.basisU
+    this.sliceArrow.set({ origin: [c[0] - nx * d + ux * side, c[1] - ny * d + uy * side, c[2] - nz * d + uz * side], normal: frame.normal, offset }, onOffset)
+  }
+
   /** Take the layers out of the viewport. */
   dispose(): void {
+    this.sliceArrow.dispose()
     this.setSketchImage(null)
     this.removeLayers.forEach((remove) => remove())
     this.removeLayers = []

@@ -122,6 +122,7 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
   useNetworkLayer(sceneRef)
   const contextKind = useReverse(s => s.sketchDraft ? '2D Sketch' : s.extrudeDraft ? 'Extrude' : s.revolveDraft ? 'Revolve' : s.featureDraft?.kind ?? '')
   const sketchOpen = useReverse((s) => s.sketchDraft !== null)
+  const sketchPlacing = useReverse((s) => s.sketchDraft?.placing === true)
   const sketchModelShown = useReverse((s) => s.sketchModelShown)
   const featureCount = useReverse((s) => s.features.length + s.rolledBack.length)
   const onReverse = useShell((s) => s.workspace === 'reverse')
@@ -417,7 +418,7 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
   const len = useLength()
   const curvature = useReverse((s) => (s.curvatureShown ? s.curvature : null))
   // A sketch takes the stage: the 2D sheet stands where the 3D viewport was.
-  const sketchStage = onReverse && sketchOpen
+  const sketchStage = onReverse && sketchOpen && !sketchPlacing
 
   // The curvature colouring: a reading at every vertex, like the maps, with
   // no figures under it.

@@ -243,3 +243,9 @@ button.desktop-ribbon-tool:disabled { opacity: .4; cursor: default; }
 .appmenu-doc:hover:not(:disabled), .appmenu-doc:focus-visible { background: var(--accent-soft); outline: none; }
 .appmenu-doc:disabled { opacity: .45; cursor: default; }
 @media (max-width: 720px) { .appmenu { grid-template-columns: 1fr; } .appmenu-commands { border-right: 0; border-bottom: 1px solid var(--line); } }
+.ribbon-menu hr { width: 100%; border: 0; border-top: 1px solid var(--line); margin: 3px 0; }
+.ribbon-menu button:disabled { opacity: .45; cursor: default; }
+.re-place { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.re-place h3 { margin: 0; font-size: 13px; }
+.re-place .moderow { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; }
+.ribbon-menu { max-height: calc(100vh - 12px); overflow-y: auto; }

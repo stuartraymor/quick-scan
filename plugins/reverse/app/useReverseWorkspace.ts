@@ -20,7 +20,7 @@ import type { EdgeInfo, FaceInfo, PreviewStep } from '../core/build'
 import { liveMapScale, paintedSparse, sparseSummary } from '../core/liveMap'
 import { curvatureRange } from '../../../src/core/geometry/curvature'
 import { cornerUnreadable, readCornerCut } from '../core/filletEstimate'
-import { FACE_SLICE_INSET_MM, liftPoint, type Feature, type PlaneRef, type SketchFeature } from '../core/features'
+import { FACE_SLICE_INSET_MM, liftPoint, planeOffset, planeTakesOffset, type Feature, type PlaneRef, type SketchFeature } from '../core/features'
 import { resolveAxis, resolveFeatures, resolvePlaneFrame } from '../core/resolve'
 import { chainsOfEdges } from '../core/segment'
 import { imageCorners } from '../core/sketchImage'
@@ -484,18 +484,20 @@ export function useReverseWorkspace({
   const sketchModelShown = useReverse((s) => s.sketchModelShown)
   const sketchSliced = useReverse((s) => s.sketchSliced)
   const sketchOpen = onReverse && sketchFrameKey !== null
+  // Placing the plane (Create Sketch): the 3D view stays as it is, with the slicing arrow.
+  const sketchPlacing = useReverse((s) => s.sketchDraft?.placing === true)
   const dark = usePrefs((s) => s.dark)
   const unitsShown = usePrefs((s) => s.units)
   useEffect(() => {
     const scene = sceneRef.current
     const draft = useReverse.getState().sketchDraft
     if (!scene) return
-    if (!sketchOpen || !draft) {
+    if (!sketchOpen || !draft || sketchPlacing) {
       scene.stopFollowingSheet()
       return
     }
     scene.reframeSheet(draft.frame)
-  }, [sketchOpen, sketchFrameKey, sceneRef])
+  }, [sketchOpen, sketchPlacing, sketchFrameKey, sceneRef])
   useEffect(() => {
     const scene = sceneRef.current
     const draft = useReverse.getState().sketchDraft
@@ -553,6 +555,7 @@ export function useReverseWorkspace({
     if (!scene) return
     const clear = () => {
       reSceneOf(scene).setPlaneHint(null, '#ffffff', '')
+      reSceneOf(scene).setSliceArrow(null, 0)
       scene.setHintedElements([])
     }
     if (!onReverse) {
@@ -564,6 +567,8 @@ export function useReverseWorkspace({
     const draft = useReverse.getState().sketchDraft
     if (draft) {
       reSceneOf(scene).setPlaneHint(draft.frame, SKETCH_COLOR, draft.name, 0.06)
+      // The arrow that walks the plane through the part, while the plane takes an offset.
+      reSceneOf(scene).setSliceArrow(planeTakesOffset(draft.plane) ? draft.frame : null, planeOffset(draft.plane), (v) => useReverse.getState().setSketchOffset(v))
       scene.setHintedElements([])
       return clear
     }
