@@ -1,0 +1,439 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+import { beforeEach, describe, expect, it } from 'vitest'
+import { unzipSync } from 'fflate'
+import { manifestText, packProject, unpackProject } from '../src/core/project/archive'
+import {
+  alignFromJson,
+  alignToJson,
+  elementFromJson,
+  elementToJson,
+  PROJECT_SCHEMA,
+  projectStem,
+  rigidFromJson,
+  rigidToJson,
+  validateManifest,
+} from '../src/core/project/manifest'
+import {
+  applyDeviationPart,
+  applyFlatPart,
+  applyScanPart,
+  applyThicknessPart,
+  collectProject,
+  sessionIsDirty,
+} from '../src/app/project'
+import { useStore, type Element } from '../src/state/store'
+import { useDeviation } from '../src/state/deviationStore'
+import { useThickness } from '../src/state/thicknessStore'
+import { useFlat } from '../src/state/flatStore'
+import { identityRigid } from '../src/core/deviation/rigid'
+import { fresh, sources } from './projectKit'
+
+describe('the project archive', () => {
+  beforeEach(fresh)
+
+  it('is a plain zip holding project.json beside the model files', () => {
+    const { manifest, members } = collectProject(sources(), null, '0.1.0')
+    const bytes = packProject(manifest, members)
+    const files = unzipSync(bytes)
+    expect(Object.keys(files).sort()).toEqual(['project.json', 'scan.stl'])
+    expect(files['scan.stl']).toEqual(sources().scan.bytes)
+    // The reference and image are only written when something is loaded.
+    expect(manifest.deviation.reference).toBeNull()
+    expect(manifest.flat.image).toBeNull()
+  })
+
+  it('round-trips the manifest and the members', () => {
+    useDeviation.setState({ nominalName: 'bracket.step' })
+    useFlat.setState({ imageName: 'sheet.png' })
+    const { manifest, members } = collectProject(sources(), Uint32Array.from([3, 5, 8]), '0.1.0')
+    const back = unpackProject(packProject(manifest, members))
+    expect(back.manifest).toEqual(JSON.parse(JSON.stringify(manifest)))
+    expect(back.manifest.deviation.scope).toEqual([3, 5, 8])
+    expect(back.manifest.deviation.reference?.member).toBe('reference.step')
+    expect(back.manifest.flat.image?.member).toBe('image.png')
+    expect([...back.members.keys()].sort()).toEqual(['image.png', 'reference.step', 'scan.stl'])
+    expect(back.members.get('reference.step')).toEqual(sources().reference.bytes)
+  })
+
+  it('remembers what units a mesh was read in, and only when not millimetres', () => {
+    useDeviation.setState({ nominalName: 'bracket.step' })
+    const inMm = collectProject(sources(), null, '0.1.0').manifest
+    expect(inMm.scan).not.toHaveProperty('units')
+    expect(inMm.deviation.reference).not.toHaveProperty('units')
+    const src = sources()
+    const scaled = collectProject(
+      { ...src, scan: { ...src.scan, units: 'mm' }, reference: { ...src.reference, units: 'in' } },
+      null,
+      '0.1.0',
+    )
+    expect(scaled.manifest.scan).not.toHaveProperty('units')
+    expect(scaled.manifest.deviation.reference?.units).toBe('in')
+    const back = unpackProject(packProject(scaled.manifest, scaled.members))
+    expect(back.manifest.deviation.reference?.units).toBe('in')
+    const inches = collectProject({ ...src, scan: { ...src.scan, units: 'in' } }, null, '0.1.0').manifest
+    expect(inches.scan?.units).toBe('in')
+    expect(() => validateManifest({ ...inches, scan: { ...inches.scan, units: 'furlong' } })).toThrow('scan.units')
+    expect(() => validateManifest({ ...scaled.manifest, deviation: { ...scaled.manifest.deviation, reference: { ...scaled.manifest.deviation.reference, units: 3 } } })).toThrow('deviation.reference.units')
+  })
+
+  it('keeps the files a textured scan came with, under the names they came under', () => {
+    const src = sources()
+    const mtl = new TextEncoder().encode('newmtl a\nmap_Kd Skin.png\n')
+    const png = new Uint8Array([137, 80, 78, 71])
+    const textured = { ...src, scan: { ...src.scan, name: 'part.obj', companions: [{ name: 'part.mtl', bytes: mtl }, { name: 'Skin.png', bytes: png }] } }
+    const { manifest, members } = collectProject(textured, null, '0.1.0')
+    expect(manifest.scan?.companions).toEqual([
+      { fileName: 'part.mtl', member: 'scan-1.mtl' },
+      { fileName: 'Skin.png', member: 'scan-2.png' },
+    ])
+    const back = unpackProject(packProject(manifest, members))
+    expect(back.manifest.scan?.companions).toEqual(manifest.scan?.companions)
+    expect(back.members.get('scan-1.mtl')).toEqual(mtl)
+    expect(back.members.get('scan-2.png')).toEqual(png)
+    // A plain scan says nothing of them, and a member that is not there is
+    // refused like the scan's own.
+    expect(collectProject(src, null, '0.1.0').manifest.scan).not.toHaveProperty('companions')
+    const lost = members.filter((m) => m.name !== 'scan-2.png')
+    expect(() => unpackProject(packProject(manifest, lost))).toThrow('scan-2.png')
+    expect(() => validateManifest({ ...manifest, scan: { ...manifest.scan, companions: [{ fileName: 'x.png', member: '../x.png' }] } })).toThrow('scan.companions')
+  })
+
+  it('refuses what is not a project', () => {
+    expect(() => unpackProject(new Uint8Array([1, 2, 3]))).toThrow('Not a ScanRuler project')
+    expect(() => validateManifest({ app: 'filaSim', schemaVersion: 1 })).toThrow(
+      'Not a ScanRuler project',
+    )
+    expect(() => validateManifest({ app: 'ScanRuler', schemaVersion: PROJECT_SCHEMA + 1 })).toThrow(
+      'newer version',
+    )
+  })
+
+  it('names the file after the project, else the scan, else the image', () => {
+    expect(projectStem(null, 'bracket.stl', 'sheet.png')).toBe('bracket')
+    expect(projectStem(null, null, 'sheet.png')).toBe('sheet')
+    expect(projectStem(null, null, null)).toBe('project')
+    // A name is kept whole, a dot in it no extension, but for what a file
+    // name cannot hold.
+    expect(projectStem('Bracket v2.1', 'bracket.stl', null)).toBe('Bracket v2.1')
+    expect(projectStem('Lid: left/right?', null, null)).toBe('Lid- left-right-')
+    expect(projectStem(' .. ', 'bracket.stl', null)).toBe('bracket')
+  })
+})
+
+describe('the JSON encodings', () => {
+  it('carry typed arrays through as plain arrays', () => {
+    const m = identityRigid()
+    m.t[1] = 2.5
+    const back = rigidFromJson(JSON.parse(JSON.stringify(rigidToJson(m))))
+    expect(back.r).toBeInstanceOf(Float64Array)
+    expect(Array.from(back.t)).toEqual([0, 2.5, 0])
+    expect(() => rigidFromJson({ r: [1], t: [] })).toThrow()
+
+    const el: Element = {
+      id: 1,
+      kind: 'plane',
+      name: 'Plane 1',
+      color: '#f00',
+      source: {
+        type: 'fitted',
+        seeds: [4],
+        selection: Uint32Array.from([1, 2, 3]),
+        settings: { method: 'gaussian', sigma: 1 },
+      },
+      status: 'fitting',
+      visible: true,
+    }
+    const json = JSON.parse(JSON.stringify(elementToJson(el)))
+    expect(json.source.selection).toEqual([1, 2, 3])
+    expect(json.source.settings).toEqual({ method: 'gaussian', sigma: 1 })
+    expect(json.status).toBe('done')
+    const restored = elementFromJson(json, { method: 'gaussian', sigma: 3 })
+    expect(restored.source.type === 'fitted' && restored.source.selection).toBeInstanceOf(
+      Uint32Array,
+    )
+    // The element's own cut-off comes back; the fallback is for elements
+    // saved without one.
+    expect(restored.source.type === 'fitted' && restored.source.settings.sigma).toBe(1)
+    delete json.source.settings
+    const legacy = elementFromJson(json, { method: 'gaussian', sigma: 2 })
+    expect(legacy.source.type === 'fitted' && legacy.source.settings).toEqual({
+      method: 'gaussian',
+      sigma: 2,
+    })
+
+    const a = alignFromJson(
+      JSON.parse(
+        JSON.stringify(
+          alignToJson({
+            transform: m,
+            source: 'auto',
+            rms: 0.01,
+            meanDistance: 0.008,
+            iterations: 12,
+            matched: 500,
+            sampled: 600,
+            ambiguous: false,
+          }),
+        ),
+      ),
+    )
+    expect(a.transform.t[1]).toBe(2.5)
+    expect(a.rms).toBe(0.01)
+  })
+})
+
+describe('writing a project back onto the stores', () => {
+  beforeEach(fresh)
+
+  it('restores elements, dimensions, counters and settings', () => {
+    const { manifest } = collectProject(sources(), null, '0.1.0')
+    manifest.scan!.elements = [
+      {
+        id: 7,
+        kind: 'sphere',
+        name: 'Sphere 1',
+        color: '#abc',
+        // Saved before the cut-off was the element's own: it takes the
+        // project's, which is what it was measured with.
+        source: { type: 'fitted', seeds: [10], selection: [1, 2] },
+        status: 'done',
+        visible: false,
+        fit: { kind: 'sphere', center: [0, 0, 0], radius: 5, rms: 0, count: 3 } as never,
+      },
+      {
+        id: 9,
+        kind: 'plane',
+        name: 'Plane 1',
+        color: '#cba',
+        source: { type: 'fitted', seeds: [11], settings: { method: 'gaussian', sigma: 0 } },
+        status: 'done',
+        visible: true,
+      },
+    ]
+    manifest.scan!.dimensions = [
+      { id: 3, type: 'point-point', name: 'D1', refs: [7, 7] },
+      {
+        id: 4,
+        type: 'orient-angularity',
+        name: 'Angularity 2',
+        refs: [7, 7],
+        basic: 30,
+        limit: { kind: 'max', max: 0.05 },
+      },
+      {
+        id: 5,
+        type: 'dist-point-point',
+        name: 'Distance 1',
+        refs: [7, 7],
+        limit: { kind: 'band', nominal: 10, plus: 0.1, minus: 0.05 },
+      },
+    ]
+    manifest.scan!.nextId = 8
+    manifest.scan!.nextOfDimGroup = { distance: 2, angle: 1, angularity: 3 }
+    manifest.scan!.settings = { method: 'gaussian', sigma: 2 }
+    manifest.scan!.selectMode = 'paint'
+    applyScanPart(JSON.parse(JSON.stringify(manifest.scan)))
+    const s = useStore.getState()
+    expect(s.elements).toHaveLength(2)
+    expect(s.elements[0].visible).toBe(false)
+    expect(
+      s.elements[0].source.type === 'fitted' && s.elements[0].source.selection,
+    ).toBeInstanceOf(Uint32Array)
+    expect(s.elements[0].source.type === 'fitted' && s.elements[0].source.settings.sigma).toBe(2)
+    expect(s.elements[1].source.type === 'fitted' && s.elements[1].source.settings.sigma).toBe(0)
+    expect(s.dimensions[0].name).toBe('D1')
+    // A tolerance keeps its basic angle and its limit; a dimension its band.
+    expect(s.dimensions[1]).toMatchObject({ basic: 30, limit: { kind: 'max', max: 0.05 } })
+    expect(s.dimensions[2].limit).toEqual({ kind: 'band', nominal: 10, plus: 0.1, minus: 0.05 })
+    expect(s.nextOfDimGroup).toEqual({ distance: 2, angle: 1, angularity: 3 })
+    expect(s.nextId).toBe(8)
+    expect(s.settings.sigma).toBe(2)
+    expect(s.selectMode).toBe('paint')
+    expect(sessionIsDirty()).toBe(true)
+  })
+
+  it('restores the deviation, thickness and flat parts', () => {
+    useDeviation.setState({
+      tolerance: 0.25,
+      bands: 9,
+      split: true,
+      probes: [{ id: 1, point: [1, 1, 1], value: 0.1 }],
+      nextProbeId: 2,
+    })
+    useThickness.setState({ status: 'ready', method: 'sphere', limit: 2.5 })
+    useFlat.setState({
+      imageName: 'sheet.png',
+      pxPerMm: { x: 23.6, y: 23.6 },
+      calSource: 'measured',
+      showGrid: false,
+      turns: 3,
+      mirror: true,
+    })
+    const { manifest } = collectProject(sources(), null, '0.1.0')
+    expect(manifest.thickness.measured).toBe(true)
+    expect(manifest.flat.turns).toBe(3)
+    expect(manifest.flat.mirror).toBe(true)
+    const json = JSON.parse(JSON.stringify(manifest))
+
+    useDeviation.setState({ tolerance: 0.1, bands: null, split: false, probes: [] })
+    useThickness.getState().clear()
+    useThickness.setState({ method: 'ray', limit: 1 })
+    useFlat.setState({ pxPerMm: null, calSource: 'none', showGrid: true, turns: 0, mirror: false })
+
+    applyDeviationPart(json.deviation)
+    applyThicknessPart(json.thickness)
+    applyFlatPart(json.flat)
+    expect(useDeviation.getState().tolerance).toBe(0.25)
+    expect(useDeviation.getState().bands).toBe(9)
+    expect(useDeviation.getState().split).toBe(true)
+    expect(useDeviation.getState().probes[0].value).toBe(0.1)
+    expect(useThickness.getState().method).toBe('sphere')
+    expect(useThickness.getState().limit).toBe(2.5)
+    expect(useFlat.getState().pxPerMm).toEqual({ x: 23.6, y: 23.6 })
+    expect(useFlat.getState().calSource).toBe('measured')
+    expect(useFlat.getState().showGrid).toBe(false)
+    expect(useFlat.getState().turns).toBe(3)
+    expect(useFlat.getState().mirror).toBe(true)
+    useFlat.setState({ turns: 0, mirror: false })
+  })
+
+  it('lays a sheet saved before it could be turned or mirrored the way it was scanned', () => {
+    useFlat.setState({ imageName: 'sheet.png', subject: { kind: 'image' }, sheets: {}, turns: 0, mirror: false })
+    useFlat.getState().setSubject({ kind: 'section', id: 4 })
+    useFlat.getState().turnSheet(2)
+    // Top-to-bottom on a sheet shown upside down runs the turns the other
+    // way — which is the same two — and mirrors it.
+    useFlat.getState().mirrorSheet('top-bottom')
+    const { manifest } = collectProject(sources(), null, '0.1.0')
+    const json = JSON.parse(JSON.stringify(manifest))
+    expect(json.flat.turns).toBe(2)
+    expect(json.flat.mirror).toBe(true)
+    expect(json.flat.sheets['section:4'].turns).toBe(2)
+    expect(json.flat.sheets['section:4'].mirror).toBe(true)
+    expect(json.flat.sheets.image.turns).toBe(0)
+    expect(json.flat.sheets.image.mirror).toBe(false)
+    // An older build wrote none of them.
+    delete json.flat.turns
+    delete json.flat.mirror
+    delete json.flat.sheets['section:4'].turns
+    delete json.flat.sheets['section:4'].mirror
+    delete json.flat.sheets.image.turns
+    delete json.flat.sheets.image.mirror
+
+    useStore.setState({ sections: [{ id: 4 } as never], nextSectionNumber: 2 })
+    // Whatever the stage held before the load must not leak into the sheet.
+    useFlat.setState({ subject: { kind: 'image' }, sheets: {}, turns: 1, mirror: true })
+    applyFlatPart(json.flat)
+    expect(useFlat.getState().subject).toEqual({ kind: 'section', id: 4 })
+    expect(useFlat.getState().turns).toBe(0)
+    expect(useFlat.getState().mirror).toBe(false)
+    expect(useFlat.getState().sheets.image.turns).toBe(0)
+    expect(useFlat.getState().sheets.image.mirror).toBe(false)
+    useStore.setState({ sections: [], nextSectionNumber: 1 })
+    useFlat.setState({ subject: { kind: 'image' }, sheets: {} })
+  })
+
+  it('saves sections as planes and every subject sheet, and puts them back', () => {
+    const frame = {
+      origin: [1, 2, 3] as [number, number, number],
+      normal: [0, 0, 1] as [number, number, number],
+      basisU: [1, 0, 0] as [number, number, number],
+      basisV: [0, 1, 0] as [number, number, number],
+    }
+    useStore.setState({
+      sections: [
+        {
+          id: 4,
+          name: 'Section 1',
+          color: '#abc',
+          visible: true,
+          frame,
+          ref: 'z',
+          refDir: [0, 0, 1],
+          offset: 2,
+          cut: { points: new Float32Array([0, 0, 3]), offsets: Uint32Array.from([0, 1]) },
+          cutKey: 'k',
+        },
+      ],
+      nextSectionNumber: 2,
+    })
+    // Measuring on the section, with the image's sheet stashed behind it.
+    useFlat.setState({ imageName: 'sheet.png', subject: { kind: 'image' }, sheets: {}, elements: [] })
+    useFlat.getState().setSubject({ kind: 'section', id: 4 })
+    useFlat.getState().startDraft('point', 'flat-point-pick')
+    useFlat.getState().addDraftPick([3, 4])
+    useFlat.getState().commitDraft()
+
+    const { manifest } = collectProject(sources(), null, '0.1.0')
+    const json = JSON.parse(JSON.stringify(manifest))
+    // The polylines are not saved — they are cut again on load.
+    expect(json.scan.sections[0].cut).toBeUndefined()
+    expect(json.scan.sections[0].frame).toEqual(frame)
+    expect(json.flat.subject).toEqual({ kind: 'section', id: 4 })
+    expect(Object.keys(json.flat.sheets).sort()).toEqual(['image', 'section:4'])
+    expect(json.flat.sheets['section:4'].elements).toHaveLength(1)
+    expect(json.flat.calSource).toBe('section')
+
+    useStore.setState({ sections: [], nextSectionNumber: 1 })
+    useFlat.setState({ subject: { kind: 'image' }, sheets: {}, elements: [], calSource: 'none' })
+    applyScanPart(json.scan)
+    expect(useStore.getState().sections).toHaveLength(1)
+    expect(useStore.getState().sections[0].cut).toBeUndefined()
+    // What it was cut across comes back whole: a coordinate plane, and the
+    // direction its tilt is read against.
+    expect(useStore.getState().sections[0].ref).toBe('z')
+    expect(useStore.getState().sections[0].refDir).toEqual([0, 0, 1])
+    expect(useStore.getState().nextSectionNumber).toBe(2)
+    applyFlatPart(json.flat)
+    const f = useFlat.getState()
+    expect(f.subject).toEqual({ kind: 'section', id: 4 })
+    expect(f.elements).toHaveLength(1)
+    expect(f.calSource).toBe('section')
+    expect(Object.keys(f.sheets)).toEqual(['image'])
+
+    // A section the project no longer holds cannot be on the stage.
+    useStore.setState({ sections: [] })
+    applyFlatPart(json.flat)
+    expect(useFlat.getState().subject).toEqual({ kind: 'image' })
+    expect(useFlat.getState().elements).toHaveLength(0)
+    useFlat.setState({ subject: { kind: 'image' }, sheets: {} })
+  })
+
+  it('reads a project from before sections as one image sheet', () => {
+    const { manifest } = collectProject(sources(), null, '0.1.0')
+    const json = JSON.parse(JSON.stringify(manifest))
+    delete json.flat.subject
+    delete json.flat.sheets
+    delete json.scan.sections
+    json.flat.elements = [
+      {
+        id: 1,
+        kind: 'point',
+        name: 'Point 1',
+        color: '#111',
+        source: { type: 'picks', method: 'flat-point-pick', picks: [[1, 2]] },
+        fit: { kind: 'point', at: [1, 2], sigma: 0, usedPoints: 0 },
+        error: null,
+        visible: true,
+      },
+    ]
+    applyScanPart(json.scan)
+    applyFlatPart(json.flat)
+    expect(useStore.getState().sections).toEqual([])
+    expect(useFlat.getState().subject).toEqual({ kind: 'image' })
+    expect(useFlat.getState().elements).toHaveLength(1)
+    expect(useFlat.getState().sheets).toEqual({})
+  })
+})
+
+describe('the manifest as text', () => {
+  it('is indented to be read while it is small, and compact once a marking makes it large', () => {
+    const manifest = { app: 'x', big: Array.from({ length: 2000 }, (_, i) => i) } as never
+    const small = manifestText(manifest)
+    expect(small).toContain('\n')
+    const compact = manifestText(manifest, 1000)
+    expect(compact).not.toContain('\n')
+    expect(compact.length).toBeLessThan(small.length / 2)
+    expect(JSON.parse(compact)).toEqual(JSON.parse(small))
+  })
+})

@@ -1,0 +1,271 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+import { beforeEach, describe, expect, it } from 'vitest'
+import { useDeviation } from '../src/state/deviationStore'
+import { identityRigid } from '../src/core/deviation/rigid'
+import { MAX_DEFLECTION_SCALE, MIN_DEFLECTION_SCALE } from '../src/core/deviation/deflection'
+import type { AlignResult } from '../src/core/deviation/align'
+
+function doneAlign(): AlignResult {
+  return {
+    transform: identityRigid(),
+    source: 'auto',
+    rms: 0.05,
+    meanDistance: 0.04,
+    iterations: 10,
+    matched: 1000,
+    sampled: 1000,
+    ambiguous: false,
+  }
+}
+
+beforeEach(() => {
+  useDeviation.getState().clearAlign()
+  useDeviation.getState().clearElementMap()
+  useDeviation.setState({
+    source: 'reference',
+    rangeAuto: true,
+    maxDistanceAuto: true,
+    mapVersion: 0,
+    elementVersion: 0,
+    split: false,
+    showMap: true,
+    showScan: true,
+  })
+})
+
+describe('deviation store', () => {
+  it('keeps a good alignment when the measurement fails', () => {
+    const s = () => useDeviation.getState()
+    s().resolveAlign(doneAlign())
+    s().beginMap()
+    s().failMap('worker died')
+    expect(s().mapStatus).toBe('idle')
+    expect(s().alignStatus).toBe('done')
+    expect(s().align).not.toBeNull()
+    expect(s().alignMessage).toBe('worker died')
+  })
+
+  it('applies the suggested search distance until the user overrides it', () => {
+    const s = () => useDeviation.getState()
+    s().resolveMap(0.4, 2.5)
+    expect(s().maxDistance).toBe(2.5)
+    // Still automatic, so a re-measure may move it.
+    s().resolveMap(0.4, 1.5)
+    expect(s().maxDistance).toBe(1.5)
+    // The user's word beats every later suggestion…
+    s().setMaxDistance(5)
+    s().resolveMap(0.4, 2.5)
+    expect(s().maxDistance).toBe(5)
+    // …until a fresh session clears the override.
+    s().clearAlign()
+    s().resolveMap(0.4, 2.5)
+    expect(s().maxDistance).toBe(2.5)
+  })
+})
+
+describe('the deviation as volumes', () => {
+  // Enough of a measurement for the store, which only holds it.
+  const measured = () => ({ regions: [], tolerance: 0.1 }) as unknown as Parameters<ReturnType<typeof useDeviation.getState>['resolveVolume']>[0]
+
+  it('is let go of with the alignment, the scan or the reference it was measured under', () => {
+    const s = () => useDeviation.getState()
+    s().resolveAlign(doneAlign())
+    s().beginVolume()
+    expect(s().volumeStatus).toBe('running')
+    s().resolveVolume(measured())
+    expect(s().volumeStatus).toBe('ready')
+    expect(s().volume).not.toBeNull()
+    // Drawn in the map's colours, it puts the colour plot away.
+    expect(s().showMap).toBe(false)
+    s().resolveAlign(doneAlign())
+    expect(s().volume).toBeNull()
+    s().resolveVolume(measured())
+    s().clearReferenceMap()
+    expect(s().volume).toBeNull()
+    s().resolveVolume(measured())
+    s().clearAlign()
+    expect(s().volume).toBeNull()
+    expect(s().volumeStatus).toBe('idle')
+  })
+
+  it('keeps the alignment when the measurement fails', () => {
+    const s = () => useDeviation.getState()
+    s().resolveAlign(doneAlign())
+    s().beginVolume()
+    s().failVolume('out of memory')
+    expect(s().volumeStatus).toBe('idle')
+    expect(s().volumeMessage).toBe('out of memory')
+    expect(s().align).not.toBeNull()
+  })
+})
+
+describe('how the map is looked at', () => {
+  const s = () => useDeviation.getState()
+
+  it('opens the split view onto a scan that is actually shown', () => {
+    // The left half is the scan, so a hidden one would open onto an empty half.
+    s().setShowScan(false)
+    s().setSplit(true)
+    expect(s().split).toBe(true)
+    expect(s().showScan).toBe(true)
+    // Closing it is no reason to touch what is on the stage.
+    s().setShowScan(false)
+    s().setSplit(false)
+    expect(s().showScan).toBe(false)
+  })
+
+  it('keeps the map measured when the colour plot is switched off', () => {
+    s().resolveAlign(doneAlign())
+    s().resolveMap(0.4, 2.5)
+    s().addProbe([1, 2, 3], 0.12)
+    s().setShowMap(false)
+    // Not looking at a reading is not the same as not having it: the map, the
+    // figures under the scale and the pinned readings all stand.
+    expect(s().showMap).toBe(false)
+    expect(s().mapStatus).toBe('ready')
+    expect(s().probes).toHaveLength(1)
+    s().setShowMap(true)
+    expect(s().showMap).toBe(true)
+  })
+})
+
+describe('measuring against a reference part or an element', () => {
+  const s = () => useDeviation.getState()
+
+  it('keeps both maps, so switching what is measured against loses neither', () => {
+    s().resolveAlign(doneAlign())
+    s().resolveMap(0.4, 2.5)
+    s().setSource('element')
+    s().setTarget(7, -1)
+    s().resolveElementMap(0.2)
+    expect(s().elementStatus).toBe('ready')
+    // The reference map is still measured under the alignment it was measured
+    // under — switching is a change of what is being read, not of what is known.
+    expect(s().mapStatus).toBe('ready')
+    expect(s().align).not.toBeNull()
+    s().setSource('reference')
+    expect(s().mapStatus).toBe('ready')
+    expect(s().elementStatus).toBe('ready')
+  })
+
+  it('drops the pinned readings on the way between them', () => {
+    s().resolveAlign(doneAlign())
+    s().resolveMap(0.4, 2.5)
+    s().addProbe([1, 2, 3], 0.12)
+    expect(s().probes).toHaveLength(1)
+    // A reading off one map and a reading off the other are both millimetres on
+    // the same part and look identical on it.
+    s().setSource('element')
+    expect(s().probes).toHaveLength(0)
+  })
+
+  it('takes the map with the element it was measured against', () => {
+    s().setSource('element')
+    s().setTarget(7, 1)
+    s().resolveElementMap(0.2)
+    s().setTarget(9, -1)
+    expect(s().elementStatus).toBe('idle')
+    expect(s().targetId).toBe(9)
+    expect(s().targetSide).toBe(-1)
+  })
+
+  it('leaves the map alone when the element already in use is chosen again', () => {
+    s().setSource('element')
+    s().setTarget(7, 1)
+    s().resolveElementMap(0.2)
+    // Re-picking it in the dropdown, or clicking it on the part. The field is
+    // recomputed off a change to the choice, so resetting the status here would
+    // take the map away with nothing left to bring it back.
+    s().setTarget(7, 1)
+    expect(s().elementStatus).toBe('ready')
+    // A side that has been re-detected differently is a change, and does reset.
+    s().setTarget(7, -1)
+    expect(s().elementStatus).toBe('idle')
+  })
+
+  it('leaves the reference readout alone when the element map is cleared behind it', () => {
+    s().resolveAlign(doneAlign())
+    s().resolveMap(0.4, 2.5)
+    s().setSource('element')
+    s().setTarget(7, 1)
+    s().resolveElementMap(0.2)
+    s().setSource('reference')
+    s().setReadout(
+      { min: -1, max: 1, mean: 0, rms: 0.1, sigma: 0.1, measured: 10, total: 10, withinTolerance: 9, tolerance: 0.1 },
+      { bins: Uint32Array.of(1), low: -1, high: 1, peak: 1 },
+    )
+    // The element the other map was measured against goes away — deleted in the
+    // measure workspace — while the reference map is the one on screen.
+    s().clearElementMap()
+    expect(s().elementStatus).toBe('idle')
+    expect(s().stats).not.toBeNull()
+    expect(s().histogram).not.toBeNull()
+  })
+
+  it('clamps the facing limit and lets it be switched off', () => {
+    s().setTargetFacing(200)
+    expect(s().targetFacingDeg).toBe(90)
+    s().setTargetFacing(0)
+    expect(s().targetFacingDeg).toBe(1)
+    s().setTargetFacing(null)
+    expect(s().targetFacingDeg).toBeNull()
+  })
+
+  it('keeps the reference map its own facing limit, clamped the same way', () => {
+    s().setTargetFacing(30)
+    s().setMapFacing(200)
+    expect(s().mapFacingDeg).toBe(90)
+    s().setMapFacing(0)
+    expect(s().mapFacingDeg).toBe(1)
+    s().setMapFacing(null)
+    expect(s().mapFacingDeg).toBeNull()
+    expect(s().targetFacingDeg).toBe(30)
+  })
+
+  it('flips the material side', () => {
+    s().setTarget(7, 1)
+    s().flipTargetSide()
+    expect(s().targetSide).toBe(-1)
+    s().flipTargetSide()
+    expect(s().targetSide).toBe(1)
+  })
+})
+
+describe('the deformation animation', () => {
+  const s = () => useDeviation.getState()
+  beforeEach(() => useDeviation.setState({ animate: false, animScale: 10, animScaleAuto: true }))
+
+  it('follows the suggested scale until the user sets one', () => {
+    s().suggestAnimScale(50)
+    expect(s().animScale).toBe(50)
+    s().setAnimScale(25)
+    expect(s().animScaleAuto).toBe(false)
+    s().suggestAnimScale(80)
+    expect(s().animScale).toBe(25)
+  })
+
+  it('keeps the scale within its bounds', () => {
+    s().setAnimScale(0.2)
+    expect(s().animScale).toBe(MIN_DEFLECTION_SCALE)
+    s().setAnimScale(1e9)
+    expect(s().animScale).toBe(MAX_DEFLECTION_SCALE)
+  })
+
+  it('stops for the marking tools and the point picker, which work on the scan where it is', () => {
+    s().setAnimate(true)
+    s().startMarking()
+    expect(s().animate).toBe(false)
+    s().stopMarking()
+    s().setAnimate(true)
+    s().startPicking()
+    expect(s().animate).toBe(false)
+  })
+
+  it('stops with a new reference, and goes on through a new alignment', () => {
+    s().setAnimate(true)
+    s().resolveAlign(doneAlign())
+    expect(s().animate).toBe(true)
+    s().beginNominalLoad('other.stl')
+    expect(s().animate).toBe(false)
+  })
+})

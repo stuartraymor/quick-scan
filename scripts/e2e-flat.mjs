@@ -1,0 +1,632 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// End-to-end smoke test for the 2D Measure workspace: drives the real app in
+// headless Chrome — generates a synthetic flatbed scan (no binary fixtures in
+// this repo), loads it through the panel, waits for edge detection, fits a
+// circle and a line by region drag, picks a point and drags its pin, edits,
+// hides and deletes through the element list, calibrates on a known
+// distance, sets an alignment, measures a dimension, and reads the report off the
+// clipboard.
+//
+// The fixture is exact by construction: a grayscale PNG at a declared 600 dpi
+// with soft-shouldered edges, a 240 px circle and a 600 px wide rectangle —
+// so the assertions can be tight.
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import {
+  APP_URL,
+  check,
+  click,
+  drag,
+  finish,
+  launchApp,
+  OUT_DIR,
+  repoFile,
+  sheetToScreen,
+  shotPath,
+  sleep,
+} from './e2e-lib.mjs'
+import { buildPng, DISC, H, PPM, RECT, W } from './e2e-flat-fixture.mjs'
+
+const fixture = join(OUT_DIR, 'flat-fixture.png')
+writeFileSync(fixture, buildPng())
+
+// Ground truth in document units (mm, y up) at the declared scale.
+const mm = (px) => px / PPM
+const SHEET_W = mm(W)
+const SHEET_H = mm(H)
+const DISC_C = [mm(DISC.cx), mm(H - DISC.cy)]
+const DISC_DIA = mm(2 * DISC.r)
+const RECT_TOP_Y = mm(H - RECT.y0) // the rectangle's upper edge, in doc y
+const RECT_WIDTH = mm(RECT.x1 - RECT.x0)
+
+// ---- the session ------------------------------------------------------------
+
+const { browser, page, consoleErrors } = await launchApp()
+// Downloads land in a folder of their own, for the SVG export at the end.
+const DL_DIR = repoFile('e2e-out/flat-dl')
+rmSync(DL_DIR, { recursive: true, force: true })
+mkdirSync(DL_DIR, { recursive: true })
+const cdp = await browser.target().createCDPSession()
+await cdp.send('Browser.setDownloadBehavior', {
+  behavior: 'allow',
+  downloadPath: DL_DIR,
+  eventsEnabled: true,
+})
+await browser
+  .defaultBrowserContext()
+  .overridePermissions(APP_URL.replace(/\/$/, ''), [
+    'clipboard-read',
+    'clipboard-write',
+    'clipboard-sanitized-write',
+  ])
+
+await click(page, '[data-test=workspace-flat]')
+// The support card overlays the lower stage, exactly where picks on the
+// fixture's rectangle land — close it before measuring through it.
+await click(page, '[data-test=support-card] .sc-x').catch(() => {})
+const input = await page.$('input[type=file][accept*=".png"]')
+await input.uploadFile(fixture)
+await page.waitForFunction(
+  () => /chains found/.test(document.querySelector('[data-test=flat-edge-status]')?.textContent ?? ''),
+  { timeout: 60_000 },
+)
+
+// ---- metadata and the uncalibrated alarm -----------------------------------
+const calStatus = await page.$eval('[data-test=flat-cal-status]', (el) => el.textContent)
+check(/600 dpi/.test(calStatus), 'the declared 600 dpi is read from pHYs')
+check((await page.$('[data-test=flat-uncalibrated-chip]')) !== null, 'the uncalibrated alarm is up')
+
+// Screen mapping for the framed sheet. Not the loupe, which is a second canvas
+// in the same viewport and is zero-sized until the cursor is over the image.
+const rect = await page.$eval('.viewslot:not([hidden]) .viewport canvas:not(.loupe)', (el) => {
+  const r = el.getBoundingClientRect()
+  return { x: r.x, y: r.y, w: r.width, h: r.height }
+})
+const aspect = rect.w / rect.h
+const frustH = Math.max((SHEET_H / 2) * 1.08, ((SHEET_W / 2) * 1.08) / aspect)
+const toScreen = sheetToScreen(rect, SHEET_W, SHEET_H)
+
+const rowTexts = () =>
+  page.$$eval('[data-test=element-row]', (els) =>
+    els.map((e) => e.textContent.replace(/\s+/g, ' ').trim()),
+  )
+
+// ---- a circle by one region drag -------------------------------------------
+// Picking is the default; the region fit is the other method in the box.
+await click(page, '[data-test=flat-fit-circle]')
+check(
+  /Click three or more points/.test(await page.$eval('[data-test=flat-draft-hint]', (el) => el.textContent)),
+  'a kind button opens with point picking',
+)
+await page.select('[data-test=flat-draft-method]', 'flat-circle-edge')
+const rr = DISC_DIA / 2 + 1
+await drag(page, toScreen(DISC_C[0] - rr, DISC_C[1] + rr), toScreen(DISC_C[0] + rr, DISC_C[1] - rr))
+await sleep(400)
+await click(page, '[data-test=flat-create-element]')
+await sleep(200)
+let rows = await rowTexts()
+const dia = Number((rows[0]?.match(/Ø ([\d.]+)/) ?? [])[1])
+check(
+  Math.abs(dia - DISC_DIA) < 0.08,
+  `the region-fitted circle reads Ø ${DISC_DIA.toFixed(3)} mm (got ${dia})`,
+)
+
+// ---- the same circle by one click on its edge --------------------------------
+// An edge tool reads a click as the whole detected edge under it.
+await click(page, '[data-test=flat-fit-circle]')
+await page.select('[data-test=flat-draft-method]', 'flat-circle-edge')
+await page.mouse.click(...toScreen(DISC_C[0] + DISC_DIA / 2, DISC_C[1]))
+await sleep(400)
+const clickedPicks = await page.$eval('[data-test=flat-draft-picks]', (el) => el.textContent)
+const clickedDia = Number(
+  ((await page.$eval('[data-test=flat-draft-status]', (el) => el.textContent)).match(/([\d.]+)/) ?? [])[1],
+)
+check(
+  Number(clickedPicks.replace(/[^\d]/g, '')) > 100,
+  `one click on the edge takes the whole chain (${clickedPicks})`,
+)
+check(
+  Math.abs(clickedDia - DISC_DIA) < 0.08,
+  `and the clicked circle reads Ø ${DISC_DIA.toFixed(3)} mm (got ${clickedDia})`,
+)
+await click(page, '[data-test=flat-draft-cancel]')
+
+// ---- the same circle by a fit to edge: the click that grows -----------------
+// The fit starts at the point clicked and grows along the chain; on a
+// closed rim it goes all the way round.
+const readStatus = async () => page.$eval('[data-test=flat-draft-status]', (el) => el.textContent)
+await click(page, '[data-test=flat-fit-circle]')
+await page.select('[data-test=flat-draft-method]', 'flat-circle-seed')
+await page.mouse.click(...toScreen(DISC_C[0] + DISC_DIA / 2, DISC_C[1]))
+await sleep(400)
+const grownPicks = Number((await page.$eval('[data-test=flat-draft-picks]', (el) => el.textContent)).replace(/[^\d]/g, ''))
+const grownDia = Number(((await readStatus()).match(/([\d.]+)/) ?? [])[1])
+check(grownPicks > 600, `the fit to edge grows round the whole rim (${grownPicks} points)`)
+check(
+  Math.abs(grownDia - DISC_DIA) < 0.08,
+  `and reads Ø ${DISC_DIA.toFixed(3)} mm (got ${grownDia})`,
+)
+// A line clicked on the rim is refused with the reason, and the box says so.
+await click(page, '[data-test=flat-draft-cancel]')
+await click(page, '[data-test=flat-fit-line]')
+await page.select('[data-test=flat-draft-method]', 'flat-line-seed')
+await page.mouse.click(...toScreen(DISC_C[0], DISC_C[1] + DISC_DIA / 2))
+await sleep(400)
+const rimLine = await readStatus()
+check(/curved/.test(rimLine), `a line clicked on the rim is refused as curved (${rimLine})`)
+await click(page, '[data-test=flat-draft-cancel]')
+
+// ---- one side of the rectangle by a fit to edge ------------------------------
+// The rectangle's outline is one chain with four corners; a click on the
+// top side takes that side alone, corner to corner.
+await click(page, '[data-test=flat-fit-line]')
+await page.select('[data-test=flat-draft-method]', 'flat-line-seed')
+await page.mouse.click(...toScreen(mm((RECT.x0 + RECT.x1) / 2), RECT_TOP_Y))
+await sleep(400)
+const grownLine = await readStatus()
+const grownLen = Number((grownLine.match(/L ([\d.]+)/) ?? [])[1])
+const grownAngle = Number((grownLine.match(/· (-?[\d.]+)°/) ?? [])[1])
+check(
+  Math.abs(grownLen - RECT_WIDTH) < 0.3,
+  `the fit to edge takes the top side corner to corner, L ${RECT_WIDTH.toFixed(3)} mm (got ${grownLen})`,
+)
+check(Math.abs(grownAngle) < 0.15, `and it is horizontal (${grownAngle}°)`)
+// A circle clicked on the side is refused: the edge there is straight.
+await click(page, '[data-test=flat-draft-cancel]')
+await click(page, '[data-test=flat-fit-circle]')
+await page.select('[data-test=flat-draft-method]', 'flat-circle-seed')
+await page.mouse.click(...toScreen(mm((RECT.x0 + RECT.x1) / 2), RECT_TOP_Y))
+await sleep(400)
+const sideCircle = await readStatus()
+check(/straight/.test(sideCircle), `a circle clicked on the side is refused as straight (${sideCircle})`)
+await click(page, '[data-test=flat-draft-cancel]')
+
+// ---- snap to edge off, and a right-drag pan ----------------------------------
+// With the snap off a click is the measurement; a right-drag moves the sheet
+// under the cursor by exactly the drag, whatever the navigation scheme. A
+// fresh point draft per check — a press on the placed pin would drag it.
+const mmPerScreenPx = (2 * frustH) / rect.h
+const nearEdge = [DISC_C[0] + DISC_DIA / 2 + 0.3, DISC_C[1]]
+const readX = async () =>
+  Number(((await page.$eval('[data-test=flat-draft-status]', (el) => el.textContent)).match(/X (-?[\d.]+)/) ?? [])[1])
+await click(page, '[data-test=flat-fit-point]')
+await page.mouse.click(...toScreen(...nearEdge))
+await sleep(200)
+check(Math.abs((await readX()) - (DISC_C[0] + DISC_DIA / 2)) < 0.08, 'snap on: the click lands on the edge')
+await click(page, '[data-test=flat-draft-cancel]')
+await click(page, '[data-test=flat-fit-point]')
+await click(page, '[data-test=flat-draft-snap]')
+await page.mouse.click(...toScreen(...nearEdge))
+await sleep(200)
+check(Math.abs((await readX()) - nearEdge[0]) < 0.08, 'snap off: the click is the measurement')
+await click(page, '[data-test=flat-draft-cancel]')
+await click(page, '[data-test=flat-fit-point]')
+const [px0, py0] = toScreen(...nearEdge)
+await drag(page, [px0, py0], [px0 + 120, py0], { button: 'right' })
+await page.mouse.click(px0, py0)
+await sleep(200)
+const panned = await readX()
+check(
+  Math.abs(panned - (nearEdge[0] - 120 * mmPerScreenPx)) < 0.1,
+  `right-drag pans the sheet (x ${panned.toFixed(2)} after a 120 px pan)`,
+)
+await drag(page, [px0 + 120, py0], [px0, py0], { button: 'right' })
+await click(page, '[data-test=flat-draft-snap]')
+check(
+  await page.$eval('[data-test=flat-draft-snap]', (el) => el.checked),
+  'and the snap goes back on for the rest of the run',
+)
+// A plain click on the pin takes the pick back; the draft is empty again.
+// (The pick went down on the panned sheet, so the pin sits 120 px left now.)
+await page.mouse.click(px0 - 120, py0)
+await sleep(200)
+check(
+  (await page.$eval('[data-test=flat-draft-picks]', (el) => el.textContent)) === '0 picks',
+  'a click on a pin removes that pick',
+)
+await click(page, '[data-test=flat-draft-cancel]')
+
+// ---- the sheet turned a quarter turn -----------------------------------------
+// Rotate 90° rolls the view and re-fits the sheet: what was to the right of
+// the disc is above it. A raw (Alt) pick through the turned view must still
+// read the document spot under the cursor, and turning back restores the
+// framing every later pick in this script is aimed by.
+await click(page, '[data-test=flat-turn-ccw]')
+await sleep(300)
+check(
+  /quarter turn counter-clockwise/.test(await page.$eval('[data-test=flat-turn-status]', (el) => el.textContent)),
+  'the datum group says the sheet is shown a quarter turn round',
+)
+// The turned sheet stands on end: document +X runs up the screen, +Y left.
+const frustT = Math.max((SHEET_W / 2) * 1.08, ((SHEET_H / 2) * 1.08) / aspect)
+const toScreenTurned = (mx, my) => [
+  rect.x + (rect.w * (-(my - SHEET_H / 2) / (frustT * aspect) + 1)) / 2,
+  rect.y + (rect.h * (1 - (mx - SHEET_W / 2) / frustT)) / 2,
+]
+const spot = [DISC_C[0] + 9, DISC_C[1] - 7]
+await click(page, '[data-test=flat-fit-point]')
+await page.keyboard.down('Alt')
+await page.mouse.click(...toScreenTurned(...spot))
+await page.keyboard.up('Alt')
+await sleep(200)
+const turnedRead = await page.$eval('[data-test=flat-draft-status]', (el) => el.textContent)
+const turnedX = Number((turnedRead.match(/X (-?[\d.]+)/) ?? [])[1])
+const turnedY = Number((turnedRead.match(/Y (-?[\d.]+)/) ?? [])[1])
+check(
+  Math.abs(turnedX - spot[0]) < 0.15 && Math.abs(turnedY - spot[1]) < 0.15,
+  `a pick through the turned view reads the spot under the cursor (${turnedX}, ${turnedY} for ${spot.map((v) => v.toFixed(2))})`,
+)
+await click(page, '[data-test=flat-draft-cancel]')
+await click(page, '[data-test=flat-turn-cw]')
+await sleep(300)
+check((await page.$('[data-test=flat-turn-status]')) === null, 'turning back clears the notice')
+await click(page, '[data-test=flat-fit-point]')
+await page.keyboard.down('Alt')
+await page.mouse.click(...toScreen(...spot))
+await page.keyboard.up('Alt')
+await sleep(200)
+const backX = Number(((await page.$eval('[data-test=flat-draft-status]', (el) => el.textContent)).match(/X (-?[\d.]+)/) ?? [])[1])
+check(Math.abs(backX - spot[0]) < 0.15, `and the sheet is framed as before (x ${backX.toFixed(2)})`)
+await click(page, '[data-test=flat-draft-cancel]')
+
+// ---- the sheet mirrored ------------------------------------------------------
+// Mirror ↔ flips the view left-to-right in place — the framing is kept, what
+// was left of the disc is right of it. A raw (Alt) pick through the mirrored
+// view must still read the document spot under the cursor, and mirroring
+// again restores the view every later pick is aimed by.
+await click(page, '[data-test=flat-mirror-lr]')
+await sleep(300)
+check(
+  /mirrored left-to-right/.test(await page.$eval('[data-test=flat-turn-status]', (el) => el.textContent)),
+  'the alignment group says the sheet is shown mirrored left-to-right',
+)
+const toScreenMirrored = (mx, my) => [
+  rect.x + (rect.w * (1 - (mx - SHEET_W / 2) / (frustH * aspect))) / 2,
+  rect.y + (rect.h * (1 - (my - SHEET_H / 2) / frustH)) / 2,
+]
+await click(page, '[data-test=flat-fit-point]')
+await page.keyboard.down('Alt')
+await page.mouse.click(...toScreenMirrored(...spot))
+await page.keyboard.up('Alt')
+await sleep(200)
+const mirroredRead = await page.$eval('[data-test=flat-draft-status]', (el) => el.textContent)
+const mirroredX = Number((mirroredRead.match(/X (-?[\d.]+)/) ?? [])[1])
+const mirroredY = Number((mirroredRead.match(/Y (-?[\d.]+)/) ?? [])[1])
+check(
+  Math.abs(mirroredX - spot[0]) < 0.15 && Math.abs(mirroredY - spot[1]) < 0.15,
+  `a pick through the mirrored view reads the spot under the cursor (${mirroredX}, ${mirroredY} for ${spot.map((v) => v.toFixed(2))})`,
+)
+await click(page, '[data-test=flat-draft-cancel]')
+await page.screenshot({ path: shotPath('flat-mirrored.png') })
+await click(page, '[data-test=flat-mirror-lr]')
+await sleep(300)
+check((await page.$('[data-test=flat-turn-status]')) === null, 'mirroring back clears the notice')
+
+// ---- a line along the rectangle's top edge ---------------------------------
+await click(page, '[data-test=flat-fit-line]')
+await page.select('[data-test=flat-draft-method]', 'flat-line-edge')
+await drag(
+  page,
+  toScreen(mm(RECT.x0) + 2, RECT_TOP_Y + 0.5),
+  toScreen(mm(RECT.x1) - 2, RECT_TOP_Y - 0.5),
+)
+await sleep(400)
+await click(page, '[data-test=flat-create-element]')
+await sleep(200)
+rows = await rowTexts()
+check(rows.length === 2, 'two elements measured')
+const angle = Number((rows[1]?.match(/· (-?[\d.]+)°/) ?? [])[1])
+check(Math.abs(angle) < 0.15, `the edge line is horizontal (${angle}°)`)
+
+// ---- a picked point, and its pin dragged somewhere else ---------------------
+// Alt places the raw click; the pin then drags (snapping) onto the disc's
+// edge, and the fit follows the drag.
+await click(page, '[data-test=flat-fit-point]')
+const loose = [DISC_C[0] + DISC_DIA / 2 + 6, DISC_C[1] + 4]
+await page.keyboard.down('Alt')
+await page.mouse.click(...toScreen(...loose))
+await page.keyboard.up('Alt')
+await sleep(200)
+const readPreview = () => page.$eval('[data-test=flat-draft-status]', (el) => el.textContent)
+const before = await readPreview()
+await drag(page, toScreen(...loose), toScreen(DISC_C[0] + DISC_DIA / 2 + 0.15, DISC_C[1]), { steps: 12 })
+const after = await readPreview()
+const dragX = Number((after.match(/X (-?[\d.]+)/) ?? [])[1])
+check(before !== after, 'dragging the pin moves the pick')
+check(
+  Math.abs(dragX - (DISC_C[0] + DISC_DIA / 2)) < 0.08,
+  `the dragged pin snapped onto the disc edge (x ${dragX.toFixed(3)})`,
+)
+await click(page, '[data-test=flat-create-element]')
+await sleep(200)
+rows = await rowTexts()
+check(rows.length === 3 && /^Point 1/.test(rows[2]), 'the point joins the list')
+
+// ---- the list: edit, hide, delete ------------------------------------------
+const editKeys = await page.$$('[data-test=edit-element]')
+await editKeys[2].click()
+await sleep(200)
+check(
+  /Edit Point 1/.test(await page.$eval('.draftbox .sec-head', (el) => el.textContent)),
+  'the pencil re-opens the element in its box',
+)
+await page.$eval('[data-test=flat-draft-name]', (el) => (el.value = ''))
+await page.type('[data-test=flat-draft-name]', 'Rim')
+await click(page, '[data-test=flat-create-element]')
+await sleep(200)
+rows = await rowTexts()
+check(rows.length === 3 && /^Rim/.test(rows[2]), 'saving writes the element back under its new name')
+const eyes = await page.$$('[data-test=element-row] .eye')
+await eyes[2].click()
+await sleep(150)
+check(
+  (await page.$$eval('[data-test=element-row].ghost', (els) => els.length)) === 1,
+  'the eye hides the element',
+)
+// The whole-list eye: anything showing → hide all; all hidden → show all.
+await click(page, '[data-test=flat-elements-show-all]')
+await sleep(150)
+check(
+  (await page.$$eval('[data-test=element-row].ghost', (els) => els.length)) === 3,
+  'Hide all ghosts every element',
+)
+await click(page, '[data-test=flat-elements-show-all]')
+await sleep(150)
+check(
+  (await page.$$eval('[data-test=element-row].ghost', (els) => els.length)) === 0,
+  'Show all brings them all back',
+)
+const xs = await page.$$('[data-test=element-row] .x:not(.edit):not(.eye)')
+await xs[2].click()
+await sleep(150)
+rows = await rowTexts()
+check(rows.length === 2, 'the cross deletes it')
+
+// ---- a dimension: circle center to that line -------------------------------
+await click(page, '[data-test=flat-new-dimension]')
+await page.select('[data-test=flat-dim-type]', 'flat-dist-point-line')
+await page.select('[data-test=flat-dim-slot-0]', '1')
+await page.select('[data-test=flat-dim-slot-1]', '2')
+await sleep(200)
+await click(page, '[data-test=flat-add-dimension]')
+await sleep(300)
+const readDim = () =>
+  page.$eval('[data-test=dimension-row] [data-test=dimension-value]', (el) =>
+    el.textContent.replace(/\s+/g, ' ').trim(),
+  )
+const dimRow = await readDim()
+const wantDist = DISC_C[1] - RECT_TOP_Y
+const gotDist = Number((dimRow?.match(/(-?[\d.]+) ?MM/i) ?? [])[1])
+check(
+  Math.abs(gotDist - wantDist) < 0.08,
+  `center-to-edge distance reads ${wantDist.toFixed(3)} mm (got ${gotDist})`,
+)
+
+// ---- calibrate on the rectangle's known width ------------------------------
+await click(page, '[data-test=flat-cal-distance]')
+const midY = mm(H - (RECT.y0 + RECT.y1) / 2)
+await page.mouse.click(...toScreen(mm(RECT.x0) + 0.1, midY))
+await sleep(150)
+await page.mouse.click(...toScreen(mm(RECT.x1) - 0.1, midY))
+await sleep(250)
+await page.focus('[data-test=flat-cal-true]')
+await page.$eval('[data-test=flat-cal-true]', (el) => (el.value = ''))
+await page.type('[data-test=flat-cal-true]', RECT_WIDTH.toFixed(3))
+await page.keyboard.press('Enter')
+await sleep(150)
+// A middle click on the stage confirms the calibration — the same as the
+// Apply button, like every other confirm in the tool.
+const [mx, my] = toScreen(mm(W / 2), mm(H / 2))
+await page.mouse.click(mx, my, { button: 'middle' })
+await sleep(400)
+check((await page.$('[data-test=flat-uncalibrated-chip]')) === null, 'a middle click applies the calibration and clears the alarm')
+rows = await rowTexts()
+const diaAfter = Number((rows[0]?.match(/Ø ([\d.]+)/) ?? [])[1])
+check(
+  Math.abs(diaAfter - DISC_DIA) < 0.1,
+  `the snapped two-point calibration lands on nominal (Ø now ${diaAfter})`,
+)
+
+// ---- alignment along the rectangle edge ------------------------------------
+// The edge is exactly horizontal by construction, so the sheet rolls square
+// by (as good as) nothing and the screen mapping above stays valid for the
+// picks that follow.
+await click(page, '[data-test=flat-datum-set]')
+await page.mouse.click(...toScreen(mm(RECT.x0) + 1, RECT_TOP_Y))
+await sleep(200)
+await page.mouse.click(...toScreen(mm(RECT.x1) - 1, RECT_TOP_Y))
+await sleep(400)
+check(
+  /Aligned to the part/.test(await page.$eval('[data-test=flat-datum-status]', (el) => el.textContent)),
+  'the alignment commits',
+)
+// The dimension is frame-invariant; the alignment leaves it untouched.
+const dimAfter = await readDim()
+check(dimAfter === dimRow, 'the alignment never moves a distance')
+
+// ---- counting ---------------------------------------------------------------
+await click(page, '[data-test=flat-fit-count]')
+// The tally has the same snap checkbox as a point pick, and it is on.
+check(
+  await page.$eval('[data-test=flat-count-snap]', (el) => el.checked),
+  'the count tool offers the snap checkbox, on by default',
+)
+for (let i = 0; i < 4; i++) {
+  await page.mouse.click(...toScreen(mm(RECT.x0) + 2 + i * 3, RECT_TOP_Y))
+  await sleep(120)
+}
+check(
+  /^4 counted/.test(await page.$eval('[data-test=flat-count-status]', (el) => el.textContent)),
+  'four clicks tally four',
+)
+await click(page, '[data-test=flat-count-undo]')
+check(
+  /^3 counted/.test(await page.$eval('[data-test=flat-count-status]', (el) => el.textContent)),
+  'undo takes one back',
+)
+check((await page.$$('.pick-pin')).length >= 3, 'the tally wears its numbers on the sheet')
+// Back on the sheet for a fourth; Enter then creates it, the way it does in
+// the 3D workspace.
+await page.mouse.click(...toScreen(mm(RECT.x0) + 11, RECT_TOP_Y))
+await sleep(120)
+await page.keyboard.press('Enter')
+await sleep(200)
+check(
+  (await page.$eval('[data-test=flat-count-value-1]', (el) => el.textContent)) === '4',
+  'Enter creates the count, listed under the elements',
+)
+check((await page.$('[data-test=flat-count-status]')) === null, 'and the tool is put away')
+
+// ---- a text note -------------------------------------------------------------
+await click(page, '[data-test=flat-fit-text]')
+check((await page.$('[data-test=flat-note-placing]')) !== null, 'the Text tool arms')
+const noteAt = toScreen(mm(DISC.cx), mm(H - DISC.cy))
+await page.mouse.click(...noteAt)
+await sleep(200)
+check((await page.$('[data-test=flat-note-editor]')) !== null, 'a click places the note and opens it')
+await page.keyboard.type('Hub bore')
+await sleep(100)
+check(
+  (await page.$eval('[data-test=flat-note-1]', (el) => el.textContent)) === 'Hub bore',
+  'what is typed shows on the sheet',
+)
+const noteBox = await page.$eval('[data-test=flat-note-1]', (el) => {
+  const r = el.getBoundingClientRect()
+  return { x: r.x, y: r.y, w: r.width, h: r.height }
+})
+check(
+  Math.abs(noteBox.x - noteAt[0]) < 3 && Math.abs(noteBox.y + noteBox.h - noteAt[1]) < 3,
+  'anchored at its lower-left where the click landed',
+)
+// Drag the label 80 px right and 60 px up; the sheet must not pan with it.
+const sheetBefore = await page.$eval('[data-test=flat-count-value-1]', () =>
+  Array.from(document.querySelectorAll('.pick-pin')).map((e) => e.getBoundingClientRect().x),
+)
+await drag(page, [noteBox.x + noteBox.w / 2, noteBox.y + noteBox.h / 2], [noteBox.x + noteBox.w / 2 + 80, noteBox.y + noteBox.h / 2 - 60])
+const noteAfter = await page.$eval('[data-test=flat-note-1]', (el) => el.getBoundingClientRect().x)
+const sheetAfter = await page.$eval('[data-test=flat-count-value-1]', () =>
+  Array.from(document.querySelectorAll('.pick-pin')).map((e) => e.getBoundingClientRect().x),
+)
+check(Math.abs(noteAfter - (noteBox.x + 80)) < 3, 'dragging moves the note')
+check(
+  sheetBefore.every((x, i) => Math.abs(x - sheetAfter[i]) < 1),
+  'and leaves the sheet where it was',
+)
+await page.keyboard.press('Enter')
+await sleep(150)
+check((await page.$('[data-test=flat-note-editor]')) === null, 'Enter closes the editor')
+check(/Hub bore/.test((await rowTexts()).join(' ')), 'the note is listed with the elements')
+
+// ---- the report ------------------------------------------------------------
+const buttons = await page.$$('button')
+for (const b of buttons) {
+  if (/Copy report/.test(await b.evaluate((el) => el.textContent))) {
+    await b.click()
+    break
+  }
+}
+await sleep(400)
+const report = await page.evaluate(() => navigator.clipboard.readText()).catch(() => '')
+check(/Scale: CALIBRATED/.test(report), 'the report says the scale is calibrated')
+check(/aligned part frame/.test(report), 'and that coordinates are in the aligned part frame')
+check(/Ø/.test(report) && /Distance to line/.test(report), 'and carries elements and dimensions')
+check(/Count 1: 4/.test(report), 'and the tally')
+
+// ---- the SVG ---------------------------------------------------------------
+// The sheet as a drawing at true scale: the edge chains as polylines, the
+// elements as native shapes, y down like the image — so the disc's centre in
+// the file is where it is in the image, in millimetres.
+await click(page, '[data-test=flat-export-svg]')
+let svgFile = null
+for (let i = 0; i < 50 && !svgFile; i++) {
+  await sleep(200)
+  const done = readdirSync(DL_DIR).filter((f) => f.endsWith('.svg'))
+  if (done.length) svgFile = join(DL_DIR, done[0])
+}
+check(!!svgFile, 'Export SVG downloads an .svg file')
+if (svgFile) {
+  check(/flat-fixture-sheet\.svg$/.test(svgFile), `named after the image: ${svgFile}`)
+  const svg = readFileSync(svgFile, 'utf8')
+  const width = Number((svg.match(/<svg[^>]*\swidth="([\d.]+)mm"/) ?? [])[1])
+  check(
+    Math.abs(width - SHEET_W) < 0.05,
+    `the drawing is the sheet's width in millimetres (${width} for ${SHEET_W.toFixed(3)})`,
+  )
+  const polylines = (svg.match(/<polyline /g) ?? []).length
+  check(polylines >= 2, `the edge chains are polylines (${polylines})`)
+  const circle = svg.match(/<circle cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)"/)
+  check(!!circle, 'the fitted circle is a <circle>')
+  if (circle) {
+    const [cx, cy, rad] = circle.slice(1).map(Number)
+    check(Math.abs(2 * rad - DISC_DIA) < 0.1, `at its measured diameter (Ø ${(2 * rad).toFixed(3)})`)
+    check(
+      Math.abs(cx - mm(DISC.cx)) < 0.1 && Math.abs(cy - mm(DISC.cy)) < 0.1,
+      `where the disc is, y down like the image (${cx}, ${cy})`,
+    )
+  }
+  check(/<g id="element-\d+" data-name="Line 1"[^>]*>\s*<title>[^<]*<\/title>\s*<line /.test(svg), 'and the fitted line is a <line>')
+  check(/Scale: CALIBRATED/.test(svg), 'the file carries the traceability line')
+}
+check(/Sheet exported/.test(await page.$eval('.strip', (el) => el.textContent)), 'status says exported')
+
+// ---- the DXF ---------------------------------------------------------------
+// The same drawing for CAD: millimetres by declaration, y up, the origin on
+// the alignment — which sits on the rectangle's top edge with +X along it —
+// so the fitted line lies on the x axis and the disc's centre reads in the
+// aligned part frame, its height over the line being the dimension. The
+// edges come thinned: fewer polyline vertices than the SVG carries.
+await click(page, '[data-test=flat-export-dxf]')
+let dxfFile = null
+for (let i = 0; i < 50 && !dxfFile; i++) {
+  await sleep(200)
+  const done = readdirSync(DL_DIR).filter((f) => f.endsWith('.dxf'))
+  if (done.length) dxfFile = join(DL_DIR, done[0])
+}
+check(!!dxfFile, 'Export DXF downloads a .dxf file')
+if (dxfFile && svgFile) {
+  const dxf = readFileSync(dxfFile, 'utf8')
+  const lines = dxf.split('\n')
+  const pairs = []
+  for (let i = 0; i + 1 < lines.length; i += 2) pairs.push([lines[i].trim(), lines[i + 1]])
+  const start = pairs.findIndex(([c, v]) => c === '2' && v === 'ENTITIES')
+  const ents = []
+  for (let i = start + 1; i < pairs.length && !(pairs[i][0] === '0' && pairs[i][1] === 'ENDSEC'); i++) {
+    if (pairs[i][0] === '0') ents.push({ type: pairs[i][1], g: [] })
+    else ents[ents.length - 1].g.push(pairs[i])
+  }
+  const val = (e, code) => e.g.find(([c]) => c === code)?.[1]
+  const num = (e, code) => Number(val(e, code))
+  check(/\$ACADVER\n\s*1\nAC1015\n/.test(dxf) && /\$INSUNITS\n\s*70\n4\n/.test(dxf), 'an AutoCAD 2000 file declared in millimetres')
+  const polys = ents.filter((e) => e.type === 'LWPOLYLINE')
+  const vertices = polys.reduce((s, e) => s + num(e, '90'), 0)
+  const svgVertices = (readFileSync(svgFile, 'utf8').match(/<polyline points="([^"]+)"/g) ?? [])
+    .join(' ')
+    .split(/\s+/)
+    .filter((t) => /,/.test(t)).length
+  check(
+    polys.length >= 2 && vertices > 0 && vertices < svgVertices / 2,
+    `the edge chains are polylines, thinned (${vertices} of the SVG's ${svgVertices} vertices)`,
+  )
+  const circle = ents.find((e) => e.type === 'CIRCLE')
+  const line = ents.find((e) => e.type === 'LINE')
+  check(!!circle && Math.abs(2 * num(circle, '40') - DISC_DIA) < 0.1, 'the circle is a CIRCLE at its measured diameter')
+  if (circle && line) {
+    check(Math.abs(num(line, '20')) < 0.05 && Math.abs(num(line, '21')) < 0.05, `the fitted line lies on the alignment's x axis (y ${val(line, '20')}, ${val(line, '21')})`)
+    const cx = num(circle, '10')
+    const cy = num(circle, '20')
+    const wantX = DISC_C[0] - (mm(RECT.x0) + 1)
+    const wantY = DISC_C[1] - RECT_TOP_Y
+    check(
+      Math.abs(cx - wantX) < 0.15 && Math.abs(cy - wantY) < 0.1,
+      `the disc's centre reads in the aligned part frame (${cx}, ${cy} for ${wantX.toFixed(3)}, ${wantY.toFixed(3)})`,
+    )
+    const dist = Number((report.match(/Distance to line: ([\d.]+) mm/) ?? [])[1])
+    check(Math.abs(cy - dist) < 0.01, `its height over the line is the dimension (${dist})`)
+  }
+  check(ents.some((e) => e.type === 'TEXT' && val(e, '1') === 'Circle 1'), 'the labels are TEXT')
+  check(ents.every((e) => ['edges', 'elements', 'labels'].includes(val(e, '8'))), 'everything lies on one of the three layers')
+}
+check(/Drawing exported/.test(await page.$eval('.strip', (el) => el.textContent)), 'status says exported')
+
+await page.screenshot({ path: shotPath('flat-final.png') })
+await finish(browser, consoleErrors)

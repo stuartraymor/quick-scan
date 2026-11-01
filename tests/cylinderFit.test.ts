@@ -1,0 +1,214 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+import { describe, expect, it } from 'vitest'
+import {
+  fitCylinderClipped,
+  fitCylinderOnAxis,
+  ransacCylinder,
+} from '../src/core/fit/cylinder'
+import { mulberry32 } from '../src/core/fit/ransac'
+import type { Cylinder, Vec3 } from '../src/core/types'
+import { allIndices, gaussian, sampleCylinder, samplePlane, unit } from './helpers'
+
+const POINT: [number, number, number] = [4, -3, 2]
+// Off-axis on purpose, so an axis-aligned bug cannot pass by accident.
+const AXIS: Vec3 = [0.4, 0.6, 0.6928]
+const R = 6.35
+const LENGTH = 30
+
+/** Exact outward normals for points sampled on the cylinder wall. */
+function wallNormals(points: Float32Array, point: Vec3, axis: Vec3): Float32Array {
+  const d = unit(axis)
+  const out = new Float32Array(points.length)
+  for (let i = 0; i < points.length / 3; i++) {
+    const j = i * 3
+    const qx = points[j] - point[0]
+    const qy = points[j + 1] - point[1]
+    const qz = points[j + 2] - point[2]
+    const t = qx * d[0] + qy * d[1] + qz * d[2]
+    const wx = qx - t * d[0]
+    const wy = qy - t * d[1]
+    const wz = qz - t * d[2]
+    const l = Math.hypot(wx, wy, wz)
+    out[j] = wx / l
+    out[j + 1] = wy / l
+    out[j + 2] = wz / l
+  }
+  return out
+}
+
+/** Distance from the true axis to the fitted one, measured at the sample's
+ *  centre — the number that actually matters for a downstream measurement. */
+function axisOffset(c: Cylinder): number {
+  const d: Vec3 = [c.ax, c.ay, c.az]
+  const qx = POINT[0] - c.px
+  const qy = POINT[1] - c.py
+  const qz = POINT[2] - c.pz
+  const t = qx * d[0] + qy * d[1] + qz * d[2]
+  return Math.hypot(qx - t * d[0], qy - t * d[1], qz - t * d[2])
+}
+
+function tilt(c: Cylinder): number {
+  const a = unit(AXIS)
+  const cosine = Math.min(1, Math.abs(c.ax * a[0] + c.ay * a[1] + c.az * a[2]))
+  return (Math.acos(cosine) * 180) / Math.PI
+}
+
+describe('Gaussian cylinder fit', () => {
+  it('recovers radius and axis from a 10-degree-off starting guess', () => {
+    const pts = sampleCylinder(20_000, POINT, AXIS, R, LENGTH, 0.02)
+    // Tilt the initial axis 10° and shift it 1 mm sideways.
+    const bad = unit([AXIS[0] + 0.18, AXIS[1] - 0.1, AXIS[2]])
+    const init = fitCylinderOnAxis(pts, allIndices(20_000), bad)!
+    const fit = fitCylinderClipped(pts, allIndices(20_000), init, 3)!
+
+    expect(Math.abs(fit.cylinder.r - R)).toBeLessThan(0.005)
+    expect(tilt(fit.cylinder)).toBeLessThan(0.05)
+    expect(axisOffset(fit.cylinder)).toBeLessThan(0.005)
+    expect(fit.sigma).toBeGreaterThan(0.015)
+    expect(fit.sigma).toBeLessThan(0.025)
+  })
+
+  it('recovers a 140-degree arc (partially visible cylinder)', () => {
+    const pts = sampleCylinder(20_000, POINT, AXIS, R, LENGTH, 0.02, 43, (140 * Math.PI) / 180)
+    const init = fitCylinderOnAxis(pts, allIndices(20_000), unit([AXIS[0] + 0.1, AXIS[1], AXIS[2]]))!
+    const fit = fitCylinderClipped(pts, allIndices(20_000), init, 3)!
+
+    expect(Math.abs(fit.cylinder.r - R)).toBeLessThan(0.05)
+    expect(tilt(fit.cylinder)).toBeLessThan(0.3)
+    expect(axisOffset(fit.cylinder)).toBeLessThan(0.05)
+  })
+
+  it('sigma clipping sheds sparse gross outliers', () => {
+    const pts = sampleCylinder(20_000, POINT, AXIS, R, LENGTH, 0.02, 44)
+    const normals = wallNormals(pts, POINT, AXIS)
+    const rand = mulberry32(99)
+    for (let i = 0; i < 400; i++) {
+      const j = ((rand() * 20_000) | 0) * 3
+      pts[j] += normals[j] * 0.5
+      pts[j + 1] += normals[j + 1] * 0.5
+      pts[j + 2] += normals[j + 2] * 0.5
+    }
+    const init = fitCylinderOnAxis(pts, allIndices(20_000), AXIS)!
+    const clipped = fitCylinderClipped(pts, allIndices(20_000), init, 3)!
+    expect(Math.abs(clipped.cylinder.r - R)).toBeLessThan(0.01)
+    expect(clipped.used.length).toBeLessThan(20_000)
+  })
+})
+
+describe('RANSAC cylinder estimate', () => {
+  it('finds the cylinder despite 30% structured outliers', () => {
+    const wall = sampleCylinder(3_000, POINT, AXIS, R, LENGTH, 0.02, 45, (200 * Math.PI) / 180)
+    const normals = wallNormals(wall, POINT, AXIS)
+    // Fake shoulder contamination: a flat disc of points off the end.
+    const rand = mulberry32(7)
+    const disc = new Float32Array(1_300 * 3)
+    const discN = new Float32Array(1_300 * 3)
+    const d = unit(AXIS)
+    for (let i = 0; i < 1_300; i++) {
+      const j = i * 3
+      disc[j] = POINT[0] + (rand() - 0.5) * 20 + d[0] * (LENGTH / 2)
+      disc[j + 1] = POINT[1] + (rand() - 0.5) * 20 + d[1] * (LENGTH / 2)
+      disc[j + 2] = POINT[2] + (rand() - 0.5) * 20 + d[2] * (LENGTH / 2)
+      discN[j] = d[0]
+      discN[j + 1] = d[1]
+      discN[j + 2] = d[2]
+    }
+    const allPts = new Float32Array(wall.length + disc.length)
+    allPts.set(wall)
+    allPts.set(disc, wall.length)
+    const allN = new Float32Array(normals.length + discN.length)
+    allN.set(normals)
+    allN.set(discN, normals.length)
+
+    const res = ransacCylinder(allPts, allN, allIndices(4_300), { seed: 1 })!
+    expect(res).toBeTruthy()
+    expect(Math.abs(res.cylinder.r - R)).toBeLessThan(0.1)
+    expect(tilt(res.cylinder)).toBeLessThan(1)
+    expect(axisOffset(res.cylinder)).toBeLessThan(0.1)
+    // The disc must not have been swept into the consensus set — bar the few
+    // of its points that happen to sit on the ring where it crosses the wall.
+    const fromDisc = [...res.inliers].filter((i) => i >= 3_000).length
+    expect(fromDisc).toBeLessThan(0.03 * res.inliers.length)
+  })
+
+  it('finds a large cylinder from a few degrees of it, where the arc rises clear of the noise', () => {
+    // 4° of a 500 mm radius: the arc rises 0.3 mm off its chord, fifteen
+    // times the noise — curved, however little of the turn it is.
+    const sliver = sampleCylinder(2_000, POINT, AXIS, 500, 20, 0.02, 8, (4 * Math.PI) / 180)
+    const res = ransacCylinder(sliver, wallNormals(sliver, POINT, AXIS), allIndices(2_000), { seed: 2 })!
+    expect(res).toBeTruthy()
+    expect(Math.abs(res.cylinder.r - 500)).toBeLessThan(5)
+    expect(tilt(res.cylinder)).toBeLessThan(0.5)
+  })
+
+  it('rejects a patch with no curvature to work with', () => {
+    // A flat patch whose normals scatter by a few degrees, as a scan's do:
+    // pairs of them still cross, and without a check every candidate is a
+    // cylinder as large as the radius cap lets it be.
+    const normal = unit([0.3, -0.5, 0.8])
+    const flat = samplePlane(2_000, POINT, normal, 30, 0.02, 11)
+    const flatNormals = new Float32Array(flat.length)
+    for (let i = 0; i < flat.length; i += 3) flatNormals.set(normal, i)
+    expect(ransacCylinder(flat, scattered(flatNormals, 3), allIndices(2_000), { seed: 2 })).toBeNull()
+    // 2° of a 500 mm radius rises 76 µm off its chord, under noise of 0.3 mm.
+    const sliver = sampleCylinder(2_000, POINT, AXIS, 500, 20, 0.3, 8, (2 * Math.PI) / 180)
+    expect(ransacCylinder(sliver, wallNormals(sliver, POINT, AXIS), allIndices(2_000), { seed: 2 })).toBeNull()
+  })
+})
+
+/** Unit normals each turned off its own by a random few degrees. */
+function scattered(normals: Float32Array, degrees: number): Float32Array {
+  const rand = mulberry32(5)
+  const s = (degrees * Math.PI) / 180
+  const out = new Float32Array(normals.length)
+  for (let i = 0; i < normals.length; i += 3) {
+    const n = unit([normals[i] + gaussian(rand) * s, normals[i + 1] + gaussian(rand) * s, normals[i + 2] + gaussian(rand) * s])
+    out.set(n, i)
+  }
+  return out
+}
+
+/** Points on a lobed wall about the test axis: r(θ) = R + amp·cos(lobes·θ),
+ *  no noise — a surface that reaches exactly `amp` inside and outside the
+ *  round cylinder it averages to. The angles are laid out evenly (only the
+ *  axial position is random), so the lobes cancel exactly and the sample
+ *  hits both the peaks and the flats. */
+function lobedWall(n: number, lobes: number, amp: number): Float32Array {
+  const rand = mulberry32(7)
+  const d = unit(AXIS)
+  const h: Vec3 = Math.abs(d[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0]
+  const u = unit([d[1] * h[2] - d[2] * h[1], d[2] * h[0] - d[0] * h[2], d[0] * h[1] - d[1] * h[0]])
+  const v: Vec3 = [d[1] * u[2] - d[2] * u[1], d[2] * u[0] - d[0] * u[2], d[0] * u[1] - d[1] * u[0]]
+  const out = new Float32Array(n * 3)
+  for (let i = 0; i < n; i++) {
+    const ang = (i / n) * 2 * Math.PI
+    const t = (rand() - 0.5) * LENGTH
+    const r = R + amp * Math.cos(lobes * ang)
+    const cu = Math.cos(ang) * r
+    const cv = Math.sin(ang) * r
+    out[i * 3] = POINT[0] + cu * u[0] + cv * v[0] + t * d[0]
+    out[i * 3 + 1] = POINT[1] + cu * u[1] + cv * v[1] + t * d[1]
+    out[i * 3 + 2] = POINT[2] + cu * u[2] + cv * v[2] + t * d[2]
+  }
+  return out
+}
+
+describe('radial extremes', () => {
+  it('reports how far a lobed wall reaches inside and outside the fit', () => {
+    // Three lobes average out, so the Gaussian radius is R, and the wall
+    // reaches 50 µm inside it at the flats and 50 µm outside at the lobes —
+    // the two numbers the min and max diameter are read from.
+    const n = 6000
+    const amp = 0.05
+    const pts = lobedWall(n, 3, amp)
+    const d = unit(AXIS)
+    const init: Cylinder = { px: POINT[0], py: POINT[1], pz: POINT[2], ax: d[0], ay: d[1], az: d[2], r: R }
+    const fit = fitCylinderClipped(pts, allIndices(n), init, 0)!
+    expect(fit).toBeTruthy()
+    expect(Math.abs(fit.cylinder.r - R)).toBeLessThan(5e-4)
+    expect(Math.abs(fit.min + amp)).toBeLessThan(5e-4)
+    expect(Math.abs(fit.max - amp)).toBeLessThan(5e-4)
+    expect(fit.span).toBeCloseTo(fit.max - fit.min, 12)
+    expect(fit.used.length).toBe(n)
+  })
+})

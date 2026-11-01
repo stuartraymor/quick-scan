@@ -1,0 +1,132 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// What the page needs to know of the commands without carrying them: which
+// one is running — the status strip names it, the hint ring and the
+// viewport's clicks stand back while one does — and what a command that
+// changes the session is held to, which the command host sets. The registry
+// (registry.ts) runs them; it is loaded with the agent connection.
+
+import { create } from 'zustand'
+
+interface ActivityState {
+  /** The command changing the session right now, for the status strip, and
+   *  when it started (ms since the epoch). */
+  running: { name: string; title: string; since: number } | null
+  /** Its latest progress line. */
+  progress: string | null
+}
+
+/** Which command is running — read by the status strip, the hint ring and
+ *  the viewport's click handlers, which stand back while one does. */
+export const useCommandActivity = create<ActivityState>(() => ({ running: null, progress: null }))
+
+export const commandRunning = (): boolean => useCommandActivity.getState().running !== null
+
+export interface CommandGuard {
+  /** What the session is busy with, in a sentence, or null when it is free. */
+  busy(): string | null
+}
+
+const FREE: CommandGuard = { busy: () => null }
+let guard: CommandGuard = FREE
+
+/** What a command that changes the session is held to — set by the command
+ *  host (host.ts). The returned function puts the default back. */
+export function configureCommands(next: CommandGuard): () => void {
+  guard = next
+  return () => {
+    guard = FREE
+  }
+}
+
+/** The guard in force. */
+export const commandGuard = (): CommandGuard => guard
+
+// ---- What a plugin is busy with ----------------------------------------------------
+
+const busyChecks = new Map<string, () => string | null>()
+
+/** A store a wait can watch: what zustand's stores have. */
+export interface Watchable {
+  subscribe(listener: () => void): () => void
+}
+
+/** The stores a plugin's busy check reads, by its id — see watchSession. */
+const busyStores = new Map<string, readonly Watchable[]>()
+
+/** What stops a plugin's work, by its id — see registerBusy. */
+const busyStops = new Map<string, (done: Promise<unknown>) => Promise<void>>()
+
+/** The session's own stores, as the command host names them. */
+let sessionStores: readonly Watchable[] = []
+
+/** The session's own stores, for a wait to look again on (watchSession) —
+ *  set by the command host (host.ts). The returned function lets them go. */
+export function watchSessionStores(stores: readonly Watchable[]): () => void {
+  sessionStores = stores
+  return () => {
+    if (sessionStores === stores) sessionStores = []
+  }
+}
+
+/** A plugin's part of what the session is busy with, under its id: what its
+ *  own machinery is doing that a command must not run over — in a few
+ *  words, or null when it is idle. Read wherever the session's own are:
+ *  the guard on every command that changes the session, and the readout's
+ *  `busy`. `stores`: those whose changes may change the answer, for a wait
+ *  to look again on (watchSession) rather than only on its timer, which a
+ *  hidden tab's browser slows to once a minute. `stop`, when the work can
+ *  be stopped: run before a change that throws the session's work away
+ *  (Command.discards) while the check says busy, resolving once the
+ *  plugin is no longer — `done` settles when that change has run, for
+ *  work the plugin would start again meanwhile to wait for. Called from
+ *  the plugin's install(); the returned function takes it out again. Two
+ *  under one id throw. */
+export function registerBusy(id: string, check: () => string | null, stores: readonly Watchable[] = [], stop?: (done: Promise<unknown>) => Promise<void>): () => void {
+  if (busyChecks.has(id)) throw new Error(`Two busy checks share the id "${id}".`)
+  busyChecks.set(id, check)
+  busyStores.set(id, stores)
+  if (stop) busyStops.set(id, stop)
+  return () => {
+    if (busyChecks.get(id) !== check) return
+    busyChecks.delete(id)
+    busyStores.delete(id)
+    busyStops.delete(id)
+  }
+}
+
+/** Before a change that throws the session's work away: what each plugin
+ *  is busy with stopped, where it can be — see registerBusy. A stop that
+ *  fails leaves the plugin busy, for the guard to say so. */
+export async function stopPluginWork(done: Promise<unknown>): Promise<void> {
+  const stops: Promise<void>[] = []
+  for (const [id, stop] of busyStops) {
+    try {
+      if (busyChecks.get(id)?.()) stops.push(stop(done).catch(() => {}))
+    } catch {
+      // A check or a stop that fails says nothing.
+    }
+  }
+  await Promise.all(stops)
+}
+
+/** Hear every change of the session's stores, the plugins' busy stores and
+ *  `also`; the returned function stops. */
+export function watchSession(listener: () => void, also: readonly Watchable[] = []): () => void {
+  const stops = [...new Set([...sessionStores, ...also, ...[...busyStores.values()].flat()])].map((s) => s.subscribe(listener))
+  return () => {
+    for (const stop of stops) stop()
+  }
+}
+
+/** What a plugin is busy with, the first that is, or null. */
+export function pluginBusy(): string | null {
+  for (const check of busyChecks.values()) {
+    try {
+      const busy = check()
+      if (busy) return busy
+    } catch {
+      // A check that fails says nothing.
+    }
+  }
+  return null
+}

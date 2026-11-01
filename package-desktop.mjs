@@ -1,0 +1,13 @@
+import { packager } from '@electron/packager';
+import { mkdir, cp, writeFile, readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+const root = fileURLToPath(new URL('.', import.meta.url));
+const sourcePackage = JSON.parse(await readFile(root+'package.json','utf8'));
+const stage = root + 'desktop-stage';
+await mkdir(stage, {recursive:true});
+await cp(root+'dist', stage+'/dist', {recursive:true});
+await cp(root+'desktop.cjs', stage+'/desktop.cjs');
+await cp(root+'LICENSE', stage+'/LICENSE');
+await writeFile(stage+'/package.json', JSON.stringify({name:'quick-scan', productName:'Quick Scan', version:sourcePackage.version, main:'desktop.cjs', author:'CNC Kitchen; local desktop packaging', license:'AGPL-3.0-only'}));
+const electronVersion = JSON.parse(await readFile(root+'node_modules/electron/package.json','utf8')).version;
+console.log(await packager({dir:stage, out:root+'desktop-build', name:'Quick Scan', executableName:'Quick Scan', platform:'win32', arch:'x64', electronVersion, asar:true, overwrite:true, icon:root+'public/favicon.ico', win32metadata:{CompanyName:'Local desktop build', FileDescription:`Quick Scan v${sourcePackage.version} (based on ScanRuler)`, ProductName:'Quick Scan'}}));

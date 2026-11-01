@@ -1,0 +1,242 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// What the 2D viewport draws, derived from the flat store: the plain data
+// half of the store→FlatScene sync, kept apart from the hook that pushes it
+// (useFlatSceneSync) the same way app/project is kept apart from useProject.
+// Everything here is in document units — millimetres under a scale, bare
+// pixels without one — because that is the frame the sheet is built in; the
+// store keeps image pixels so a recalibration moves the measurements and not
+// the picks. This module is the one place that conversion happens on the
+// way out.
+
+import { collectsEdgePoints, flatMethod } from '../core/flat/construct'
+import { datumFrame, fitInFrame, sheetPose, type FlatFrame, type SheetPose } from '../core/flat/datum'
+import { evaluateFlatDimensions, type FlatDimension } from '../core/flat/dimensions'
+import type { FlatElement } from '../core/flat/elements'
+import type { FlatDatum } from '../core/flat/datum'
+import type { PixelsPerMm } from '../core/flat/image'
+import { splineHandles, type SplineHandle } from '../core/flat/spline'
+import { formatFlatPrimary, sheetUnits } from '../core/flat/summary'
+import type { DisplayUnits } from '../core/units'
+import type { FlatFit, Vec2 } from '../core/flat/types'
+import {
+  flatCountColor,
+  flatDraftColorOf,
+  toolOf,
+  type FlatCount,
+  type FlatDraft,
+  type FlatNote,
+  type FlatTool,
+} from '../state/flatStore'
+
+/** The slice of the flat store the sheet is drawn from. */
+export interface SheetSource {
+  pxPerMm: PixelsPerMm | null
+  tool: FlatTool
+  elements: FlatElement[]
+  draft: FlatDraft | null
+  nextId: number
+  dimensions: FlatDimension[]
+  datum: FlatDatum | null
+  showGrid: boolean
+  turns: number
+  mirror: boolean
+  counts: FlatCount[]
+  nextCountId: number
+  notes: FlatNote[]
+}
+
+export interface SheetNote {
+  id: number
+  text: string
+  at: Vec2
+  editing: boolean
+}
+
+export interface SheetCount {
+  picks: Vec2[]
+  color: string
+  name?: string
+}
+
+export interface SheetDimension {
+  title: string
+  value: string
+  segment?: [Vec2, Vec2]
+  arc?: { vertex: Vec2; dirA: Vec2; dirB: Vec2 }
+}
+
+export interface SheetElement {
+  fit: FlatFit
+  color: string
+  name: string
+  value: string
+}
+
+export interface SheetDraft {
+  /** Numbered, draggable pins — empty for a region-collected draft. */
+  pins: Vec2[]
+  fit: FlatFit | null
+  /** A region-collected draft's points: a dot cloud, not pins. */
+  cloud: Vec2[] | undefined
+  color: string
+  /** The stage takes drags as regions rather than pans. */
+  regionMode: boolean
+  /** A spline draft's tangent handles, one per pin, each end draggable —
+   *  none for anything else, or before the curve exists. */
+  handles: SplineHandle[]
+}
+
+export type SheetGrid = { origin: Vec2; xDir: Vec2 } | null
+
+/** Document units per image pixel — the sheet's own scale. */
+export function sheetScale(s: Pick<SheetSource, 'pxPerMm'>): PixelsPerMm {
+  return s.pxPerMm ? { x: 1 / s.pxPerMm.x, y: 1 / s.pxPerMm.y } : { x: 1, y: 1 }
+}
+
+/** An image pixel as a spot on the sheet. */
+function pxToDoc(s: Pick<SheetSource, 'pxPerMm'>, px: Vec2): Vec2 {
+  const mm = sheetScale(s)
+  return [px[0] * mm.x, px[1] * mm.y]
+}
+
+/** The calibration tool's picks — stored in image pixels because they must
+ *  survive the very scale change they cause. */
+export function sheetCalibrationPicks(s: Pick<SheetSource, 'pxPerMm' | 'tool'>): Vec2[] {
+  return (toolOf(s, 'calibrate')?.picks ?? []).map((p) => pxToDoc(s, p))
+}
+
+/** Notes on the sheet: the hidden ones stay off it unless open for typing. */
+export function sheetNotes(s: Pick<SheetSource, 'pxPerMm' | 'tool' | 'notes'>): SheetNote[] {
+  const editingId = toolOf(s, 'note')?.editId ?? null
+  return s.notes
+    .filter((n) => n.visible || n.id === editingId)
+    .map((n) => ({ id: n.id, text: n.text, at: pxToDoc(s, n.at), editing: n.id === editingId }))
+}
+
+/** The tallies: finished ones under their names, the live one in the colour
+ *  it will get. A re-opened tally is drawn by the live one only. */
+export function sheetCounts(
+  s: Pick<SheetSource, 'pxPerMm' | 'tool' | 'counts' | 'nextCountId'>,
+): SheetCount[] {
+  const counting = toolOf(s, 'count')
+  const toDoc = (picks: readonly Vec2[]) => picks.map((p) => pxToDoc(s, p))
+  return [
+    ...s.counts
+      .filter((c) => c.visible && c.id !== counting?.editId)
+      .map((c) => ({ picks: toDoc(c.picks), color: c.color, name: c.name })),
+    ...(counting
+      ? [{ picks: toDoc(counting.picks), color: flatCountColor(counting.editId ?? s.nextCountId) }]
+      : []),
+  ]
+}
+
+/** The measured dimensions, drawn where they were taken — values are
+ *  rigid-invariant, so the datum never moves them. Written in `units` on a
+ *  sheet in millimetres; a sheet in pixels stays in pixels. */
+export function sheetDimensions(s: Pick<SheetSource, 'dimensions' | 'elements' | 'pxPerMm'>, units: DisplayUnits = 'mm'): SheetDimension[] {
+  return evaluateFlatDimensions(s.dimensions, s.elements, sheetUnits(s.pxPerMm ? 'mm' : 'px', units)) // units-ok: the document unit, an id
+    .filter((d) => d.dim.visible && d.value.value !== undefined)
+    .map((d) => ({ title: d.dim.name, value: d.value.value!, segment: d.value.segment, arc: d.value.arc }))
+}
+
+/** The frame the sheet reads in: the alignment at the scale in force, right-
+ *  handed as the sheet is shown — or null while it is unaligned (or the
+ *  picks coincide and span no frame). The one place the frame is built, so
+ *  every reading, the report and the drawings agree on its handedness. */
+export function sheetFrame(s: Pick<SheetSource, 'pxPerMm' | 'datum' | 'mirror'>): FlatFrame | null {
+  return s.datum ? datumFrame(s.datum, s.pxPerMm, s.mirror) : null
+}
+
+/** The committed grid: datum-aligned when one is set and wanted. `undefined`
+ *  while the datum tool is collecting — its live preview owns the stage
+ *  then, and the committed grid must not overwrite it. */
+export function sheetGrid(
+  s: Pick<SheetSource, 'pxPerMm' | 'tool' | 'datum' | 'showGrid' | 'mirror'>,
+): SheetGrid | undefined {
+  if (s.tool.kind === 'datum') return undefined
+  const frame = s.showGrid ? sheetFrame(s) : null
+  return frame && { origin: frame.origin, xDir: frame.xDir }
+}
+
+/** The alignment's +X in document units — the direction the sheet is shown
+ *  with to the right of the screen — or null while the sheet lies as it was
+ *  scanned. Null too for coincident picks, which span no frame. */
+export function sheetAlignment(s: Pick<SheetSource, 'pxPerMm' | 'datum' | 'mirror'>): Vec2 | null {
+  return sheetFrame(s)?.xDir ?? null
+}
+
+/** How the sheet is shown: the alignment brought square, the mirror, then
+ *  the quarter turns — see sheetPose. */
+export function sheetPoseOf(s: Pick<SheetSource, 'pxPerMm' | 'datum' | 'turns' | 'mirror'>): SheetPose {
+  return sheetPose(sheetAlignment(s), s.turns, s.mirror)
+}
+
+/** The grid the datum tool previews while it holds its first pick: pivoting
+ *  around the origin toward the cursor, so the second pick is aimable. Null
+ *  when there is nothing to preview. */
+export function sheetDatumPreview(
+  s: Pick<SheetSource, 'pxPerMm' | 'tool'>,
+  cursor: Vec2 | null,
+): SheetGrid {
+  const datum = toolOf(s, 'datum')
+  if (!datum || datum.picks.length !== 1 || !cursor) return null
+  const origin = pxToDoc(s, datum.picks[0])
+  const dx = cursor[0] - origin[0]
+  const dy = cursor[1] - origin[1]
+  const len = Math.hypot(dx, dy)
+  if (len < 1e-6) return null
+  return { origin, xDir: [dx / len, dy / len] }
+}
+
+/** The measured elements with their headline values — read in the datum
+ *  frame when one is set, drawn where they were measured, the values in
+ *  `units` on a sheet in millimetres. An element open for editing is drawn
+ *  by its draft instead. */
+export function sheetElements(
+  s: Pick<SheetSource, 'pxPerMm' | 'elements' | 'draft' | 'datum' | 'mirror'>,
+  units: DisplayUnits = 'mm',
+): SheetElement[] {
+  // units-ok: the sheet's document unit, an id formatFlatPrimary takes
+  const unit = s.pxPerMm ? 'mm' : 'px'
+  const frame = sheetFrame(s)
+  return s.elements
+    .filter((e) => e.visible && e.fit && e.id !== s.draft?.editId)
+    .map((e) => ({
+      fit: e.fit!,
+      color: e.color,
+      name: e.name,
+      value: formatFlatPrimary(fitInFrame(e.fit!, frame), unit, units),
+    }))
+}
+
+/** The draft's pins (or dot cloud) and ghost, in its own colour. */
+export function sheetDraft(
+  s: Pick<SheetSource, 'pxPerMm' | 'draft' | 'elements' | 'nextId'>,
+): SheetDraft {
+  const picks = (s.draft?.picks ?? []).map((p) => pxToDoc(s, p))
+  // A draft of collected edge points — a region's, or a click's grown
+  // stretch — carries thousands of them: a dot cloud, not numbered pins.
+  // Only the region tool takes the plain drag for its box; a fit-to-edge
+  // draft leaves it to pan, as the 3D fit from a click leaves it to orbit.
+  const method = s.draft ? flatMethod(s.draft.method) : null
+  const isEdgeDraft = method ? collectsEdgePoints(method) : false
+  const fit = s.draft?.fit ?? null
+  return {
+    pins: isEdgeDraft ? [] : picks,
+    fit,
+    cloud: isEdgeDraft ? picks : undefined,
+    color: flatDraftColorOf(s),
+    regionMode: method?.mode === 'edge',
+    handles: fit?.kind === 'spline' ? splineHandles(fit) : [],
+  }
+}
+
+/** Whether the loupe follows the cursor: while picks are being placed by
+ *  hand — an element's, a calibration's, a tally's. */
+export function sheetLoupeActive(s: Pick<SheetSource, 'tool' | 'draft'>): boolean {
+  return (
+    (s.draft !== null && flatMethod(s.draft.method).mode === 'pick') ||
+    s.tool.kind === 'calibrate' ||
+    s.tool.kind === 'count'
+  )
+}

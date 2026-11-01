@@ -1,0 +1,111 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+import { describe, expect, it } from 'vitest'
+import { spreadLabels } from '../src/viewer/labelSpread'
+
+type Pin = ReturnType<typeof pin>
+
+/** A stand-in for a rendered `.viewport-label`: centred at (x, y) by the
+ *  CSS2D transform, w × h on screen. */
+function pin(x: number, y: number, w = 100, h = 22) {
+  return { style: { display: '', transform: `translate(${x}px, ${y}px)`, top: '' }, offsetWidth: w, offsetHeight: h }
+}
+
+function spread(pins: Pin[], gap?: number) {
+  spreadLabels({ querySelectorAll: () => pins } as unknown as HTMLElement, gap)
+}
+
+const tops = (pins: Pin[]) => pins.map((p) => p.style.top)
+
+/** The screen rectangle a pin ends up with, nudge included. */
+function rect(p: Pin) {
+  const [, x, y] = /translate\((-?[\d.]+)px, (-?[\d.]+)px\)/.exec(p.style.transform)!.map(Number)
+  const dy = p.style.top ? parseFloat(p.style.top) : 0
+  return { x0: x - p.offsetWidth / 2, x1: x + p.offsetWidth / 2, y0: y + dy - p.offsetHeight / 2, y1: y + dy + p.offsetHeight / 2 }
+}
+
+function overlapping(pins: Pin[], gap = 2) {
+  const rs = pins.filter((p) => p.style.display !== 'none').map(rect)
+  const pairs: [number, number][] = []
+  for (let i = 0; i < rs.length; i++)
+    for (let j = i + 1; j < rs.length; j++) {
+      const a = rs[i], b = rs[j]
+      if (a.x0 < b.x1 + gap && a.x1 > b.x0 - gap && a.y0 < b.y1 + gap - 1e-6 && a.y1 > b.y0 - gap + 1e-6)
+        pairs.push([i, j])
+    }
+  return pairs
+}
+
+describe('spreadLabels', () => {
+  it('(the check itself sees two coincident labels as overlapping)', () => {
+    expect(overlapping([pin(0, 0), pin(0, 0)])).toEqual([[0, 1]])
+  })
+
+  it('stacks coincident labels upward, lowest staying put, and holds that layout on the next render', () => {
+    const pins = [pin(100, 100), pin(100, 100), pin(100, 100)]
+    spread(pins)
+    expect(tops(pins)).toEqual(['', '-24px', '-48px'])
+    spread(pins)
+    expect(tops(pins)).toEqual(['', '-24px', '-48px'])
+  })
+
+  it('uses the gap it is given', () => {
+    const pins = [pin(0, 0), pin(0, 0)]
+    spread(pins, 10)
+    expect(tops(pins)).toEqual(['', '-32px'])
+  })
+
+  it('keeps lifting a label that is pushed into a third one', () => {
+    // Centres 10 px apart, so the top pin clears the bottom one only by
+    // landing on the middle one, and has to go up once more.
+    const pins = [pin(50, 100), pin(150, 90), pin(100, 80)]
+    spread(pins)
+    expect(tops(pins)).toEqual(['', '-14px', '-28px'])
+    expect(overlapping(pins)).toEqual([])
+  })
+
+  it('leaves labels alone that are apart on screen, and clears a nudge they no longer need', () => {
+    const pins = [pin(0, 100), pin(300, 100), pin(0, 0)]
+    pins[0].style.top = '-24px'
+    spread(pins)
+    expect(tops(pins)).toEqual(['', '', ''])
+  })
+
+  it('skips hidden labels and resets a single visible one', () => {
+    const pins = [pin(100, 100), pin(100, 100)]
+    pins[0].style.display = 'none'
+    pins[1].style.top = '-24px'
+    spread(pins)
+    expect(pins[1].style.top).toBe('')
+    spread([])
+  })
+
+  // Pairs of label centres on which the offset that should put one label
+  // exactly `gap` above the other comes back, in floating point, a hair
+  // short — the overlap test stays true after the nudge was applied, and a
+  // loop that runs "until clear" never ends. Found by searching the
+  // original loop with random sub-pixel positions; three are kept.
+  it.each([
+    [0.7741, 7.1104],
+    [5.4067, 5.4979],
+    [15.1655, 14.9569],
+  ])('settles on positions (%f, %f) where the exact nudge rounds the wrong way', (ya, yb) => {
+    const pins = [pin(100, ya), pin(100, yb)]
+    for (let frame = 0; frame < 50; frame++) spread(pins)
+    expect(overlapping(pins)).toEqual([])
+    const lower = ya >= yb ? 0 : 1
+    expect(pins[lower].style.top).toBe('')
+    expect(parseFloat(pins[1 - lower].style.top)).toBeLessThan(0)
+  })
+
+  it('never overlaps on a crowd of random labels, and stops in bounded time', () => {
+    let seed = 12345
+    const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff)
+    for (let trial = 0; trial < 200; trial++) {
+      const pins: Pin[] = []
+      const n = 2 + Math.floor(rnd() * 7)
+      for (let i = 0; i < n; i++) pins.push(pin(rnd() * 300, rnd() * 120, 60 + rnd() * 100, 10 + rnd() * 30))
+      spread(pins)
+      expect(overlapping(pins)).toEqual([])
+    }
+  })
+})

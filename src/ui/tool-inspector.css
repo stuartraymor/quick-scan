@@ -1,0 +1,17 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+.desktop-mid { position: relative; }
+.tool-inspector { order: 3; width: 306px; min-width: 270px; flex: none; min-height: 0; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line-strong); }
+.tool-inspector[hidden] { display: none; }
+.tool-inspector[data-mode='floating'] { position: absolute; left: 244px; top: 10px; width: 304px; max-width: calc(100% - 16px); max-height: calc(100% - 20px); z-index: 8; border-radius: 4px; box-shadow: 0 5px 20px #12233530; }
+.inspector-titlebar { display: flex; align-items: center; gap: 7px; min-height: 34px; padding: 4px 7px 4px 10px; background: var(--chassis); border-bottom: 1px solid var(--line); user-select: none; }
+[data-mode='floating'] .inspector-titlebar { cursor: move; touch-action: none; }
+.inspector-titlebar > strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 600; }
+.inspector-titlebar > button { display: grid; place-items: center; width: 23px; height: 23px; padding: 0; border: 1px solid transparent; background: transparent; box-shadow: none; color: var(--dim); }
+.inspector-titlebar > button:hover { background: var(--well-deep); border-color: var(--line); color: var(--ink); }
+.inspector-body { min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.inspector-body > .panel { width: 100%; min-width: 0; max-width: none; padding: 12px; border: 0; overflow: visible; resize: none; font-size: 12px; }
+.inspector-operation-hint { flex: none; padding: 7px 10px; border-top: 1px solid var(--line); color: var(--dim); background: var(--well); font-size: 10px; }
+.inspector-reopen { position: absolute; right: 12px; top: 10px; z-index: 8; display: flex; align-items: center; gap: 7px; background: var(--panel); padding: 8px 10px; box-shadow: 0 2px 8px #12233520; }
+.desktop-mid .stagecorner { top: auto; bottom: 12px; left: auto; right: 12px; align-items: flex-end; }
+@media (max-width: 1200px) { .tool-inspector { width: 280px; min-width: 250px; } .tool-inspector[data-mode='floating'] { left: 200px; } }
+@media (max-width: 900px) { .tool-inspector[data-mode='floating'] { left: 175px; } }

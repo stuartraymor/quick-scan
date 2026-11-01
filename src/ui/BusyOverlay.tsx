@@ -1,0 +1,70 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Whenever the tool is reading a file or grinding on the mesh, it says so in
+// the middle of the viewport — where the user is already looking, rather than
+// in the corner of the status strip.
+//
+// It subscribes to the stores itself instead of taking props, so a progress
+// line arriving every few hundred milliseconds re-renders this card and
+// nothing else.
+
+import { useStore } from '../state/store'
+import { useDeviation } from '../state/deviationStore'
+import { useThickness } from '../state/thicknessStore'
+
+export function BusyOverlay() {
+  const loading = useStore((s) => s.busy)
+  // A search run for the user — Auto-align, Use symmetry — that takes
+  // seconds on a big scan, with nothing on the part to show for it until it
+  // ends.
+  const working = useStore((s) => s.working)
+  const fitting = useStore(
+    (s) => s.draft?.status === 'fitting' || s.elements.some((e) => e.status === 'fitting'),
+  )
+  const statusText = useStore((s) => s.statusText)
+  // How far the job has got, when it says: a bar under the spinner.
+  const progress = useStore((s) => s.progress)
+  const nominalBusy = useDeviation((s) => s.nominalBusy)
+  const aligning = useDeviation((s) => s.alignStatus === 'running')
+  const mapping = useDeviation((s) => s.mapStatus === 'running')
+  const volume = useDeviation((s) => s.volumeStatus === 'running')
+  const measuring = useThickness((s) => s.status === 'running')
+  // The split picker owns the whole stage while it is up, and runs the
+  // alignment it was opened for from its own buttons.
+  const picking = useDeviation((s) => s.picking)
+
+  const busy = loading || nominalBusy || working !== null || fitting || aligning || mapping || measuring || volume
+  if (!busy || picking) return null
+
+  const label =
+    loading || nominalBusy
+      ? 'LOADING…'
+      : working !== null
+        ? working
+        : fitting
+          ? 'FITTING…'
+          : aligning
+            ? 'ALIGNING…'
+            : volume && !mapping && !measuring
+              ? 'FINDING VOLUME ERRORS…'
+              : 'MEASURING…'
+
+  // A fit is short and reports nothing, so the strip still holds the
+  // instruction that started it — repeating that under the spinner would read
+  // as if the tool were still waiting to be told what to do.
+  const note = fitting && !loading && !nominalBusy && working === null ? null : statusText
+
+  return (
+    <div className="busyoverlay" data-test="fitting-chip">
+      <div className="busycard">
+        <span className="spinner big" />
+        <b>{label}</b>
+        {progress !== null && (
+          <div className="busybar" data-test="busy-progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}>
+            <span style={{ width: `${Math.max(2, Math.min(100, progress * 100))}%` }} />
+          </div>
+        )}
+        {note && <span className="busynote">{note}</span>}
+      </div>
+    </div>
+  )
+}

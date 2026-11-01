@@ -1,0 +1,281 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Enter or a middle-mouse click confirms whatever is pending — the element
+// draft, the dimension, the 2D workspace's drafts, counts and calibration, the
+// alignment, the fine fit, the first measurement of a map — and Escape
+// discards it. Whatever the store does not know as a pending thing is found
+// on the page instead: the panel marks its confirm button of the moment with
+// `data-confirm`, and the key or click presses it. The middle click only
+// counts when it isn't a drag — the middle button also drives the camera.
+//
+// The number keys turn the camera to the standard views, PrusaSlicer's way:
+// 0 iso, 1 top, 2 bottom, 3 front, 4 rear, 5 left, 6 right — and the other
+// three-quarter views from above on the keys left over, 7 front-left, 8
+// rear-left, 9 rear-right, round the part from 0. They work whatever
+// else is pending — a part is turned to see where the next pick goes, and
+// making the draft first stand down would defeat that.
+import { useEffect } from 'react'
+import { creationMethod, takesSurface } from '../core/elements/construct'
+import { evaluateDimension } from '../core/dimensions'
+import type { FitData } from '../core/types'
+import { draftHolds, picksItsPoints, sectionDraftReady, useStore } from '../state/store'
+import { useDeviation } from '../state/deviationStore'
+import { useMark } from '../state/markStore'
+import { useFlat } from '../state/flatStore'
+import { useShell } from '../state/shellStore'
+import { plugins } from '../plugins/registry'
+import { undo, redo } from '../state/historyStore'
+import type { StandardView } from '../viewer/orthoViewport'
+
+/** The keys of the plugin whose workspace is on screen, if one is. */
+const pluginKeys = () => plugins().find((p) => p.workspace?.id === useShell.getState().workspace)?.keyboard ?? null
+
+/** The number row, bound as PrusaSlicer binds it, 7–9 our own. */
+const VIEW_KEYS: Record<string, StandardView> = {
+  '0': 'iso',
+  '1': 'top',
+  '2': 'bottom',
+  '3': 'front',
+  '4': 'rear',
+  '5': 'left',
+  '6': 'right',
+  '7': 'iso-front-left',
+  '8': 'iso-rear-left',
+  '9': 'iso-rear-right',
+}
+
+/** The arrow keys, as steps through what lies under the cursor: down and
+ *  right go further back, up and left come forward again. */
+const ARROW_STEPS: Record<string, 1 | -1> = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }
+
+export function useGlobalShortcuts({
+  stopMarking,
+  abortAlign,
+  stopPicking,
+  cancelDraft,
+  restartDraft,
+  confirmDraft,
+  cancelSection,
+  confirmSection,
+  viewFrom,
+  cycleUnderCursor,
+}: {
+  /** Close the deviation workspace's local fine fit marking session. */
+  stopMarking: () => void
+  /** Stop the best fit that is running, wherever it has got to. */
+  abortAlign: () => void
+  /** Close the split-screen point picker, selection and all. */
+  stopPicking: () => void
+  cancelDraft: () => void
+  /** The draft emptied, the kind kept in hand. */
+  restartDraft: () => void
+  confirmDraft: () => void
+  /** The section being made: discard it, or create it. */
+  cancelSection: () => void
+  confirmSection: () => void
+  /** Turn the 3D viewport's camera to a standard view. */
+  viewFrom: (view: StandardView) => void
+  /** Step through what lies under the cursor in the 3D viewport — see
+   *  SceneManager.cycleUnderCursor. True when something was stepped to. */
+  cycleUnderCursor: (step: 1 | -1) => boolean
+}) {
+  useEffect(() => {
+    // Mirrors the "Add dimension" button: every slot filled and the preview
+    // actually producing a value.
+    const dimensionReady = () => {
+      const s = useStore.getState()
+      const dd = s.dimDraft
+      if (!dd || s.draft || dd.refs.some((r) => r === null)) return false
+      const fits = dd.refs.map((id) => s.elements.find((el) => el.id === id)?.fit)
+      if (!fits.every((f): f is FitData => f !== undefined)) return false
+      return !evaluateDimension(dd.type, fits, { anchor: dd.anchor, basic: dd.basic }).invalid
+    }
+    // The 2D workspace knows its own pending things — see useFlat.confirmable
+    // and useFlat.retreat.
+    const flatConfirmable = () => useFlat.getState().confirmable()
+    /** The panel's confirm button of the moment, if one is enabled: the
+     *  `data-confirm` buttons, lowest priority value first. */
+    const confirmButton = (): HTMLButtonElement | null => {
+      const buttons = Array.from(
+        document.querySelectorAll<HTMLButtonElement>('button[data-confirm]:not(:disabled)'),
+      )
+      if (buttons.length === 0) return null
+      buttons.sort((a, b) => Number(a.dataset.confirm) - Number(b.dataset.confirm))
+      return buttons[0]
+    }
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      if (target && (['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName) || target.isContentEditable)) {
+        // Escape in a field of a box or a tool leaves the field and goes on
+        // to close what it is in, as it does with the focus anywhere else —
+        // a box set up by typing into it would otherwise not close on the
+        // key at all. Not where the field took the key for itself (a number
+        // typed over, put back), nor from a text being written.
+        if (e.key !== 'Escape' || e.defaultPrevented || target.tagName === 'TEXTAREA' || target.isContentEditable) return
+        target.blur()
+      }
+      // One press, one step. A key held down auto-repeats, and Escape backs
+      // out of a marking session in steps — a repeat would carry straight on
+      // from standing the gesture down to discarding the draft, marking and
+      // all, which is exactly the trap the two steps exist to avoid.
+      if (e.repeat) return
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && ['z', 'y'].includes(e.key.toLowerCase())) {
+        e.preventDefault()
+        void (e.key.toLowerCase() === 'y' || e.shiftKey ? redo() : undo())
+        return
+      }
+      // Enter on a focused button belongs to the button — the browser clicks
+      // it right after this handler, and confirming the draft as well would
+      // fire two different actions from one key press.
+      if (e.key === 'Enter' && target?.closest('button')) return
+      // The view keys belong to the 3D viewport alone: the 2D workspace has no
+      // camera to turn, and the split picker's halves are posed by hand. Bare
+      // keys only — Ctrl+1 and the like are the browser's tab switching.
+      const view = VIEW_KEYS[e.key]
+      if (view && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        if (useShell.getState().workspace === 'flat' || useDeviation.getState().picking) return
+        if (plugins().some((p) => p.keyboard?.holdsViewKeys?.())) return
+        viewFrom(view)
+        return
+      }
+      // The arrow keys step through what lies under the cursor in the 3D
+      // viewport, one behind another — a face behind the one in front, a
+      // body behind another — for the click to take. Only over something
+      // that has more than one thing there; a list or a picker that took
+      // the key for itself keeps it.
+      if (ARROW_STEPS[e.key] && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey && !e.defaultPrevented) {
+        if (cycleUnderCursor(ARROW_STEPS[e.key])) {
+          e.preventDefault()
+          return
+        }
+      }
+      // A plugin's workspace has the keys first.
+      if (pluginKeys()?.keydown?.(e, { confirmButton })) return
+      // A best fit that is running owns Escape, wherever it was started from:
+      // it is the one thing on screen that cannot be waited out, and stopping
+      // it costs nothing — the alignment in hand is kept and no measurement is
+      // thrown away.
+      if (useDeviation.getState().alignStatus === 'running') {
+        if (e.key === 'Escape') abortAlign()
+        return
+      }
+      // The split-screen picker backs out one step at a time, like every other
+      // session that takes the mouse: the first Escape stands the selection
+      // gesture down and hands the camera back, the second closes the picker.
+      if (useDeviation.getState().picking) {
+        if (e.key !== 'Escape') return
+        if (useMark.getState().gesture !== null) useMark.getState().setGesture(null)
+        else stopPicking()
+        return
+      }
+      if (useShell.getState().workspace === 'flat') {
+        if (e.key === 'Escape') useFlat.getState().retreat()
+        else if (e.key === 'Enter') (flatConfirmable() ?? (() => confirmButton()?.click()))()
+        return
+      }
+      const store = useStore.getState()
+      if (useDeviation.getState().marking) {
+        // Escape backs out one step at a time: the first hands the camera back
+        // by standing the gesture down, the second closes the local fine fit
+        // and takes the marking with it. Never both at once — the key is
+        // reached for to get the mouse working again, and losing a marking to
+        // that would be a trap.
+        if (e.key === 'Enter') confirmButton()?.click()
+        if (e.key !== 'Escape') return
+        if (useMark.getState().gesture !== null) useMark.getState().setGesture(null)
+        else stopMarking()
+        return
+      }
+      if (store.draft) {
+        if (e.key === 'Escape') {
+          // The same retreat while an element is being marked by hand — a fit
+          // on the marking, or a search of the scan confined to it: the first
+          // Escape hands the camera back, the second discards the draft.
+          // Never both at once — the key is reached for to get the mouse
+          // working again, and losing the marking to that would be a trap.
+          // (And the draft keeps its marking even then — see store.discarded.)
+          const marked =
+            store.selectMode === 'paint' &&
+            takesSurface(creationMethod(store.draft.kind, store.draft.method))
+          if (marked && useMark.getState().gesture !== null) useMark.getState().setGesture(null)
+          // Likewise a construction slot waiting for a click on the scan: the
+          // first Escape stops the picking, the second discards the draft.
+          // Not where the slots ask for their picks themselves (a plane
+          // through three points): there the picking is the editor.
+          else if (store.draft.pickSlot != null && !picksItsPoints(store.draft)) store.cancelDraftPick()
+          // A new draft with picks in it is emptied first and the kind kept
+          // in hand, as a sketch tool's half-placed points go before the
+          // tool. Not a marked surface: that draft closes and keeps it (see
+          // store.discarded), so no Escape rubs out minutes of marking.
+          else if (store.draft.editId === undefined && !store.draft.selection?.length && draftHolds(store.draft)) restartDraft()
+          else cancelDraft()
+        } else if (e.key === 'Enter' && store.draft.status === 'ready') confirmDraft()
+        return
+      }
+      if (store.alignDraft) {
+        // First Escape leaves point picking, the second closes the editor.
+        if (e.key === 'Escape') {
+          if (store.alignDraft.pickSlot !== null) store.cancelAlignmentPick()
+          else store.cancelAlignment()
+        } else if (e.key === 'Enter') confirmButton()?.click()
+        return
+      }
+      if (store.sectionDraft) {
+        if (e.key === 'Escape') cancelSection()
+        else if (e.key === 'Enter' && sectionDraftReady(store.sectionDraft)) confirmSection()
+        return
+      }
+      if (store.dimDraft) {
+        if (e.key === 'Escape') store.cancelDimension()
+        else if (e.key === 'Enter' && dimensionReady()) store.commitDimension()
+        return
+      }
+      if (e.key === 'Enter') confirmButton()?.click()
+    }
+    /** What a confirm would land on right now, if anything. */
+    const confirmable = (): 'draft' | 'dimension' | 'section' | 'flat' | 'plugin' | 'button' | null => {
+      const button = () => (confirmButton() ? 'button' : null)
+      if (useShell.getState().workspace === 'flat') return flatConfirmable() ? 'flat' : button()
+      // A plugin's workspace confirms by the middle button like everything
+      // else, when it has something ready of its own.
+      const plugin = pluginKeys()
+      if (plugin?.confirmable) return plugin.confirmable() ? 'plugin' : button()
+      const store = useStore.getState()
+      if (store.draft) return store.draft.status === 'ready' ? 'draft' : null
+      if (store.dimDraft) return dimensionReady() ? 'dimension' : null
+      if (store.sectionDraft) return sectionDraftReady(store.sectionDraft) ? 'section' : null
+      return button()
+    }
+    let middleDown: { x: number; y: number } | null = null
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.button !== 1) return
+      middleDown = { x: e.clientX, y: e.clientY }
+      // Keep the browser's middle-click autoscroll out of the way while an
+      // element or dimension is waiting to be confirmed.
+      if (confirmable()) e.preventDefault()
+    }
+    const onPointerUp = (e: PointerEvent) => {
+      const down = middleDown
+      middleDown = null
+      if (e.button !== 1 || !down) return
+      // A wheel button wobbles more under the finger than the left one
+      // does; a pan this short is nothing, a lost confirm is a missed click.
+      if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > 12) return
+      const what = confirmable()
+      if (what === 'draft') confirmDraft()
+      else if (what === 'dimension') useStore.getState().commitDimension()
+      else if (what === 'section') confirmSection()
+      else if (what === 'flat') flatConfirmable()?.()
+      else if (what === 'plugin') pluginKeys()?.confirmable?.()?.()
+      else if (what === 'button') confirmButton()?.click()
+    }
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('pointerdown', onPointerDown)
+    window.addEventListener('pointerup', onPointerUp)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('pointerdown', onPointerDown)
+      window.removeEventListener('pointerup', onPointerUp)
+    }
+    // Runs on the listed dependencies only, not on everything it reads.
+  }, [])
+}

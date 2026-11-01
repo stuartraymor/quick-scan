@@ -1,0 +1,63 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// The DRO windows the panel reads its measurements in — big digits, small
+// legend — shared so the draft preview, the dimension preview and the
+// dimension rows all write their numbers the same way.
+
+import { tintStyle } from './tint'
+
+/** What a DRO window needs of a dimension's evaluation — the slice the 3D
+ *  DimensionValue and the 2D FlatDimensionValue share. */
+export interface ReadValue {
+  label: string
+  value?: string
+  invalid?: string
+  warning?: string
+  detail?: string
+}
+
+/** Split a formatted measurement into digits and unit so the DRO window can
+ *  set them apart the way an instrument does — big number, small legend. */
+function splitValue(value: string): [string, string] {
+  if (value.endsWith('°')) return [value.slice(0, -1), 'DEG']
+  const cut = value.lastIndexOf(' ')
+  return cut < 0 ? [value, ''] : [value.slice(0, cut), value.slice(cut + 1).toUpperCase()]
+}
+
+/** The digits and legend inside a DRO window — every window writes its
+ *  measurement this way, so the split lives in one place. The digits go in
+ *  an element's own colour where one is given, as the draft preview does. */
+export function DroValue({ value, color }: { value: string; color?: string }) {
+  const [num, unit] = splitValue(value)
+  return (
+    <>
+      <b className={color ? 'tinted' : undefined} style={color ? tintStyle(color) : undefined}>
+        {num}
+      </b>
+      <span>{unit}</span>
+    </>
+  )
+}
+
+/** A DRO window carrying a dimension's value, or its alarm face when the
+ *  measurement has none. The dimension preview and the dimension rows read
+ *  identically by design, so they share it. `over` paints the digits red:
+ *  the value is past the limit typed for it. */
+export function ValueWindow({
+  value,
+  testId,
+  over = false,
+}: {
+  value: ReadValue
+  testId: string
+  over?: boolean
+}) {
+  return value.invalid ? (
+    <div className="dro-window alarm" data-test={testId}>
+      <b>no value</b>
+    </div>
+  ) : (
+    <div className={over ? 'dro-window over' : 'dro-window'} data-test={testId}>
+      <DroValue value={value.value!} />
+    </div>
+  )
+}

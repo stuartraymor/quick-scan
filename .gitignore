@@ -1,0 +1,43 @@
+node_modules/
+dist/
+.wrangler/
+*.local
+.DS_Store
+
+# Local test scan files
+/*.stl
+/*.ply
+/*.obj
+
+# Generated e2e screenshots
+/e2e-*.png
+/e2e-out/
+
+# The app built for Node, headless (npm run build:engine)
+/dist-engine/
+
+# Secrets and local environment: never commit
+.env
+.env.*
+!.env.example
+
+# Desktop packaging output (rebuilt by package-desktop.mjs / installer scripts)
+/desktop-build/
+/desktop-stage/
+/installer/out/
+/installer/dist/
+*.exe
+*.msi
+*.pfx
+*.p12
+*.log
+
+# Reference material and extracted third-party binaries stay out of the repo
+/analysis/
+/QuickSurface*/
+/extracted/
+
+# Editors and OS
+Thumbs.db
+.vscode/
+.idea/

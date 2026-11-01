@@ -1,0 +1,455 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// The box an element is created or edited in, plus the Fitting group that
+// rides along while a surface fit is open. Renders nothing without a draft.
+
+import { hasDiameter } from '../core/elements/assumed'
+import { creationMethod, methodsForKind, takesSurface } from '../core/elements/construct'
+import { isExtendable } from '../core/elements/extend'
+import { isOrientable } from '../core/elements/orient'
+import { elementKindInfo } from '../core/elements/kinds'
+import { formatDetail, formatPrimary, SIGMA_LABELS } from '../core/summary'
+import { BASE_PLANE_SEEDS } from '../core/symmetry'
+import type { SigmaPreset } from '../core/types'
+import { useMark } from '../state/markStore'
+import { blockedRefs, draftColorOf, orientedDraft, useStore, type SelectMode } from '../state/store'
+import { dimensionRefsOf } from '../state/sectionModel'
+import { usePulse } from '../app/useHints'
+import { AssumedField } from './AssumedField'
+import { KnownDiameterField } from './KnownDiameterField'
+import { DroValue } from './DroValue'
+import { ExtendFields } from './ExtendFields'
+import { InfoDot } from './InfoDot'
+import { MarkTools } from './MarkTools'
+import { OrientFields } from './OrientFields'
+import { NameField, providersFor, RefSelect } from './RefSelect'
+import { tintStyle } from './tint'
+import { useLength } from '../app/useUnits'
+
+export function DraftEditor({
+  onSelectMode,
+  onDraftSigma,
+  onDraftKnownDiameter,
+  onClearPaint,
+  onUndoPick,
+  onCancelDraft,
+  onConfirmDraft,
+  onFindSymmetry,
+}: {
+  /** Switch between clicking a point and marking the surface by hand. */
+  onSelectMode: (mode: SelectMode) => void
+  /** The draft's outlier cut-off changed: it re-fits on what it has. */
+  onDraftSigma: (k: SigmaPreset) => void
+  /** The sphere's known diameter changed: it re-fits holding it, or free. */
+  onDraftKnownDiameter: (mm: number | undefined) => void
+  /** Rub out the whole hand-marked surface. */
+  onClearPaint: () => void
+  onUndoPick: () => void
+  onCancelDraft: () => void
+  onConfirmDraft: () => void
+  /** Search the scan for its mirror plane, for the open symmetry-plane
+   *  draft — from its seed plane, or from the scan's principal planes. */
+  onFindSymmetry: () => void
+}) {
+  const busy = useStore((s) => s.busy)
+  const elements = useStore((s) => s.elements)
+  const sections = useStore((s) => s.sections)
+  const draft = useStore((s) => s.draft)
+  const draftColor = useStore(draftColorOf)
+  const setDraftMethod = useStore((s) => s.setDraftMethod)
+  const setDraftName = useStore((s) => s.setDraftName)
+  const setDraftRef = useStore((s) => s.setDraftRef)
+  const beginDraftPick = useStore((s) => s.beginDraftPick)
+  const setDraftParam = useStore((s) => s.setDraftParam)
+  // Readings and typed lengths in the units shown; the draft holds
+  // millimetres.
+  const len = useLength()
+  const setDraftSeed = useStore((s) => s.setDraftSeed)
+  const selectMode = useStore((s) => s.selectMode)
+  // The marking itself is the shared tool set (markStore / MarkTools); the
+  // panel only needs to know how much surface it has taken.
+  const markGesture = useMark((s) => s.gesture)
+  const paintCount = useMark((s) => s.count)
+  // Named as the step from the moment the draft opens; the ring itself waits
+  // for the fit, because a disabled control never wears one.
+  const pulse = usePulse('create-element')
+
+  const draftKind = draft && elementKindInfo(draft.kind)
+  const method = draft && creationMethod(draft.kind, draft.method)
+  const kindMethods = draft ? methodsForKind(draft.kind) : []
+  // The element the open draft writes back to, if it is an edit rather than a
+  // new element, and what such a draft must not be built on.
+  const edited = draft?.editId !== undefined ? elements.find((e) => e.id === draft.editId) : undefined
+  const blocked = blockedRefs(draft?.editId, elements)
+  // What a slot can be filled from: the elements, and the sections as the
+  // planes they were cut on, which only a plane's slot takes.
+  const refPool = dimensionRefsOf(elements, sections)
+  // What the draft will be created as: the measured fit, turned onto its
+  // reference plane if it is aligned to one. The preview shows this one.
+  const shownFit = orientedDraft(draft, refPool).fit
+
+  // Marking the surface by hand replaces the click-and-grow flow, so it only
+  // exists for the kinds that are fitted to the scan at all.
+  const paintingSurface =
+    draft !== null && method !== null && takesSurface(method) && selectMode === 'paint'
+  // What the brush is being dragged over: the feature itself for a fit, the
+  // part of the scan a search may use for a construction.
+  const marked = method?.mode === 'fit' ? draftKind?.noun ?? 'surface' : 'surface the search may use'
+  const pickHint =
+    !draft || !draftKind || !method
+      ? ''
+      : paintingSurface
+        ? markGesture === null
+          ? `Pick a marking tool above, then drag over the ${marked}.`
+          : paintCount === 0
+            ? `Drag over the ${marked} to mark it.`
+            : 'Keep marking to add more; right-drag rubs out.'
+        : draft.picks.length === 0 && draft.status !== 'ready'
+          ? method.hint
+          : method.mode === 'pick'
+            ? draft.kind === 'point'
+              ? `Click again to move the point, or ${edited ? 'save it' : 'create it'}.`
+              : draft.picks.length < (method.minPicks ?? 1)
+                ? `${(method.minPicks ?? 1) - draft.picks.length} more point${
+                    (method.minPicks ?? 1) - draft.picks.length === 1 ? '' : 's'
+                  } to go — spread them around the ${draftKind.noun}.`
+                : `More points refine the fit, or ${edited ? 'save it' : 'create it'}.`
+            : `Add more points if the ${draftKind.noun} is split across unconnected patches.`
+
+  if (draft === null) return null
+
+  return (
+    <>
+      {draftKind !== null && method !== null && (
+        <div className="draftbox" style={{ borderLeftColor: draftColor }}>
+          <div className="sec-head">
+            <span className="dot" style={{ background: draftColor }} />
+            {edited ? `Edit ${edited.name}` : `New ${draftKind.noun}`}
+          </div>
+
+          {draft.editId !== undefined && (
+            <NameField
+              value={draft.name ?? ''}
+              testId="draft-name"
+              onChange={(name) => setDraftName(name)}
+            />
+          )}
+
+          {kindMethods.length > 1 && (
+            <label className="field">
+              <span>Created</span>
+              <select
+                data-test="draft-method"
+                value={draft.method}
+                onChange={(e) => setDraftMethod(e.target.value)}
+              >
+                {kindMethods.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          {method.mode === 'fit' && (
+            <label className="field">
+              <span>
+                Surface
+                <InfoDot title="Which surface is fitted">
+                  <p>
+                    <b>Found from a click:</b> click once on the feature and the patch grows outward
+                    across the scan on its own, stopping where the surface stops being flat or round
+                    enough to belong. Fast, and right most of the time.
+                  </p>
+                  <p>
+                    <b>Marked by hand:</b> take exactly the triangles you want — with a window, a
+                    round brush or a lasso, the same three tools the deviation workspace marks a
+                    local fine fit with. Use it when a click runs off across a fillet, when noise
+                    breaks the feature into unconnected patches, or when only part of a face is
+                    worth trusting.
+                  </p>
+                  <p>
+                    Nothing is armed until you pick one of them: while a tool is live it takes both
+                    plain drags — left marks, right rubs out — and <b>Navigate</b> or Esc hands them
+                    back to the camera. Shift-drag orbits either way.
+                  </p>
+                </InfoDot>
+              </span>
+              <select
+                data-test="draft-select-mode"
+                value={selectMode}
+                onChange={(e) => onSelectMode(e.target.value as SelectMode)}
+              >
+                <option value="auto">Found from a click</option>
+                <option value="paint">Marked by hand</option>
+              </select>
+            </label>
+          )}
+
+          {method.mode === 'construct' && method.surface && (
+            <label className="field">
+              <span>
+                Search on
+                <InfoDot title="Which surface the search may use">
+                  <p>
+                    <b>Whole scan:</b> every triangle of the part takes part — the right choice for
+                    a clean scan of the part alone.
+                  </p>
+                  <p>
+                    <b>Marked surface:</b> mark the part of the scan the search may use, with the
+                    same window, brush and lasso a hand-marked fit uses, and leave out what should
+                    not count — a fixture, a stamped number, a patch the scanner missed or
+                    smeared. Only the marked points are searched, and only the marked triangles
+                    are surface a mirror image may land on. The marking is saved with the element.
+                  </p>
+                </InfoDot>
+              </span>
+              <select
+                data-test="draft-select-mode"
+                value={selectMode}
+                onChange={(e) => onSelectMode(e.target.value as SelectMode)}
+              >
+                <option value="auto">Whole scan</option>
+                <option value="paint">Marked surface</option>
+              </select>
+            </label>
+          )}
+
+          {paintingSurface && (
+            <MarkTools
+              showCount={false}
+              escapeNote="Esc a second time discards the element — its marking is kept in the panel, under a Restore button, until the next element is started."
+              onClear={onClearPaint}
+            />
+          )}
+
+          {method.mode === 'construct' ? (
+            <>
+              <p className="hint">{method.hint}</p>
+              {method.id === 'plane-symmetry' && (
+                <>
+                  <RefSelect
+                    label="Seed plane (optional)"
+                    options={[...BASE_PLANE_SEEDS, ...providersFor(['plane'], refPool, blocked)]}
+                    value={draft.seed ?? null}
+                    testId="draft-seed"
+                    picking={false}
+                    onChange={(id) => setDraftSeed(id)}
+                  />
+                  <button
+                    data-test="find-symmetry"
+                    disabled={busy || draft.status === 'fitting'}
+                    onClick={onFindSymmetry}
+                    title="Reflect the scan through the seed — a coordinate plane, a plane element or a section; with none, through each of its principal planes — fit the reflection back onto the scan, and read the mirror plane off the fit"
+                  >
+                    {draft.status === 'ready' ? 'Find again' : 'Find symmetry plane'}
+                  </button>
+                </>
+              )}
+              {draft.note && (
+                <p className="hint" data-test="draft-note">
+                  {draft.note}
+                </p>
+              )}
+              {method.slots.map((slot, i) => (
+                <RefSelect
+                  key={i}
+                  label={slot.label}
+                  options={providersFor([slot.role], refPool, blocked, slot.kinds)}
+                  value={draft.refs[i]}
+                  testId={`draft-ref-${i}`}
+                  picking={draft.pickSlot === i}
+                  onChange={(id) => setDraftRef(i, id)}
+                  onPickNew={
+                    slot.role === 'point' && !slot.kinds ? () => beginDraftPick(i) : undefined
+                  }
+                />
+              ))}
+              {method.params.map((p, i) => {
+                if (p.hidden) return null
+                // A length is typed in the units shown, rounded far below
+                // anything shown so the text reads back as typed.
+                const length = p.unit === 'mm'
+                const held = draft.params[i]
+                return (
+                  <label className="field" key={p.key}>
+                    <span>
+                      {p.label}
+                      {length ? ` (${len.word()})` : ''}
+                    </span>
+                    <input
+                      type="number"
+                      step="any"
+                      data-test={`draft-param-${p.key}`}
+                      value={Number.isFinite(held) ? (length ? Number(len.toDisplay(held).toFixed(6)) : held) : ''}
+                      onChange={(e) => {
+                        const v = e.target.value === '' ? NaN : Number(e.target.value)
+                        setDraftParam(i, length ? len.fromDisplay(v) : v)
+                      }}
+                    />
+                  </label>
+                )
+              })}
+            </>
+          ) : (
+            <p className="hint">{pickHint}</p>
+          )}
+
+          <div className="dro">
+            <div className="dro-label">
+              <span>Preview</span>
+              {paintingSurface ? (
+                <span data-test="paint-count">
+                  {paintCount.toLocaleString('en-US')} point
+                  {paintCount === 1 ? '' : 's'} marked
+                </span>
+              ) : (
+                method.mode !== 'construct' && (
+                  <span>
+                    {draft.picks.length} pick
+                    {draft.picks.length === 1 ? '' : 's'}
+                  </span>
+                )
+              )}
+            </div>
+            <div
+              className={
+                'dro-window ' +
+                draft.status +
+                (draft.status === 'fitting'
+                  ? ' working'
+                  : draft.status === 'failed'
+                    ? ' alarm'
+                    : '')
+              }
+              data-test="draft-status"
+            >
+              {draft.status === 'empty' && (
+                <b style={{ fontSize: 12, fontWeight: 400, color: 'var(--dim)' }}>
+                  {method.mode === 'construct'
+                    ? 'Incomplete'
+                    : paintingSurface
+                      ? 'Nothing marked'
+                      : draft.picks.length > 0
+                        ? `${draft.picks.length} of ${method.minPicks ?? 1} points`
+                        : 'No points picked'}
+                </b>
+              )}
+              {draft.status === 'fitting' && (
+                <b>
+                  <span className="spinner" />
+                  Fitting…
+                </b>
+              )}
+              {draft.status === 'failed' && <b>{draft.message ?? 'Failed'}</b>}
+              {draft.status === 'ready' &&
+                (() => {
+                  const primary = formatPrimary(shownFit!, len.units)
+                  if (shownFit!.kind === 'point' || shownFit!.kind === 'line' || primary === '') {
+                    return (
+                      <b className="tinted" style={tintStyle(draftColor)}>
+                        ✓ {draftKind.label}
+                      </b>
+                    )
+                  }
+                  return <DroValue value={primary} color={draftColor} />
+                })()}
+            </div>
+            {draft.status === 'ready' && <div className="dro-note">{formatDetail(shownFit!, len.units)}</div>}
+          </div>
+
+          {/* The design value behind the measurement, for the kinds defined by
+              a diameter — what the element is drawn and exported at. */}
+          {draft.status === 'ready' && hasDiameter(draft.fit) && <AssumedField fit={draft.fit} />}
+
+          {/* The designed relation to a reference plane, for the kinds with a
+              direction to turn — applied to the measurement on the way in. */}
+          {draft.status === 'ready' && isOrientable(draft.fit) && <OrientFields fit={draft.fit} />}
+
+          {/* How much of the measured surface to draw, once there is one. A
+              cylinder and a plane are the two elements whose size on screen is
+              a drawing decision rather than the measurement itself. */}
+          {/* A fit confined to its span can fail — too little surface left
+              inside it — and does so keeping the fit it had, so the fields
+              stay to pull the ends back out or switch the option off. */}
+          {(draft.status === 'ready' || (draft.status === 'failed' && draft.fit !== undefined)) &&
+            isExtendable(shownFit) && <ExtendFields fit={shownFit} />}
+
+          <button
+            className={pulse ? 'primary block pulse' : 'primary block'}
+            data-test="create-element"
+            disabled={draft.status !== 'ready'}
+            onClick={onConfirmDraft}
+          >
+            {edited ? 'Save changes' : `Create ${draftKind.noun}`}
+          </button>
+          <div className="toolrow">
+            {method.mode !== 'construct' && !paintingSurface && (
+              <button disabled={draft.picks.length === 0} onClick={onUndoPick}>
+                Undo point
+              </button>
+            )}
+            <button data-test="cancel-draft" onClick={onCancelDraft}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* How this one element is fitted. The settings are the draft's own and
+          go into the element with it: a clean bore and a noisy cast face on
+          the same part want different cut-offs, so no choice here reaches
+          any other element. */}
+      {draft && method?.mode === 'fit' && (
+        <div className="group">
+          <div className="g-label">
+            <span>Fitting {edited ? edited.name : `this ${draftKind?.noun ?? 'element'}`}</span>
+          </div>
+          <label className="field">
+            <span>Method</span>
+            <select value={draft.settings.method} disabled>
+              <option value="gaussian">Gaussian best-fit</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>
+              Used points
+              <InfoDot title="Used points">
+                <p>
+                  Every element is a Gaussian best fit — the plane, cylinder or sphere that
+                  minimises the squared distance to the points taken from the scan.
+                </p>
+                <p>
+                  This is the outlier cut-off. Points further from that first fit than the chosen
+                  multiple of the standard deviation are dropped and the fit is repeated, so scan
+                  noise, a stray edge triangle or a speck of spray cannot drag the result. Tighter
+                  cut-offs give a cleaner element from fewer points; <i>all points</i> keeps
+                  everything.
+                </p>
+                <p>
+                  The setting belongs to this element: changing it re-fits this one from the
+                  points it was built on, and every other element keeps the cut-off it was
+                  measured with. Re-open an element to change its own. The last choice is
+                  what the next new element starts with.
+                </p>
+              </InfoDot>
+            </span>
+            <select
+              data-test="used-points"
+              value={draft.settings.sigma}
+              disabled={busy}
+              onChange={(e) => onDraftSigma(Number(e.target.value) as SigmaPreset)}
+            >
+              {([3, 2, 1, 0] as SigmaPreset[]).map((k) => (
+                <option key={k} value={k}>
+                  {SIGMA_LABELS[k]}
+                </option>
+              ))}
+            </select>
+          </label>
+          {draft.kind === 'sphere' && <KnownDiameterField busy={busy} onChange={onDraftKnownDiameter} />}
+        </div>
+      )}
+    </>
+  )
+}

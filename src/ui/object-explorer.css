@@ -1,0 +1,77 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+.object-explorer {
+  display: flex;
+  flex-direction: column;
+  width: 246px;
+  min-width: 190px;
+  min-height: 0;
+  flex: 0 0 246px;
+  background: var(--panel);
+  color: var(--ink);
+  border-right: 1px solid var(--line-strong);
+  font: 12px/1.4 var(--ui);
+  overflow: hidden;
+}
+.object-explorer .explorer-heading {
+  min-height: 31px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  background: var(--chassis);
+  border-bottom: 1px solid var(--line);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+}
+.object-explorer .explorer-heading small { color: var(--dim); font: 10px var(--mono); }
+.object-explorer > .explorer-heading { flex-shrink: 0; }
+.object-explorer .explorer-history-panel { display: flex; flex-direction: column; flex: 0 0 32%; min-height: 140px; overflow: hidden; border-top: 4px solid var(--line); }
+.object-explorer .explorer-history-panel > .explorer-heading { flex: 0 0 29px; justify-content: flex-start; gap: 6px; }
+.object-explorer .explorer-history-panel > .explorer-heading small { margin-left: auto; }
+.object-explorer .explorer-document { display: flex; align-items: center; gap: 7px; padding: 12px 10px; border-bottom: 1px solid var(--line); }
+.object-explorer .explorer-document strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.object-explorer .explorer-document > svg { color: var(--accent); }
+.object-explorer .explorer-content { flex: 1; min-height: 0; overflow: auto; padding: 6px 0 14px; scrollbar-width: thin; }
+.object-explorer .explorer-group { margin: 0; padding: 0; border: 0; }
+.object-explorer .explorer-group > summary { display: flex; align-items: center; gap: 7px; padding: 7px 10px; cursor: pointer; list-style: none; font-size: 11px; font-weight: 600; user-select: none; }
+.object-explorer .explorer-group > summary::-webkit-details-marker { display: none; }
+.object-explorer .explorer-group > summary::before { content: ''; width: 5px; height: 5px; border-right: 1px solid var(--dim); border-bottom: 1px solid var(--dim); transform: rotate(-45deg); transition: transform 100ms; }
+.object-explorer .explorer-group[open] > summary::before { transform: rotate(45deg) translateY(-2px); }
+.object-explorer .explorer-group > summary:hover { background: var(--well); }
+.object-explorer .explorer-group > summary small { margin-left: auto; color: var(--dim); font: 10px var(--mono); }
+.object-explorer .explorer-children { margin: 0 5px 3px 16px; padding-left: 4px; border-left: 1px solid var(--line); }
+.object-explorer .explorer-row { display: flex; align-items: center; min-height: 27px; border-radius: 2px; }
+.object-explorer .explorer-row:hover { background: var(--well); }
+.object-explorer .explorer-row.selected { background: var(--accent-soft); color: var(--accent-d); }
+.object-explorer .explorer-item {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1;
+  gap: 6px;
+  padding: 5px 5px;
+  min-height: 27px;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  color: inherit;
+  font: 12px var(--ui);
+  text-align: left;
+}
+.object-explorer button.explorer-item:hover { background: transparent; }
+.object-explorer .explorer-item > span:not(.explorer-color) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.object-explorer .explorer-item > small { font-size: 9px; color: var(--dim); margin-left: auto; }
+.object-explorer .explorer-icon { flex: 0 0 16px; }
+.object-explorer .explorer-color { flex: 0 0 8px; height: 8px; border-radius: 50%; box-shadow: inset 0 0 0 1px #0002; }
+.object-explorer .explorer-eye { display: grid; place-items: center; flex: 0 0 24px; width: 24px; min-width: 24px; min-height: 25px; padding: 3px; border: 0; border-radius: 2px; background: transparent; box-shadow: none; color: var(--dim); }
+.object-explorer .explorer-eye:hover { color: var(--accent); background: var(--accent-soft); }
+.object-explorer .explorer-eye.is-hidden { color: var(--faint); }
+.object-explorer button:disabled { opacity: .45; cursor: default; }
+.object-explorer button:focus-visible, .object-explorer summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.object-explorer .explorer-empty { margin: 4px 8px 9px; color: var(--dim); font-size: 11px; line-height: 1.5; }
+.object-explorer .explorer-history-entry { display: flex; align-items: baseline; gap: 8px; padding: 5px 8px; font-size: 11px; }
+.object-explorer .explorer-history-entry small { color: var(--faint); font: 9px var(--mono); min-width: 14px; }
+.object-explorer .explorer-footer { display: flex; justify-content: space-between; gap: 8px; padding: 7px 10px; border-top: 1px solid var(--line); background: var(--well); color: var(--dim); font-size: 10px; }
+@media (max-width: 1150px) { .object-explorer { width: 210px; flex-basis: 210px; } }

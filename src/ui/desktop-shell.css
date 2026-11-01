@@ -1,0 +1,217 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+/* Original desktop chrome. Geometry and tool state remain with the sessions. */
+:root {
+  --ui: 'Segoe UI', system-ui, sans-serif;
+  --cond: 'Segoe UI', system-ui, sans-serif;
+  --chassis: #edf0f3;
+  --panel: #fafbfc;
+  --well: #f0f3f6;
+  --line: #d2d8df;
+  --line-strong: #b4bec9;
+  --accent: #2674b9;
+  --accent-soft: #e3effa;
+  --ink: #283746;
+  --dim: #697989;
+}
+.top {
+  height: 39px;
+  min-height: 39px;
+  gap: 8px;
+  padding: 0 10px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.top .brandmark { width: 24px; height: 24px; }
+.top .brand { min-width: 115px; }
+.top .brand b { font-size: 15px; letter-spacing: -.35px; }
+.top .brand > span { display: none; }
+.top .projectname { font-family: var(--ui); font-size: 12px; max-width: 220px; }
+.top .partchip { max-width: 190px; font-size: 10px; }
+.top .partchip span { display: none; }
+.top .project-save-status { font-size: 10px; max-width: 125px; }
+.top button.ghost { padding: 5px 8px; font-size: 11px; }
+.top .ptxt { display: none; }
+.desktop-workspaces {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0 10px;
+  height: 33px;
+  background: var(--chassis);
+  overflow-x: auto;
+  scrollbar-width: thin;
+  align-items: stretch;
+}
+.desktop-workspaces button {
+  flex: none;
+  border: 0;
+  border-radius: 4px 4px 0 0;
+  padding: 0 15px;
+  color: var(--dim);
+  background: transparent;
+  font-size: 12px;
+  gap: 7px;
+  box-shadow: none;
+  border-bottom: 2px solid transparent;
+  text-transform: none;
+  letter-spacing: normal;
+}
+.desktop-workspaces button.on {
+  background: var(--panel);
+  border-bottom-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+.desktop-workspaces button:not(.on):hover { background: var(--well); color: var(--ink); }
+.desktop-ribbon {
+  flex: none;
+  display: flex;
+  min-height: 102px;
+  padding: 5px 8px 0;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line-strong);
+  box-shadow: 0 2px 4px #182e4610;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  z-index: 3;
+}
+.desktop-ribbon-group {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  padding: 0 4px;
+  border-right: 1px solid var(--line);
+  min-width: 74px;
+}
+.desktop-ribbon-group:last-child { border-right: 0; }
+.desktop-ribbon-tools { display: flex; flex: 1; gap: 2px; align-items: flex-start; }
+button.desktop-ribbon-tool {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 54px;
+  min-height: 70px;
+  padding: 7px 3px 5px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--ink);
+  font: 10px/1.25 var(--ui);
+  text-align: center;
+}
+button.desktop-ribbon-tool:hover:not(:disabled) { border-color: #abc9e8; background: var(--accent-soft); }
+button.desktop-ribbon-tool:active:not(:disabled) { background: #cbdff4; }
+button.desktop-ribbon-tool:disabled { opacity: .4; cursor: default; }
+.desktop-ribbon-tool .icon { width: 27px; height: 27px; color: var(--accent); }
+.desktop-ribbon-tool[data-test='ribbon-open'] { --accent: #c58b22; }
+.desktop-ribbon-tool[data-test='ribbon-save'] { --accent: #7a6ab0; }
+.desktop-ribbon-tool[data-test='ribbon-prepare-scan'] { --accent: #b17d44; }
+.desktop-ribbon-tool[data-test='ribbon-edit-scan'] { --accent: #c86351; }
+.desktop-ribbon-tool[data-test='ribbon-align'] { --accent: #788e4b; }
+.desktop-ribbon-tool[data-test='ribbon-compare'] { --accent: #3c9a80; }
+.desktop-ribbon-label {
+  display: block;
+  text-align: center;
+  color: var(--dim);
+  font-size: 10px;
+  line-height: 22px;
+  white-space: nowrap;
+}
+.desktop-ribbon-assistant { margin-left: auto; }
+.ribbon-dropdown { position: relative; }
+.ribbon-dropdown > summary { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; width: 59px; min-height: 70px; padding: 7px 3px 5px; border: 1px solid transparent; border-radius: 4px; font-size: 10px; text-align: center; cursor: pointer; list-style: none; }
+.ribbon-dropdown > summary::-webkit-details-marker { display: none; }
+.ribbon-dropdown > summary:hover { background: var(--accent-soft); border-color: var(--line-strong); }
+.ribbon-dropdown[open] > summary { background: var(--accent-soft); }
+.ribbon-menu { position: fixed; z-index: 30; min-width: 160px; display: flex; flex-direction: column; padding: 4px; background: var(--panel); border: 1px solid var(--line-strong); box-shadow: 0 5px 18px #182e4630; }
+.ribbon-menu button { border: 0; background: transparent; text-align: left; padding: 8px 12px; font-size: 12px; box-shadow: none; }
+.ribbon-menu button:hover:not(:disabled) { background: var(--accent-soft); }
+.desktop-mid { padding: 0; gap: 0; }
+.desktop-mid > .panel {
+  order: 3;
+  width: 306px;
+  min-width: 270px;
+  max-width: 440px;
+  resize: horizontal;
+  border-left: 1px solid var(--line-strong);
+  border-right: 0;
+  padding: 0 13px 20px;
+  gap: 12px;
+  font-size: 12px;
+}
+.desktop-mid > .panel::before {
+  content: 'TOOL PROPERTIES';
+  display: block;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  margin: 0 -13px 0;
+  padding: 11px 13px;
+  background: var(--chassis);
+  border-bottom: 1px solid var(--line);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 1px;
+  color: var(--dim);
+}
+.desktop-mid > .stage { order: 2; min-width: 220px; }
+.desktop-mid .group { border-left: 0; padding-left: 0; }
+.desktop-mid .g-label, .desktop-mid .sec-head { font-size: 11px; letter-spacing: .35px; }
+.desktop-mid .panel .kindrow button { border-radius: 4px; }
+.desktop-mid .stagecorner { top: 10px; }
+.object-explorer {
+  order: 1;
+  width: 235px;
+  min-width: 185px;
+  max-width: 360px;
+  flex: none;
+  resize: horizontal;
+  overflow: auto;
+  background: var(--panel);
+  border-right: 1px solid var(--line-strong);
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+}
+.object-explorer button { font: inherit; box-shadow: none; }
+.explorer-header { padding: 11px 12px; font-size: 10px; font-weight: 650; letter-spacing: 1px; border-bottom: 1px solid var(--line); background: var(--chassis); color: var(--dim); }
+.explorer-tabs { display: flex; border-bottom: 1px solid var(--line); }
+.explorer-tabs button { flex: 1; padding: 9px 7px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--dim); }
+.explorer-tabs button[aria-selected='true'] { border-bottom-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.explorer-content { flex: 1; overflow: auto; padding: 10px 6px; }
+.explorer-group { margin-bottom: 15px; }
+.explorer-group-title { font-size: 10px; text-transform: uppercase; letter-spacing: .7px; padding: 7px 6px; color: var(--dim); font-weight: 600; }
+.explorer-row { display: flex; width: 100%; align-items: center; gap: 7px; padding: 7px 6px; border-radius: 3px; min-width: 0; }
+.explorer-row:hover { background: var(--well); }
+.explorer-row.selected { background: var(--accent-soft); }
+.explorer-row .icon { color: var(--accent); flex: none; }
+.explorer-row button { border: 0; background: none; padding: 0; color: inherit; min-width: 0; text-align: left; }
+.explorer-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.explorer-empty { padding: 8px 7px; color: var(--dim); font-size: 11px; line-height: 1.7; }
+.explorer-footer { padding: 10px 12px; border-top: 1px solid var(--line); color: var(--dim); font-size: 10px; line-height: 1.6; }
+@media (max-width: 1200px) {
+  .object-explorer { width: 190px; min-width: 160px; }
+  .desktop-mid > .panel { width: 280px; min-width: 250px; }
+  .top .partchip, .top .project-save-status { display: none; }
+  button.desktop-ribbon-tool { width: 61px; }
+  .desktop-ribbon-group { padding: 0 5px; }
+}
+@media (max-width: 900px) {
+  .object-explorer { width: 165px; min-width: 140px; }
+  .desktop-mid > .panel { width: 260px; min-width: 235px; }
+  .top .brand { min-width: 90px; }
+  .top .projectname { max-width: 130px; }
+}
+
+.top .brand .quick-scan-version { font-size: 10px; font-weight: 500; color: var(--dim); margin-left: 5px; letter-spacing: 0; }
+
+/* The inspector now owns tool-panel chrome; its legacy pseudo-title is unused. */
+
+.ribbon-menu .desktop-ribbon-tool { width: 100%; min-height: 32px; flex-direction: row; justify-content: flex-start; text-align: left; gap: 9px; padding: 6px 10px; font-size: 12px; }
+.ribbon-menu .desktop-ribbon-tool .icon { width: 18px; height: 18px; }

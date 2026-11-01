@@ -1,0 +1,104 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// The 3D viewport: a thin React wrapper that builds the SceneManager once on
+// mount and wires its callbacks through refs, so a new handler on every
+// render never builds the scene — and the mesh and BVH in it — again. A
+// browser that refuses WebGL gets an explanation and what to try, instead
+// of a bare grey page indistinguishable from a hung app.
+
+import { useEffect, useRef, useState } from 'react'
+import type { WorldAxis } from '../core/section/frame'
+import { SceneManager, type GripSide, type PickHit } from '../viewer/SceneManager'
+import { FitButton } from './FitButton'
+
+export function Viewer({
+  onReady,
+  onPick,
+  onHover,
+  onElementPick,
+  onWorldPlanePick,
+  onPaintChange,
+  onExtendDrag,
+}: {
+  onReady: (scene: SceneManager) => void
+  onPick: (hit: PickHit) => void
+  onHover?: (hit: PickHit | null) => void
+  /** A click that landed on an existing element while element picking is
+   *  on, with where the click was in client pixels. */
+  onElementPick?: (id: number, clientX: number, clientY: number) => void
+  /** A click on one of the coordinate planes offered to a section. */
+  onWorldPlanePick?: (axis: WorldAxis) => void
+  /** A brush stroke ended, with this many vertices marked in total. */
+  onPaintChange?: (count: number) => void
+  /** One of the grips on the element being made — or of the gizmo on a
+   *  section plane — was dragged this far: millimetres, or degrees for a
+   *  ring. */
+  onExtendDrag?: (side: GripSide, delta: number, phase: 'start' | 'move' | 'end') => void
+}) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const sceneRef = useRef<SceneManager | null>(null)
+  const pickRef = useRef(onPick)
+  pickRef.current = onPick
+  const hoverRef = useRef(onHover)
+  hoverRef.current = onHover
+  const elementPickRef = useRef(onElementPick)
+  elementPickRef.current = onElementPick
+  const worldPlaneRef = useRef(onWorldPlanePick)
+  worldPlaneRef.current = onWorldPlanePick
+  const paintRef = useRef(onPaintChange)
+  paintRef.current = onPaintChange
+  const extendRef = useRef(onExtendDrag)
+  extendRef.current = onExtendDrag
+  const readyRef = useRef(onReady)
+  readyRef.current = onReady
+
+  // WebGL could not be started — three's renderer constructor threw. Without
+  // this catch that exception would take down the whole React tree and leave
+  // a bare grey page, which is indistinguishable from a hung app.
+  const [webglError, setWebglError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let scene: SceneManager
+    try {
+      scene = new SceneManager(containerRef.current!)
+    } catch (e) {
+      console.error(e)
+      setWebglError(e instanceof Error ? e.message : String(e))
+      return
+    }
+    scene.onPick = (hit) => pickRef.current(hit)
+    scene.onHover = (hit) => hoverRef.current?.(hit)
+    scene.onElementPick = (id, x, y) => elementPickRef.current?.(id, x, y)
+    scene.onWorldPlanePick = (axis) => worldPlaneRef.current?.(axis)
+    scene.onPaintChange = (count) => paintRef.current?.(count)
+    scene.onExtendDrag = (side, delta, phase) => extendRef.current?.(side, delta, phase)
+    sceneRef.current = scene
+    readyRef.current(scene)
+    return () => {
+      sceneRef.current = null
+      scene.dispose()
+    }
+  }, [])
+
+  return (
+    <div className="viewport" ref={containerRef}>
+      {webglError === null && <FitButton onFit={() => sceneRef.current?.fitToView()} />}
+      {webglError !== null && (
+        <div className="webgl-missing" role="alert">
+          <b>The 3D view could not be started.</b>
+          <p>
+            This tool draws everything with WebGL, and your browser refused to create a WebGL
+            context. Usually that means hardware acceleration is switched off or the graphics
+            driver is blocklisted.
+          </p>
+          <p>
+            In Firefox, check <i>Settings → General → Performance → Use hardware acceleration
+            when available</i> (and that <code>webgl.disabled</code> is <code>false</code> in{' '}
+            <code>about:config</code>), then reload. Failing that, try another browser — nothing
+            is uploaded either way, all processing stays on your machine.
+          </p>
+          <p className="webgl-missing-detail">{webglError}</p>
+        </div>
+      )}
+    </div>
+  )
+}

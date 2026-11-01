@@ -1,0 +1,393 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Measured elements as topology rather than as loose surfaces: a plane becomes
+// a bounded planar face, a cylinder and a sphere become closed solids, and an
+// outline on a section's sheet stood up through a height a block.
+//
+// Why it matters. A RECTANGULAR_TRIMMED_SURFACE in a geometric set is legal
+// STEP and every kernel can read it, but it arrives in CAD as construction
+// geometry — something to look at. A face with real edges is a face: it can be
+// sketched on, offset, extruded and referenced. A closed shell is a body: it
+// can be cut with, measured against and put in an assembly. That is what a
+// measured cylinder is for once it leaves the metrology tool, so that is what
+// this writes.
+//
+// Orientation is the whole game in a B-rep, and the rule behind every .T./.F.
+// below is the same one: walking a face's boundary with the face normal up,
+// the face lies to the left. For a solid the face normals point out of the
+// material, which fixes each loop's direction in turn — and every edge ends up
+// used exactly twice, once each way, which is what makes the shell manifold.
+
+import type { ShadowPiece } from './section/shadow'
+import type { ConeFit, CylinderFit, PlaneFit, SphereFit, TorusFit, Vec3 } from './types'
+import { addScaled, cross, normalize, sub } from './vec'
+import { orthoBasis } from './fit/linalg'
+import { direction, esc, num, placement, point, StepWriter } from './stepWriter'
+
+/** No dimension of an exported body may be zero: a degenerate face is not a
+ *  face, and an importer is entitled to reject one. */
+const MIN = 1e-6
+
+/** One oriented use of an edge in a loop. */
+interface EdgeUse {
+  edge: number
+  forward: boolean
+}
+
+function edgeLoop(w: StepWriter, uses: EdgeUse[]): number {
+  const oriented = uses.map((u) =>
+    w.add(`ORIENTED_EDGE('',*,*,#${u.edge},${u.forward ? '.T.' : '.F.'})`),
+  )
+  return w.add(`EDGE_LOOP('',(${oriented.map((o) => `#${o}`).join(',')}))`)
+}
+
+function vertex(w: StepWriter, p: Vec3): number {
+  return w.add(`VERTEX_POINT('',#${point(w, p)})`)
+}
+
+/** A straight edge between two vertices that have already been written. */
+function lineEdge(w: StepWriter, a: Vec3, va: number, b: Vec3, vb: number): number {
+  const dir = normalize(sub(b, a)) ?? [1, 0, 0]
+  const p = point(w, a)
+  const d = direction(w, dir)
+  const v = w.add(`VECTOR('',#${d},1.)`)
+  const line = w.add(`LINE('',#${p},#${v})`)
+  return w.add(`EDGE_CURVE('',#${va},#${vb},#${line},.T.)`)
+}
+
+/**
+ * A whole circle as one closed edge: start and end are the same vertex, on the
+ * seam where the reference direction crosses it.
+ *
+ * This is what a full circular rim is in every B-rep a CAD kernel writes — the
+ * alternative, splitting it in half to give the loop two distinct vertices,
+ * invents an edge that is not on the part.
+ */
+function circleEdge(w: StepWriter, centre: Vec3, axis: Vec3, ref: Vec3, r: number): number {
+  const pl = placement(w, centre, axis, ref)
+  const circle = w.add(`CIRCLE('',#${pl},${num(Math.max(r, MIN))})`)
+  const v = vertex(w, addScaled(centre, ref, r))
+  return w.add(`EDGE_CURVE('',#${v},#${v},#${circle},.T.)`)
+}
+
+function face(w: StepWriter, name: string, surface: number, bounds: number[]): number {
+  return w.add(
+    `ADVANCED_FACE('${esc(name)}',(${bounds.map((b) => `#${b}`).join(',')}),#${surface},.T.)`,
+  )
+}
+
+/**
+ * A measured plane as a bounded planar face, in an open shell of its own.
+ *
+ * The rectangle is the measured patch — its own centre, its own two in-plane
+ * axes, its own extents — carried over exactly. Only the second axis is
+ * re-derived, as normal × u, so that the four corners always run
+ * counter-clockwise about the normal however the fit happened to orient its
+ * basis: the loop direction is what tells CAD which way the face faces.
+ */
+export function writePlaneShell(w: StepWriter, name: string, fit: PlaneFit): number {
+  const n = normalize(fit.normal) ?? [0, 0, 1]
+  const u = normalize(fit.basisU) ?? orthoBasis(n)[0]
+  const v = normalize(cross(n, u)) ?? orthoBasis(n)[1]
+  const eu = Math.max(fit.extentU, MIN)
+  const ev = Math.max(fit.extentV, MIN)
+
+  const corners: Vec3[] = [
+    addScaled(addScaled(fit.center, u, -eu), v, -ev),
+    addScaled(addScaled(fit.center, u, eu), v, -ev),
+    addScaled(addScaled(fit.center, u, eu), v, ev),
+    addScaled(addScaled(fit.center, u, -eu), v, ev),
+  ]
+  const vertices = corners.map((c) => vertex(w, c))
+  const edges = corners.map((c, i) =>
+    lineEdge(w, c, vertices[i], corners[(i + 1) % 4], vertices[(i + 1) % 4]),
+  )
+
+  const surf = w.add(`PLANE('',#${placement(w, fit.center, n, u)})`)
+  const loop = edgeLoop(
+    w,
+    edges.map((edge) => ({ edge, forward: true })),
+  )
+  const bound = w.add(`FACE_OUTER_BOUND('',#${loop},.T.)`)
+  const f = face(w, name, surf, [bound])
+  const shell = w.add(`OPEN_SHELL('',(#${f}))`)
+  return w.add(`SHELL_BASED_SURFACE_MODEL('${esc(name)}',(#${shell}))`)
+}
+
+/**
+ * A measured cylinder as a solid: the wall it was fitted to, closed off at
+ * both ends by flat lids.
+ *
+ * Three faces meet at two rims. The wall's normal points away from the axis,
+ * so its lower rim is walked with the parametrisation and its upper one
+ * against it; each lid then takes the same rim back the other way, which is
+ * exactly the twice-and-oppositely rule a closed shell is checked against.
+ */
+export function writeCylinderSolid(w: StepWriter, name: string, fit: CylinderFit): number {
+  const axis = normalize(fit.axis) ?? [0, 0, 1]
+  const ref = orthoBasis(axis)[0]
+  const r = Math.max(fit.radius, MIN)
+  const half = Math.max(fit.length, MIN) / 2
+  const bottom = addScaled(fit.center, axis, -half)
+  const top = addScaled(fit.center, axis, half)
+
+  const bottomRim = circleEdge(w, bottom, axis, ref, r)
+  const topRim = circleEdge(w, top, axis, ref, r)
+
+  const wall = w.add(`CYLINDRICAL_SURFACE('',#${placement(w, bottom, axis, ref)},${num(r)})`)
+  return cappedSolid(w, name, wall, { bottom, top, bottomRim, topRim }, axis, ref)
+}
+
+/**
+ * A measured cone as a solid frustum: the tapered wall it was fitted to,
+ * closed off at both ends by flat lids — writeCylinderSolid with the wall
+ * swapped for a CONICAL_SURFACE and the two rims at their own radii.
+ *
+ * A fit that reaches the apex reports a zero small-end radius; the rim is
+ * clamped to MIN like every other dimension, so the export is a frustum with
+ * a microscopic top rather than a body with a degenerate vertex — the honest
+ * trade for never handing CAD an edge its kernel may reject.
+ */
+export function writeConeSolid(w: StepWriter, name: string, fit: ConeFit): number {
+  const axis = normalize(fit.axis) ?? [0, 0, 1]
+  const ref = orthoBasis(axis)[0]
+  const r1 = Math.max(fit.radius1, MIN)
+  const r2 = Math.max(fit.radius2, MIN)
+  const half = Math.max(fit.length, MIN) / 2
+  const bottom = addScaled(fit.center, axis, -half)
+  const top = addScaled(fit.center, axis, half)
+  const semi = (fit.halfAngle * Math.PI) / 180
+
+  const bottomRim = circleEdge(w, bottom, axis, ref, r1)
+  const topRim = circleEdge(w, top, axis, ref, r2)
+
+  const wall = w.add(
+    `CONICAL_SURFACE('',#${placement(w, bottom, axis, ref)},${num(r1)},${num(semi)})`,
+  )
+  return cappedSolid(w, name, wall, { bottom, top, bottomRim, topRim }, axis, ref)
+}
+
+/** The solid a wall between two rims makes with a flat lid on each: the
+ *  wall's face bounded by both rims, the lids taking the rims back the other
+ *  way. Every entity in the order the writers always put them down. */
+function cappedSolid(
+  w: StepWriter,
+  name: string,
+  wall: number,
+  ends: { bottom: Vec3; top: Vec3; bottomRim: number; topRim: number },
+  axis: Vec3,
+  ref: Vec3,
+): number {
+  const { bottom, top, bottomRim, topRim } = ends
+  const down: Vec3 = [-axis[0], -axis[1], -axis[2]]
+  const wallFace = face(w, name, wall, [
+    w.add(`FACE_OUTER_BOUND('',#${edgeLoop(w, [{ edge: bottomRim, forward: true }])},.T.)`),
+    w.add(`FACE_BOUND('',#${edgeLoop(w, [{ edge: topRim, forward: false }])},.T.)`),
+  ])
+
+  // Each lid faces out of the solid, so the bottom one is built on a plane
+  // whose normal already points away from the body.
+  const bottomPlane = w.add(`PLANE('',#${placement(w, bottom, down, ref)})`)
+  const bottomFace = face(w, name, bottomPlane, [
+    w.add(`FACE_OUTER_BOUND('',#${edgeLoop(w, [{ edge: bottomRim, forward: false }])},.T.)`),
+  ])
+  const topPlane = w.add(`PLANE('',#${placement(w, top, axis, ref)})`)
+  const topFace = face(w, name, topPlane, [
+    w.add(`FACE_OUTER_BOUND('',#${edgeLoop(w, [{ edge: topRim, forward: true }])},.T.)`),
+  ])
+
+  const shell = w.add(`CLOSED_SHELL('',(#${wallFace},#${bottomFace},#${topFace}))`)
+  return w.add(`MANIFOLD_SOLID_BREP('${esc(name)}',#${shell})`)
+}
+
+/**
+ * A measured sphere as a solid ball: two hemispheres meeting at an equator.
+ *
+ * Splitting it at the equator rather than along a meridian is what keeps this
+ * simple. A meridian seam would put both poles on the boundary, where a
+ * spherical surface's parametrisation collapses, and those degenerate edges
+ * are the classic way a sphere fails to import. Bounded by the equator alone,
+ * each face keeps its pole in its own interior, where the collapse is ordinary
+ * and every kernel handles it — and which half of the surface is meant is
+ * settled, as always, by which way the rim is walked.
+ */
+/**
+ * A measured torus as a solid: the whole ring, one face on the toroidal
+ * surface bounded by its two seams — the circle round the tube where the
+ * spine's parameter starts, and the circle along the spine where the
+ * tube's does — each used once each way, the four uses meeting at the one
+ * vertex on the outer equator. The same one-face form CAD writes a torus
+ * in; a fillet's round is a stretch of this ring.
+ */
+export function writeTorusSolid(w: StepWriter, name: string, fit: TorusFit): number {
+  const axis = normalize(fit.axis) ?? [0, 0, 1]
+  const ref = orthoBasis(axis)[0]
+  const R = Math.max(fit.majorRadius, MIN)
+  const r = Math.max(fit.minorRadius, MIN)
+  const outer = addScaled(fit.center, ref, R + r)
+  const v = vertex(w, outer)
+  // The seam along the spine: the outer equator.
+  const spine = w.add(`CIRCLE('',#${placement(w, fit.center, axis, ref)},${num(R + r)})`)
+  const spineEdge = w.add(`EDGE_CURVE('',#${v},#${v},#${spine},.T.)`)
+  // The seam round the tube: the circle in the plane of the axis and the
+  // reference direction, centred on the spine.
+  const tubeAxis = normalize(cross(axis, ref)) ?? orthoBasis(axis)[1]
+  const tube = w.add(`CIRCLE('',#${placement(w, addScaled(fit.center, ref, R), tubeAxis, ref)},${num(r)})`)
+  const tubeEdge = w.add(`EDGE_CURVE('',#${v},#${v},#${tube},.T.)`)
+  const surf = w.add(`TOROIDAL_SURFACE('',#${placement(w, fit.center, axis, ref)},${num(R)},${num(r)})`)
+  const loop = edgeLoop(w, [
+    { edge: spineEdge, forward: true },
+    { edge: tubeEdge, forward: true },
+    { edge: spineEdge, forward: false },
+    { edge: tubeEdge, forward: false },
+  ])
+  const f = face(w, name, surf, [w.add(`FACE_OUTER_BOUND('',#${loop},.T.)`)])
+  const shell = w.add(`CLOSED_SHELL('',(#${f}))`)
+  return w.add(`MANIFOLD_SOLID_BREP('${esc(name)}',#${shell})`)
+}
+
+export function writeSphereSolid(w: StepWriter, name: string, fit: SphereFit): number {
+  const axis: Vec3 = [0, 0, 1]
+  const ref: Vec3 = [1, 0, 0]
+  const r = Math.max(fit.radius, MIN)
+
+  const equator = circleEdge(w, fit.center, axis, ref, r)
+  const surf = w.add(`SPHERICAL_SURFACE('',#${placement(w, fit.center, axis, ref)},${num(r)})`)
+
+  const upper = face(w, name, surf, [
+    w.add(`FACE_OUTER_BOUND('',#${edgeLoop(w, [{ edge: equator, forward: true }])},.T.)`),
+  ])
+  const lower = face(w, name, surf, [
+    w.add(`FACE_OUTER_BOUND('',#${edgeLoop(w, [{ edge: equator, forward: false }])},.T.)`),
+  ])
+
+  const shell = w.add(`CLOSED_SHELL('',(#${upper},#${lower}))`)
+  return w.add(`MANIFOLD_SOLID_BREP('${esc(name)}',#${shell})`)
+}
+
+/** A profile on a sheet stood up through a height: the sheet's frame, the
+ *  outer loop and its holes in the sheet's [u, v] mm — each run with the
+ *  material on its left, so the outer loop counter-clockwise seen from the
+ *  normal and the holes clockwise — and where the block starts and ends
+ *  along the normal, from the frame's origin. */
+export interface PrismInput {
+  frame: { origin: Vec3; normal: Vec3; basisU: Vec3; basisV: Vec3 }
+  outer: readonly ShadowPiece[]
+  holes: readonly (readonly ShadowPiece[])[]
+  from: number
+  to: number
+}
+
+function sensedFace(w: StepWriter, name: string, surface: number, bounds: number[], sense: boolean): number {
+  return w.add(
+    `ADVANCED_FACE('${esc(name)}',(${bounds.map((b) => `#${b}`).join(',')}),#${surface},${sense ? '.T.' : '.F.'})`,
+  )
+}
+
+/**
+ * A profile extruded into a solid: a planar face at each end, bounded by the
+ * outer loop and a FACE_BOUND per hole, and one side face per piece of each
+ * loop — a plane for a line, a cylinder for an arc or a whole circle — so a
+ * rounded rectangle is eight side faces, not a facet per sampled point.
+ *
+ * Every piece's start is a vertex at the bottom and one at the top, joined
+ * by a vertical edge; the bottom and top edges are the piece's own curve at
+ * each height. A side face runs along its bottom edge, up the next piece's
+ * vertical, back along its top edge and down its own vertical: seen from
+ * outside with the normal up, counter-clockwise, its normal out of the
+ * material. An arc that turns clockwise about the normal is hollow from
+ * outside — its cylinder's normal points into the block — so its face is
+ * written against the surface. A whole circle is one side face between its
+ * two rims, as a measured cylinder's wall is.
+ */
+export function writePrismSolid(w: StepWriter, name: string, p: PrismInput): number {
+  const N = normalize(p.frame.normal) ?? [0, 0, 1]
+  const U = normalize(p.frame.basisU) ?? orthoBasis(N)[0]
+  const V = normalize(cross(N, U)) ?? orthoBasis(N)[1]
+  const down: Vec3 = [-N[0], -N[1], -N[2]]
+  const lo = Math.min(p.from, p.to)
+  const hi = Math.max(Math.max(p.from, p.to), lo + MIN)
+  const at = (q: readonly number[], h: number): Vec3 =>
+    addScaled(addScaled(addScaled(p.frame.origin, U, q[0]), V, q[1]), N, h)
+  const dir2 = (d: readonly number[]): Vec3 => normalize(addScaled(addScaled([0, 0, 0], U, d[0]), V, d[1])) ?? U
+
+  const sides: number[] = []
+  const topBounds: number[] = []
+  const bottomBounds: number[] = []
+  const loops = [{ pieces: p.outer, outer: true }, ...p.holes.map((pieces) => ({ pieces, outer: false }))]
+  for (const { pieces, outer } of loops) {
+    const bound = (loop: number) => w.add(`${outer ? 'FACE_OUTER_BOUND' : 'FACE_BOUND'}('',#${loop},.T.)`)
+    const only = pieces[0]
+    if (pieces.length === 1 && only.kind === 'circle') {
+      // The outer loop runs counter-clockwise, a hole clockwise: the rims
+      // are written about the normal or against it to run that way.
+      const axis = outer ? N : down
+      const r = Math.max(only.radius, MIN)
+      const bottomRim = circleEdge(w, at(only.center, lo), axis, U, r)
+      const topRim = circleEdge(w, at(only.center, hi), axis, U, r)
+      const wall = w.add(`CYLINDRICAL_SURFACE('',#${placement(w, at(only.center, lo), N, U)},${num(r)})`)
+      sides.push(
+        sensedFace(w, name, wall, [
+          w.add(`FACE_OUTER_BOUND('',#${edgeLoop(w, [{ edge: bottomRim, forward: true }])},.T.)`),
+          w.add(`FACE_BOUND('',#${edgeLoop(w, [{ edge: topRim, forward: false }])},.T.)`),
+        ], outer),
+      )
+      topBounds.push(bound(edgeLoop(w, [{ edge: topRim, forward: true }])))
+      bottomBounds.push(bound(edgeLoop(w, [{ edge: bottomRim, forward: false }])))
+      continue
+    }
+    const runs = pieces.filter((pc): pc is Exclude<ShadowPiece, { kind: 'circle' }> => pc.kind !== 'circle')
+    const n = runs.length
+    if (n < 2) continue
+    const lowAt = runs.map((pc) => at(pc.from, lo))
+    const highAt = runs.map((pc) => at(pc.from, hi))
+    const vb = lowAt.map((q) => vertex(w, q))
+    const vt = highAt.map((q) => vertex(w, q))
+    const up = runs.map((_, k) => lineEdge(w, lowAt[k], vb[k], highAt[k], vt[k]))
+    const bottom: number[] = []
+    const top: number[] = []
+    for (let k = 0; k < n; k++) {
+      const pc = runs[k]
+      const next = (k + 1) % n
+      if (pc.kind === 'line') {
+        bottom.push(lineEdge(w, lowAt[k], vb[k], lowAt[next], vb[next]))
+        top.push(lineEdge(w, highAt[k], vt[k], highAt[next], vt[next]))
+        const t = dir2([pc.to[0] - pc.from[0], pc.to[1] - pc.from[1]])
+        const out = normalize(cross(t, N)) ?? U
+        const surf = w.add(`PLANE('',#${placement(w, lowAt[k], out, t)})`)
+        const loop = edgeLoop(w, [
+          { edge: bottom[k], forward: true },
+          { edge: up[next], forward: true },
+          { edge: top[k], forward: false },
+          { edge: up[k], forward: false },
+        ])
+        sides.push(sensedFace(w, name, surf, [w.add(`FACE_OUTER_BOUND('',#${loop},.T.)`)], true))
+        continue
+      }
+      // An arc: the circle about the normal when it turns that way,
+      // against it otherwise, so the edge runs with its curve.
+      const ref = dir2([pc.from[0] - pc.center[0], pc.from[1] - pc.center[1]])
+      const axis = pc.sweep >= 0 ? N : down
+      const r = Math.max(pc.radius, MIN)
+      const circle = (h: number) => w.add(`CIRCLE('',#${placement(w, at(pc.center, h), axis, ref)},${num(r)})`)
+      bottom.push(w.add(`EDGE_CURVE('',#${vb[k]},#${vb[next]},#${circle(lo)},.T.)`))
+      top.push(w.add(`EDGE_CURVE('',#${vt[k]},#${vt[next]},#${circle(hi)},.T.)`))
+      const wall = w.add(`CYLINDRICAL_SURFACE('',#${placement(w, at(pc.center, lo), N, ref)},${num(r)})`)
+      const loop = edgeLoop(w, [
+        { edge: bottom[k], forward: true },
+        { edge: up[next], forward: true },
+        { edge: top[k], forward: false },
+        { edge: up[k], forward: false },
+      ])
+      sides.push(sensedFace(w, name, wall, [w.add(`FACE_OUTER_BOUND('',#${loop},.T.)`)], pc.sweep >= 0))
+    }
+    topBounds.push(bound(edgeLoop(w, top.map((edge) => ({ edge, forward: true })))))
+    bottomBounds.push(bound(edgeLoop(w, bottom.map((edge) => ({ edge, forward: false })).reverse())))
+  }
+
+  const topPlane = w.add(`PLANE('',#${placement(w, at([0, 0], hi), N, U)})`)
+  const bottomPlane = w.add(`PLANE('',#${placement(w, at([0, 0], lo), down, U)})`)
+  const topFace = face(w, name, topPlane, topBounds)
+  const bottomFace = face(w, name, bottomPlane, bottomBounds)
+  const shell = w.add(`CLOSED_SHELL('',(${[...sides, topFace, bottomFace].map((f) => `#${f}`).join(',')}))`)
+  return w.add(`MANIFOLD_SOLID_BREP('${esc(name)}',#${shell})`)
+}

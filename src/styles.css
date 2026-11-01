@@ -1,0 +1,4175 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+/* "Werkbank" theme — software as a measuring instrument. Warm-gray chassis,
+   recessed input wells, CNC-Kitchen-blue accent, DRO-style readouts. Shared
+   with filaSim so the two tools read as one bench.
+   Type: Barlow (DIN heritage) for UI, Barlow Semi Condensed for small caps
+   labels, B612 Mono (the Airbus cockpit face) for all data. All three are
+   SIL OFL 1.1, self-hosted from /fonts (licenses alongside the files). */
+
+@font-face {
+  font-family: 'Barlow';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/barlow-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Barlow';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/barlow-500.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Barlow';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/barlow-600.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Barlow';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/barlow-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Barlow Semi Condensed';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/barlow-semi-condensed-500.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Barlow Semi Condensed';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/barlow-semi-condensed-600.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'B612 Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/b612-mono-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'B612 Mono';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/b612-mono-700.woff2') format('woff2');
+}
+
+:root {
+  --chassis: #e7e6e1; /* instrument housing */
+  --panel: #fcfcfa; /* faceplates */
+  --well: #efeee9; /* recessed inputs */
+  --well-deep: #e2e1db;
+  --line: #cfcec7; /* panel seams */
+  --line-strong: #b5b4ad;
+  --ink: #26282a;
+  --dim: #75787b;
+  --faint: #9a9d9f;
+  --accent: #1877c0; /* CNC Kitchen brand blue */
+  --accent-d: #12629f;
+  --accent-soft: #d9e8f5;
+  --green: #2e7d46; /* status lamp */
+  --red: #b3361c;
+  --amber: #c97b10;
+  --strip: #26282a; /* machine status strip */
+  --stage: #dedcd6; /* the viewport behind the parts — viewThemes.ts carries the same figure */
+  --glass: 252, 252, 250; /* the faceplate as an rgb triple, for the translucent chips over the stage */
+  --ui: 'Barlow', 'Segoe UI', system-ui, sans-serif;
+  --cond: 'Barlow Semi Condensed', var(--ui);
+  --mono: 'B612 Mono', Consolas, 'Cascadia Mono', monospace;
+  --r: 3px;
+  --inset: inset 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+/* The dark instrument: the same chassis with the lights off. Keyed on the
+   attribute the preference store writes to the root (see prefsStore.ts), which
+   index.html sets before the first paint so a dark chassis never flashes
+   light. Every colour token the light theme defines is redefined here — a
+   colour with a definition in only one theme is a colour that is wrong in the
+   other. The status strip was dark already and only goes a shade further.
+   Nothing that carries a reading changes with the chassis: the element tints,
+   the deviation and thickness ramps and the axis colours are the same on
+   both. `color-scheme` is what turns the native parts — the dropdown lists,
+   the scrollbars — dark with it. */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --chassis: #1b1d20;
+  --panel: #25282c;
+  --well: #1e2124;
+  --well-deep: #17191c;
+  --line: #383c41;
+  --line-strong: #4b5057;
+  --ink: #e4e6e8;
+  --dim: #a0a4a8;
+  --faint: #767a7f;
+  --accent: #3f93d6;
+  --accent-d: #62aae4;
+  --accent-soft: #223c55;
+  --green: #4fb26e;
+  --red: #e26b4f;
+  --amber: #e2a43b;
+  --strip: #121416;
+  --stage: #2e3135;
+  --glass: 37, 40, 44;
+  --inset: inset 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Two heights, deliberately. iOS Safari sizes the initial containing block —
+   and with it every `100%` and `vh` — to the window with the toolbars
+   *retracted*, so on an iPad the status strip sits a toolbar's worth below the
+   fold and the whole instrument scrolls. `dvh` is the height the window
+   actually has at this moment, which makes the shell fill a tablet the way it
+   fills a desktop; the `100%` above it stays as the fallback. */
+html,
+body,
+#root {
+  height: 100%;
+  height: 100dvh;
+  margin: 0;
+}
+
+/* No pinch or double-tap zoom of the page, for the browsers that let a page
+   be zoomed whatever the viewport tag says (iOS Safari). Panels still
+   scroll; the canvas takes its own pinch (`.viewport canvas`). And no font
+   boosting when a phone is turned sideways. */
+html {
+  touch-action: pan-x pan-y;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  font-family: var(--ui);
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--chassis);
+  overflow: hidden;
+  /* The window itself never scrolls, so a drag that runs past the end of a
+     panel must not rubber-band the chassis under it either. */
+  overscroll-behavior: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.project-save-status {
+  font-size: 11px;
+  max-width: 170px;
+}
+
+/* The agent connection, while it is on: a lamp and where it stands. */
+.agentchip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--well);
+  color: var(--dim);
+  white-space: nowrap;
+}
+.agentchip .agentlamp {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #e8a33d;
+  animation: lampblink 1s ease-in-out infinite alternate;
+}
+.agentchip.connected .agentlamp {
+  background: var(--green);
+  animation: none;
+}
+.agentchip.refused .agentlamp {
+  background: #d9472b;
+  animation: none;
+}
+.project-save-status small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recovery-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+.recovery-bar select { max-width: min(420px, 90vw); }
+.connector-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px 12px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line);
+  border-left: 3px solid var(--amber);
+  font-size: 12px;
+}
+.connector-bar p { flex: 1 1 100%; margin: 0; }
+.connector-ask { flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.connector-bar ul { flex: 1 1 auto; margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+.connector-bar li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.connector-bar code { font-family: var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; background: var(--well); padding: 2px 6px; border-radius: var(--r); }
+@media (max-width: 1100px) {
+  .project-save-status { max-width: 95px; }
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  /* A floor, not a design width: below it the window scrolls rather than
+     crushing the panel into the stage. */
+  min-width: 640px;
+}
+
+.mid {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.grow {
+  flex: 1;
+}
+
+.dim {
+  color: var(--dim);
+}
+
+/* ---------------- top bar ---------------- */
+
+.top {
+  height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 12px;
+  background: var(--chassis);
+  border-bottom: 1px solid var(--line);
+  flex: none;
+  /* Once everything that can shrink has, the row scrolls sideways rather
+     than running off the window — on a phone the keys at its end are
+     otherwise out of reach. */
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.top::-webkit-scrollbar {
+  display: none;
+}
+
+.brandmark {
+  width: 30px;
+  height: 30px;
+  display: block;
+  flex: none;
+}
+
+.brand {
+  line-height: 1.12;
+  white-space: nowrap;
+}
+
+.brand b {
+  font-size: 14.5px;
+  font-weight: 700;
+  display: block;
+}
+
+.brand span {
+  font-size: 9.5px;
+  color: var(--dim);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 600;
+  font-family: var(--cond);
+}
+
+/* The version is a number, not another word of the caption: lowercase v,
+   digits kept close. */
+.brand .ver {
+  font-style: normal;
+  text-transform: none;
+  letter-spacing: 0.04em;
+}
+
+/* The project's name, typed where it is read: a field that looks like the
+   label it is until it is pointed at. */
+.projectname {
+  margin-left: 12px;
+  flex: 0 1 auto;
+  min-width: 90px;
+  font: inherit;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r);
+  padding: 5px 8px 6px;
+  text-overflow: ellipsis;
+}
+
+.projectname::placeholder {
+  color: var(--dim);
+  font-weight: 500;
+  font-style: italic;
+}
+
+.projectname:hover {
+  border-color: var(--line);
+}
+
+.projectname:focus {
+  outline: none;
+  background: var(--well);
+  border-color: var(--line);
+  box-shadow: var(--inset);
+}
+
+/* The loaded part, named on the chassis the way a machine names its job. */
+.partchip {
+  margin-left: 10px;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 5px 12px 6px;
+  box-shadow: var(--inset);
+  min-width: 0;
+  /* Squeezed by the keys on its right it is cut short, not written over them. */
+  overflow: hidden;
+}
+
+.partchip b {
+  font-weight: 600;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.partchip span {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+/* ---------------- controls ---------------- */
+
+button {
+  font: inherit;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 6px 11px;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--line-strong);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.15);
+}
+
+button.primary:hover:not(:disabled) {
+  background: var(--accent-d);
+  border-color: var(--accent-d);
+}
+
+/* ---------------- guided hints ---------------- */
+
+/* The control to press next, breathing at the rate of the ready lamp. It is a
+   ring around the control and nothing else: no dimming of anything around it,
+   no overlay to click away, no change to where the control sits or how it
+   works. Which control wears it is derived from the state of the work (see
+   src/core/hints.ts), so it moves on by itself as each step is finished.
+
+   Drawn as a pseudo-element rather than a box-shadow so that the primary
+   button's own shadow survives underneath it, and hidden on anything disabled
+   — a ring on a control that cannot be pressed yet would be a lie, and it is
+   what lets the ladder name the step before the step is reachable. */
+.pulse {
+  position: relative;
+}
+
+/* Amber, and deliberately not the accent: blue is what this panel already uses
+   to mean "this is the live one", and on a primary button a blue ring is a blue
+   ring around a blue fill. Amber is the annunciator colour — the same one the
+   busy lamp runs at — so the guidance reads as a lamp rather than as another
+   piece of the control. It stands off by a couple of pixels rather than hugging
+   the control, because that strip of background is what makes it a ring. */
+.pulse::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border: 2px solid #e8a33d;
+  border-radius: 6px;
+  pointer-events: none;
+  animation: pulsering 1.6s ease-out infinite;
+}
+
+.pulse:disabled::after {
+  display: none;
+}
+
+/* An annunciator ping: the ring comes up to full, then throws a halo outward
+   off its own edge as it settles back. Colour and halo are animated rather
+   than opacity, so the two peak together instead of the ring dimming the very
+   halo it is throwing — and the halo is spread on a shadow rather than a
+   second element, so nothing around the control moves. */
+@keyframes pulsering {
+  0%,
+  100% {
+    border-color: rgba(232, 163, 61, 0.5);
+    box-shadow: 0 0 0 0 rgba(232, 163, 61, 0);
+  }
+
+  35% {
+    border-color: rgba(232, 163, 61, 1);
+    box-shadow: 0 0 0 0 rgba(232, 163, 61, 0.5);
+  }
+
+  75% {
+    border-color: rgba(232, 163, 61, 0.8);
+    box-shadow: 0 0 0 10px rgba(232, 163, 61, 0);
+  }
+}
+
+/* ---------------- the ⓘ key and its card ---------------- */
+
+/* Sits directly after the label it belongs to, at the weight of a punctuation
+   mark: present enough to be found, quiet enough that a faceplate full of them
+   still reads as controls. It lights up once it has been opened. */
+button.infodot {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--dim);
+  font-family: var(--cond);
+  font-size: 11px;
+  font-style: italic;
+  font-weight: 700;
+  line-height: 1;
+  vertical-align: -2px;
+}
+
+button.infodot:hover:not(:disabled),
+button.infodot.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+button.infodot:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The dot follows the label it explains, so everywhere but a .sec-head — which
+   already spaces its children — it carries a word's worth of gap itself. */
+.hint button.infodot {
+  margin-left: 3px;
+}
+
+.field > span button.infodot,
+.checkrow button.infodot,
+.g-label button.infodot {
+  margin-left: 5px;
+}
+
+/* Wider than the panel on purpose — it is portalled to the body so that an
+   explanation is not squeezed into a 306 px column. */
+.infocard {
+  position: fixed;
+  z-index: 60;
+  width: 380px;
+  max-width: calc(100vw - 16px);
+  padding: 13px 15px 15px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.17);
+}
+
+.infocard > b {
+  display: block;
+  font-family: var(--cond);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink);
+  margin-bottom: 7px;
+}
+
+.infocard-body {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--dim);
+}
+
+.infocard-body p {
+  margin: 0 0 7px;
+}
+
+.infocard-body p:last-child {
+  margin-bottom: 0;
+}
+
+.infocard-body b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+button.block {
+  display: block;
+  width: 100%;
+}
+
+/* Save / Load Project in the top bar: the same ghost buttons filaSim has in
+   the same corner, and they give up their word on a narrow window the way the
+   status strip's keys do. */
+.top button.ghost {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* Undo and redo: two picture keys kept together, apart from the project
+   keys beside them. */
+.top .undokeys {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  margin: 0 8px;
+}
+
+.top .undokeys button {
+  display: flex;
+  align-items: center;
+  padding: 6px 8px;
+}
+
+/* The keys on the right carry a picture, which is what is left of them when
+   the narrow layouts drop their words. */
+.top button.withicon {
+  gap: 5px;
+}
+
+/* The top bar is one row that never wraps. What it holds varies — the
+   plugins' tabs, the part chip, the agent chip — so it is not folded by
+   window width: TopBar measures, and takes the folds below in turn, each on
+   top of those before it, until the row fits. It measures with nothing
+   squeezed — the part chip asking for its name's width, up to a cap — so
+   the words go before the part's name or the save status are cut short. */
+.top.measuring > * {
+  flex-shrink: 0;
+}
+
+.top.measuring .partchip {
+  max-width: 240px;
+}
+
+/* 1. The project keys give up the word "Project", and the part chip its
+   counts — the panel's model row carries the triangle count too. */
+.top[data-fold~='1'] .ptxt,
+.top[data-fold~='1'] .partchip span {
+  display: none;
+}
+
+/* 2. The workspace tabs give up their pictures. */
+.top[data-fold~='2'] .modeswitch svg.icon {
+  display: none;
+}
+
+/* 3. The brand gives up its caption: the version is in the brand's tooltip
+   and in the imprint as well. */
+.top[data-fold~='3'] .brand span {
+  display: none;
+}
+
+/* 4. The tabs not open give up their word for their picture — the tooltip
+   still names them — and the open one keeps its name. The workspaces'
+   names are the widest thing in the bar. */
+.top[data-fold~='4'] .modeswitch button:not(.on) .wtxt {
+  display: none;
+}
+
+.top[data-fold~='4'] .modeswitch button:not(.on) svg.icon {
+  display: block;
+}
+
+/* 5. The keys on the right give up their words and keep their pictures,
+   the agent chip its words and keeps its lamp — its tooltip says the rest. */
+.top[data-fold~='5'] .btxt {
+  display: none;
+}
+
+/* Narrower still the row scrolls (see .top), and an end with keys out of
+   sight fades out, so they read as there rather than missing. */
+.top[data-hidden='end'] {
+  mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent);
+}
+
+.top[data-hidden='start'] {
+  mask-image: linear-gradient(to left, #000 calc(100% - 40px), transparent);
+}
+
+.top[data-hidden='start end'] {
+  mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent);
+}
+
+/* icon-only link styled as a ghost button (GitHub mark in the top bar) */
+a.iconbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 6px 9px;
+  cursor: pointer;
+}
+
+a.iconbtn:hover {
+  border-color: var(--line-strong);
+}
+
+button.x {
+  flex: none;
+  padding: 0 7px;
+  border: none;
+  background: none;
+  border-radius: var(--r);
+  line-height: 18px;
+  color: var(--faint);
+}
+
+button.x:hover:not(:disabled) {
+  color: var(--red);
+  background: var(--well-deep);
+}
+
+input[type='checkbox'],
+input[type='range'] {
+  accent-color: var(--accent);
+}
+
+select {
+  font-family: var(--ui);
+  font-size: 12.5px;
+  color: var(--ink);
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 5px 7px;
+  box-shadow: var(--inset);
+}
+
+select:disabled {
+  color: var(--dim);
+}
+
+/* ---------------- left panel ---------------- */
+
+.panel {
+  width: 336px;
+  min-width: 336px;
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* The panel is the only scroller on the page; a flick that reaches its end
+     stops there rather than handing the rest of the gesture to the window. */
+  overscroll-behavior: contain;
+  padding: 15px 15px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+
+/* Every section is one tool, and the rule down its left edge says where that
+   tool starts and stops — the panel is a stack of instruments, not one long
+   form. */
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 9px;
+  border-left: 2px solid var(--line);
+}
+
+/* Small-caps rule between sections — the panel's only headings. */
+.g-label {
+  font-family: var(--cond);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--dim);
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.g-label > span:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.g-label b {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink);
+  letter-spacing: 0;
+  font-weight: 400;
+  text-transform: none;
+}
+
+.sec-head {
+  font-family: var(--cond);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--line);
+}
+
+/* A tally beside the heading — pushed to the far end of the rule. */
+.sec-head > b {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--dim);
+}
+
+.hint {
+  font-size: 11.5px;
+  color: var(--dim);
+  line-height: 1.45;
+  margin: 0;
+}
+
+.divider {
+  border-top: 1px solid var(--line);
+  margin: 2px 0;
+}
+
+/* What a panel offers once the measuring is done — below the rule that closes
+   the last section, and outside the sections' own left rules. */
+.tailrow {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.field > span {
+  font-size: 12px;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+/* What a feature has picked on the part so far — "2 faces picked" — in
+   the place of the control it would otherwise have. */
+.field > span.picked {
+  flex: 0 1 172px;
+  width: 172px;
+  min-width: 108px;
+  white-space: normal;
+  text-align: right;
+  color: var(--ink);
+}
+
+/* Preferred width, not a fixed one: a long label — "Max. deviation of
+   normals", with its ⓘ key after it — would otherwise push the control off the
+   edge of the panel rather than take the space from it. */
+.field select {
+  width: 172px;
+  flex: 0 1 172px;
+  min-width: 108px;
+}
+
+/* The tilt readout in the section box: the angle, what it is read against,
+   and the key that squares the plane up again. */
+.field .tilt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.field .tilt button {
+  padding: 3px 8px;
+  white-space: nowrap;
+}
+
+.toolrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.toolrow select,
+.toolrow input[type='text'] {
+  flex: 1;
+  min-width: 0;
+}
+
+.toolrow button {
+  flex: 1;
+  white-space: nowrap;
+  padding: 6px 8px;
+}
+
+/* Steps of the workflow that are not the one in hand — everything but the
+   local fine fit, while its marking tools are out. Faded back rather than
+   disabled: none of it stops working, and any of it comes straight back under
+   the pointer or the moment something inside takes focus. Greying a control
+   out that still responds would be the worse lie. */
+.muted {
+  opacity: 0.38;
+  filter: saturate(0.5);
+  transition:
+    opacity 130ms ease,
+    filter 130ms ease;
+}
+
+.muted:hover,
+.muted:focus-within {
+  opacity: 1;
+  filter: none;
+}
+
+/* A mode selector of more keys than fit across the faceplate — the marking
+   gestures, where one of the four is always the live one. Two rows rather
+   than four cramped columns, so each key can say what it is. */
+.moderow {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.moderow button {
+  white-space: nowrap;
+  padding: 6px 8px;
+}
+
+/* A latching key in the panel — the erase switch of the surface brush, the
+   deformation animation. It has to read as held down, not merely hovered. */
+.moderow button.on,
+.toolrow button.on,
+button.block.on {
+  color: var(--accent-d);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+
+.checkrow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.checkrow input {
+  flex: none;
+}
+
+/* What the deviation is measured against. The first choice of the workspace and
+   the one that decides how much setup follows, so it reads as two keys of a
+   rotary switch rather than as a pair of radio buttons in a list. */
+.sourcerow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.sourcerow button {
+  padding: 8px 6px;
+  font-weight: 600;
+  white-space: nowrap;
+  background: var(--well);
+  box-shadow: var(--inset);
+}
+
+.sourcerow button:hover:not(:disabled):not(.on) {
+  color: var(--accent-d);
+  border-color: var(--accent);
+}
+
+.sourcerow button.on {
+  color: var(--accent-d);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: none;
+}
+
+/* Which side of an element the material is on: a word, because "+1" would mean
+   nothing, and the key that turns it round when the reading comes out inverted. */
+.sidepick {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 108px;
+}
+
+.sidepick b {
+  flex: 1;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--dim);
+}
+
+.sidepick button {
+  flex: none;
+  padding: 4px 9px;
+}
+
+/* One key per element type — the whole flow starts with this choice, so they
+   sit on the faceplate as physical keys rather than flat white rectangles. */
+.kindrow {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.kindrow button {
+  padding: 8px 4px;
+  font-weight: 600;
+  white-space: nowrap;
+  background: var(--well);
+  box-shadow: var(--inset);
+}
+
+.kindrow button:hover:not(:disabled) {
+  color: var(--accent-d);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* The drawn icons of ui/icons.tsx. Ink follows the key's text colour, the
+   accent is what the key makes or changes — see the head of that file. */
+svg.icon {
+  flex: none;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  overflow: visible;
+}
+
+svg.icon .i-a {
+  stroke: var(--accent);
+}
+
+svg.icon .i-f {
+  stroke: var(--accent);
+  fill: var(--accent-soft);
+}
+
+svg.icon .i-g {
+  fill: color-mix(in srgb, currentColor 13%, transparent);
+}
+
+svg.icon .i-gf {
+  stroke: none;
+  fill: color-mix(in srgb, currentColor 13%, transparent);
+}
+
+svg.icon .i-dt {
+  stroke: none;
+  fill: currentColor;
+}
+
+svg.icon .i-adt {
+  stroke: none;
+  fill: var(--accent);
+}
+
+svg.icon .i-th {
+  stroke-width: 1.1;
+}
+
+svg.icon .i-ft {
+  opacity: 0.5;
+}
+
+svg.icon .i-ds {
+  stroke-dasharray: 2 2.4;
+}
+
+svg.icon .i-ax {
+  stroke-dasharray: 3.2 1.6 0.6 1.6;
+  stroke-width: 1.1;
+}
+
+svg.icon .i-as {
+  stroke: var(--accent);
+  opacity: 0.3;
+}
+
+/* At 16 px and under a 1.5-unit stroke is less than a pixel. */
+svg.icon.small {
+  stroke-width: 1.9;
+}
+
+svg.icon.small .i-th,
+svg.icon.small .i-ax {
+  stroke-width: 1.4;
+}
+
+/* A key that inverts when it is on — the view bar's — takes the soft fill
+   with it, or the fill is a pale patch on the dark key. */
+.keys button.on svg.icon .i-f {
+  fill: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.viewbar .keys button,
+.modeswitch button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* The ends of the list rows: a pencil, an eye, a bin. */
+button.x svg.icon {
+  display: inline-block;
+  vertical-align: -2px;
+}
+
+.g-label button.x.eye.all svg.icon {
+  margin-right: 4px;
+}
+
+/* On a primary key the ground is the accent itself: the drawing goes white
+   with it, the made part told from the given by its fill alone. So on a key
+   that stays pressed — the tool in hand — or its accent would vanish into
+   the ground. */
+button.primary svg.icon .i-a,
+button.primary svg.icon .i-f,
+.kindrow button.on svg.icon .i-a,
+.kindrow button.on svg.icon .i-f {
+  stroke: currentColor;
+}
+
+button.primary svg.icon .i-f,
+.kindrow button.on svg.icon .i-f {
+  fill: rgba(255, 255, 255, 0.28);
+}
+
+button.primary svg.icon .i-adt,
+.kindrow button.on svg.icon .i-adt {
+  fill: currentColor;
+}
+
+/* The feature keys: the picture over its word, four to a row. Sixteen new
+   pictures are a lot to learn without the words. */
+.kindrow.featurekeys {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+/* Nine element types are three rows of three. */
+.kindrow.featurekeys.three {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.kindrow.featurekeys button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 8px 2px 6px;
+  font-family: var(--cond);
+  font-size: 11.5px;
+  line-height: 1.1;
+}
+
+.kindrow.featurekeys button span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A key with a picture beside its word. */
+button.withicon {
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+/* ---------------- readouts ---------------- */
+
+/* The measured number, in its window. Everything the tool exists to report
+   lands in one of these. */
+.dro {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 9px 11px 10px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.dro-label {
+  font-size: 11.5px;
+  color: var(--dim);
+  margin-bottom: 6px;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.dro-window {
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  padding: 5px 10px;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dro-window b {
+  font-family: var(--mono);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.dro-window span {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--dim);
+  letter-spacing: 0.06em;
+  text-align: right;
+}
+
+.dro.hero .dro-window b {
+  color: var(--accent-d);
+}
+
+/* A fit that could not be solved is an alarm lamp, not a quieter number. */
+.dro-window.alarm {
+  background: #f8ece8;
+  border-color: #ddb4a8;
+  box-shadow: inset 0 1px 3px rgba(140, 47, 24, 0.14);
+}
+
+:root[data-theme='dark'] .dro-window.alarm {
+  background: #3b241d;
+  border-color: #6e3b2c;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
+.dro-window.alarm b,
+.dro.hero .dro-window.alarm b {
+  color: var(--red);
+  font-size: 12px;
+  white-space: normal;
+}
+
+.dro-window.working b {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--dim);
+}
+
+/* Caveat under a measurement — worth reading, not an alarm. */
+.warnnote {
+  margin: 4px 0 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--amber);
+}
+
+/* A dimension row carries its own hide/delete keys, inline with the title so
+   nothing overlaps it. */
+.dro-tools {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  min-width: 0;
+}
+
+.dro-tools .dro-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-right: 2px;
+}
+
+button.x.eye {
+  font-size: 10px;
+  padding: 0 5px;
+}
+
+button.x.eye:hover:not(:disabled) {
+  color: var(--accent-d);
+}
+
+/* The whole-list eye in a label row: reads like the label, acts like the eye. */
+.g-label button.x.eye.all {
+  font-family: var(--cond);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 16px;
+}
+
+/* Re-open an element or a dimension. Sits with the hide key, and greys out
+   while another editor already has the panel. */
+button.x.edit {
+  font-size: 11px;
+  padding: 0 5px;
+}
+
+button.x.edit:hover:not(:disabled) {
+  color: var(--accent-d);
+}
+
+button.x:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* The kind of a feature, as an icon in the body's colour where an element
+   row has its dot: a CAD tree's row is a symbol and a name. */
+.kv .kind {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  width: 15px;
+  height: 15px;
+  opacity: 0.9;
+}
+
+.kv.ghost .kind {
+  opacity: 0.35;
+}
+
+.kv.rolled .kind {
+  color: var(--faint) !important;
+}
+
+.kv b.warn {
+  color: var(--amber);
+}
+
+/* Referenced by the dimension or construction being built — mirrors the
+   element's selection glow in the viewport. */
+.kv.sel {
+  background: var(--well);
+  box-shadow: inset 2px 0 0 var(--accent);
+  border-radius: 3px;
+  padding-left: 6px;
+  padding-right: 4px;
+}
+
+.kv.sel .name {
+  font-weight: 600;
+}
+
+/* Hidden in the viewport — still measured, so the row stays, just quieter. */
+.kv.ghost .name {
+  color: var(--faint);
+}
+
+.kv.ghost .dot {
+  opacity: 0.35;
+}
+
+/* A feature below the rollback bar: set aside, not built. */
+.kv.rolled {
+  opacity: 0.55;
+}
+
+.kv.rolled .dot {
+  background: var(--faint);
+}
+
+.kv.rolled b {
+  font-weight: 400;
+  color: var(--faint);
+}
+
+/* The same quieting for a dimension hidden in the viewport. */
+.dro.ghost .dro-label > span:first-child {
+  color: var(--faint);
+}
+
+.dro-note {
+  margin-top: 6px;
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: var(--dim);
+}
+
+/* A limit under a reading: the allowance restated and how far the value
+   stands from it. The digits above turn red when it is over — the one
+   colour the instrument keeps for a reading that fails — and the alarm
+   line under it says by how much. Within is not celebrated. */
+.dro-window.over b,
+.dro.hero .dro-window.over b {
+  color: var(--red);
+}
+
+.warnnote.fail {
+  color: var(--red);
+  font-weight: 600;
+}
+
+/* The plus and minus of a dimension's tolerance, side by side. */
+.tolpair {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.tolpair b {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dim);
+}
+
+.tolpair .unitfield {
+  flex: 0 1 82px;
+  width: 82px;
+  min-width: 64px;
+}
+
+/* Key/value line — a measured element in the list, or a secondary figure. */
+.kv {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  padding: 3px 1px;
+  color: var(--dim);
+}
+
+.kv .name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+}
+
+.kv b {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink);
+  font-weight: 400;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.kv b.working {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--dim);
+}
+
+/* Colour swatch tying a list row to its element in the viewport. */
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+}
+
+/* The pending fit gets a bezel in its future colour — set inline. */
+.draftbox {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 11px;
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--r);
+  box-shadow: var(--inset);
+}
+
+.draftbox .sec-head {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+/* Numbered step headings of the alignment editor: set on a plane, align with
+   an axis, move to zero point. */
+.stephead {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-top: 3px;
+}
+
+.stephead .stepno {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: #fff;
+  background: var(--accent);
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.stephead .step-opt {
+  margin-left: auto;
+  font-size: 10.5px;
+  font-weight: 400;
+  color: var(--dim);
+}
+
+.draftbox .dro {
+  background: var(--panel);
+}
+
+/* How far past the measured surface the element is drawn: a field per side,
+   laid out the way the sides sit on the element — the two ends of a cylinder
+   side by side, the four edges of a plane as a square. */
+.extend {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.extend-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.extend-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* The side, in the same condensed capitals as every other legend on the
+   faceplate, and never wider than the figure it belongs to. */
+.extend-field > span {
+  font-family: var(--cond);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--dim);
+  white-space: nowrap;
+  flex: none;
+  width: 30px;
+}
+
+.extend-field input[type='number'] {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 5px 6px;
+  box-shadow: var(--inset);
+  width: 100%;
+  min-width: 0;
+}
+
+/* ---------------- stage (viewport) ---------------- */
+
+.stage {
+  flex: 1;
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--stage);
+}
+
+.viewport {
+  position: absolute;
+  inset: 0;
+}
+
+/* The viewport owns every gesture that lands on it. Left to itself a touch
+   browser reads a drag over the canvas as a page pan and a two-finger spread
+   as a page zoom, so the model never turns and the window moves instead —
+   `touch-action: none` hands the drag to the navigator. The selection and
+   callout suppressions are the same idea for a long press: this is an
+   instrument face, not text. */
+.viewport canvas {
+  display: block;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* Fit to view, in the bottom-right corner of every viewport that can be
+   orbited — the corner that already answers "where am I looking from".
+   Deliberately quiet: it is a way out of a lost model, not a step in any
+   measurement, so it stays out of the way until it is looked for. */
+.viewfit {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 3;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--dim);
+  opacity: 0.72;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(18, 22, 26, 0.14);
+}
+
+.viewfit:hover {
+  opacity: 1;
+  color: var(--accent-d);
+  border-color: var(--accent);
+}
+
+.viewfit svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* In the main viewport the axis gizmo already holds that corner, so the button
+   parks directly above it. How tall a corner the gizmo takes depends on the
+   viewport's size, so the scene publishes it — see SceneManager.drawGizmo. */
+.viewport > .viewfit {
+  bottom: calc(var(--gizmo-size, 0px) + 22px);
+}
+
+/* WebGL could not be started: the one state where the stage has nothing to
+   show. A plain card in the middle of it, so the failure reads as a message
+   from the tool rather than a page that never loaded. */
+.webgl-missing {
+  position: absolute;
+  left: 50%;
+  top: 18px;
+  transform: translateX(-50%);
+  /* Above the start pane, which fills the stage with an opaque card of its
+     own — an invitation to load a file the tool could not show anyway. */
+  z-index: 20;
+  max-width: 30rem;
+  padding: 1rem 1.25rem;
+  background: var(--panel);
+  color: var(--ink);
+  border: 1px solid rgba(18, 22, 26, 0.18);
+  border-radius: 6px;
+  box-shadow: 0 6px 24px rgba(18, 22, 26, 0.12);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.webgl-missing p {
+  margin: 0.5rem 0 0;
+}
+
+.webgl-missing-detail {
+  opacity: 0.6;
+  font-size: 0.78rem;
+}
+
+/* The window / lasso outline, drawn over the canvas while it is being
+   dragged. Dashed and unfilled-but-for-a-wash, so the surface it is about to
+   take stays readable underneath it. */
+.marquee {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.marquee polygon {
+  fill: var(--marquee-fill, rgba(255, 255, 255, 0.14));
+  stroke: var(--marquee-stroke, #12161a);
+  stroke-width: 1.25;
+  stroke-dasharray: 5 3;
+  vector-effect: non-scaling-stroke;
+}
+
+/* Rubbing out reads inverted: the same outline, in the tone of surface being
+   handed back rather than taken. The custom properties carry the viewport
+   colour scheme's accents (set on the SVG by the marking); the fallbacks are
+   the default scheme's own. */
+.marquee polygon.erase {
+  fill: var(--marquee-erase-fill, rgba(18, 22, 26, 0.16));
+  stroke: var(--marquee-erase-stroke, #fbfaf7);
+}
+
+/* Instruction of the moment, pinned where the user is looking. */
+.hintchip {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - 24px);
+  padding: 5px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  background: rgba(var(--glass), 0.94);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The uncalibrated alarm on the 2D Measure stage. Deliberately louder than a
+   hint chip: every number in that workspace rests on the scale, so an
+   unverified scale is a fact about the measurements, not a tip. */
+.warnchip {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - 24px);
+  padding: 6px 16px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #7a3c00;
+  background: rgba(255, 214, 140, 0.96);
+  border: 1px solid #d9962e;
+  border-radius: var(--r);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.14);
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The rubber band an edge tool drags over the sheet, and the loupe that rides
+   the cursor while points are being placed. Both wear the annunciator amber
+   the calibration pins already use: tool furniture, not measurement. */
+.flat-band {
+  position: absolute;
+  border: 1px dashed #e8a33d;
+  background: rgba(232, 163, 61, 0.08);
+  pointer-events: none;
+  z-index: 4;
+}
+
+/* A selection box, told apart as CAD tells them: a window, dragged
+   rightward — what lies wholly inside — solid; a crossing box, dragged
+   leftward — what it touches too — dashed. */
+.flat-band.box.window {
+  border: 1px solid #3cb371;
+  background: rgba(60, 179, 113, 0.12);
+}
+
+.flat-band.box.crossing {
+  border: 1px dashed #4db8ff;
+  background: rgba(77, 184, 255, 0.12);
+}
+
+.loupe {
+  position: absolute;
+  width: 120px;
+  height: 120px;
+  border: 2px solid #e8a33d;
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* Reading a file or grinding on the mesh: said in the middle of the viewport,
+   where the user is already looking. It never takes the pointer — the camera
+   keeps working while the worker does. */
+.busyoverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 8;
+}
+
+.busycard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-width: min(420px, calc(100% - 48px));
+  padding: 20px 26px;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--ink);
+  text-align: center;
+  background: rgba(var(--glass), 0.96);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.16);
+}
+
+.busycard b {
+  font-weight: 700;
+}
+
+/* How far a job that says has got, under the spinner. */
+.busybar {
+  width: 220px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.busybar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.25s ease-out;
+}
+
+.busynote {
+  font-family: var(--ui);
+  font-size: 11.5px;
+  letter-spacing: 0;
+  line-height: 1.4;
+  color: var(--dim);
+}
+
+.toast {
+  position: absolute;
+  bottom: 48px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - 24px);
+  padding: 7px 12px;
+  font-size: 12px;
+  color: #8c2f18;
+  background: #f6e7e3;
+  border: 1px solid #ddb4a8;
+  border-left: 3px solid #c0492b;
+  border-radius: var(--r);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.14);
+  z-index: 6;
+}
+
+/* The same alarm on the dark chassis: the tint goes into the ground and the
+   text comes up, so it is still a red card and still legible. */
+:root[data-theme='dark'] .toast {
+  color: #f3b3a0;
+  background: #3b241d;
+  border-color: #6e3b2c;
+  border-left-color: var(--red);
+}
+
+/* The bottom-left corner of the stage — the one corner the instrument does not
+   use: the colour scale and its statistics own the right edge, the orientation
+   gizmo the bottom right, the hint chip the top centre. Two things live here,
+   stacked so that neither can ever cover the other: the view bar at the very
+   bottom, where it stays whatever else comes and goes, and the support card
+   above it. The column itself takes no pointer, so the stage showing between
+   them still orbits. Below the toast in the stacking order: should the two
+   ever meet, an error is the thing that must stay readable. */
+.stagecorner {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: calc(100% - 24px);
+  pointer-events: none;
+}
+
+.stagecorner > * {
+  pointer-events: auto;
+}
+
+/* The ways of looking at the parts: one row of housings — the parts, the
+   workspace's keys at the side, the section view — with the section view's
+   own row above it while it is open. Words rather than glyphs — there is
+   room here that the status strip never had. A narrow stage wraps the row
+   rather than running it under the colour scale. */
+.viewbar {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.viewrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+/* A row of keys in one housing, the depressed key being the one that is on.
+   Shared by the view bar and the settings dialog's Light / Dark / System
+   switch: one look for "a switch with positions" wherever it stands. */
+.keys {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.14);
+}
+
+.keys button {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--dim);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 5px 11px;
+  white-space: nowrap;
+}
+
+.keys button:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--well);
+  border-color: transparent;
+}
+
+.keys button.on,
+.keys button.on:hover:not(:disabled) {
+  color: var(--panel);
+  background: var(--ink);
+}
+
+/* A part's key on the view bar (ui/PartKey): the click that shows the part
+   and the caret that opens its menu, as one key — dark together while the
+   part is shown. One that cannot be clicked now is greyed out by its ARIA
+   state, its caret too until the pointer is on it: the menu still opens. */
+.partkey {
+  position: relative;
+  display: inline-flex;
+}
+
+.partkey > button:first-child {
+  position: relative;
+}
+
+.keys .partkey.hasmenu > button:first-child {
+  padding-right: 6px;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.keys .partkey > .partcaret {
+  padding: 5px 7px 5px 4px;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.partkey > button[aria-disabled='true'],
+.partkey.locked > .partcaret {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.partkey.locked > .partcaret:hover,
+.partkey.locked > .partcaret[aria-expanded='true'] {
+  opacity: 1;
+  cursor: pointer;
+}
+
+.keys .partkey > button[aria-disabled='true']:not(.on):hover {
+  color: var(--dim);
+  background: none;
+}
+
+.keys .partkey > button.on[aria-disabled='true']:hover {
+  color: var(--panel);
+  background: var(--ink);
+}
+
+/* Something in the part's menu stands otherwise than the workspace opens
+   with. */
+.partdot {
+  position: absolute;
+  top: 3px;
+  right: 2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* A part's menu, over its key: how the part is drawn, as keys of their own
+   stacked in a housing like the bar's. The strip under it bridges the gap
+   down to the key, so the pointer crossing it does not close the menu. */
+.partmenu {
+  position: absolute;
+  left: -4px;
+  bottom: calc(100% + 8px);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  min-width: 160px;
+  padding: 3px;
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
+
+.partmenu[hidden] {
+  display: none;
+}
+
+.partmenu::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 10px;
+}
+
+.viewbar .partmenu > button {
+  justify-content: flex-start;
+}
+
+/* One of a few ways to draw the part: its name, then the ways as small keys
+   in a well. */
+.partchoice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 2px 2px 2px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--dim);
+}
+
+.partchoice-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1;
+  white-space: nowrap;
+}
+
+.partchoice-keys {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--well);
+  border-radius: 5px;
+}
+
+.viewbar .partchoice-keys button {
+  padding: 3px 8px;
+}
+
+.viewbar .partchoice-keys button:hover:not(:disabled):not(.on) {
+  background: var(--panel);
+}
+
+/* The section view's row: what the plane is laid across and where, as
+   fields standing among the keys at a key's height, in the same housing. */
+.sectionkeys {
+  align-items: center;
+  flex-wrap: wrap;
+  max-width: calc(100vw - 32px);
+}
+
+.sectionkeys label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 4px 0 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.sectionkeys select {
+  padding: 3px 5px;
+  max-width: 150px;
+}
+
+.sectionkeys input[type='number'] {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 3px 6px;
+  box-shadow: var(--inset);
+  width: 78px;
+}
+
+.sectionkeys .unit,
+.sectionkeys .tilt {
+  font-weight: 400;
+}
+
+.sectionkeys button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Support card — above the view bar in the corner. A part is looked at from
+   the middle out, so the bottom left is also the quietest place to be asked
+   for something. */
+.supportcard {
+  width: 290px;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px 14px;
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.18);
+}
+
+.sc-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.sc-head b {
+  flex: 1;
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.sc-x {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin: -3px -5px 0 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--dim);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--r);
+  cursor: pointer;
+}
+
+.sc-x:hover {
+  color: var(--ink);
+  background: var(--well);
+  border-color: var(--line);
+}
+
+.supportcard p {
+  margin: 0 0 2px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--dim);
+}
+
+.supportcard p b {
+  font-weight: 700;
+  color: var(--ink);
+}
+
+/* Three keys, stacked and full width, in their own house colours — the store
+   in CNC Kitchen blue, then the two tip jars in theirs. Links, not buttons:
+   each one opens somewhere. */
+.sc-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 8px 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #fff;
+  text-decoration: none;
+  border-radius: var(--r);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.15);
+}
+
+.sc-btn:hover {
+  filter: brightness(1.08);
+}
+
+.sc-btn .sc-icon {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.sc-btn.store {
+  background: var(--accent);
+}
+
+.sc-btn.paypal {
+  background: #0091d4;
+}
+
+.sc-btn.kofi {
+  background: #f0544f;
+}
+
+/* The one thing that does come near the card is an error, which is centred at
+   the bottom of the stage — and an error must never be the thing hidden behind
+   an ask for money. So while the card is up the toast takes the centre of what
+   is left beside it, 302px of stage being the card and its margin. (This is why
+   the corner is rendered ahead of the toast in App.tsx: the sibling combinator
+   only reaches forwards, and the rule has to lapse the moment the card is
+   closed — which `:has()` reads off the corner, the card being inside it.)
+   The toast wraps rather than truncating, so a narrower berth costs it height,
+   not words. The view bar on its own needs no such rule: it is short, and the
+   toast paints over it should the two ever meet. */
+.stagecorner:has(.supportcard) ~ .toast {
+  left: calc(50% + 151px);
+  max-width: calc(100% - 314px);
+}
+
+/* Narrower than this there is no "beside": what is left of the stage is too
+   thin to read an error in, so the toast keeps the full width and clears the
+   card upwards instead. The offset clears the tallest the corner gets — the
+   view bar's two rows, then four lines of blurb and the three keys — and has
+   to be revisited if that copy grows. */
+@media (max-width: 1150px) {
+  .stagecorner:has(.supportcard) ~ .toast {
+    bottom: 360px;
+    left: 50%;
+    max-width: calc(100% - 24px);
+  }
+}
+
+/* The big one, when a save or an export has just handed over a file. */
+.supportask-back {
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+
+.modal.supportask {
+  width: 460px;
+  gap: 14px;
+  padding: 26px 30px 22px;
+}
+
+.modal.supportask h2 {
+  font-size: 19px;
+  line-height: 1.3;
+}
+
+.modal.supportask p {
+  margin: 0 0 2px;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--dim);
+}
+
+.modal.supportask p b {
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.modal.supportask p a {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.modal.supportask .sc-btn {
+  flex: none;
+  padding: 13px 14px;
+  font-size: 15px;
+}
+
+.modal.supportask .sc-btn .sc-icon {
+  font-size: 15px;
+}
+
+.supportask-off {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.supportask-foot {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.drop-overlay {
+  position: absolute;
+  inset: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--accent);
+  border-radius: var(--r);
+  background: rgba(var(--glass), 0.8);
+  color: var(--accent-d);
+  font-size: 18px;
+  font-weight: 600;
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* Callouts drawn into the scene by the CSS2D renderer — same faceplate stock
+   as the panel, so a label on the model reads as part of the instrument. */
+.viewport-label {
+  padding: 3px 8px;
+  border-radius: 2px;
+  background: rgba(var(--glass), 0.94);
+  border: 1px solid var(--line);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14);
+  color: var(--ink);
+  font-size: 11px;
+  line-height: 1.35;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* The Labels key on the view bar, off: the tags go, the geometry stays. Set
+   on the viewport by SceneManager.setLabelsVisible. */
+.nolabels .viewport-label {
+  display: none;
+}
+
+/* A label on the side the section view cuts away goes with what it labels
+   (SceneManager.dressClipped). */
+.viewport-label.cut-away,
+.cut-away {
+  display: none;
+}
+
+.viewport-label .label-title {
+  font-family: var(--cond);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+/* Text in an element's own colour: the title of its pin on the part, its
+   reading in the panel's DRO window. The colour arrives as `--tint`, and for
+   a reason: the palette is tuned to hold on the light chassis, and on the
+   dark one its deeper tones — the purple, the magenta, the green — sink into
+   the panel behind them. So the dark instrument lifts every tint part of the
+   way to white before it is used as text. Only the text: the swatches and
+   the surfaces keep the true colour, which is the one the reading is in.
+   The compound selectors outrank the contexts' own text colours. */
+.tinted,
+.dro-window b.tinted,
+.viewport-label .label-title.tinted {
+  color: var(--tint);
+}
+
+:root[data-theme='dark'] .tinted {
+  color: color-mix(in srgb, var(--tint) 60%, #fff);
+}
+
+.viewport-label .label-value {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.distance-label .label-value {
+  color: var(--accent-d);
+}
+
+/* The small lines under a pin's value: the elements a tolerance is about,
+   the limit and how the value stands to it. */
+.viewport-label .label-note {
+  font-size: 9.5px;
+  line-height: 1.3;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+/* A value past its limit: the digits go red, on the pin as in the panel. */
+.viewport-label.over .label-value,
+.distance-label.over .label-value {
+  color: var(--red);
+}
+
+/* Labels of the datum stage — the coordinate planes and axes an alignment is
+   aimed at. Quieter than the measured pins: they are scenery, not results,
+   and each wears its own axis colour on a barely-there chip. */
+.viewport-label.stage-label {
+  background: rgba(var(--glass), 0.78);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.stage-label .label-title {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
+/* ---------------- machine status strip ---------------- */
+
+.strip {
+  height: 30px;
+  background: var(--strip);
+  color: #b9bcbe;
+  display: flex;
+  align-items: center;
+  font-family: var(--mono);
+  font-size: 10px;
+  flex: none;
+  overflow: hidden;
+}
+
+.strip > div {
+  padding: 0 13px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 100%;
+  border-right: 1px solid #3a3c3e;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.strip > div.msg {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+  line-height: 30px;
+}
+
+.strip b {
+  color: #eceeef;
+  font-weight: 400;
+}
+
+.strip .warn {
+  color: #f0a58a;
+  font-weight: 600;
+}
+
+.strip .grow {
+  border-right: none;
+}
+
+.strip button {
+  color: #b9bcbe;
+  background: none;
+  border: none;
+  border-left: 1px solid #3a3c3e;
+  border-radius: 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  height: 100%;
+  padding: 0 13px;
+  /* One row, same as the link above. */
+  white-space: nowrap;
+}
+
+.strip button:hover:not(:disabled) {
+  color: #fff;
+  background: #313335;
+}
+
+.strip button.on {
+  color: #fff;
+  background: #3a3c3e;
+}
+
+.strip a {
+  color: #b9bcbe;
+  text-decoration: none;
+  padding: 0 13px;
+  line-height: 30px;
+  border-left: 1px solid #3a3c3e;
+  /* The strip is one 30px row. Let this clip off the end rather than wrap and
+     shove everything else onto a second line nobody can see. */
+  white-space: nowrap;
+}
+
+.strip a:hover {
+  color: #fff;
+  background: #313335;
+}
+
+.lamp {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 5px rgba(46, 125, 70, 0.7);
+  flex: none;
+}
+
+.lamp.busy {
+  background: #e8a33d;
+  box-shadow: 0 0 5px rgba(232, 163, 61, 0.8);
+  animation: lampblink 1s ease-in-out infinite alternate;
+}
+
+.lamp.err {
+  background: #d9472b;
+  box-shadow: 0 0 5px rgba(217, 71, 43, 0.8);
+}
+
+@keyframes lampblink {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0.45;
+  }
+}
+
+/* Fits run off the main thread; the spinner is the only sign work is
+   happening between a pick and its result. */
+.spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  flex: none;
+  border: 2px solid rgba(38, 40, 42, 0.18);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+/* The viewport's own: big enough to be the thing you see, not a detail. */
+.spinner.big {
+  width: 30px;
+  height: 30px;
+  border-width: 3px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lamp.busy {
+    animation: none;
+  }
+
+  .spinner {
+    animation-duration: 2.4s;
+  }
+
+  /* The ring still marks the step, at full strength; it just stops breathing. */
+  .pulse::after {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+/* ---------------- modals ---------------- */
+
+.modalback {
+  position: fixed;
+  inset: 0;
+  background: rgba(38, 40, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+
+.modal {
+  width: 560px;
+  max-width: 92vw;
+  max-height: 86vh;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.modalhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.modal h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.modal h3 {
+  margin: 8px 0 0;
+  font-family: var(--cond);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.modal .x {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  flex: none;
+  font-size: 17px;
+  line-height: 1;
+  color: var(--dim);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--r);
+  cursor: pointer;
+}
+
+.modal .x:hover {
+  color: var(--ink);
+  background: var(--well);
+  border-color: var(--line);
+}
+
+/* ---------------- imprint & privacy ---------------- */
+
+.modal.imprint {
+  width: 620px;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.modal.imprint p {
+  margin: 0;
+}
+
+.modal.imprint h3 {
+  margin: 6px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.modal.imprint ul {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.modal.imprint a {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ---------------- settings ---------------- */
+
+.modal.settings {
+  width: 540px;
+  gap: 6px;
+}
+
+.modal.settings > p.dim {
+  margin: 0 0 4px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+/* One setting: its name, its control, and a line under the control saying
+   what it does — the same grid for a switch, a dropdown and a slider, so the
+   dialog reads as one instrument panel rather than a form. */
+.setting {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  align-items: center;
+  column-gap: 14px;
+  row-gap: 3px;
+  padding: 5px 0;
+}
+
+.setting > label,
+.setting > span {
+  font-size: 12px;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.setting > select,
+.setting > input[type='number'],
+.setting > input[type='text'] {
+  width: 100%;
+  max-width: 240px;
+}
+
+.setting > small code {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.setting > small {
+  grid-column: 2;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--faint);
+}
+
+.setting > small b {
+  font-weight: 600;
+  color: var(--dim);
+}
+
+/* The switch sits in a well like the dropdowns beside it, not on the stage. */
+.setting .keys {
+  justify-self: start;
+  background: var(--well);
+  border-color: var(--line);
+  box-shadow: var(--inset);
+}
+
+.setting .keys button {
+  padding: 4px 12px;
+  font-size: 12px;
+}
+
+/* The colour maps, each shown as the ramp it paints — a dropdown can only
+   name them. The label sits by the first row rather than the middle of three. */
+.setting.colormaps > span {
+  align-self: start;
+  padding-top: 7px;
+}
+
+.cmaps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.cmaps button {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 5px 6px 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: left;
+  color: var(--dim);
+  background: var(--well);
+  box-shadow: var(--inset);
+}
+
+.cmaps button:hover:not(:disabled) {
+  color: var(--ink);
+}
+
+.cmaps button.on,
+.cmaps button.on:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--panel);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+/* Cap, ramp, cap — as the scale beside a map stacks them, laid on its side. */
+.cmap-ramp {
+  display: flex;
+  height: 14px;
+  border-radius: 2px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18);
+}
+
+.cmap-ramp i {
+  flex: 0 0 7px;
+}
+
+.cmap-ramp i:nth-child(2) {
+  flex: 1 1 auto;
+  margin: 0 1px;
+}
+
+/* The SpaceMouse's reversed axes: six switches, each lit while reversed. */
+.setting.puckaxes-row > span {
+  align-self: start;
+  padding-top: 6px;
+}
+
+.puckaxes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.puckaxes button {
+  padding: 4px 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--dim);
+  background: var(--well);
+  box-shadow: var(--inset);
+}
+
+.puckaxes button:hover:not(:disabled) {
+  color: var(--ink);
+}
+
+.puckaxes button.on,
+.puckaxes button.on:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--panel);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.range {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 240px;
+}
+
+.range input[type='range'] {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.range output {
+  flex: none;
+  min-width: 46px;
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.settings-check {
+  align-items: flex-start;
+  padding: 5px 0;
+  line-height: 1.4;
+}
+
+.settings-check input {
+  margin: 2px 0 0;
+}
+
+.settings-check b {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* ---------------- units of an STL ---------------- */
+
+.modal.units {
+  width: 480px;
+}
+
+.modal.units > p.dim {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.modal.units .modalfoot,
+.modal.agentdata .modalfoot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.modal.agentdata {
+  width: 520px;
+}
+
+.modal.agentdata > p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+/* ---------------- responsive ---------------- */
+
+@media (max-width: 860px) {
+  .panel {
+    width: 282px;
+    min-width: 282px;
+    padding: 12px 12px 18px;
+  }
+
+  .brand span,
+  .partchip span {
+    display: none;
+  }
+
+  /* The strip is a fixed 30px row that never wraps. Labelled buttons give up
+     their word and keep their glyph — "§ IMPRINT" → "§" — with the title
+     attribute carrying the name. The imprint has to stay reachable, so it
+     shrinks rather than disappearing. */
+  .strip .btxt {
+    display: none;
+  }
+}
+
+/* A phone held upright: beside the panel the stage would be a sliver, so it
+   goes on top and the panel scrolls beneath it. The desktop floor goes too —
+   on a phone what lies past it cannot be reached at all. */
+@media (max-width: 640px) {
+  .app {
+    min-width: 0;
+  }
+
+  .mid {
+    flex-direction: column-reverse;
+  }
+
+  .panel {
+    width: auto;
+    min-width: 0;
+    height: 42%;
+    flex: none;
+    border-right: none;
+    border-top: 1px solid var(--line);
+  }
+
+  .stage {
+    min-height: 0;
+  }
+
+  /* The strip's message — where an error shows — needs the room more than
+     the slogan does. */
+  .strip .ltxt {
+    display: none;
+  }
+}
+
+/* A phone held sideways: every row the stage does not get counts. */
+@media (max-height: 500px) {
+  .top {
+    height: 44px;
+  }
+}
+
+/* ================= deviation workspace ================= */
+
+/* Workspace selector: two positions of one switch, not two buttons. The
+   depressed key is the workspace you are in. */
+.modeswitch {
+  display: flex;
+  flex: none; /* two-word labels must not be squeezed by the part chip */
+  margin-left: 4px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r);
+  overflow: hidden;
+  background: var(--well-deep);
+  box-shadow: var(--inset);
+}
+
+.modeswitch button {
+  border: none;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  font-family: var(--cond);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--dim);
+  padding: 5px 13px;
+  white-space: nowrap;
+}
+
+.modeswitch button + button {
+  border-left: 1px solid var(--line-strong);
+}
+
+.modeswitch button:hover:not(:disabled):not(.on) {
+  color: var(--ink);
+}
+
+.modeswitch button.on {
+  background: var(--panel);
+  color: var(--accent);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.05);
+}
+
+.viewslot {
+  position: absolute;
+  inset: 0;
+}
+
+/* ---------------- side by side ---------------- */
+
+/* The scan and the reference in two viewports, one camera between them. The
+   main viewport is not moved into a half — that would unmount it and throw away
+   the mesh and its BVH — it becomes one where it stands, by giving up its
+   absolute fill for a place in a flex row. */
+.viewslot.split {
+  display: flex;
+}
+
+/* Last of these, and deliberately: it has the same specificity as the rules
+   above, so being hidden has to be the thing that wins. */
+.viewslot[hidden] {
+  display: none;
+}
+
+.viewslot.split .viewport {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.comparehalf {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  /* The only seam on the stage: two parts one beside the other have to read as
+     two views and not as one wide one. */
+  border-left: 1px solid var(--line-strong);
+}
+
+.compareview {
+  position: absolute;
+  inset: 0;
+}
+
+/* Same gesture suppressions as the main viewport — this half turns under the
+   same buttons and the same fingers. */
+.compareview canvas {
+  display: block;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* Which part is which, in the bottom corner of the half it names: out of the
+   way of the chips above and of the scale beside them, and close enough to the
+   model to be read without hunting for it. */
+.splitcap {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  max-width: calc(100% - 20px);
+  padding: 3px 9px;
+  background: rgba(var(--glass), 0.92);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  pointer-events: none;
+}
+
+.splitcap b {
+  font-family: var(--cond);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.splitcap span {
+  font-size: 11px;
+  color: var(--faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The scale reads the scan, so beside the split view it moves to the inner edge
+   of the scan's half rather than staying at the edge of a stage whose right-hand
+   side now belongs to the reference. */
+.stage.split .devlegend {
+  right: calc(50% + 14px);
+}
+
+/* A failed or doubtful result speaks up in the panel rather than vanishing
+   into the status strip. */
+.alarmtext {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--red);
+  background: #fbeeea;
+  border-left: 2px solid var(--red);
+  padding: 6px 8px;
+  border-radius: 0 var(--r) var(--r) 0;
+}
+
+.field input[type='number'],
+.field input[type='text'] {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 5px 7px;
+  box-shadow: var(--inset);
+  width: 172px;
+  flex: 0 1 172px;
+  min-width: 108px;
+}
+
+/* A name is prose, not a figure — the only text field in the panel. */
+.field input[type='text'] {
+  font-family: var(--ui);
+  font-size: 12.5px;
+}
+
+.slider {
+  width: 100%;
+  accent-color: var(--accent);
+  margin: 2px 0 4px;
+}
+
+/* ---------------- the scale ---------------- */
+
+/* Pinned to the right edge of the stage, where a legend belongs and where it
+   covers the least of the part. */
+.devlegend {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  pointer-events: none;
+  font-family: var(--mono);
+}
+
+.devlegend-unit {
+  font-family: var(--cond);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--dim);
+  padding-right: 2px;
+}
+
+/* The sign convention, written at the end of the ramp it belongs to. The
+   numbers alone leave "+0.4" to be guessed at, and the colours get read long
+   before the panel does — so each end says in words what it means. */
+.devlegend-end {
+  font-family: var(--cond);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--ink);
+  max-width: 150px;
+  text-align: right;
+  text-wrap: balance;
+  line-height: 1.2;
+  padding: 2px 4px;
+  background: rgba(var(--glass), 0.86);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+
+/* The sign itself, in the colour of the end it labels — warm above, cool
+   below, matching the ramp beside it. */
+.devlegend-end b {
+  font-family: var(--mono);
+  font-weight: 700;
+}
+
+.devlegend-end.high b {
+  color: var(--red);
+}
+
+.devlegend-end.low b {
+  color: var(--accent);
+}
+
+.devlegend-body {
+  flex: 1 1 auto;
+  min-height: 90px;
+  max-height: 460px;
+  display: flex;
+  align-items: stretch;
+  gap: 5px;
+}
+
+/* Distribution, sharing the ramp's vertical axis: a bar sits at exactly the
+   height of the colour it is counting. */
+.devhist {
+  width: 62px;
+  display: flex;
+  flex-direction: column;
+  justify-content: stretch;
+  background: rgba(var(--glass), 0.86);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 3px;
+  gap: 0;
+  /* The legend lets clicks through to the stage; the bars take the hover. */
+  position: relative;
+  pointer-events: auto;
+}
+
+.devhist-row {
+  flex: 1 1 0;
+  display: flex;
+  justify-content: flex-end;
+  min-height: 0;
+}
+
+.devhist-row span {
+  background: var(--ink);
+  opacity: 0.62;
+  min-height: 1px;
+  align-self: stretch;
+}
+
+.devhist-row.hover {
+  background: rgba(var(--glass), 1);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+
+.devhist-row.hover span {
+  opacity: 1;
+}
+
+/* What a hovered bar counts, to its left, level with it. */
+.devhist-readout {
+  position: absolute;
+  right: calc(100% + 6px);
+  transform: translateY(50%);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  padding: 4px 7px;
+  font-size: 10.5px;
+  line-height: 1.25;
+  white-space: nowrap;
+  color: var(--ink);
+  background: rgba(var(--glass), 0.96);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r);
+  pointer-events: none;
+}
+
+.devhist-readout span {
+  color: var(--dim);
+}
+
+.devramp {
+  position: relative;
+  width: 17px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r);
+  overflow: hidden;
+  box-shadow: var(--inset);
+}
+
+/* Off-scale, but still measured. Distinct from the ramp's own ends so a
+   saturated reading is never mistaken for a merely large one. */
+.devramp-cap {
+  height: 11px;
+  flex: none;
+}
+
+.devramp-bar {
+  flex: 1 1 auto;
+}
+
+.devticks {
+  position: relative;
+  width: 54px;
+  font-size: 10.5px;
+  color: var(--ink);
+}
+
+.devticks span {
+  position: absolute;
+  left: 0;
+  transform: translateY(50%);
+  padding: 0 2px;
+  background: rgba(var(--glass), 0.82);
+  border-radius: 2px;
+  line-height: 1.25;
+}
+
+.devticks span.zero {
+  font-weight: 700;
+  color: var(--green);
+}
+
+/* A value called out on the ramp — a band's edge inside the scale — and the
+   stretch it opens, hatched along the ramp's edge. */
+.devramp-mark {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 2px solid var(--ink);
+  box-shadow: 0 0 0 1px rgba(var(--glass), 0.85);
+  transform: translateY(1px);
+  pointer-events: auto;
+}
+
+.devramp-band {
+  position: absolute;
+  left: 0;
+  width: 5px;
+  background: repeating-linear-gradient(45deg, var(--ink) 0 2px, transparent 2px 4px);
+  opacity: 0.75;
+  pointer-events: auto;
+}
+
+.devticks span.mark {
+  font-weight: 700;
+  z-index: 1;
+}
+
+/* An end of the scale the user sets: the figure, as a key, where the figure
+   would be — and the box it opens into, in the same place and type. The
+   legend itself lets clicks through to the stage; these two take them. */
+.devticks .devtick-edit,
+.devticks .devtick-input {
+  position: absolute;
+  left: 0;
+  transform: translateY(50%);
+  pointer-events: auto;
+  font: inherit;
+  line-height: 1.25;
+  color: var(--ink);
+  background: rgba(var(--glass), 0.82);
+  border-radius: 2px;
+}
+
+.devticks .devtick-edit {
+  padding: 0 2px;
+  border: 1px solid transparent;
+  cursor: text;
+}
+
+.devticks .devtick-edit:hover,
+.devticks .devtick-edit:focus-visible {
+  border-color: var(--line-strong);
+  background: rgba(var(--glass), 1);
+  outline: none;
+}
+
+.devticks .devtick-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0 2px;
+  border: 1px solid var(--accent);
+  background: rgba(var(--glass), 1);
+  outline: none;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.devticks .devtick-input::-webkit-outer-spin-button,
+.devticks .devtick-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.devstats {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 1px 12px;
+  background: rgba(var(--glass), 0.92);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 7px 9px;
+  font-size: 11px;
+}
+
+.devstats > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.devstats > div.wide {
+  grid-column: 1 / -1;
+  border-top: 1px solid var(--line);
+  padding-top: 3px;
+  margin-top: 2px;
+}
+
+.devstats span {
+  font-family: var(--cond);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.devstats b {
+  font-weight: 500;
+}
+
+/* ---------------- split-screen point picker ---------------- */
+
+.splitpicker {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--chassis);
+  z-index: 5;
+}
+
+.splitbody {
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
+}
+
+.splithalf {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--line-strong);
+}
+
+.splithalf:last-child {
+  border-right: none;
+}
+
+.splithead {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 11px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.splithead b {
+  font-family: var(--cond);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.splithead span {
+  font-size: 11px;
+  color: var(--faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Which side the next click belongs on — the whole flow is an alternation, so
+   the view being waited on is lit. */
+.splithalf.active .splithead {
+  background: var(--accent-soft);
+}
+
+.splithalf.active .splithead b {
+  color: var(--accent-d);
+}
+
+/* The scan half's second line: what the left button does on it, and how much
+   surface has been chosen for the fit so far. Under that half's own heading
+   rather than in the bar at the foot of the window, because the selection is a
+   statement about the scan and only the scan can be marked. */
+.picktools {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 11px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+/* In a panel the four modes stack two by two; on one line they run across. */
+.picktools .moderow {
+  display: flex;
+  flex: none;
+  margin: 0;
+}
+
+.picktools .moderow button {
+  font-size: 11px;
+  padding: 3px 8px;
+}
+
+.picktools > button {
+  font-size: 11px;
+  padding: 3px 8px;
+}
+
+.picksize {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.picksize input[type='number'] {
+  width: 4.5rem;
+}
+
+.picksize .slider {
+  width: 6.5rem;
+  margin: 0;
+}
+
+.pickcount {
+  font-size: 11px;
+  color: var(--dim);
+  margin-left: auto;
+}
+
+/* Selected, but not enough of it to fit on — the fit would refuse, so say so
+   where the selecting is happening. */
+.pickcount.short {
+  color: var(--red);
+}
+
+.splitview {
+  flex: 1 1 auto;
+  position: relative;
+  min-height: 0;
+}
+
+.splitview canvas {
+  display: block;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.splitbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 12px;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+}
+
+.splitstep {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.splitstep b {
+  font-size: 12.5px;
+  color: var(--ink);
+}
+
+.splitstep span {
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.splitpins {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  max-width: 240px;
+}
+
+.pinchip {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: #fff;
+  min-width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Half a pair: placed on the scan, still waiting for its counterpart. */
+.pinchip.half {
+  background: none !important;
+  color: var(--dim);
+  border: 1px dashed currentColor;
+}
+
+.splitwarn {
+  font-size: 11.5px;
+  color: var(--red);
+  max-width: 300px;
+}
+
+/* How far the picked pairs are from agreeing with each other once a rigid
+   transform is fitted through them — a rough gauge of the clicking, not of the
+   final alignment, which ICP still has to do. */
+.splitfit {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+/* Number riding on a picked point, in the pair's own colour — the only thing
+   tying a point on the scan to its counterpart on the reference. */
+.pick-pin {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+  padding: 1px 5px;
+  border-radius: 8px;
+  transform: translate(10px, -10px);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+/* The ends of a spline draft's tangent handles: tool furniture in the
+   annunciator amber, a hollow ring while the tangent is automatic and a
+   filled one once a drag has fixed it. The ring is not the hit target — the
+   scene tests the handle's document spot itself — so it takes no pointer. */
+.spline-handle {
+  width: 9px;
+  height: 9px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 2px solid #e8a33d;
+  background: rgba(var(--glass), 0.94);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+}
+
+.spline-handle.fixed {
+  background: #e8a33d;
+}
+
+/* ---------------- model slots & units ---------------- */
+
+.slot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.slot .dot {
+  border: 1px solid;
+  flex: none;
+}
+
+.slotname {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.slotname b {
+  font-size: 12.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slotname b:only-child {
+  color: var(--ink);
+}
+
+.slotname span {
+  font-size: 10.5px;
+  color: var(--faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slot button {
+  flex: none;
+  padding: 4px 9px;
+  font-size: 11.5px;
+}
+
+/* The unit belongs to the number, not to the label — a field that does not say
+   what it is measured in is the reason to have this at all. */
+.unitfield {
+  position: relative;
+  flex: 0 1 172px;
+  width: 172px;
+  min-width: 108px;
+}
+
+.unitfield input[type='number'] {
+  width: 100%;
+  padding-right: 30px;
+}
+
+.unitfield i {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-style: normal;
+  font-family: var(--cond);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--faint);
+  pointer-events: none;
+}
+
+.probeno {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: #fff;
+  background: var(--ink);
+  min-width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+/* ---------------- empty-state stage ---------------- */
+
+.startpane {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 24px;
+  background: var(--chassis);
+}
+
+.starthead {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  text-align: center;
+  max-width: 520px;
+}
+
+.starthead b {
+  font-family: var(--cond);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.starthead span {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--faint);
+}
+
+.starttiles {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* A dashed well says "put something in me" without needing a label to say it. */
+.starttile {
+  width: 236px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 20px 16px 16px;
+  background: var(--panel);
+  border: 1px dashed var(--line-strong);
+  border-radius: 5px;
+  transition:
+    border-color 120ms,
+    background 120ms;
+}
+
+.starttile.over {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.starttile.filled {
+  border-style: solid;
+}
+
+.starttile-role {
+  font-family: var(--cond);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.starttile-what {
+  font-size: 11.5px;
+  color: var(--faint);
+}
+
+.starttile-drop {
+  font-size: 11.5px;
+  color: var(--dim);
+  margin: 7px 0 4px;
+}
+
+.starttile-name {
+  font-size: 11.5px;
+  color: var(--green);
+  margin: 7px 0 4px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.startfoot {
+  font-size: 11.5px;
+  color: var(--faint);
+}
+
+.startsample {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+}
+
+.startsample small {
+  font-size: 11.5px;
+  color: var(--faint);
+}
+
+.startskip {
+  display: flex;
+  justify-content: center;
+  padding-top: 2px;
+}
+
+/* ---------------- hover reading ---------------- */
+
+/* Fixed, because it tracks the cursor in viewport coordinates and must not be
+   clipped by the stage it floats over. */
+.hoverdev {
+  position: fixed;
+  z-index: 6;
+  pointer-events: none;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(38, 40, 42, 0.92);
+  padding: 3px 8px;
+  border-radius: var(--r);
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.hoverdev.unmatched {
+  background: rgba(117, 120, 123, 0.92);
+  font-weight: 400;
+}
+
+/* A pinned reading, in the same pin style the element workspace uses. */
+.viewport-label.probe {
+  border-color: var(--line-strong);
+}
+
+/* A pinned reading's title, in ink like the value under it — one tone for
+   every pin, as the chassis has it: a title that is ink on the light
+   instrument must not be that same ink on the dark chip, where it would
+   vanish. */
+.viewport-label.reading .label-title {
+  color: var(--ink);
+}
+
+/* A free text note on the 2D sheet: the one label that takes the pointer —
+   a press drags it across the sheet, a click opens it for typing. Anchored
+   at its lower-left so the pin spot is where the text begins. */
+.viewport-label.note-label {
+  pointer-events: auto;
+  cursor: grab;
+  user-select: none;
+  font-family: var(--ui);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: left;
+  border-left: 3px solid var(--accent-d);
+}
+
+.viewport-label.note-label.dragging {
+  cursor: grabbing;
+}
+
+.viewport-label.note-label.empty {
+  color: var(--dim);
+  font-style: italic;
+  font-weight: 400;
+}
+
+.viewport-label.note-label.editing {
+  outline: 2px solid var(--accent-d);
+  outline-offset: 1px;
+}
+
+/* Its name, the moment the cursor is over it — a title would keep the hand
+   waiting. Above the glyph, so the piece under it stays in view. */
+.viewport-label[data-tip]:hover::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 4px);
+  padding: 2px 7px;
+  border-radius: 2px;
+  background: var(--ink);
+  color: var(--panel, var(--stage));
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.note-row-kind {
+  font-family: var(--cond);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+/* ---------------- pressed keys, grip fields, warnings ---------------- */
+
+/* The tool in hand, and any other key that stays pressed. */
+.kindrow button.on,
+.kindrow button.on:hover:not(:disabled) {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+/* The number field on a feature grip in the viewport. */
+.viewport-label.grip-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  pointer-events: auto;
+}
+
+.viewport-label.grip-field input {
+  width: 64px;
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 1px 4px;
+}
+
+.viewport-label.grip-field input:read-only {
+  color: var(--dim);
+}
+
+.viewport-label.grip-field i {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--dim);
+}
+
+.g-label .working {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  text-transform: none;
+  letter-spacing: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.hint.warn {
+  color: var(--amber);
+  overflow-wrap: anywhere;
+}
+
+/* A warning in a row never pushes the name out of it. */
+.kv b.warn {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- a dropdown whose options can be pointed at (ui/RefPicker) ----------
+   Styled as the selects around it; the list opens under the face and the
+   option under the cursor is what the viewport shows. */
+.picker {
+  position: relative;
+  width: 172px;
+  flex: 0 1 172px;
+  min-width: 108px;
+}
+
+.picker .picker-face {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  font-family: var(--ui);
+  font-size: 12.5px;
+  text-align: left;
+  color: var(--ink);
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 5px 7px;
+  box-shadow: var(--inset);
+}
+
+.picker .picker-face span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker .picker-face .placeholder {
+  color: var(--dim);
+}
+
+.picker .picker-face i {
+  font-style: normal;
+  color: var(--dim);
+  flex: none;
+}
+
+.picker.open .picker-face {
+  border-color: var(--accent);
+}
+
+.picklist {
+  position: absolute;
+  z-index: 40;
+  left: 0;
+  right: 0;
+  top: calc(100% + 3px);
+  max-height: 260px;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  padding: 3px;
+}
+
+/* Too little room under the button (ui/useOpenUp): the list opens above it. */
+.picklist.up {
+  top: auto;
+  bottom: calc(100% + 3px);
+  box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.35);
+}
+
+.pickgroup-label {
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--dim);
+  padding: 5px 7px 2px;
+}
+
+.pickoption {
+  font-size: 12.5px;
+  padding: 5px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pickoption.active,
+.pickoption:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+.pickoption.chosen {
+  font-weight: 600;
+}
+
+.pickoption.empty {
+  color: var(--dim);
+  cursor: default;
+}
+
+/* ---- Export mesh: the button and the formats it opens (ui/ExportMeshButton)
+   The list is the picker's, under the button and as wide as it. */
+.exportmesh {
+  position: relative;
+  display: flex;
+}
+
+.toolrow .exportmesh {
+  flex: 1;
+}
+
+.exportmesh > button {
+  flex: 1;
+}
+
+.exportmesh > button i {
+  font-style: normal;
+  color: var(--dim);
+}
+
+.exportmesh .pickoption {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-family: var(--ui);
+  color: var(--ink);
+  background: none;
+  border: 0;
+  box-shadow: none;
+}
+
+.exportmesh .pickoption:hover,
+.exportmesh .pickoption:focus-visible {
+  background: var(--accent);
+  color: #fff;
+}

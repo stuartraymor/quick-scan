@@ -1,0 +1,19 @@
+Quick Scan - before you install
+
+Quick Scan turns 3D scans into measured, editable CAD. It runs entirely on
+your computer.
+
+ * Early release. Quick Scan is version 0.0.x software. Keep copies of your
+   source scans and save projects often.
+ * Open source. Quick Scan is a modified version of ScanRuler by Stefan Hermann
+   (CNC Kitchen), licensed under the GNU Affero General Public License v3.0.
+   The next page shows the licence. The complete source code is available from
+   the project page linked in the Start Menu folder.
+ * Independent. Quick Scan is not affiliated with or endorsed by CNC Kitchen or
+   by any commercial scan-to-CAD vendor.
+ * Unsigned installer. If Windows SmartScreen says "Windows protected your PC",
+   this installer has no code-signing certificate yet. Compare the SHA-256
+   shown in the release notes with your download before running it.
+ * Uninstalling removes the program but keeps your projects and settings
+   (stored under %APPDATA%\QuickScan-v...). Delete those folders by hand to
+   remove everything.

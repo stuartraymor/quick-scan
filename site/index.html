@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quick Scan – scan to measured, editable CAD</title>
+<meta name="description" content="Quick Scan is a free, open-source Windows app that fits geometry to 3D scans, measures them and rebuilds them as editable CAD. Everything runs on your PC.">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="#top"><img src="img/mark.svg" alt="" width="28" height="28"> Quick Scan</a>
+  <nav>
+    <a href="#features">Features</a>
+    <a href="#download">Download</a>
+    <a href="https://github.com/stuartraymor/quick-scan">GitHub</a>
+  </nav>
+</header>
+
+<main id="top">
+  <section class="hero">
+    <p class="eyebrow">Free · Open source · Windows</p>
+    <h1>Scan in. Measured, editable CAD out.</h1>
+    <p class="lede">Quick Scan fits planes, cylinders and spheres to your 3D scans, measures between them, compares against CAD, and rebuilds the part as a clean model. It runs entirely on your computer.</p>
+    <div class="cta">
+      <a class="btn primary" id="dl" href="https://github.com/stuartraymor/quick-scan/releases/latest">Download for Windows</a>
+      <a class="btn" href="https://github.com/stuartraymor/quick-scan">View source</a>
+    </div>
+    <p class="fine">Windows 10/11, 64-bit · v0.0.3 early release · AGPL-3.0</p>
+    <figure class="shot">
+      <img src="img/quick-scan-main.png" width="1500" height="900" alt="Quick Scan window showing a 3D scan of a bracket with the ribbon, object explorer and measurement panel">
+    </figure>
+  </section>
+
+  <section id="features" class="features">
+    <h2>What you can do</h2>
+    <div class="grid">
+      <article><h3>Fit primitives</h3><p>Click a feature to get a best-fit plane, cylinder, cone, sphere, torus or circle with its form error.</p></article>
+      <article><h3>Align and measure</h3><p>Auto-align from the scan's own faces, datum alignment, distance and angle dimensions, GD&amp;T and tolerances.</p></article>
+      <article><h3>Compare to CAD</h3><p>Colour deviation plots, wall thickness maps and cross-sections measured on a 2D sheet.</p></article>
+      <article><h3>Rebuild as CAD</h3><p>Sketch, extrude, revolve, fillet, pattern and more on an exact OpenCASCADE kernel, with a feature history and STEP export.</p></article>
+      <article><h3>Familiar layout</h3><p>Ribbon command tabs, an Objects / History explorer and movable, dockable tool panels that never lose your place.</p></article>
+      <article><h3>Private by design</h3><p>Files are processed locally. An optional AI command interface lets an assistant you connect drive the same session.</p></article>
+    </div>
+    <figure class="shot second">
+      <img src="img/quick-scan-cad.png" width="1500" height="900" loading="lazy" alt="Quick Scan CAD tab with the CAD tools panel open">
+    </figure>
+  </section>
+
+  <section id="download" class="download">
+    <h2>Get Quick Scan</h2>
+    <p>Download <code>Quick-Scan-Setup-0.0.3.exe</code> from the latest release and run it. The installer needs no administrator rights by default.</p>
+    <p><a class="btn primary" href="https://github.com/stuartraymor/quick-scan/releases/latest">Download for Windows</a></p>
+    <div class="note">
+      <strong>About the Windows warning.</strong> Installers are not code-signed yet, so SmartScreen may say “Windows protected your PC”. That means unrecognised publisher, not malware detected. Compare the SHA-256 in the release notes with your download, or build from source.
+    </div>
+    <h3>Honest limits</h3>
+    <ul>
+      <li>An early 0.0.x release. Expect rough edges; keep your source scans.</li>
+      <li>Independent software. Not affiliated with, and not equivalent to, any commercial scan-to-CAD product.</li>
+      <li>Quad/SubD freeform surfacing and stacked sections are not implemented yet.</li>
+      <li>Windows 64-bit only.</li>
+    </ul>
+  </section>
+</main>
+
+<footer>
+  <p>Quick Scan is free software under the <a href="https://www.gnu.org/licenses/agpl-3.0.html">GNU AGPL v3</a>. It is a modified version of <a href="https://github.com/CNCKitchen/ScanRuler">ScanRuler</a> by Stefan Hermann (CNC Kitchen), who is not affiliated with or responsible for this project. <a href="https://github.com/stuartraymor/quick-scan">Complete source</a> · <a href="https://github.com/stuartraymor/quick-scan/blob/main/ATTRIBUTION.md">Attribution</a> · <a href="https://github.com/stuartraymor/quick-scan/blob/main/SECURITY.md">Security</a></p>
+</footer>
+</body>
+</html>

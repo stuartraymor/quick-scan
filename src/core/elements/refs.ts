@@ -1,0 +1,86 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// What an element stands for when something is measured from it: a point, an
+// axis or a plane — the standard metrology reduction, in which a sphere is
+// its centre and a cylinder its axis. Dimensions, tolerances and
+// constructions take their references by role rather than by kind, so which
+// kinds play which role is settled here, once, along with the margin past
+// which a reading is said to have left the measured surface.
+
+import type { ElementKind, FitData, PlaneFit, Vec3 } from '../types'
+
+/** The proxy geometry an element contributes to a measurement — the standard
+ *  metrology reduction: spheres, points and circles act as a point, cylinders,
+ *  cones and lines as an axis, planes as a plane. A circle is on both lists:
+ *  its center is the point it stands for, but its normal is a perfectly good
+ *  axis for whoever asks for one in a dropdown. */
+export type RefRole = 'point' | 'axis' | 'plane'
+
+const ROLE_PROVIDERS: Record<RefRole, readonly ElementKind[]> = {
+  point: ['point', 'sphere', 'circle'],
+  axis: ['line', 'cylinder', 'cone', 'circle', 'torus'],
+  plane: ['plane'],
+}
+
+export function providesRole(kind: ElementKind, role: RefRole): boolean {
+  return ROLE_PROVIDERS[role].includes(kind)
+}
+
+/** The one role an element kind plays in a measurement. */
+export function roleOf(kind: ElementKind): RefRole {
+  if (kind === 'plane') return 'plane'
+  if (kind === 'line' || kind === 'cylinder' || kind === 'cone' || kind === 'torus') return 'axis'
+  return 'point'
+}
+
+/** What a slot of a dimension or a tolerance takes: any of the roles,
+ *  narrowed to specific kinds where the characteristic is about one shape —
+ *  a cylindricity is of a cylinder, not of whatever has an axis. */
+export interface SlotRoles {
+  roles: readonly RefRole[]
+  kinds?: readonly ElementKind[]
+}
+
+export function slotTakes(slot: SlotRoles, kind: ElementKind): boolean {
+  return (
+    slot.roles.some((role) => providesRole(kind, role)) &&
+    (!slot.kinds || slot.kinds.includes(kind))
+  )
+}
+
+/** The point an element stands for, or null if it has none. */
+export function refPoint(fit: FitData): Vec3 | null {
+  return fit.kind === 'point' || fit.kind === 'sphere' || fit.kind === 'circle'
+    ? fit.center
+    : null
+}
+
+export interface AxisRef {
+  origin: Vec3
+  dir: Vec3
+  /** Half of the measured/drawn extent, for "off the measured section"
+   *  checks. The axis itself is infinite. */
+  halfLength: number
+}
+
+/** How far past the measured patch or section a perpendicular foot may land
+ *  before a measurement warns that it left the measured surface — as a
+ *  factor on the half-extent. */
+export const EXTENT_MARGIN = 1.3
+
+export function refAxis(fit: FitData): AxisRef | null {
+  if (fit.kind === 'cylinder' || fit.kind === 'cone')
+    return { origin: fit.center, dir: fit.axis, halfLength: fit.length / 2 }
+  if (fit.kind === 'line') return { origin: fit.center, dir: fit.dir, halfLength: fit.length / 2 }
+  // A torus's axis is the ring's; the tube radius stands in for its reach
+  // along the axis, as the circle's radius does.
+  if (fit.kind === 'torus') return { origin: fit.center, dir: fit.axis, halfLength: fit.minorRadius }
+  // A circle's axis is its normal through the center. The radius stands in for
+  // the measured extent — the circle was measured in its own plane, so a foot
+  // landing much further out than that along the axis deserves the warning.
+  if (fit.kind === 'circle') return { origin: fit.center, dir: fit.normal, halfLength: fit.radius }
+  return null
+}
+
+export function refPlane(fit: FitData): PlaneFit | null {
+  return fit.kind === 'plane' ? fit : null
+}

@@ -1,0 +1,317 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// How flat elements come to be: picked point by point, or constructed from
+// existing elements. The method table is what the panel's UI is generated
+// from, the evaluator is what the store re-runs when a source element moves —
+// the same shape as elements/construct.ts, cut down to the flat kinds.
+
+import { FitError } from '../fit/errors'
+import {
+  fitArcPoints,
+  fitArcRegion,
+  fitCirclePoints,
+  fitCircleRegion,
+  fitLinePoints,
+  fitLineRegion,
+  flatPoint,
+} from './fit'
+import { flatRefLine, flatRefPoint, type FlatRefRole } from './refs'
+import { fitSplinePoints } from './spline'
+import type { FlatFit, FlatElementKind, Vec2 } from './types'
+import { cross2, mid2, sub2 } from './vec2'
+
+export interface FlatMethod {
+  id: string
+  kind: FlatElementKind
+  /** How the geometry is collected: `pick` takes clicks on the image and fits
+   *  once there are enough, `seed` takes one click on a detected edge and
+   *  grows the fit along it from there (the 2D twin of the 3D fit from a
+   *  click — see flat/grow.ts), `edge` takes dragged regions and consumes the
+   *  detected edge points inside them, `construct` assembles from other
+   *  elements. Seed and edge picks flow through the same draft — the
+   *  collected points ARE the picks, there are just very many of them.
+   *  Which method a kind's button opens with is flatDefaultMethod's. */
+  mode: 'pick' | 'seed' | 'edge' | 'construct'
+  label: string
+  /** One line for the creation UI. */
+  hint: string
+  minPicks?: number
+  slots?: { role: FlatRefRole; label: string }[]
+  /** A construction that takes any number of references past its slots:
+   *  more of the last slot's role, labelled the stem and their number —
+   *  "Center 4", "Center 5". The slots are the least it is built from. */
+  repeat?: { label: string }
+}
+
+export const FLAT_METHODS: readonly FlatMethod[] = [
+  {
+    id: 'flat-point-pick',
+    kind: 'point',
+    mode: 'pick',
+    label: 'Picked point',
+    hint: 'Click the point on the image. Clicking again moves it.',
+    minPicks: 1,
+  },
+  {
+    id: 'flat-point-midpoint',
+    kind: 'point',
+    mode: 'construct',
+    label: 'Midpoint',
+    hint: 'Halfway between two points or centers.',
+    slots: [
+      { role: 'point', label: 'From' },
+      { role: 'point', label: 'To' },
+    ],
+  },
+  {
+    id: 'flat-point-intersect',
+    kind: 'point',
+    mode: 'construct',
+    label: 'Line intersection',
+    hint: 'Where two lines cross — the corner two edges meet at, however rounded the part is there.',
+    slots: [
+      { role: 'line', label: 'Line A' },
+      { role: 'line', label: 'Line B' },
+    ],
+  },
+  {
+    id: 'flat-point-center',
+    kind: 'point',
+    mode: 'construct',
+    label: 'Center point',
+    hint: 'The center of a circle or arc, as a point of its own.',
+    slots: [{ role: 'point', label: 'From' }],
+  },
+  {
+    id: 'flat-line-pick',
+    kind: 'line',
+    mode: 'pick',
+    label: 'Through points',
+    hint: 'Click two or more points along the edge — more points give the best-fit line.',
+    minPicks: 2,
+  },
+  {
+    id: 'flat-line-seed',
+    kind: 'line',
+    mode: 'seed',
+    label: 'Fit to edge',
+    hint: 'Click anywhere on a straight stretch of a detected edge — the line grows along the edge from there and stops where it bends away, at a corner or into a fillet.',
+    minPicks: 4,
+  },
+  {
+    id: 'flat-line-edge',
+    kind: 'line',
+    mode: 'edge',
+    label: 'From edge region',
+    hint: 'Click a detected edge to take the whole of it, or drag a box along it — every edge point collected feeds the fit, strays from other edges are voted out.',
+    minPicks: 8,
+  },
+  {
+    id: 'flat-circle-pick',
+    kind: 'circle',
+    mode: 'pick',
+    label: 'Through points',
+    hint: 'Click three or more points around the circle — more points give the best fit.',
+    minPicks: 3,
+  },
+  {
+    id: 'flat-circle-seed',
+    kind: 'circle',
+    mode: 'seed',
+    label: 'Fit to edge',
+    hint: "Click anywhere on a round stretch of a detected edge — the circle grows along the edge from there and stops where it leaves the arc; a hole's rim is taken all the way round.",
+    minPicks: 6,
+  },
+  {
+    id: 'flat-circle-edge',
+    kind: 'circle',
+    mode: 'edge',
+    label: 'From edge region',
+    hint: "Click the circle's detected edge to take the whole of it, or drag a box over it — every edge point collected feeds the fit, strays are voted out.",
+    minPicks: 12,
+  },
+  {
+    id: 'flat-circle-centers',
+    kind: 'circle',
+    mode: 'construct',
+    label: 'Through centers',
+    hint: 'The best-fit circle through the centers of three or more holes, arcs or points — a bolt circle. Click each center on the sheet, or choose them below.',
+    slots: [
+      { role: 'point', label: 'Center 1' },
+      { role: 'point', label: 'Center 2' },
+      { role: 'point', label: 'Center 3' },
+    ],
+    repeat: { label: 'Center' },
+  },
+  {
+    id: 'flat-arc-pick',
+    kind: 'arc',
+    mode: 'pick',
+    label: 'Through points',
+    hint: 'Click three or more points along the arc — the fit covers what the points cover.',
+    minPicks: 3,
+  },
+  {
+    id: 'flat-arc-edge',
+    kind: 'arc',
+    mode: 'edge',
+    label: 'From edge region',
+    hint: "Click the arc's detected edge to take the whole of it, or drag a box along it — every edge point collected feeds the fit, strays are voted out.",
+    minPicks: 12,
+  },
+  {
+    id: 'flat-spline-pick',
+    kind: 'spline',
+    mode: 'pick',
+    label: 'Through fit points',
+    hint: 'Click the points the curve runs through, in order along the edge — the curve bends smoothly through every one.',
+    minPicks: 2,
+  },
+]
+
+/** What a spline's picks carry besides where they are: the tangent handle
+ *  set at each point (an offset from the point, or null for an automatic
+ *  tangent) and whether the curve closes on itself. */
+export interface SplinePickOptions {
+  tangents?: readonly (Vec2 | null)[]
+  closed?: boolean
+}
+
+export function flatMethodsForKind(kind: FlatElementKind): FlatMethod[] {
+  return FLAT_METHODS.filter((m) => m.kind === kind)
+}
+
+/** The method a kind's button opens with. On the scanned image, picking by
+ *  hand — the first method listed — since a hand pick is right wherever the
+ *  edge detector is not. On a section the cut is one clean chain and every
+ *  edge is detected by construction, so a line or a circle opens with the
+ *  fit to edge: one click per side and per bore is how a section is
+ *  measured. */
+export function flatDefaultMethod(kind: FlatElementKind, onSection: boolean): string {
+  const methods = flatMethodsForKind(kind)
+  if (onSection) {
+    const seed = methods.find((m) => m.mode === 'seed')
+    if (seed) return seed.id
+  }
+  return methods[0].id
+}
+
+export function flatMethod(id: string): FlatMethod {
+  const m = FLAT_METHODS.find((x) => x.id === id)
+  if (!m) throw new Error(`Unknown flat method "${id}".`)
+  return m
+}
+
+/** The label of reference slot `i` of a construction — past its slots, a
+ *  repeating one's next: "Center 4". */
+export function flatSlotLabel(m: FlatMethod, i: number): string {
+  const slots = m.slots ?? []
+  return i < slots.length ? slots[i].label : `${m.repeat?.label ?? 'Reference'} ${i + 1}`
+}
+
+/** The role reference slot `i` of a construction takes — past its slots,
+ *  a repeating one's last. Null where there is no such slot. */
+export function flatSlotRole(m: FlatMethod, i: number): FlatRefRole | null {
+  const slots = m.slots ?? []
+  if (i < slots.length) return slots[i].role
+  return m.repeat && slots.length > 0 ? slots[slots.length - 1].role : null
+}
+
+/** A construction's references as its draft keeps them: a repeating one's
+ *  close up when one is taken out — the centres after it move up a slot —
+ *  and never run short of its least. A fixed one's stay where they are. */
+export function flatConstructRefs(m: FlatMethod, refs: readonly (number | null)[]): (number | null)[] {
+  if (!m.repeat) return [...refs]
+  const n = m.slots?.length ?? 0
+  const kept = refs.filter((r): r is number => r !== null)
+  return kept.length >= n ? kept : [...kept, ...new Array<null>(n - kept.length).fill(null)]
+}
+
+/** Whether a method's picks are edge points collected off the detected
+ *  chains — by a click that grows along them or a region that takes them
+ *  in — rather than points placed by hand: thousands of them, drawn as a
+ *  cloud, cleared as one. */
+export function collectsEdgePoints(m: FlatMethod): boolean {
+  return m.mode === 'seed' || m.mode === 'edge'
+}
+
+/** Fit a pick-mode method from its collected points. `spline` is read by the
+ *  spline method alone. */
+export function evaluateFlatPicks(
+  methodId: string,
+  points: readonly Vec2[],
+  spline: SplinePickOptions = {},
+): FlatFit {
+  switch (methodId) {
+    case 'flat-spline-pick':
+      return fitSplinePoints(
+        points,
+        points.map((_, i) => spline.tangents?.[i] ?? null),
+        spline.closed ?? false,
+      )
+    case 'flat-point-pick': {
+      if (points.length < 1) throw new FitError('Click the point first.')
+      return flatPoint(points[points.length - 1])
+    }
+    // A click's grown points are the straight or round stretch itself, so
+    // the plain least squares is the fit — the growing did the choosing.
+    case 'flat-line-pick':
+    case 'flat-line-seed':
+      return fitLinePoints(points)
+    case 'flat-circle-pick':
+    case 'flat-circle-seed':
+      return fitCirclePoints(points)
+    case 'flat-arc-pick':
+      return fitArcPoints(points)
+    case 'flat-line-edge':
+      return fitLineRegion(points)
+    case 'flat-circle-edge':
+      return fitCircleRegion(points)
+    case 'flat-arc-edge':
+      return fitArcRegion(points)
+    default:
+      throw new Error(`"${methodId}" is not a pick method.`)
+  }
+}
+
+/**
+ * Evaluate a construction from its already-resolved references, in slot
+ * order. Throws FitError with a user-facing message when the construction is
+ * degenerate — the caller shows it and keeps the draft open.
+ */
+export function evaluateFlatConstruction(methodId: string, refs: readonly FlatFit[]): FlatFit {
+  switch (methodId) {
+    case 'flat-point-midpoint': {
+      const a = flatRefPoint(refs[0])
+      const b = flatRefPoint(refs[1])
+      if (!a || !b) throw new FitError('Both references must provide a point.')
+      return flatPoint(mid2(a, b))
+    }
+    case 'flat-point-intersect': {
+      const a = flatRefLine(refs[0])
+      const b = flatRefLine(refs[1])
+      if (!a || !b) throw new FitError('Both references must be lines.')
+      const denom = cross2(a.dir, b.dir)
+      // sin of the angle between unit directions — parallel lines never meet.
+      if (Math.abs(denom) < 1e-9) {
+        throw new FitError('The lines are parallel — they do not intersect.')
+      }
+      const t = cross2(sub2(b.origin, a.origin), b.dir) / denom
+      return flatPoint([a.origin[0] + t * a.dir[0], a.origin[1] + t * a.dir[1]])
+    }
+    case 'flat-point-center': {
+      const p = flatRefPoint(refs[0])
+      if (!p) throw new FitError('The reference must provide a point.')
+      return flatPoint(p)
+    }
+    // A bolt circle: the circle fit through the centres, so its form is how
+    // far the holes stray from one pitch circle.
+    case 'flat-circle-centers': {
+      const points = refs.map(flatRefPoint)
+      if (points.some((p) => p === null)) throw new FitError('Every reference must provide a point.')
+      if (points.length < 3) throw new FitError('A circle needs at least three centers.')
+      return fitCirclePoints(points as Vec2[])
+    }
+    default:
+      throw new Error(`"${methodId}" is not a construction.`)
+  }
+}
