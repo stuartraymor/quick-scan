@@ -12,7 +12,7 @@
 import * as THREE from 'three'
 import { INTERSECTED, NOT_INTERSECTED } from 'three-mesh-bvh'
 import type { RegionColors } from './regionColors'
-import { enlargeVertices, shrinkVertices, wandSelect } from '../core/geometry/wand'
+import { buildTriangleGraph, enlargeVertices, shrinkVertices, wandGrow, type TriangleGraph } from '../core/geometry/wand'
 import { DEFAULT_THEME, type ViewTheme } from './viewThemes'
 
 /** How a marking gesture takes surface: dragged over it with a round brush,
@@ -284,6 +284,7 @@ export class SurfaceMarking {
       this.wandAt(e.clientX, e.clientY, erase)
       return true
     }
+    this.lastWand = null
     this.painting = true
     if (gesture === 'brush') {
       this.paintLast = null
@@ -366,6 +367,7 @@ export class SurfaceMarking {
    * setPaintBrush then finds both in place and leaves them alone.
    */
   setPaintedVertices(vertices: Uint32Array, colorHex: string): void {
+    this.lastWand = null
     if (!this.ctx.mesh()) return
     this.ctx.setPaintColor(colorToRgb(colorHex))
     if (!this.ctx.regions.setPaintedVertices(vertices)) return
@@ -377,6 +379,7 @@ export class SurfaceMarking {
 
   /** Rub out the whole marking. */
   clearPaint(): void {
+    this.lastWand = null
     if (!this.ctx.regions.clearPaint()) return
     const attr = this.ctx.paintAttr()
     if (attr) attr.needsUpdate = true
@@ -391,19 +394,63 @@ export class SurfaceMarking {
     if (!this.paint || !mesh || !attr) return
     this.ctx.setPickRay(clientX, clientY)
     const hit = this.ctx.raycaster.intersectObject(mesh, false)[0]
-    const geometry = mesh.geometry as THREE.BufferGeometry
-    const index = geometry.getIndex()
-    if (!hit || typeof hit.faceIndex !== 'number' || !index) return
-    const pos = (geometry.getAttribute('position') as THREE.BufferAttribute).array as Float32Array
-    const patch = wandSelect(index.array, pos, hit.faceIndex, this.paint.wandDegrees ?? 20, this.ctx.graphVertex)
-    for (const v of patch) this.ctx.regions.markVertex(v, erase)
+    const graph = this.triangleGraph()
+    if (!hit || typeof hit.faceIndex !== 'number' || !graph) return
+    // Remembered so the degrees slider can grow or shrink this pick live.
+    this.lastWand = { seed: hit.faceIndex, erase, before: this.ctx.regions.paintedVertices() }
+    this.applyWand()
+  }
+
+  /** The triangle graph of the scan as drawn, built once and kept until the
+   *  triangle list changes (another scan, Hide Selected, Show Hidden). */
+  private graphCache: { index: THREE.BufferAttribute; graph: TriangleGraph } | null = null
+  private triangleGraph(): TriangleGraph | null {
+    const mesh = this.ctx.mesh()
+    const geometry = mesh?.geometry as THREE.BufferGeometry | undefined
+    const index = geometry?.getIndex()
+    if (!geometry || !index) return null
+    if (this.graphCache?.index !== index) {
+      const pos = (geometry.getAttribute('position') as THREE.BufferAttribute).array as Float32Array
+      this.graphCache = { index, graph: buildTriangleGraph(index.array, pos, this.ctx.graphVertex) }
+    }
+    return this.graphCache.graph
+  }
+
+  /** The last wand pick, and the marking as it stood before it. */
+  private lastWand: { seed: number; erase: boolean; before: Uint32Array } | null = null
+  private wandFrame = 0
+
+  /** The last wand pick laid down again at the current degrees: the marking
+   *  goes back to how it was before the pick, then takes (or gives back) the
+   *  patch the degrees now reach. */
+  private applyWand(): void {
+    const w = this.lastWand
+    const attr = this.ctx.paintAttr()
+    const graph = this.triangleGraph()
+    if (!w || !this.paint || !attr || !graph) return
+    const patch = wandGrow(graph, w.seed, this.paint.wandDegrees ?? 2)
+    if (!this.ctx.regions.setPaintedVertices(w.before)) return
+    for (let i = 0; i < patch.length; i++) this.ctx.regions.markVertex(patch[i], w.erase)
     attr.needsUpdate = true
     this.ctx.invalidate()
     this.ctx.onPaintChange(this.ctx.regions.paintCount)
   }
 
+  /** The degrees slider moved: the setting changes, and the last wand pick
+   *  follows it — once a frame however fast the slider is dragged. */
+  setWandDegrees(degrees: number): void {
+    if (!this.paint || !Number.isFinite(degrees) || this.paint.wandDegrees === degrees) return
+    this.paint = { ...this.paint, wandDegrees: degrees }
+    if (!this.lastWand || this.wandFrame) return
+    this.wandFrame = requestAnimationFrame(() => {
+      this.wandFrame = 0
+      this.applyWand()
+    })
+  }
+
   /** Enlarge (+1) or Shrink (-1) the marking by one ring of triangles. */
   resizePaint(direction: 1 | -1): void {
+    this.lastWand = null
     const mesh = this.ctx.mesh()
     const attr = this.ctx.paintAttr()
     const index = (mesh?.geometry as THREE.BufferGeometry | undefined)?.getIndex()
@@ -424,6 +471,7 @@ export class SurfaceMarking {
    *  re-fits on it, a region being measured) takes the new one up the same way
    *  it would a stroke. Only a marking session's marking is turned. */
   invertPaint(): void {
+    this.lastWand = null
     const mesh = this.ctx.mesh()
     const attr = this.ctx.paintAttr()
     if (!this.paint || !mesh || !attr) return

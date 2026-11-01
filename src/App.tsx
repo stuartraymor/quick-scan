@@ -980,6 +980,65 @@ export default function App() {
       setExtractFitting(false)
     }
   }
+  /** Hide Selected / Isolate / Show Hidden — QUICKSURFACE's selection options. */
+  const handleHideTriangles = (which: 'selected' | 'unselected') => {
+    const n = sceneRef.current?.hideTriangles(which) ?? 0
+    if (n === 0) {
+      useStore.getState().setStatus(which === 'selected' ? 'Select triangles first, then Hide Selected.' : 'Select the area to keep, then Isolate.')
+      return
+    }
+    clearPaint()
+    useShell.getState().setHiddenTriangles(n)
+    useStore.getState().setStatus(`${n.toLocaleString('en-US')} triangles hidden — Show Hidden brings them back.`)
+  }
+  const handleShowHidden = () => {
+    sceneRef.current?.showHiddenTriangles()
+    useShell.getState().setHiddenTriangles(0)
+  }
+  /** Snapshot to clipboard: the view as a PNG, saved as a file where the clipboard refuses it. */
+  const handleSnapshot = async () => {
+    const scene = sceneRef.current
+    if (!scene) return
+    try {
+      const bytes = await scene.capture()
+      const blob = new Blob([new Uint8Array(bytes)], { type: 'image/png' })
+      try {
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+        useStore.getState().setStatus('Snapshot copied to the clipboard — paste it into a document or an image editor.')
+      } catch {
+        const a = document.createElement('a')
+        a.href = URL.createObjectURL(blob)
+        a.download = 'quick-scan-snapshot.png'
+        a.click()
+        setTimeout(() => URL.revokeObjectURL(a.href), 10000)
+        useStore.getState().setStatus('The clipboard refused the picture — the snapshot was saved as a PNG instead.')
+      }
+    } catch (e) {
+      useStore.getState().setError(`Snapshot failed: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+  /** File → Import CAD: the STEP goes to the CAD plugin as bodies once its kernel is up. */
+  const handleImportCad = (file: File) => {
+    if (!runtimesRef.current.some((r) => r.importCad)) {
+      void openFile(file)
+      return
+    }
+    useShell.getState().setWorkspace('reverse')
+    useStore.getState().setStatus(`Preparing the CAD tools to import ${file.name}…`)
+    let tries = 0
+    const attempt = () => {
+      if (runtimesRef.current.find((r) => r.importCad)?.importCad?.(file)) {
+        useStore.getState().setStatus(`Importing ${file.name} as CAD bodies.`)
+        return
+      }
+      if (++tries > 240) {
+        useStore.getState().setError(`The CAD tools did not get ready to import ${file.name}. Try Import STEP in the CAD panel.`)
+        return
+      }
+      setTimeout(attempt, 250)
+    }
+    attempt()
+  }
   const closeExtract = () => {
     useShell.getState().setExtractOpen(false)
     clearPaint()
@@ -1592,6 +1651,7 @@ export default function App() {
         onOpenImage={openImage}
         onExportModel={() => { const cad = runtimes.find((r) => r.ribbonActions)?.ribbonActions?.export; if (cad) cad.run(); else handleExportStep() }}
         onExportMesh={handleExportMesh}
+        onImportCadFile={handleImportCad}
         savable={(fileName !== null && vertexCountLoaded) || flatImageName !== null || runtimes.some((r) => r.canSave)}
       />
       <DesktopRibbon
@@ -1608,10 +1668,14 @@ export default function App() {
         onSave={saveProject}
         savable={(fileName !== null && vertexCountLoaded) || flatImageName !== null || runtimes.some((r) => r.canSave)}
         onDeselect={clearPaint}
+        onSnapshot={() => void handleSnapshot()}
+        onHideSelected={() => handleHideTriangles('selected')}
+        onIsolate={() => handleHideTriangles('unselected')}
+        onShowHidden={handleShowHidden}
       />
       <RecoveryBar recovery={recovery} />
       <ConnectorBar />
-      <ExtractPrimitives onType={(k) => void handleExtractType(k)} onClose={closeExtract} onClear={clearPaint} fitting={extractFitting} />
+      <ExtractPrimitives onType={(k) => void handleExtractType(k)} onClose={closeExtract} onClear={clearPaint} fitting={extractFitting} onHide={() => handleHideTriangles('selected')} onIsolate={() => handleHideTriangles('unselected')} onShowAll={handleShowHidden} />
       <div className="mid desktop-mid">
         <ObjectExplorer
           pluginObjects={active?.explorerObjects}

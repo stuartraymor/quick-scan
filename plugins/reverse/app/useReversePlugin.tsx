@@ -606,6 +606,15 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
     toolContext: { title: contextKind ? contextKind[0].toUpperCase() + contextKind.slice(1) : 'CAD tools', key: contextKind, active: Boolean(contextKind) },
     ribbon: <ReverseRibbon />,
     ribbonActions,
+    importCad: (file: File) => {
+      const s = useReverse.getState()
+      if (s.kernelStatus !== 'ready' || s.sketchDraft || s.extrudeDraft || s.revolveDraft || s.featureDraft) return false
+      void file.text().then((text) => {
+        const ref = useReverse.getState().addStepFile(file.name, text)
+        useReverse.getState().startFeature('import', { file: ref, name: file.name.replace(/\.(step|stp)$/i, '') })
+      })
+      return true
+    },
     explorerObjects: <ReverseObjects />,
     explorerHistory: <ReverseHistory />,
     field: curvature ? { values: curvature.values, rgb: curvatureRgb, scale: curvatureScale(curvature.range) } : null,

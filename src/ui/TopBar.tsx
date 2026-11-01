@@ -157,6 +157,7 @@ export function TopBar({
   onOpenImage,
   onExportModel,
   onExportMesh,
+  onImportCadFile,
   savable,
   recovery,
 }: {
@@ -167,6 +168,8 @@ export function TopBar({
   onOpenImage: (file: File) => void
   onExportModel: () => void
   onExportMesh: (format: MeshFormat) => void
+  /** A STEP picked with Import CAD — imported as CAD bodies, not as a scan. */
+  onImportCadFile?: (file: File) => void
   savable: boolean
   recovery: RecoveryStatus
 }) {
@@ -273,7 +276,7 @@ export function TopBar({
         onChange={(e) => onLoad(bundleFiles(Array.from(e.target.files ?? [])) ?? undefined)}
       />
       <input ref={scanRef} type="file" accept={SCAN_ACCEPT} multiple hidden data-test="import-scan-input" onChange={(e) => onLoad(bundleFiles(Array.from(e.target.files ?? [])) ?? undefined)} />
-      <input ref={cadRef} type="file" accept=".step,.stp" hidden data-test="import-cad-input" onChange={(e) => onLoad(bundleFiles(Array.from(e.target.files ?? [])) ?? undefined)} />
+      <input ref={cadRef} type="file" accept=".step,.stp" hidden data-test="import-cad-input" onChange={(e) => { const f = e.target.files?.[0]; if (f && onImportCadFile) { void (window as unknown as { quickScanFiles?: { remember(f: File): Promise<unknown> } }).quickScanFiles?.remember(f); onImportCadFile(f) } else onLoad(f); e.target.value = '' }} />
       <button
         className="ghost withicon"
         data-test="new-project"
@@ -352,6 +355,7 @@ export function TopBar({
           { tab: 'analysis', label: 'Analysis', workspace: 'deviation' },
           { tab: 'ai', label: 'AI', workspace: undefined },
           { tab: 'settings', label: 'Settings', workspace: undefined },
+          { tab: 'help', label: 'Help', workspace: undefined },
           { tab: 'thickness', label: 'Wall Thickness', workspace: 'thickness' },
           { tab: 'flat', label: '2D Measure', workspace: 'flat' },
         ].filter(w => !['mesh','reverse'].includes(w.workspace ?? '') || workspaceTabs().some(t => t.id === w.workspace)).map(w => w.tab === 'settings' ? (

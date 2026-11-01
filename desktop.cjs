@@ -1,4 +1,4 @@
-const { app, BrowserWindow, protocol, net, dialog, ipcMain } = require('electron');
+const { app, BrowserWindow, protocol, net, dialog, ipcMain, shell } = require('electron');
 const { spawn } = require('node:child_process');
 const updater = require('./updater.cjs');
 const recents = require('./recents.cjs');
@@ -27,7 +27,11 @@ else {
     wireUpdater();
     wireFiles();
     win.webContents.on('will-navigate', (event, url) => { if (!url.startsWith('scanruler://app/')) event.preventDefault(); });
-    win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    // Help links open in the user's browser — only these hosts, never in the app.
+    win.webContents.setWindowOpenHandler(({ url }) => {
+      if (/^https:\/\/(github\.com|www\.cnckitchen\.com)\//.test(url)) void shell.openExternal(url);
+      return { action: 'deny' };
+    });
     win.webContents.session.on('will-download', (event, item) => {
       if (smoke) item.setSavePath(path.join(app.getPath('userData'), 'desktop-smoke.scanruler'));
       else {

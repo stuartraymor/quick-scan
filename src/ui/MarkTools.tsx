@@ -10,7 +10,7 @@
 // quietly holds the mouse hostage in one workspace but not the other is worse
 // than either behaviour on its own.
 
-import { brushRange, useMark, type MarkGesture } from '../state/markStore'
+import { brushRange, useMark, WAND_MAX_DEG, WAND_MIN_DEG, type MarkGesture } from '../state/markStore'
 import { useStore } from '../state/store'
 import { Icon, type IconName } from './icons'
 import { InfoDot } from './InfoDot'
@@ -144,9 +144,9 @@ export function MarkTools({
           <input
             className="slider"
             type="range"
-            min={1}
-            max={90}
-            step={1}
+            min={WAND_MIN_DEG}
+            max={WAND_MAX_DEG}
+            step={0.01}
             value={m.wandDegrees}
             data-test="mark-wand-degrees"
             aria-label="Magic Wand sensitivity in degrees"

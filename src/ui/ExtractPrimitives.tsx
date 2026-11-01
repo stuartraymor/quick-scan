@@ -9,7 +9,7 @@
 // The selection is the app's shared marking (markStore / viewer/marking); the
 // fit is the element fit a hand-marked element uses.
 
-import { useMark, type MarkGesture } from '../state/markStore'
+import { useMark, WAND_MAX_DEG, WAND_MIN_DEG, type MarkGesture } from '../state/markStore'
 import { useStore } from '../state/store'
 import { useShell } from '../state/shellStore'
 import type { ElementKind } from '../core/types'
@@ -35,15 +35,19 @@ const TYPES: { kind: ElementKind; icon: IconName; label: string }[] = [
   { kind: 'sphere', icon: 'elSphere', label: 'Sphere' },
 ]
 
-export function ExtractPrimitives({ onType, onClose, onClear, fitting }: {
+export function ExtractPrimitives({ onType, onClose, onClear, fitting, onHide, onIsolate, onShowAll }: {
   onType: (kind: ElementKind) => void
   onClose: () => void
   onClear: () => void
   fitting: boolean
+  onHide: () => void
+  onIsolate: () => void
+  onShowAll: () => void
 }) {
   const open = useShell((s) => s.extractOpen)
   const m = useMark()
   const labels = useStore((s) => s.showLabels)
+  const hidden = useShell((s) => s.hiddenTriangles)
   if (!open) return null
   const toolOn = (t: Tool) => (t.id === 'through' ? m.backfaces : m.gesture === t.id)
   const pick = (t: Tool) => {
@@ -67,9 +71,9 @@ export function ExtractPrimitives({ onType, onClose, onClear, fitting }: {
         ))}
       </div>
       <div className="qs-degrees">
-        <input type="range" min={1} max={90} step={0.01} value={m.wandDegrees} disabled={m.wandConnected} aria-label="Sensitivity in degrees"
+        <input type="range" min={WAND_MIN_DEG} max={WAND_MAX_DEG} step={0.01} value={m.wandDegrees} disabled={m.wandConnected} aria-label="Sensitivity in degrees"
           data-test="extract-degrees-slider" onChange={(e) => m.setWandDegrees(Number(e.target.value))} />
-        <input type="number" min={1} max={90} step="any" value={Number(m.wandDegrees.toFixed(2))} disabled={m.wandConnected}
+        <input type="number" min={WAND_MIN_DEG} max={WAND_MAX_DEG} step="any" value={Number(m.wandDegrees.toFixed(2))} disabled={m.wandConnected}
           data-test="extract-degrees" onChange={(e) => e.target.value !== '' && m.setWandDegrees(Number(e.target.value))} />
         <span>degrees</span>
       </div>
@@ -80,9 +84,9 @@ export function ExtractPrimitives({ onType, onClose, onClear, fitting }: {
       <div className="qs-iconrow" role="toolbar" aria-label="Selection options">
         <button data-test="extract-enlarge" disabled={none} title="Enlarge currently selected area" onClick={() => m.resize(1)}><Icon name="markWindow" size={20} /></button>
         <button data-test="extract-shrink" disabled={none} title="Shrink currently selected area" onClick={() => m.resize(-1)}><Icon name="markBrush" size={20} /></button>
-        <button disabled title="Isolate (leave selected and hide others) — not built in Quick Scan yet"><Icon name="model" size={20} /></button>
-        <button disabled title="Hide selected — not built in Quick Scan yet"><Icon name="eyeOff" size={20} /></button>
-        <button disabled title="Show all hidden triangles — not built in Quick Scan yet"><Icon name="eye" size={20} /></button>
+        <button data-test="extract-isolate" disabled={none} title="Isolate (leave selected and hide others)" onClick={onIsolate}><Icon name="model" size={20} /></button>
+        <button data-test="extract-hide" disabled={none} title="Hide selected" onClick={onHide}><Icon name="eyeOff" size={20} /></button>
+        <button data-test="extract-show-all" disabled={hidden === 0} title="Show all hidden triangles" onClick={onShowAll}><Icon name="eye" size={20} /></button>
         <button data-test="extract-deselect" disabled={none} title="Deselect all selected triangles" onClick={onClear}><Icon name="erase" size={20} /></button>
         <button data-test="extract-invert" disabled={none} title="Invert selection" onClick={m.invert}><Icon name="markInvert" size={20} /></button>
       </div>

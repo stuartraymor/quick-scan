@@ -1872,9 +1872,64 @@ export class SceneManager {
     this.marking.invertPaint()
   }
 
+  /** The Magic Wand's degrees, changed without re-arming the tools — the last
+   *  wand pick follows. See SurfaceMarking.setWandDegrees. */
+  setWandDegrees(degrees: number): void {
+    this.marking.setWandDegrees(degrees)
+  }
+
   /** Enlarge (+1) or Shrink (-1) the marking by one ring of triangles. */
   resizePaint(direction: 1 | -1): void {
     this.marking.resizePaint(direction)
+  }
+
+  /** The scan's full triangle list while part of it is hidden (Hide Selected
+   *  / Isolate) — put back by showHiddenTriangles. A view state only: fits,
+   *  sections and exports still use the whole scan. */
+  private fullIndex: THREE.BufferAttribute | null = null
+
+  /** Hide the selected triangles ('selected'), or everything but them
+   *  ('unselected', Isolate). A triangle counts as selected when all three
+   *  corners are. Returns how many triangles are now hidden; 0 when nothing
+   *  changed or the scan cannot be split this way. */
+  hideTriangles(which: 'selected' | 'unselected'): number {
+    const geometry = this.mesh?.geometry as THREE.BufferGeometry | undefined
+    const index = geometry?.getIndex()
+    if (!geometry || !index || geometry.groups.length > 1) return 0
+    const marked = this.regions.paintedVertices()
+    if (marked.length === 0) return 0
+    let max = 0
+    for (let i = 0; i < marked.length; i++) if (marked[i] > max) max = marked[i]
+    const on = new Uint8Array(max + 1)
+    for (let i = 0; i < marked.length; i++) on[marked[i]] = 1
+    const idx = index.array as ArrayLike<number>
+    const own = (v: number) => {
+      const g = this.graphVertex(v)
+      return g <= max && on[g] === 1
+    }
+    const kept: number[] = []
+    for (let t = 0; t + 2 < idx.length; t += 3) {
+      const inside = own(idx[t]) && own(idx[t + 1]) && own(idx[t + 2])
+      if (which === 'selected' ? !inside : inside) kept.push(idx[t], idx[t + 1], idx[t + 2])
+    }
+    if (kept.length === idx.length || kept.length === 0) return 0
+    if (!this.fullIndex) this.fullIndex = index.clone()
+    geometry.setIndex(new THREE.BufferAttribute(Uint32Array.from(kept), 1))
+    geometry.disposeBoundsTree?.()
+    geometry.computeBoundsTree()
+    this.invalidate()
+    return (this.fullIndex.count - kept.length) / 3
+  }
+
+  /** Bring every hidden triangle back. */
+  showHiddenTriangles(): void {
+    const geometry = this.mesh?.geometry as THREE.BufferGeometry | undefined
+    if (!geometry || !this.fullIndex) return
+    geometry.setIndex(this.fullIndex)
+    this.fullIndex = null
+    geometry.disposeBoundsTree?.()
+    geometry.computeBoundsTree()
+    this.invalidate()
   }
 
   /** How far along the pick ray the scan is met, or null off it. */
@@ -2950,6 +3005,7 @@ export class SceneManager {
   }
 
   private disposeMesh(): void {
+    this.fullIndex = null
     this.setEditedMesh(null)
     this.regions.detach()
     this.marking.meshDisposed()

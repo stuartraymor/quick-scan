@@ -42,7 +42,7 @@ import { providersFor } from '../ui/RefSelect'
 import { MARK_COLOR, useDeviation } from '../state/deviationStore'
 import { sectionElementsOf, useFlat } from '../state/flatStore'
 import { useShell } from '../state/shellStore'
-import { useMark } from '../state/markStore'
+import { useMark, wandDegreesOf } from '../state/markStore'
 import { useThickness } from '../state/thicknessStore'
 import { colormapById, paintField, type FieldScale } from '../core/field/colormap'
 import { fieldHistogram } from '../core/field/stats'
@@ -168,7 +168,6 @@ export function useSceneSync({
   const markErase = useMark((s) => s.erase)
   const markBackfaces = useMark((s) => s.backfaces)
   const brushDiameter = useMark((s) => s.diameter)
-  const wandDegrees = useMark((s) => (s.wandConnected ? 180 : s.wandDegrees))
   // The Extract primitives dialog marks the area before a primitive is chosen.
   const extractSession = useShell((s) => s.extractOpen && s.workspace === 'elements')
   const paintSession = painting && paintWorkspace
@@ -197,7 +196,7 @@ export function useSceneSync({
       erase: markErase,
       gesture: pluginMarkColor !== null && !pluginGestures ? null : markGesture,
       backfaces: markBackfaces,
-      wandDegrees,
+      wandDegrees: wandDegreesOf(useMark.getState()),
     })
   }, [
     picking,
@@ -211,7 +210,6 @@ export function useSceneSync({
     markErase,
     markGesture,
     markBackfaces,
-    wandDegrees,
   ])
 
   // Inverting is asked for in a panel and done here — unless the split-screen
@@ -223,6 +221,17 @@ export function useSceneSync({
       useMark.subscribe((s, prev) => {
         if (s.inverts === prev.inverts || useDeviation.getState().picking) return
         sceneRef.current?.invertPaint()
+      }),
+    [sceneRef],
+  )
+
+  // The wand's degrees go to the scene directly — a slider dragged through
+  // hundreds of values must not re-render the app for each.
+  useEffect(
+    () =>
+      useMark.subscribe((s, prev) => {
+        if (s.wandDegrees === prev.wandDegrees && s.wandConnected === prev.wandConnected) return
+        sceneRef.current?.setWandDegrees(wandDegreesOf(s))
       }),
     [sceneRef],
   )

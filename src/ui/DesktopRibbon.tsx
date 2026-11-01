@@ -4,12 +4,15 @@ import { useStore } from '../state/store'
 import { useShell } from '../state/shellStore'
 import { usePrefs } from '../state/prefsStore'
 import { useDeviation } from '../state/deviationStore'
+import { useMark } from '../state/markStore'
 import { plugins } from '../plugins/registry'
 import type { ElementKind } from '../core/types'
 import type { PluginRuntime } from '../plugins/api'
 import { CREATION_METHODS } from '../core/elements/construct'
 import { Icon, type IconName } from './icons'
 import { AiWizard } from './AiWizard'
+import { useUpdater } from './UpdateButton'
+import { APP_VERSION } from '../version'
 import { AGENT_STATUS, useAgentLink } from '../commands/agentLink'
 
 type Props = {
@@ -23,6 +26,10 @@ type Props = {
   onOpen: () => void
   onSave: () => void
   onDeselect: () => void
+  onSnapshot: () => void
+  onHideSelected: () => void
+  onIsolate: () => void
+  onShowHidden: () => void
   savable: boolean
   pluginTools?: ReactNode
   cadActions?: PluginRuntime['ribbonActions']
@@ -32,7 +39,7 @@ function Group({ label, children }: { label: string; children: ReactNode }) {
 }
 
 /** Familiar command positions, backed by the existing session and plugin verbs. */
-export function DesktopRibbon({ onFit, onSection, onAlign, onAutoAlign, onFineAlign, onPointAlign, onExport, onOpen, onSave, onDeselect, savable, pluginTools, cadActions }: Props) {
+export function DesktopRibbon({ onFit, onSection, onAlign, onAutoAlign, onFineAlign, onPointAlign, onExport, onOpen, onSave, onDeselect, onSnapshot, onHideSelected, onIsolate, onShowHidden, savable, pluginTools, cadActions }: Props) {
   const file = useStore(s => s.fileName)
   const busy = useStore(s => s.busy)
   const drafting = useStore(s => Boolean(s.draft || s.sectionDraft || s.alignDraft || s.dimDraft))
@@ -43,6 +50,10 @@ export function DesktopRibbon({ onFit, onSection, onAlign, onAutoAlign, onFineAl
   const translucent = useStore(s => s.translucent)
   const [pending, setPending] = useState<string | null>(null)
   const [aiWizard, setAiWizard] = useState(false)
+  const [about, setAbout] = useState(false)
+  const updater = useUpdater()
+  const hiddenTriangles = useShell(s => s.hiddenTriangles)
+  const marked = useMark(s => s.count)
   const agentLink = usePrefs(s => s.agentLink)
   const agent = useAgentLink()
   const locked = busy || picking || drafting
@@ -217,18 +228,22 @@ export function DesktopRibbon({ onFit, onSection, onAlign, onAutoAlign, onFineAl
     {tab === 'main' ? main : tab === 'view' ? <>
       {fileGroup}<Group label="Display">{tool(wireframe ? 'Solid view' : 'Wireframe', 'mesh', () => useStore.getState().setWireframe(!wireframe), !file)}{tool(translucent ? 'Opaque' : 'Transparent', 'transparent', () => useStore.getState().setTranslucent(!translucent), !file)}{tool('Show scan', 'eye', () => useStore.getState().setScanHidden(false), !file)}{tool('Hide scan', 'eyeOff', () => useStore.getState().setScanHidden(true), !file)}</Group>
       <Group label="Navigation">{tool('Mouse controls', 'navigate', () => usePrefs.getState().openSettings(true), false, 'Configure navigation and display preferences')}</Group>
-    </> : tab === 'scan' ? <>{fileGroup}{scanGroup}<Group label="Cross sections">{tool('Multiple sections', 'section', () => { go('elements'); onSection() }, needsScan)}</Group>{analysis}</>
+    </> : tab === 'scan' ? <>{fileGroup}{scanGroup}<Group label="Visibility">{tool('Hide Selected', 'eyeOff', onHideSelected, needsScan || marked === 0, 'Hide the selected triangles')}{tool('Isolate', 'model', onIsolate, needsScan || marked === 0, 'Leave the selected triangles and hide the rest')}{tool('Show Hidden', 'eye', onShowHidden, hiddenTriangles === 0, 'Show all hidden triangles')}</Group><Group label="Cross sections">{tool('Multiple sections', 'section', () => { go('elements'); onSection() }, needsScan)}</Group>{analysis}</>
       : tab === 'construct' ? <>{fileGroup}<Group label="Extract primitives">{primitives}{(['plane','cylinder','sphere','cone'] as ElementKind[]).map(kind => tool(kind[0].toUpperCase()+kind.slice(1), ({plane:'elPlane',cylinder:'elCylinder',sphere:'elSphere',cone:'elCone'} as Record<string,IconName>)[kind], () => { go('elements'); onFit(kind) }, needsScan))}</Group><Group label="Alignment">{tool('Align', 'alignSheet', () => { go('elements'); onAlign() }, needsScan)}</Group></>
       : ['cad','surfacing','freeform'].includes(tab) ? <>{fileGroup}{pluginTools}{analysis}{exportGroup}</>
+      : tab === 'help' ? <>{fileGroup}
+        <Group label="Help">{tool('Online help', 'labels', () => window.open('https://github.com/stuartraymor/quick-scan#readme', '_blank'), false, 'Quick Scan documentation on GitHub (opens your browser)')}{tool('Mouse controls', 'navigate', () => usePrefs.getState().openSettings(true), false, 'Navigation scheme and display options')}{updater ? tool(updater.label === 'Check for updates' ? 'Check for Update' : updater.label, 'load', updater.run, updater.busy, updater.title) : tool('Check for Update', 'load', () => {}, true, 'Updates are checked by the Windows app')}</Group>
+        <Group label="About">{tool('Credits', 'labels', () => useStore.getState().openImprint(true), false, 'Licences, attribution and imprint')}{tool('About', 'model', () => setAbout(true), false, 'Version and licence')}</Group></>
       : tab === 'ai' ? <>{fileGroup}
         <Group label="Connection">{tool(agentLink ? 'Disconnect AI' : 'Connect AI', 'navigate', () => usePrefs.getState().setAgentLink(!agentLink), busy, agentLink ? `${AGENT_STATUS[agent.status]} — click to switch the AI connection off` : 'Let an AI app on this computer drive Quick Scan (scanruler connector)')}{tool('AI settings', 'settings', () => usePrefs.getState().openSettings(true), false, 'Port, token and data permissions (Settings → Agents)')}</Group>
         <Group label="Rebuild">{tool('Rebuild with AI', 'model', () => setAiWizard(true), false, 'Step by step: connect, add the connector to your AI app, leave notes, ask it to rebuild')}</Group>
         <Group label="Notes">{agentLink ? <>{cad('note', 'Add note', 'note')}{cad('notes', 'Notes', 'labels')}</> : <>{tool('Add note', 'note', () => {}, true, 'Switch the AI connection on first')}{tool('Notes', 'labels', () => {}, true, 'Switch the AI connection on first')}</>}</Group>
         <div className="desktop-ribbon-group ai-status" data-test="ai-ribbon-status"><span>{agentLink ? `AI: ${AGENT_STATUS[agent.status]}` : 'AI connection off'}</span></div></>
       : tab === 'analysis' ? <>{fileGroup}
-        <Group label="Tools">{tool('Measure', 'wsMeasure', () => go('elements'), locked, 'Measure distances between fitted elements in 3D Measure')}{tool('Surface Area', 'mesh', () => {}, true, 'Not implemented yet')}{tool('Volume', 'mesh', () => {}, true, 'Not implemented yet')}{tool('Zebra Stripes', 'mesh', () => {}, true, 'Not implemented yet')}{tool('Environment Map', 'eye', () => {}, true, 'Not implemented yet')}{tool('Draft', 'transparent', () => {}, true, 'Not implemented yet')}{tool('Snapshot', 'save', () => {}, true, 'Not implemented yet')}</Group>
+        <Group label="Tools">{tool('Measure', 'wsMeasure', () => go('elements'), locked, 'Measure distances between fitted elements in 3D Measure')}{tool('Surface Area', 'mesh', () => {}, true, 'Not implemented yet')}{tool('Volume', 'mesh', () => {}, true, 'Not implemented yet')}{tool('Zebra Stripes', 'mesh', () => {}, true, 'Not implemented yet')}{tool('Environment Map', 'eye', () => {}, true, 'Not implemented yet')}{tool('Draft', 'transparent', () => {}, true, 'Not implemented yet')}{tool('Snapshot', 'save', onSnapshot, !file, 'Snapshot to clipboard — copy the view as a picture')}</Group>
         <Group label="Control">{tool('Compare', 'compare', () => go('deviation'), locked, 'Compare scan data with CAD or fitted geometry')}{tool('Compare to other meshes', 'compare', () => go('deviation'), locked, 'Compare the scan with a second mesh in Surface Deviation')}</Group></>
       : <>{fileGroup}<Group label="Inspection">{tool('Compare', 'compare', () => go('deviation'), locked)}{tool('Wall thickness', 'wsThickness', () => go('thickness'), locked)}{tool('2D Measure', 'wsFlat', () => go('flat'), locked)}</Group>{exportGroup}</>}
+    {about && <div className="modalback" data-test="about-dialog" onClick={() => setAbout(false)}><div className="modal about-quick-scan" role="dialog" aria-label="About Quick Scan" onClick={e => e.stopPropagation()}><h2>Quick Scan v{APP_VERSION}</h2><p>Reverse engineering for 3D scans, laid out for QUICKSURFACE users. Built on ScanRuler by Stefan Hermann (CNC Kitchen), AGPL-3.0-only.</p><p>Quick Scan is independent and is not affiliated with or endorsed by KVS Ltd / QUICKSURFACE.</p><div className="toolrow"><button onClick={() => useStore.getState().openImprint(true)}>Credits</button><button className="primary" data-test="about-close" onClick={() => setAbout(false)}>Close</button></div></div></div>}
     <AiWizard open={aiWizard} onClose={() => setAiWizard(false)} onAddNote={cadActions?.note && !cadActions.note.disabled ? () => { go('reverse'); cadActions.note?.run() } : null} noteDisabledReason={cadActions?.note?.title} />
     <div className="desktop-ribbon-group desktop-ribbon-assistant"><div className="desktop-ribbon-tools">{tool('AI', 'model', () => useShell.getState().setRibbonTab('ai'), false, 'AI tab: connect an AI app, leave notes for it, rebuild with AI')}</div><span className="desktop-ribbon-label">Assistant</span></div>
   </div>

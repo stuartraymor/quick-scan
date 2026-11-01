@@ -8,6 +8,7 @@
 import { useStore } from '../state/store'
 import { useCommandActivity } from '../commands/activity'
 import { useAgentLink } from '../commands/agentLink'
+import { schemeById } from '../viewer/navSchemes'
 
 export function StatusStrip() {
   const busy = useStore((s) => s.busy)
@@ -26,6 +27,7 @@ export function StatusStrip() {
 
   const done = elements.filter((e) => e.fit)
   const dimensions = useStore((s) => s.dimensions)
+  const navHint = schemeById(useStore((s) => s.navScheme)).hint
 
   return (
     <footer className="strip">
@@ -50,6 +52,9 @@ export function StatusStrip() {
         ) : (
           statusText
         )}
+      </div>
+      <div className="navhint" data-test="nav-hint" title="Mouse controls — change them in Settings">
+        {navHint}
       </div>
       <button
         className="stripimprint"

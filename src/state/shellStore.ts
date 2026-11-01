@@ -29,6 +29,9 @@ interface ShellState {
   appMenuOpen: boolean
   /** The Extract primitives dialog (ui/ExtractPrimitives) is open. */
   extractOpen: boolean
+  /** Triangles of the scan hidden by Hide Selected / Isolate (a view state). */
+  hiddenTriangles: number
+  setHiddenTriangles: (n: number) => void
   setExtractOpen: (open: boolean) => void
   setAppMenuOpen: (open: boolean) => void
   inspectorMode: 'floating' | 'docked'
@@ -42,6 +45,8 @@ export const useShell = create<ShellState>()((set) => ({
   inspectorOpen: true,
   appMenuOpen: false,
   extractOpen: false,
+  hiddenTriangles: 0,
+  setHiddenTriangles: (hiddenTriangles) => set({ hiddenTriangles }),
   setExtractOpen: (extractOpen) => set({ extractOpen, ...(extractOpen ? { inspectorOpen: true } : {}) }),
   setAppMenuOpen: (appMenuOpen) => set({ appMenuOpen }),
   inspectorMode: 'floating',

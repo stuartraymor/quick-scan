@@ -156,6 +156,9 @@ export interface PluginRuntime {
   ribbon?: ReactNode
   /** Named actions a shared workflow ribbon can present without importing a plugin. */
   ribbonActions?: Record<string, { run: () => void; disabled: boolean; title?: string }>
+  /** Bring a CAD file (STEP) in as bodies — File → Import CAD. False while the
+   *  plugin cannot take it yet (its kernel still loading, another editor open). */
+  importCad?: (file: File) => boolean
   /** Plugin-owned rows in the document explorer's Objects and History tabs. */
   explorerObjects?: ReactNode
   explorerHistory?: ReactNode

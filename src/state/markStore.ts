@@ -17,6 +17,13 @@ import type { MarkGesture } from '../viewer/SceneManager'
 
 export type { MarkGesture }
 
+/** The Magic Wand's sensitivity range in degrees — fine steps, as the user asked. */
+export const WAND_MIN_DEG = 0.1
+export const WAND_MAX_DEG = 10
+/** The degrees the wand spreads within: all of a connected piece with "Select all
+ *  connected triangles", else the slider's. */
+export const wandDegreesOf = (s: { wandConnected: boolean; wandDegrees: number }) => (s.wandConnected ? 180 : s.wandDegrees)
+
 interface MarkState {
   /** Which gesture is armed, or null for plain navigation. Null is the state a
    *  session opens in and the one Escape returns to: a marking gesture takes
@@ -76,7 +83,7 @@ export const useMark = create<MarkState>((set) => ({
   diameter: 2,
   count: 0,
   inverts: 0,
-  wandDegrees: 20,
+  wandDegrees: 2,
   wandConnected: false,
   resizes: { n: 0, direction: 1 },
 
@@ -86,7 +93,7 @@ export const useMark = create<MarkState>((set) => ({
   setDiameter: (diameter) => set({ diameter: Math.max(diameter, 2e-4) }),
   setCount: (count) => set({ count }),
   setWandConnected: (wandConnected) => set({ wandConnected }),
-  setWandDegrees: (d) => set({ wandDegrees: Math.min(Math.max(d, 1), 90) }),
+  setWandDegrees: (d) => set({ wandDegrees: Number.isFinite(d) ? Math.min(Math.max(d, WAND_MIN_DEG), WAND_MAX_DEG) : 2 }),
   resize: (direction) => set((s) => ({ resizes: { n: s.resizes.n + 1, direction } })),
   invert: () => set((s) => ({ inverts: s.inverts + 1 })),
   reset: () => set({ gesture: null, erase: false, count: 0 }),
