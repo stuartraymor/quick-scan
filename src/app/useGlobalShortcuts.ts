@@ -242,7 +242,7 @@ export function useGlobalShortcuts({
       if (store.alignDraft) {
         // First Escape leaves point picking, the second closes the editor.
         if (e.key === 'Escape') {
-          if (store.alignDraft.pickSlot !== null) store.cancelAlignmentPick()
+          if (store.alignDraft.pickSlot !== null || store.alignDraft.referencePickSlot) store.cancelAlignmentPick()
           else store.cancelAlignment()
         } else if (e.key === 'Enter') confirmButton()?.click()
         return

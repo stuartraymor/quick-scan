@@ -15,8 +15,13 @@ import { FlatScene } from '../../../src/viewer/FlatScene'
 import { schemeById } from '../../../src/viewer/navSchemes'
 import { sceneTheme } from '../../../src/viewer/viewThemes'
 import { useFlatSceneSettings } from '../../../src/ui/FlatViewer'
+import type { SketchChains } from '../app/useReverseWorkspace'
+import { SketchBrushOverlay } from './SketchBrushOverlay'
+import { SketchExtraOverlay } from './SketchExtraOverlay'
+import { SketchSelectionTools } from './SketchSelectionTools'
 
 export function SketchViewer({
+  chainsOf,
   onReady,
   onPick,
   onHover,
@@ -28,6 +33,7 @@ export function SketchViewer({
   onDimensionMove,
   onViewChange,
 }: {
+  chainsOf: () => SketchChains | null
   onReady: (scene: FlatScene | null) => void
   /** A click on the sheet; `raw` says Ctrl was held, which switches
    *  snapping off for the pick, as in Fusion. */
@@ -75,6 +81,7 @@ export function SketchViewer({
   const readyRef = useRef(onReady)
   readyRef.current = onReady
   const sceneRef = useRef<FlatScene | null>(null)
+  const [activeScene, setActiveScene] = useState<FlatScene | null>(null)
   const [webglError, setWebglError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -101,6 +108,7 @@ export function SketchViewer({
     scene.onDimensionMove = (id, p, begin) => dimensionMoveRef.current(id, p, begin)
     scene.onViewChange = (centre, upp) => viewRef.current(centre, upp)
     sceneRef.current = scene
+    setActiveScene(scene)
     readyRef.current(scene)
     return () => {
       sceneRef.current = null
@@ -113,6 +121,9 @@ export function SketchViewer({
 
   return (
     <div className="viewport" ref={containerRef} data-test="sketch-viewport">
+      <SketchBrushOverlay scene={activeScene} chainsOf={chainsOf} />
+      <SketchExtraOverlay scene={activeScene} />
+      <SketchSelectionTools scene={activeScene} />
       {webglError !== null && (
         <div className="webgl-missing" role="alert">
           <b>The sketch view could not be started.</b>

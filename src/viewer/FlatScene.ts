@@ -1844,6 +1844,20 @@ export class FlatScene {
   }
 
   /** Where a client point falls on the document plane, sheet or no sheet. */
+  sheetPoint(clientX: number, clientY: number): Vec2 | null {
+    return this.planeAt(clientX, clientY)
+  }
+
+  /** Project a sheet coordinate into client pixels, respecting view turns,
+   *  mirroring, alignment and pan/zoom. Used by plugin-owned brush overlays. */
+  sheetScreenPoint(point: Vec2): { x: number; y: number } | null {
+    const rect = this.container.getBoundingClientRect()
+    if (!(rect.width > 0 && rect.height > 0)) return null
+    const p = new THREE.Vector3(point[0], point[1], 0).project(this.viewport.camera)
+    if (![p.x, p.y, p.z].every(Number.isFinite)) return null
+    return { x: rect.left + (p.x + 1) * rect.width / 2, y: rect.top + (1 - p.y) * rect.height / 2 }
+  }
+
   private planeAt(clientX: number, clientY: number): Vec2 | null {
     this.viewport.setPickRay(clientX, clientY)
     const ray = this.viewport.raycaster.ray

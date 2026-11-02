@@ -18,10 +18,11 @@ import { arcAbout, circleFrom, DEFAULT_DRAW_MODES, rectangleCorners, tangentArc,
 import { splineCurve } from '../core/sketchSpline'
 import { patternPieces, polygonCorners, sketchBounds, type SketchPatternSpec } from '../core/sketch'
 import { projectableAt, type Projectable } from '../core/project'
-import { snapSketchPoint, type SnapContext, type SnapKind } from '../core/snap'
+import { lineIntent, snapSketchPoint, type SnapContext, type SnapKind } from '../core/snap'
 import { usePrefs } from '../../../src/state/prefsStore'
 import { useRePrefs } from '../state/rePrefs'
 import { arcThrough, chainArcStart, dragHandleAt, sketchHoverAt, splineClosesAt, useReverse, type SketchHover } from '../state/reStore'
+import { sketchDragGuide } from '../state/reSketchSlice'
 import type { FlatScene, SketchDimensionItem } from '../../../src/viewer/FlatScene'
 import { SKETCH_DOT, SKETCH_LINE, sketchPalette } from '../viewer/sketchPalette'
 import { dimensionFieldText, dimensionText } from '../viewer/sketchDimText'
@@ -159,26 +160,67 @@ export function patternPreview(sketch: Sketch, ids: readonly number[], spec: Ske
   return trial.entities.filter((e) => e.id >= sketch.nextId && e.kind !== 'point').map(entityFit)
 }
 
-/** The mark drawn where the cursor will land: a cross on an end it snaps
+/** The mark drawn where the cursor will land: a square on an end it snaps
  *  to, an upright cross on the origin, a triangle on the middle of a line,
  *  a diamond on a slice point, a tick on a piece, a small square on the
  *  grid — so the hand knows what it is about to take before it clicks. */
-function snapMark(kind: SnapKind, at: Vec2, s: number): FlatFit[] {
+export function snapMark(kind: SnapKind, at: Vec2, s: number): FlatFit[] {
   const [x, y] = at
   const seg = (a: Vec2, b: Vec2) => lineFit(a, b)
   const shapes: (FlatFit | null)[] =
     kind === 'anchor'
-      ? [seg([x - s, y - s], [x + s, y + s]), seg([x - s, y + s], [x + s, y - s])]
+      ? [seg([x - s, y - s], [x + s, y - s]), seg([x + s, y - s], [x + s, y + s]), seg([x + s, y + s], [x - s, y + s]), seg([x - s, y + s], [x - s, y - s])]
       : kind === 'origin'
         ? [seg([x - s * 1.4, y], [x + s * 1.4, y]), seg([x, y - s * 1.4], [x, y + s * 1.4])]
       : kind === 'midpoint'
         ? [seg([x - s, y - s * 0.7], [x + s, y - s * 0.7]), seg([x + s, y - s * 0.7], [x, y + s]), seg([x, y + s], [x - s, y - s * 0.7])]
       : kind === 'edge'
         ? [seg([x - s, y], [x, y + s]), seg([x, y + s], [x + s, y]), seg([x + s, y], [x, y - s]), seg([x, y - s], [x - s, y])]
-        : kind === 'entity' || kind === 'datum'
-          ? [seg([x - s, y], [x + s, y])]
+        : kind === 'entity'
+          ? [{ kind: 'circle', center: at, radius: s, sigma: 0, usedPoints: 0 }]
+        : kind === 'datum'
+          ? [seg([x - s, y], [x + s, y]), seg([x, y - s], [x, y + s])]
           : [seg([x - s, y - s], [x + s, y - s]), seg([x + s, y - s], [x + s, y + s]), seg([x + s, y + s], [x - s, y + s]), seg([x - s, y + s], [x - s, y - s])]
   return shapes.filter((f): f is FlatFit => f !== null)
+}
+
+/** H or V beside the rubber-banded line, matching its real inferred
+ *  relation. Strokes live in the draft layer, so they cannot intercept a
+ *  click intended for the geometry or persist after the tool is put down. */
+export function axisIntentMark(from: Vec2, to: Vec2, s: number): FlatFit[] {
+  const axis = lineIntent(from, to)
+  if (!axis || !(s > 0)) return []
+  const x = (from[0] + to[0]) / 2 + s * 2
+  const y = (from[1] + to[1]) / 2 + s * 3
+  const strokes: [Vec2, Vec2][] = axis === 'horizontal'
+    ? [[[x - s, y - s], [x - s, y + s]], [[x + s, y - s], [x + s, y + s]], [[x - s, y], [x + s, y]]]
+    : [[[x - s, y + s], [x, y - s]], [[x, y - s], [x + s, y + s]]]
+  return strokes.map(([a, b]) => lineFit(a, b)).filter((f): f is FlatFit => f !== null)
+}
+
+/** Control-points display never removes handles from selected or hovered
+ *  pieces: those handles remain the means of editing the active geometry. */
+export const sketchPointVisible = (showAll: boolean, selected: boolean, hovered: boolean): boolean => showAll || selected || hovered
+
+/** A screen-scaled dotted original carrier. Its dashes extend beyond both
+ *  original ends and the current drag position, with a bounded work count. */
+export function dragCarrierMarks(a: Vec2, b: Vec2, at: Vec2, radius: number): FlatFit[] {
+  const dx = b[0] - a[0]
+  const dy = b[1] - a[1]
+  const length = Math.hypot(dx, dy)
+  if (!(length > 1e-9) || !(radius > 0) || !Number.isFinite(radius)) return []
+  const dir: Vec2 = [dx / length, dy / length]
+  const along = (at[0] - a[0]) * dir[0] + (at[1] - a[1]) * dir[1]
+  const start = Math.min(0, along) - radius * 5
+  const end = Math.max(length, along) + radius * 5
+  const step = Math.max(radius * 0.8, (end - start) / 180)
+  const fits: FlatFit[] = []
+  for (let t = start; t < end; t += step) {
+    const last = Math.min(end, t + step * 0.32)
+    const fit = lineFit([a[0] + dir[0] * t, a[1] + dir[1] * t], [a[0] + dir[0] * last, a[1] + dir[1] * last])
+    if (fit) fits.push(fit)
+  }
+  return fits
 }
 
 const GLYPHS: Partial<Record<Constraint['kind'], string>> = {
@@ -431,6 +473,7 @@ export function useSketchSceneSync({
       const closing = draft.tool === 'spline' && splineClosesAt(draft.pending, at.p, at.radius)
       fits.push(...toolPreview(draft.tool, draft.pending, closing ? draft.pending[0] : snap.point, useRePrefs.getState().drawModes, useRePrefs.getState().polygonSides))
       if (snap.kind) fits.push(...snapMark(snap.kind, snap.point, at.radius * 0.6))
+      if (draft.tool === 'line' && draft.pending.length === 1) fits.push(...axisIntentMark(draft.pending[0], snap.point, at.radius * 0.55))
       // Over the chain's last end the press is the sketch's: held and
       // dragged it draws a tangent arc.
       overHandle = chainArcStart(draft, at.p, at.radius) !== null
@@ -447,6 +490,11 @@ export function useSketchSceneSync({
     }
     // The Pattern box open: the copies it would make, drawn where they land.
     if (draft.pattern && draft.selection.length > 0) fits.push(...patternPreview(draft.sketch, draft.selection, draft.pattern))
+    const guide = draft.tool === 'select' ? sketchDragGuide() : null
+    if (guide) {
+      fits.push(...dragCarrierMarks(guide.a, guide.b, guide.at, guide.radius))
+      if (guide.snapped) fits.push(...snapMark(guide.snapped === 'original' ? 'anchor' : 'entity', guide.at, guide.radius * 0.6))
+    }
     view.setCursor(draft.tool === 'select' ? (pick ? 'pointer' : '') : draft.tool === 'dimension' || draft.tool === 'relation' || draft.tool === 'fillet' || draft.tool === 'chamfer' ? 'pointer' : 'crosshair')
     // Over a piece the navigator lets go of the press, so it is a drag of
     // the piece and not a pan of the sheet.
@@ -525,6 +573,7 @@ export function useSketchSceneSync({
     // A spline's fit points too: what it is drawn through, and dragged by.
     for (const e of sketch.entities) {
       if (e.kind !== 'line' && e.kind !== 'arc' && e.kind !== 'spline') continue
+      if (!sketchPointVisible(useRePrefs.getState().sketchControlPoints, selected.has(e.id), lit.has(e.id))) continue
       for (const at of anchorsOf(e)) dots.push({ at: anchorPoint(e, at), color: selected.has(e.id) ? palette.selected : palette.dot, size: SKETCH_DOT.end })
     }
     for (const p of picks) {
@@ -575,9 +624,8 @@ export function useSketchSceneSync({
     // few pixels off its spot (the `glyph` class), the way CAD draws a
     // constraint beside its entity: sitting on the line's middle or on a
     // corner it would take the press meant to drag the piece.
-    // Drawn only when asked for (the key by the tools), or for the one
-    // relation selected in the panel: a fitted profile has a join and a
-    // tangency at every corner, and their glyphs bury the drawing.
+    // The display preference controls glyphs independently of dimensions.
+    // A relation selected in the panel remains visible for editing.
     const showGlyphs = useRePrefs.getState().sketchRelations
     const notes: { id: number; text: string; at: Vec2; editing: boolean; className?: string; tip?: string }[] = []
     for (const c of sketch.constraints) {
@@ -621,6 +669,7 @@ export function useSketchSceneSync({
     const dims: SketchDimensionItem[] = []
     for (const c of sketch.constraints) {
       if (!isDimension(c)) continue
+      if (!useRePrefs.getState().sketchDimensions && c.id !== draft.dimMade && c.id !== draft.selectedConstraint) continue
       const place = held?.id === c.id ? dimPlaceAt(c, sketch, held.at, traces) : null
       const shape = dimShape(place ? { ...c, place } : c, sketch, traces, lift)
       if (!shape) continue
@@ -640,9 +689,11 @@ export function useSketchSceneSync({
 
   const draft = useReverse((s) => s.sketchDraft)
   const showRelations = useRePrefs((s) => s.sketchRelations)
+  const showDimensions = useRePrefs((s) => s.sketchDimensions)
+  const showControlPoints = useRePrefs((s) => s.sketchControlPoints)
   const dark = usePrefs((s) => s.dark)
   const units = usePrefs((s) => s.units)
-  useEffect(pushSketch, [draft, showRelations, dark, units])
+  useEffect(pushSketch, [draft, showRelations, showDimensions, showControlPoints, dark, units])
   useEffect(() => {
     scene()?.setEdgeColor(colors().slice, colors().sliceOpacity)
     // Runs on the listed dependencies only, not on everything it reads.

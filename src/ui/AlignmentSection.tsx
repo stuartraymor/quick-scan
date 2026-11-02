@@ -18,6 +18,7 @@ import {
   useStore,
   type Element,
 } from '../state/store'
+import { alignmentReferences } from '../state/alignModel'
 import { InfoDot } from './InfoDot'
 import { providersFor } from './RefSelect'
 import { useLength } from '../app/useUnits'
@@ -81,6 +82,9 @@ function AlignSelect({
   testId,
   onChange,
   onPick,
+  onReferencePick,
+  referencePicking,
+  onFlip,
 }: {
   label: string
   roles: readonly RefRole[]
@@ -94,8 +98,11 @@ function AlignSelect({
   testId: string
   onChange: (id: number | null) => void
   onPick: () => void
+  onReferencePick: () => void
+  referencePicking: boolean
+  onFlip?: () => void
 }) {
-  const options = providersFor(roles, elements)
+  const options = providersFor(roles, alignmentReferences(elements))
   const selectValue = picking
     ? '__pick__'
     : value !== null
@@ -104,7 +111,7 @@ function AlignSelect({
         ? '__picked__'
         : ''
   return (
-    <label className="field">
+    <div className="field">
       <span>{label}</span>
       <select
         data-test={testId}
@@ -132,7 +139,9 @@ function AlignSelect({
             : `+ Pick ${need === 1 ? 'a point' : `${need} points`} on the scan…`}
         </option>
       </select>
-    </label>
+      <button type="button" data-test={`${testId}-pick`} aria-pressed={referencePicking} onClick={onReferencePick}>{referencePicking ? 'Picking…' : 'Pick…'}</button>
+      {onFlip && <button type="button" data-test={`${testId}-flip`} disabled={value === null && picks < need} onClick={onFlip}>Flip</button>}
+    </div>
   )
 }
 
@@ -372,6 +381,9 @@ export function AlignmentSection({
             testId="align-primary"
             onChange={(id) => setAlignmentRef('primary', id)}
             onPick={() => beginAlignmentPick('primary')}
+            onReferencePick={() => useStore.getState().beginAlignmentReferencePick('primary')}
+            referencePicking={alignDraft.referencePickSlot === 'primary'}
+            onFlip={() => useStore.getState().flipAlignmentAxis('primary')}
           />
           <label className="field">
             <span>It is the part’s</span>
@@ -399,6 +411,9 @@ export function AlignmentSection({
             testId="align-secondary"
             onChange={(id) => setAlignmentRef('secondary', id)}
             onPick={() => beginAlignmentPick('secondary')}
+            onReferencePick={() => useStore.getState().beginAlignmentReferencePick('secondary')}
+            referencePicking={alignDraft.referencePickSlot === 'secondary'}
+            onFlip={() => useStore.getState().flipAlignmentAxis('secondary')}
           />
           {(alignDraft.secondary !== null || alignDraft.secondaryPicks.length > 0) && (
             <label className="field">
@@ -430,6 +445,8 @@ export function AlignmentSection({
             testId="align-origin"
             onChange={(id) => setAlignmentRef('origin', id)}
             onPick={() => beginAlignmentPick('origin')}
+            onReferencePick={() => useStore.getState().beginAlignmentReferencePick('origin')}
+            referencePicking={alignDraft.referencePickSlot === 'origin'}
           />
 
           {/* The pose itself is previewed on the part, against the coordinate

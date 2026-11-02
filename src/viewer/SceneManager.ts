@@ -13,6 +13,7 @@ import type { LinkedView } from './cameraLink'
 import { OrthoViewport, STANDARD_VIEWS, viewAcross, type StandardView } from './orthoViewport'
 import { AxisGizmo, type GizmoAxis, type GizmoTarget } from './axisGizmo'
 import { NavigationGuides } from './navigationGuides'
+import { WandCursorOwner } from './cursorOwner'
 import { DatumStage } from './datumStage'
 import { RegionColors } from './regionColors'
 import { SurfaceMarking, colorToRgb, type PaintBrush } from './marking'
@@ -471,6 +472,7 @@ export class SceneManager {
         this.grips.putAwayWhile(this.marking.gestureArmed())
         this.overlays.setPreviewBrushing(this.marking.gestureArmed())
         this.updateHover()
+        this.updateWandCursor()
         // Anything held at a fixed size on screen — the picked-point markers —
         // has to be re-scaled when the zoom changes. A no-op on the frames it
         // has not.
@@ -482,7 +484,8 @@ export class SceneManager {
         // The section curves are fat lines sized in pixels and need the canvas.
         const el = this.viewport.renderer.domElement
         this.sections.setResolution(el.clientWidth || 1, el.clientHeight || 1)
-        this.navigationGuides.update(this.camera, this.controls.target, el.clientWidth || 1, el.clientHeight || 1)
+        this.navigationGuides.update(this.camera, this.controls.target, el.clientWidth || 1, el.clientHeight || 1,
+          Math.max(100, this.modelRadius * 1.5 + Math.hypot(...this.modelCenter())))
         for (const layer of this.layers) layer.tick?.(el.clientWidth || 1, el.clientHeight || 1)
         // A viewport that follows a sheet re-reads its scale when its own
         // size changes — shown again after being put away, or the window
@@ -840,7 +843,20 @@ export class SceneManager {
     this.hoverUnder(this.hoverAt)
   }
 
-  /** Light what is under a client point — or, with null, nothing. */
+  private wandCursorOwner = new WandCursorOwner()
+
+  private updateWandCursor(): void {
+    const at = this.hoverAt
+    const released = this.wandCursorOwner.update(
+      this.viewport.renderer.domElement.style,
+      at !== null && this.marking.pointerGesture() === 'wand',
+      this.viewport.navigating(),
+      at !== null && this.gizmoAt(at.x, at.y) !== null,
+    )
+    if (released) this.hoverDirty = true
+  }
+
+  /** Light what is under a client point, or nothing on pointer leave. */
   private hoverUnder(at: { x: number; y: number } | null): void {
     // The gizmo's arrows light under the cursor and take the plain left-drag
     // off the camera while one is under it, the way the grips do: a press on
@@ -1908,6 +1924,8 @@ export class SceneManager {
   /** Arm the brush, change what it does, or (with null) put it away. */
   setPaintBrush(brush: PaintBrush | null): void {
     this.marking.setPaintBrush(brush)
+    this.updateWandCursor()
+    this.invalidate()
   }
 
   /** The vertices marked so far, as the fitter wants them. */

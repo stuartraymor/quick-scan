@@ -901,6 +901,10 @@ export default function App() {
       return
     }
     if (store.dimDraft) store.selectDimensionElement(id)
+    else if (!useShell.getState().extractOpen && !store.busy) {
+      handleEditElement(id)
+      useMark.getState().setGesture(null)
+    }
   }
 
   /** Re-open an element in the box it was created in. Everything it was made
@@ -1286,6 +1290,10 @@ export default function App() {
    *  nothing to cut across: the plane is taken there. */
   const handleWorldPlanePick = (axis: WorldAxis) => {
     const store = useStore.getState()
+    if (store.alignDraft?.referencePickSlot) {
+      store.selectAlignmentElement(axis === 'x' ? -1001 : axis === 'y' ? -1002 : -1003)
+      return
+    }
     if (!store.sectionDraft || store.draft) return
     store.setSectionDraftRef(axis)
   }
@@ -1828,6 +1836,8 @@ export default function App() {
           pluginHistoryEntries={runtimes.flatMap(runtime => [...(runtime.explorerHistoryEntries ?? [])])}
           pluginVisibility={runtimes.flatMap(runtime => runtime.explorerVisibility ? [runtime.explorerVisibility] : [])}
           coreVisibility={active?.explorerCoreVisibility}
+          onDeleteElement={handleDelete}
+          onDeleteSection={handleDeleteSection}
           onEditElement={handleEditElement}
           onEditSection={handleEditSection}
           interactionBlocked={picking}

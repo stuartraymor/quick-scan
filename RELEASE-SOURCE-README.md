@@ -1,9 +1,9 @@
-# Quick Scan 0.0.39 corresponding source
+# Quick Scan 0.0.43 corresponding source
 
-Based on the source archive attached to v0.0.31; the upstream tag itself points at older source. Original dirty checkout was preserved.
+This source continues the verified v0.0.39 tag and the local 0.0.40–0.0.42 review increments. The release branch is based on that tag; the repository main branch contains older application source and was not overwritten.
 
-Node22+, npm ci, npm run build; node package-desktop.mjs; installer/build-installer.ps1. Exact reference samples are local inputs under public/reference-examples, separately excluded from source control. The comparison installer retains their original catalog hashes.
+Build with Node.js 22+: npm ci, npm run build, node package-desktop.mjs; use installer/build-installer.ps1 for a Windows installer. The desktop package must include agent-setup.cjs, preload.cjs and recents.cjs. The MCP integration test additionally needs npm --prefix mcp ci.
 
-This tested release adds unified Objects/History, persisted common order, actual rollback and restoration, dependency viewing, synchronized visibility, existing-object editing and guarded deletion, plus the navigation corner improvements. The dark blue and white theme is retained. See RELEASE-VERIFICATION.md for results and limits, including read-only partial timelines and incomplete full QuickSurface parity.
+See docs/AI_SETUP.md and RELEASE-VERIFICATION.md for behavior, test coverage and remaining QuickSurface parity gaps. No exact-equivalence claim is made. Reference samples are separately excluded from this source archive; preserve the catalog/license boundaries when rebuilding a sample-enabled installer.
 
-SOURCE-HASHES.json records SHA-256 for every other file in the attached normalized-LF source archive. Rebuilding requires the documented local reference samples; the source archive excludes those sample assets. The Windows installer includes all ten samples, verified against their original catalog hashes.
+SOURCE-HASHES.json records SHA-256 of every other file in this normalized-LF corresponding source archive. Original upstream attribution and AGPL-3.0-only licensing are preserved.

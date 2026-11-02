@@ -1,3 +1,10 @@
+## 0.0.43 — 2026-11-02
+
+- Desktop Rebuild with AI adds Set up my AI app for installed Claude Code, Claude Desktop and Codex configurations. Merges preserve other settings, back up changed files, report per-app failures, and share the connector pairing values.
+- Adds actionable delayed-waiting and refused-connection guidance. The data warning remains required; accepted consent and the connection's on/off choice survive later version-profile changes.
+- Includes the local 0.0.40–0.0.42 sketch/alignment/explorer improvements: a circular real-section-point fitting brush, seven fitted shapes, live geometry previews, original SVG sketch command rows, on-canvas constraints/dimensions, multiselection and original-line drag guides, plus independent mirror/duplicate/offset/trim/slot tools.
+- Full QuickSurface equivalence is not established. Several placement, Auto Join/Corner Trim, projection, analysis/display and IGES/reference-point workflows remain incomplete or different. This is an AI setup release with a partial sketch parity increment, not an exact clone certification. See RELEASE-VERIFICATION.md and docs/AI_SETUP.md.
+
 ## 0.0.39 — 2026-11-02
 
 - Objects now uses compact per-type groups, counts, and real visibility checkboxes for scan, measured elements, sections, sketches, surfaces and solids. ALL and History visibility synchronize across core and CAD objects while leaving Coordinate System independent.

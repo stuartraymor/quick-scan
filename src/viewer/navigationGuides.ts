@@ -21,37 +21,18 @@ export interface NavigationGridLayout {
   lastV: number
 }
 
-/** Exact world-unit ruling. Normally only principal views have a grid. The
- * coordinate-system display also offers its XY ruling in oblique views;
- * supplying a normal projects the frustum rays onto that world-zero plane.
- * Dense/invalid requests are omitted, never replaced with another spacing. */
-export function navigationGridLayout(camera: THREE.OrthographicCamera, spacing: number, planeNormal?: Axis): NavigationGridLayout | null {
-  if (!Number.isFinite(spacing) || spacing <= 0) return null
-  camera.updateMatrixWorld(true)
-  const direction = camera.getWorldDirection(new THREE.Vector3())
-  const magnitudes = direction.toArray().map(Math.abs)
-  const dominant = magnitudes.indexOf(Math.max(...magnitudes)) as Axis
-  if (planeNormal === undefined && magnitudes[dominant] < 1 - 1e-7) return null
-  const normal = planeNormal ?? dominant
-  if (Math.abs(direction.getComponent(normal)) < 1e-7) return null
+/** A finite world-zero square. Camera motion must never change its plane,
+ * bounds or visibility: a ray/frustum intersection becomes singular near
+ * edge-on and made the old grid disappear while orbiting. */
+export function navigationGridLayout(_camera: THREE.OrthographicCamera, spacing: number, normal: Axis = 2, halfExtent = 100): NavigationGridLayout | null {
+  if (!Number.isFinite(spacing) || spacing <= 0 || !Number.isFinite(halfExtent) || halfExtent <= 0) return null
+  const last = Math.max(1, Math.ceil(halfExtent / spacing))
+  if (!Number.isSafeInteger(last) || 4 * last + 2 > MAX_GRID_LINES) return null
+  const extent = last * spacing
+  if (!Number.isFinite(extent)) return null
   const [u, v] = ([0, 1, 2] as Axis[]).filter((axis) => axis !== normal)
-  const corners = [-1, 1].flatMap((x) => [-1, 1].map((y) => {
-    const point = new THREE.Vector3(x, y, 0).unproject(camera)
-    return point.addScaledVector(direction, -point.getComponent(normal) / direction.getComponent(normal))
-  }))
-  const minU = Math.min(...corners.map((point) => point.getComponent(u)))
-  const maxU = Math.max(...corners.map((point) => point.getComponent(u)))
-  const minV = Math.min(...corners.map((point) => point.getComponent(v)))
-  const maxV = Math.max(...corners.map((point) => point.getComponent(v)))
-  if (![minU, maxU, minV, maxV].every(Number.isFinite)) return null
-  const firstU = Math.ceil(minU / spacing)
-  const lastU = Math.floor(maxU / spacing)
-  const firstV = Math.ceil(minV / spacing)
-  const lastV = Math.floor(maxV / spacing)
-  if (![firstU, lastU, firstV, lastV].every(Number.isSafeInteger)) return null
-  const count = Math.max(0, lastU - firstU + 1) + Math.max(0, lastV - firstV + 1)
-  if (!Number.isSafeInteger(count) || count > MAX_GRID_LINES) return null
-  return { normal, u, v, minU, maxU, minV, maxV, firstU, lastU, firstV, lastV }
+  return { normal, u, v, minU: -extent, maxU: extent, minV: -extent, maxV: extent,
+    firstU: -last, lastU: last, firstV: -last, lastV: last }
 }
 
 /** Rounded 1/2/5 scale, independent of the user's exact fine-grid spacing. */
@@ -108,7 +89,7 @@ export class NavigationGuides {
     if (!this.gridEnabled) this.grid.visible = false
   }
 
-  update(camera: THREE.OrthographicCamera, target: THREE.Vector3, w: number, h: number): void {
+  update(camera: THREE.OrthographicCamera, target: THREE.Vector3, w: number, h: number, halfExtent = 100): void {
     if (w <= 0 || h <= 0) return
     const worldPerPixel = Math.abs(camera.top - camera.bottom) / (camera.zoom * h)
     if (!Number.isFinite(worldPerPixel) || worldPerPixel <= 0) return
@@ -117,16 +98,8 @@ export class NavigationGuides {
     // clipping supplies the viewport edge without attaching the axis to it.
     const extent = camera.position.length() + target.length() + worldPerPixel * Math.hypot(w, h)
     this.coordinates.scale.setScalar(extent)
-    const principal = navigationGridLayout(camera, coarseSpacing(worldPerPixel))
-    const plane = principal?.normal ?? 2
-    // Oblique XY projection covers more world units per pixel than a
-    // face-on view. Size the automatic ruling against that coverage too.
-    const coverage = coordinatesOn ? navigationGridLayout(camera, Number.MAX_VALUE, plane) : null
-    const rulingScale = coverage
-      ? Math.max((coverage.maxU - coverage.minU) / w, (coverage.maxV - coverage.minV) / h)
-      : worldPerPixel
-    const coarseStep = coarseSpacing(rulingScale)
-    const coarseLayout = coordinatesOn ? navigationGridLayout(camera, coarseStep, plane) : null
+    const coarseStep = coarseSpacing(worldPerPixel)
+    const coarseLayout = coordinatesOn ? navigationGridLayout(camera, coarseStep, 2, halfExtent) : null
     this.coarseGrid.visible = coarseLayout !== null
     if (coarseLayout) {
       const key = JSON.stringify([coarseLayout, coarseStep])
@@ -136,7 +109,7 @@ export class NavigationGuides {
         this.coarseResources = this.drawGrid(this.coarseGrid, coarseLayout, coarseStep, true, false, worldPerPixel)
       }
     }
-    const layout = this.gridEnabled ? navigationGridLayout(camera, this.spacing, coordinatesOn ? plane : undefined) : null
+    const layout = this.gridEnabled ? navigationGridLayout(camera, this.spacing, 2, halfExtent) : null
     this.grid.visible = layout !== null
     if (!layout) return
     const key = JSON.stringify([layout, this.spacing, coordinatesOn])

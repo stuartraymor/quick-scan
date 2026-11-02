@@ -51,6 +51,8 @@ import { useNotes } from '../state/noteStore'
 import { pinNoteOnBody, useNotePins, useNotesOn } from './useNotePins'
 import { useNetworkLayer } from './useNetworkLayer'
 import { readField } from '../ui/reLength'
+import { useSketchBrush } from '../state/sketchBrushStore'
+import { useSketchPresentation } from '../state/sketchPresentation'
 
 /** A scale held per millimetre — a deviation in millimetres, a curvature
  *  per millimetre — as the legend shows it, in the units shown: `power` 1
@@ -100,6 +102,7 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
   /** The Line tool's press on the chain's last end, being dragged into a
    *  tangent arc: where the hand last was, or null when no arc is in it. */
   const sketchArcDrag = useRef<{ p: Vec2; meta: { raw: boolean; unitsPerScreenPx: number } } | 'pressed' | null>(null)
+  const sketchLineDrag = useRef<{ start: Vec2; pending: boolean; moved: boolean; last: Vec2; raw: boolean; upp: number } | null>(null)
   const flushSketchDrag = () => {
     const d = sketchDragPending.current
     sketchDragPending.current = null
@@ -122,6 +125,19 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
   useNetworkLayer(sceneRef)
   const contextKind = useReverse(s => s.sketchDraft ? '2D Sketch' : s.extrudeDraft ? 'Extrude' : s.revolveDraft ? 'Revolve' : s.featureDraft?.kind ?? '')
   const sketchOpen = useReverse((s) => s.sketchDraft !== null)
+  const extractingSketch = useSketchBrush((s) => s.open)
+  useEffect(() => {
+    if (!sketchOpen) { useSketchBrush.getState().setOpen(false); useSketchPresentation.getState().setTool(null) }
+  }, [sketchOpen])
+  useEffect(() => {
+    const normal = () => {
+      const view = sketchSceneRef.current?.sheetView()
+      const draft = useReverse.getState().sketchDraft
+      if (view && draft) sceneRef.current?.followSheet(draft.frame, view.centre, view.unitsPerScreenPx, 300)
+    }
+    window.addEventListener('quickscan-sketch-normal', normal)
+    return () => window.removeEventListener('quickscan-sketch-normal', normal)
+  }, [sceneRef])
   const sketchPlacing = useReverse((s) => s.sketchDraft?.placing === true)
   const sketchModelShown = useReverse((s) => s.sketchModelShown)
   const featureCount = useReverse((s) => s.features.length + s.rolledBack.length)
@@ -605,7 +621,7 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
 
   return {
     canSave: featureCount > 0,
-    toolContext: { title: sketchPlacing ? 'Create Sketch' : contextKind ? contextKind[0].toUpperCase() + contextKind.slice(1) : 'CAD tools', key: `${contextKind}:${sketchPlacing}`, active: Boolean(contextKind) },
+    toolContext: { title: sketchPlacing ? 'Create Sketch' : extractingSketch ? 'Fit primitives' : sketchOpen ? `Edit ${useReverse.getState().sketchDraft?.name ?? 'Sketch'}` : contextKind ? contextKind[0].toUpperCase() + contextKind.slice(1) : 'CAD tools', key: `${contextKind}:${sketchPlacing}:${extractingSketch}`, active: Boolean(contextKind) },
     ribbon: <ReverseRibbon />,
     ribbonActions,
     importCad: (file: File) => {
@@ -656,6 +672,7 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
     stage: sketchStage && (
       <div className="viewslot sketch">
         <SketchViewer
+          chainsOf={reverse.chainsOf}
           onReady={sketchSync.onReady}
           onViewChange={sketchSync.onViewChange}
           onPick={(p, meta) => {
@@ -671,11 +688,15 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
               } else useStore.getState().setStatus('Nothing to project there — click an edge of a body, or a piece of another sketch, that lies flat to this plane or square to it.')
               return
             }
-            re.sketchClick(p, 8 * meta.unitsPerScreenPx, meta.shift ?? false, sketchSync.snapFor(meta.raw))
+            const count = re.sketchDraft?.sketch.entities.length ?? 0
+            const singleLine = re.sketchDraft?.tool === 'line' && !useSketchPresentation.getState().lineChain
+            re.sketchClick(p, 8 * meta.unitsPerScreenPx, meta.shift || meta.raw || false, sketchSync.snapFor(meta.raw))
+            if (singleLine && (useReverse.getState().sketchDraft?.sketch.entities.length ?? 0) > count) useReverse.getState().setSketchTool('line')
           }}
           onHover={(p, unitsPerScreenPx, raw) => sketchSync.onHover(p, 8 * unitsPerScreenPx, raw)}
           onDragStart={(p, meta) => {
             const re = useReverse.getState()
+            sketchLineDrag.current = null
             // The Line tool's press on the end it would carry on from: let go
             // there it is a click, which ends the chain; held and dragged it
             // swings a tangent arc out of the end.
@@ -684,9 +705,20 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
               return true
             }
             sketchArcDrag.current = null
+            if (re.sketchDraft?.tool === 'line') {
+              sketchLineDrag.current = { start: p, pending: re.sketchDraft.pending.length > 0, moved: false, last: p, raw: meta.raw, upp: meta.unitsPerScreenPx }
+              return true
+            }
             return re.sketchDragStart(p, 8 * meta.unitsPerScreenPx)
           }}
           onDrag={(p, meta) => {
+            const line = sketchLineDrag.current
+            if (line) {
+              if (!line.moved && !line.pending) useReverse.getState().sketchClick(line.start, 8 * line.upp, false, sketchSync.snapFor(line.raw))
+              line.moved = true; line.last = p; line.raw = meta.raw; line.upp = meta.unitsPerScreenPx
+              sketchSync.onHover(p, 8 * meta.unitsPerScreenPx, meta.raw)
+              return
+            }
             if (sketchArcDrag.current) {
               sketchArcDrag.current = { p, meta }
               sketchSync.onArcDrag(p, 8 * meta.unitsPerScreenPx, meta.raw)
@@ -700,6 +732,13 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
             })
           }}
           onDragEnd={() => {
+            const line = sketchLineDrag.current
+            sketchLineDrag.current = null
+            if (line?.moved) {
+              useReverse.getState().sketchClick(line.last, 8 * line.upp, false, sketchSync.snapFor(line.raw))
+              if (!useSketchPresentation.getState().lineChain) useReverse.getState().setSketchTool('line')
+              return
+            }
             const swung = sketchArcDrag.current
             if (swung) {
               sketchArcDrag.current = null

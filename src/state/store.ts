@@ -80,7 +80,7 @@ import type {
   Vec3,
 } from '../core/types'
 import { blockedRefs, defaultMethod, dependentsOf, type DimensionDraft, type Draft, draftFromElement, type Element, elementColor, evalConstructDraft, freshCounters, freshDraft, keptOf, nextPointPick, reevaluateConstructions, type SelectMode, transformSource, withoutRegion } from './elementModel'
-import { type AlignDraft, type AlignmentProposal, alignSlotPicks, withSlotPicks, withSlotRef } from './alignModel'
+import { alignmentReferences, alignmentSlotAccepts, flippedAlignmentAxis, type AlignDraft, type AlignmentProposal, alignSlotPicks, withSlotPicks, withSlotRef } from './alignModel'
 import { centreShadowDraft, dimensionRefsOf, type Section, sectionMeasureRefs, type SectionDraft, sectionDraftReady, sectionKeyOf, type SectionKind, specFields, settleSectionDraft } from './sectionModel'
 export { type Section, type SectionDraft, sectionDraftColorOf, sectionDraftReady } from './sectionModel'
 export { alignCenterOf, type AlignDraft, alignmentPreview, type AlignmentProposal, type AlignPreview, alignSlotPicks } from './alignModel'
@@ -344,6 +344,8 @@ interface AppState {
   setAlignmentAxis: (slot: 'primary' | 'secondary', axis: AxisDir) => void
   /** Start filling a slot by clicking points on the scan. */
   beginAlignmentPick: (slot: AlignSlot) => void
+  beginAlignmentReferencePick: (slot: AlignSlot) => void
+  flipAlignmentAxis: (slot: 'primary' | 'secondary') => void
   /** A click on the scan while a slot is collecting points, with the surface
    *  normal under it. The slot closes itself once it has enough. */
   addAlignmentPick: (point: Vec3, normal: Vec3) => void
@@ -1358,12 +1360,24 @@ export const useStore = create<AppState>()((set, get) => ({
     })),
 
   setAlignmentRef: (slot, id) =>
-    set((s) => (s.alignDraft ? { alignDraft: withSlotRef(s.alignDraft, slot, id) } : {})),
+    set((s) => {
+      if (!s.alignDraft) return {}
+      const el = id === null ? null : alignmentReferences(s.elements).find(e => e.id === id)
+      if (id !== null && (!el || !alignmentSlotAccepts(slot, el))) return {statusText:'That reference is not valid for this alignment slot.'}
+      return { alignDraft: withSlotRef(s.alignDraft, slot, id) }
+    }),
+
+  beginAlignmentReferencePick: (slot) => set(s => s.alignDraft
+    ? {alignDraft:{...s.alignDraft, pickSlot:null, referencePickSlot:slot}} : {}),
+  flipAlignmentAxis: (slot) => {
+    const ad=get().alignDraft
+    if (ad) get().setAlignmentAxis(slot, flippedAlignmentAxis(slot === 'primary' ? ad.primaryAxis : ad.secondaryAxis))
+  },
 
   beginAlignmentPick: (slot) =>
     set((s) =>
       s.alignDraft
-        ? { alignDraft: { ...withSlotPicks(s.alignDraft, slot, []), pickSlot: slot } }
+        ? { alignDraft: { ...withSlotPicks(s.alignDraft, slot, []), referencePickSlot: null, pickSlot: slot } }
         : {},
     ),
 
@@ -1402,7 +1416,9 @@ export const useStore = create<AppState>()((set, get) => ({
   cancelAlignmentPick: () =>
     set((s) => {
       const ad = s.alignDraft
-      if (!ad || ad.pickSlot === null) return {}
+      if (!ad) return {}
+      if (ad.referencePickSlot) return {alignDraft:{...ad,referencePickSlot:null}}
+      if (ad.pickSlot === null) return {}
       return { alignDraft: { ...withSlotPicks(ad, ad.pickSlot, []), pickSlot: null } }
     }),
 
@@ -1424,8 +1440,12 @@ export const useStore = create<AppState>()((set, get) => ({
     set((s) => {
       const ad = s.alignDraft
       if (!ad) return {}
-      const el = s.elements.find((e) => e.id === id)
+      const el = alignmentReferences(s.elements).find((e) => e.id === id)
       if (!el?.fit) return {}
+      if (ad.referencePickSlot) {
+        if (!alignmentSlotAccepts(ad.referencePickSlot, el)) return {statusText:'That reference is not valid for the active alignment slot.'}
+        return {alignDraft:withSlotRef(ad, ad.referencePickSlot, id)}
+      }
       // Clicking a chosen element takes it out of its slot.
       if (ad.primary === id) return { alignDraft: withSlotRef(ad, 'primary', null) }
       if (ad.secondary === id) return { alignDraft: withSlotRef(ad, 'secondary', null) }

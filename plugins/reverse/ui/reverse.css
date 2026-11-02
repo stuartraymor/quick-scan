@@ -1,4 +1,61 @@
 /* SPDX-License-Identifier: AGPL-3.0-only */
+/* Observed 2D sketch command positions at a 330px reference panel width. */
+.tool-inspector[data-mode='floating']:has(.sketch-editor-parity) { width: 330px; }
+.tool-inspector .sketch-editor-parity { display: flex; flex-direction: column; gap: 5px; }
+.sketch-controls { display: flex; flex-direction: column; gap: 0; }
+.sketch-entry-row { display: grid; grid-template-columns: 42% 1fr; gap: 6px; }
+.tool-inspector .sketch-entry-row button { min-height: 29px; }
+.sketch-section-label { margin: 6px 0 5px; font-size: 11px; }
+.sketch-command-row { display: grid; grid-auto-flow: column; grid-auto-columns: 21px; gap: 5px; justify-content: start; }
+.tool-inspector .sketch-command-row button { width: 21px; height: 21px; min-height: 21px; padding: 0 !important; border: 1px solid transparent; border-radius: 0; display: grid; place-items: center; box-shadow: none; }
+.tool-inspector .sketch-command-row.create button:not(:disabled), .tool-inspector .sketch-command-row.modify button:not(:disabled) { background: #b9ddfb; color: #3e4c53; }
+.tool-inspector .sketch-command-row button.on { border: 1px solid #171717; background: #cbe6ff; }
+.tool-inspector .sketch-command-row button svg { width: 20px; height: 20px; }
+.sketch-command-row.constraints { grid-auto-columns: 20px; gap: 4px; margin-top: 8px; }
+.tool-inspector .sketch-command-row.constraints button:not(:disabled) { background: #fff; color: #555; }
+.tool-inspector .sketch-command-row.constraints button:disabled { background: #fff; border-color: transparent; color: #aaa; }
+.sketch-selection-count { min-height: 13px; color: #666; font-size: 10px; margin-top: 4px; }
+.sketch-display { margin: 0; padding: 7px 10px 10px; border: 1px solid #d8d8d8; min-width: 0; }
+.sketch-display legend { padding: 0 3px; font-size: 12px; }
+.sketch-lock { display: flex; align-items: center; gap: 4px; margin: 8px 0 10px 43%; }
+.sketch-display-grid { display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: 12px 8px; }
+.sketch-display-grid label { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+.tool-inspector .sketch-display-grid button { justify-self: end; width: 74px; }
+.tool-inspector .sketch-overdefined { margin-top: 6px; color: #777; }
+.sketch-advanced { margin: 2px 0; }
+.sketch-advanced > summary { cursor: pointer; font-size: 10px; color: #666; padding: 4px 0; }
+.sketch-advanced[open] { display: grid; gap: 6px; border-top: 1px solid #ccc; }
+.sketch-edit-values { display: flex; flex-wrap: wrap; gap: 4px; padding-top: 8px; }
+.sketch-edit-values input { width: 58px; }
+.sketch-extract-panel .field input { width: 66px; margin-left: auto; }
+.tool-inspector[data-mode='floating']:has(.sketch-extract-panel) { width: 280px; }
+.sketch-extract-panel hr { border: 0; border-top: 1px solid #888; width: 100%; margin: 3px 0; }
+.sketch-extract-panel label { font-size: 11px; }
+.sketch-extract-panel .checkrow { display: flex; align-items: center; }
+/* The reference sketch dialogs use a light face independently of viewport theme. */
+:root[data-theme] .tool-inspector.tool-inspector:has(.sketch-editor-parity), :root[data-theme] .tool-inspector.tool-inspector:has(.sketch-extract-panel) {
+ --chassis:#f0f0f0; --panel:#f0f0f0; --well:#fff; --well-deep:#e5e5e5;
+ --ink:#171717; --dim:#666; --faint:#929292; --line:#ccc; --line-strong:#a6a6a6;
+ --accent:#1679bd; --accent-d:#12649c; --accent-soft:#cce8ff;
+ color-scheme:light; color:#171717; background:#f0f0f0; width:330px; min-width:330px;
+}
+:root[data-theme] .tool-inspector.tool-inspector:has(.sketch-extract-panel) { width:280px; min-width:280px; }
+:root[data-theme] .tool-inspector.tool-inspector:has(.sketch-editor-parity) .inspector-titlebar,
+:root[data-theme] .tool-inspector.tool-inspector:has(.sketch-extract-panel) .inspector-titlebar { background:#f0f0f0; color:#777; }
+:root[data-theme] .tool-inspector.tool-inspector:has(.sketch-editor-parity) button:not(.on):not(:disabled),
+:root[data-theme] .tool-inspector.tool-inspector:has(.sketch-extract-panel) button:not(.on):not(:disabled) { color:#171717 !important; background:linear-gradient(#fff,#fafafa) !important; }
+:root[data-theme] .tool-inspector.tool-inspector:has(.sketch-editor-parity) button.on,
+:root[data-theme] .tool-inspector.tool-inspector:has(.sketch-extract-panel) button.on { color:#171717 !important; background:#b9ddfb !important; border-color:#333; }
+:root[data-theme] .tool-inspector.tool-inspector:has(.sketch-editor-parity) button:disabled,
+:root[data-theme] .tool-inspector.tool-inspector:has(.sketch-extract-panel) button:disabled { color:#999 !important; background:#f8f8f8 !important; border-color:#ddd; }
+:root[data-theme] .tool-inspector.tool-inspector:has(.sketch-editor-parity) .sketch-command-row.create button:not(:disabled),
+:root[data-theme] .tool-inspector.tool-inspector:has(.sketch-editor-parity) .sketch-command-row.modify button:not(:disabled) { background:#b9ddfb !important; color:#3e4c53 !important; }
+:root[data-theme] .tool-inspector.tool-inspector:has(.sketch-editor-parity) .sketch-command-row.constraints button { color:#555 !important; background:#fff !important; border-color:transparent; }
+:root[data-theme] .tool-inspector.tool-inspector:has(.sketch-editor-parity) :is(input:not([type='checkbox']):not([type='range']),select),
+:root[data-theme] .tool-inspector.tool-inspector:has(.sketch-extract-panel) :is(input:not([type='checkbox']):not([type='range']),select) { background:#fff; color:#171717; border-color:#b4b4b4; }
+:root[data-theme] .tool-inspector.tool-inspector:has(.sketch-editor-parity) .inspector-body > .inspector-model-controls > .panel,
+:root[data-theme] .tool-inspector.tool-inspector:has(.sketch-extract-panel) .inspector-body > .inspector-model-controls > .panel { padding:8px 10px 10px; }
+.sketch-controls .sketch-display-grid input[type='checkbox'], .sketch-controls .sketch-lock input[type='checkbox'] { accent-color:#0078d7; }
 /* The Reverse engineer workspace's own rules, on top of the app's stylesheet
    (src/styles.css), whose tokens and base rules they use. */
 

@@ -2,6 +2,7 @@ const { app, BrowserWindow, protocol, net, dialog, ipcMain, shell } = require('e
 const { spawn } = require('node:child_process');
 const updater = require('./updater.cjs');
 const recents = require('./recents.cjs');
+const agentSetup = require('./agent-setup.cjs');
 const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
@@ -26,6 +27,7 @@ else {
     win.setMenu(null);
     wireUpdater();
     wireFiles();
+    wireAgentSetup();
     win.webContents.on('will-navigate', (event, url) => { if (!url.startsWith('scanruler://app/')) event.preventDefault(); });
     // Help links open in the user's browser — only these hosts, never in the app.
     win.webContents.setWindowOpenHandler(({ url }) => {
@@ -55,7 +57,8 @@ else {
           await wait(()=>document.querySelector('.file-info')?.textContent.includes('1 triangles'));
           await wait(()=>!document.querySelector('[data-test="save-project"]').disabled);
           document.querySelector('[data-test="save-project"]').click();
-          return {title:document.title, mesh:document.querySelector('.file-info').textContent, bridges:[typeof window.quickScanFiles, typeof window.quickScanUpdater], recent:Array.isArray(await window.quickScanFiles.recent())};
+          const setup = ${Boolean(process.env.QUICKSCAN_AGENT_TEST_HOME)} ? await window.quickScanAgent.setup() : null;
+          return {title:document.title, mesh:document.querySelector('.file-info').textContent, bridges:[typeof window.quickScanFiles, typeof window.quickScanUpdater, typeof window.quickScanAgent], recent:Array.isArray(await window.quickScanFiles.recent()), ...(setup ? {agentSetup:setup.apps} : {})};
         })()`);
         const saved = path.join(app.getPath('userData'), 'desktop-smoke.scanruler');
         for (let i=0; i<80 && !fs.existsSync(saved); i++) await new Promise(r=>setTimeout(r,250));
@@ -129,5 +132,26 @@ function wireFiles() {
     const { name, data } = recents.read(recentFile(), p);
     recents.remember(recentFile(), p);
     return { name, data: new Uint8Array(data) };
+  });
+}
+
+function wireAgentSetup() {
+  const ours = event => event.senderFrame?.url?.startsWith('scanruler://app/');
+  const options = () => {
+    if (!smoke) return { home: app.getPath('home'), appData: app.getPath('appData'), documents: app.getPath('documents') };
+    const home = process.env.QUICKSCAN_AGENT_TEST_HOME || path.join(app.getPath('userData'), 'agent-fixture');
+    return { home, appData: path.join(home, 'roaming'), documents: path.join(home, 'Documents'), env: { APPDATA: path.join(home, 'roaming') } };
+  };
+  ipcMain.handle('agent:setup', event => {
+    if (!ours(event)) throw Error('Refused.');
+    return agentSetup.setup(options());
+  });
+  ipcMain.handle('agent:remembered', event => {
+    if (!ours(event)) throw Error('Refused.');
+    return agentSetup.remembered(options());
+  });
+  ipcMain.handle('agent:remember', (event, state) => {
+    if (!ours(event)) throw Error('Refused.');
+    return agentSetup.remember(state, options());
   });
 }

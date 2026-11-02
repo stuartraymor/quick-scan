@@ -7,12 +7,16 @@ import { AlignmentError, type AlignSlot, type AxisDir, computeDatumAlignment, de
 import type { Rigid } from '../core/deviation/rigid'
 import type { FitData, Vec3 } from '../core/types'
 import type { Element } from './elementModel'
+import { providesRole } from '../core/elements/refs'
+import { orthoBasis } from '../core/fit/linalg'
 
 /** The 3-2-1 alignment being set up: per slot either an existing element or
  *  points picked straight on the scan (3 span the levelling plane, 2 the
  *  rotation line, 1 the origin), plus the global axis each direction becomes.
  *  Nothing moves until it is applied. */
 export interface AlignDraft {
+  /** Explicit viewport-reference target, separate from raw scan-point picking. */
+  referencePickSlot?: AlignSlot | null
   primary: number | null
   primaryPicks: Vec3[]
   /** Surface normal at each primary pick, so the levelling plane knows which
@@ -73,7 +77,11 @@ export function alignmentPreview(
   centerOf: Vec3 | null = null,
 ): { preview: AlignPreview | null; error: string | null } {
   const slotFit = (slot: AlignSlot, ref: number | null): FitData | null => {
-    if (ref !== null) return elements.find((e) => e.id === ref)?.fit ?? null
+    if (ref !== null) {
+      const element = alignmentReferences(elements).find((e) => e.id === ref)
+      if (!element || !alignmentSlotAccepts(slot, element)) throw new AlignmentError('The ' + slot + ' reference is unavailable. Select another reference.')
+      return element.fit!
+    }
     return fitFromAlignPicks(
       slot,
       alignSlotPicks(ad, slot),
@@ -111,7 +119,7 @@ export function alignmentPreview(
 /** The slot with the given element reference and its picks discarded — the
  *  two ways of filling a slot are exclusive. */
 export function withSlotRef(ad: AlignDraft, slot: AlignSlot, id: number | null): AlignDraft {
-  const base = { ...ad, pickSlot: ad.pickSlot === slot ? null : ad.pickSlot, proposal: undefined }
+  const base = { ...ad, referencePickSlot: null, pickSlot: ad.pickSlot === slot ? null : ad.pickSlot, proposal: undefined }
   if (slot === 'primary')
     return { ...base, primary: id, primaryPicks: [], primaryPickNormals: [] }
   if (slot === 'secondary') return { ...base, secondary: id, secondaryPicks: [] }
@@ -129,4 +137,33 @@ export function withSlotPicks(
     return { ...base, primary: null, primaryPicks: picks, primaryPickNormals: normals }
   if (slot === 'secondary') return { ...base, secondary: null, secondaryPicks: picks }
   return { ...base, origin: null, originPicks: picks }
+}
+
+// Negative IDs are reserved for immutable alignment datums; document objects
+// allocate positive IDs. These datums never enter the model/history or move
+// when alignment is applied.
+const stats = { sigma: 0, usedPoints: 0, regionSize: 0 }
+export function alignmentReferences(elements: Element[]): Element[] {
+  const datums: Element[] = []
+  const directions: Vec3[] = [[1,0,0],[0,1,0],[0,0,1]]
+  for (let i=0;i<3;i++) {
+    const normal=directions[i], [basisU,basisV]=orthoBasis(normal)
+    const common={color:'#888888', status:'done' as const, visible:true, source:{type:'picked' as const}}
+    datums.push({...common,id:-1001-i,kind:'plane',name:['Right (YZ)','Front (XZ)','Top (XY)'][i],
+      fit:{...stats,kind:'plane',center:[0,0,0],normal,basisU,basisV,extentU:100,extentV:100}})
+    datums.push({...common,id:-1011-i,kind:'line',name:['X axis','Y axis','Z axis'][i],
+      fit:{...stats,kind:'line',center:[0,0,0],dir:normal,length:200}})
+  }
+  datums.push({id:-1020,kind:'point',name:'Origin',color:'#888888',status:'done',visible:true,
+    source:{type:'picked'},fit:{...stats,kind:'point',center:[0,0,0]}})
+  return [...datums,...elements]
+}
+
+export function alignmentSlotAccepts(slot: AlignSlot, element: Element): boolean {
+  return Boolean(element.fit) && (slot === 'origin' ? providesRole(element.kind,'point')
+    : providesRole(element.kind,'plane') || providesRole(element.kind,'axis'))
+}
+
+export function flippedAlignmentAxis(axis: AxisDir): AxisDir {
+  return (axis[0] + (axis[1] === '+' ? '-' : '+')) as AxisDir
 }

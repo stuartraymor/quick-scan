@@ -13,6 +13,8 @@ import { POLYGON_MAX_SIDES } from '../core/sketch'
 
 const GRID_SNAP_KEY = 'scanruler.gridsnap'
 const SKETCH_RELATIONS_KEY = 'scanruler.sketchrelations'
+const SKETCH_DIMENSIONS_KEY = 'scanruler.sketchdimensions'
+const SKETCH_CONTROL_POINTS_KEY = 'scanruler.sketchcontrolpoints'
 const FIT_OPTIONS_KEY = 'scanruler.fitoptions'
 const LIVE_MAP_KEY = 'scanruler.livemap'
 const LIVE_MAP_RANGE_KEY = 'scanruler.livemaprange'
@@ -89,11 +91,15 @@ interface RePrefsState {
    *  that wants round numbers switches it on with the key by the sketch
    *  tools. */
   gridSnap: boolean
-  /** Whether the relations of a sketch are drawn beside their pieces as
-   *  glyphs. Off by default: a fitted profile carries a join and a tangency
-   *  at every corner, and the glyphs bury the drawing; the list in the panel
-   *  has them all, and a relation selected there shows its glyph. */
+  /** Whether relations are drawn beside their pieces. On for new profiles;
+   *  an existing stored choice is preserved. Selected relations stay visible. */
   sketchRelations: boolean
+  /** Dimension callouts, independent of the relation glyphs. A dimension
+   *  being placed or edited stays visible while this is off. */
+  sketchDimensions: boolean
+  /** All endpoint and spline control-point handles. Selected and hovered
+   *  pieces keep their handles visible even with this off. */
+  sketchControlPoints: boolean
   /** How Fit all chains cuts a slice — the Fit options window's fields, see
    *  core/fitOptions.ts. */
   fitOptions: FitOptions
@@ -117,6 +123,8 @@ interface RePrefsState {
   playbackSkipSketches: boolean
   setGridSnap: (on: boolean) => void
   setSketchRelations: (on: boolean) => void
+  setSketchDimensions: (on: boolean) => void
+  setSketchControlPoints: (on: boolean) => void
   setFitOptions: (options: FitOptions) => void
   setLiveMap: (on: boolean) => void
   setLiveMapRange: (mm: number) => void
@@ -129,7 +137,9 @@ interface RePrefsState {
 
 export const useRePrefs = create<RePrefsState>()((set) => ({
   gridSnap: read(GRID_SNAP_KEY) === '1',
-  sketchRelations: read(SKETCH_RELATIONS_KEY) === '1',
+  sketchRelations: read(SKETCH_RELATIONS_KEY) !== '0',
+  sketchDimensions: read(SKETCH_DIMENSIONS_KEY) !== '0',
+  sketchControlPoints: read(SKETCH_CONTROL_POINTS_KEY) === '1',
   fitOptions: storedFitOptions(),
   liveMap: read(LIVE_MAP_KEY) !== '0',
   liveMapRange: clampLiveMapRange(Number(read(LIVE_MAP_RANGE_KEY))),
@@ -146,6 +156,14 @@ export const useRePrefs = create<RePrefsState>()((set) => ({
   setSketchRelations: (sketchRelations) => {
     write(SKETCH_RELATIONS_KEY, sketchRelations ? '1' : '0')
     set({ sketchRelations })
+  },
+  setSketchDimensions: (sketchDimensions) => {
+    write(SKETCH_DIMENSIONS_KEY, sketchDimensions ? '1' : '0')
+    set({ sketchDimensions })
+  },
+  setSketchControlPoints: (sketchControlPoints) => {
+    write(SKETCH_CONTROL_POINTS_KEY, sketchControlPoints ? '1' : '0')
+    set({ sketchControlPoints })
   },
   setFitOptions: (options) => {
     const fitOptions = sanitizeFitOptions(options)

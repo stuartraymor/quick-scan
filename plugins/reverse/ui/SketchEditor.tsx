@@ -36,33 +36,9 @@ import { NameField } from '../../../src/ui/RefSelect'
 import { useLength } from '../../../src/app/useUnits'
 import type { LengthPresets } from '../../../src/core/units'
 import { CORNER_GAP_MM } from '../core/corners'
-
-const TOOLS: { id: SketchTool; icon: KeyIconName; label: string; title: string }[] = [
-  { id: 'select', icon: 'select', label: 'Select', title: 'Click a piece to select it, a second to pair it; click empty sheet to clear. Drag over empty sheet for a box: rightward it takes what lies wholly inside, leftward whatever it touches; hold Shift or Ctrl to add to the selection. Drag an end, a centre or a piece to move it — it snaps to other ends, the slice and the pieces, and a line moves square to itself; hold Ctrl to move it freely. The right button pans' },
-  { id: 'line', icon: 'line', label: 'Line (L)', title: 'Click the start, then every next corner — each line carries on from the last. Press on the last end and drag for an arc tangent to the piece before it. Escape, Enter or a second click on the last end ends the chain; so does landing on another piece’s end. Hold Ctrl to place a point without snapping' },
-  { id: 'rectangle', icon: 'rectangle', label: 'Rectangle', title: 'Two opposite corners, the centre and a corner, or one side and the far side at any angle — rest the cursor on the key to choose; the key shows the way last chosen. The rectangle follows the cursor between the clicks' },
-  { id: 'polygon', icon: 'polygon', label: 'Polygon', title: 'A regular polygon: its centre, then a corner — or the middle of a side, for one sized across its flats like a hex nut. The sides are equal and drawn about a construction circle to dimension; how many there are is set under the keys while the tool is in hand' },
-  { id: 'circle', icon: 'circle', label: 'Circle (C)', title: 'The centre and a point on the rim, the two ends of a diameter, or three points on the rim — rest the cursor on the key to choose; the key shows the way last chosen. The circle follows the cursor between the clicks' },
-  { id: 'arc', icon: 'arc', label: 'Arc (R)', title: 'The start, the end and a point it passes through, or the centre, the start and where it ends — rest the cursor on the key to choose; the key shows the way last chosen. The arc follows the cursor' },
-  { id: 'spline', icon: 'spline', label: 'Spline (S)', title: 'A smooth curve through the points clicked: click each point in turn — the curve follows the cursor. Click the last point again (or double-click it), press Enter or Escape to end it open; click the first point to close it round. Drag a fit point to bend it. Joined to a line or an arc at an end, it can be held tangent there. With a spline selected, Fit to slice pulls it onto the slice it was drawn over' },
-  { id: 'fillet', icon: 'filletCorner', label: 'Fillet (F)', title: 'Round a corner: click the corner point where two lines meet, or one line and then the other. With two lines selected, the key rounds those. The lines need not touch — a short piece bridging their ends is replaced by the round. The radius comes out as a dimension to type over; the next round starts with the last radius' },
-  { id: 'chamfer', icon: 'chamferCorner', label: 'Chamfer', title: 'Cut a corner off straight: click the corner point where two lines meet, or one line and then the other. With two lines selected, the key chamfers those. The two distances come out as dimensions to type over — alike for an even chamfer, apart for an uneven one; the next chamfer starts with the last distance' },
-  { id: 'project', icon: 'project', label: 'Project', title: 'Click an edge of a body, or a piece of another sketch, on the part under the sheet: it comes into this sketch as a piece of its own, fixed where it lies — to close a profile with, or to hang relations and dimensions on. It lights under the cursor when it can be taken' },
-]
-
-/** The relation keys: the tooltip is the name alone, as a CAD sketcher's
- *  is; what each one takes is said on the hint line once it is in hand. */
-const RELATIONS: { kind: Constraint['kind']; icon: KeyIconName; label: string }[] = [
-  { kind: 'coincident', icon: 'coincident', label: 'Coincident' },
-  { kind: 'horizontal', icon: 'horizontal', label: 'Horizontal' },
-  { kind: 'vertical', icon: 'vertical', label: 'Vertical' },
-  { kind: 'parallel', icon: 'parallel', label: 'Parallel' },
-  { kind: 'perpendicular', icon: 'perpendicular', label: 'Perpendicular' },
-  { kind: 'tangent', icon: 'tangent', label: 'Tangent' },
-  { kind: 'concentric', icon: 'concentric', label: 'Concentric' },
-  { kind: 'equal', icon: 'equal', label: 'Equal' },
-  { kind: 'symmetric', icon: 'symmetric', label: 'Symmetric' },
-]
+import { SketchControls } from './SketchControls'
+import { SketchExtractPanel } from './SketchExtractPanel'
+import { useSketchBrush } from '../state/sketchBrushStore'
 
 /** The ways each of the shape tools draws: pictures in the strip that opens
  *  on the tool's key, the one chosen last on the key itself — and what each
@@ -90,98 +66,6 @@ const DRAW_MODES: { [K in keyof DrawModes]: (DrawMode & { id: DrawModes[K] })[] 
 }
 
 const isShapeTool = (tool: SketchTool): tool is keyof DrawModes => tool === 'rectangle' || tool === 'polygon' || tool === 'circle' || tool === 'arc'
-
-/** How long the cursor rests on a shape tool's key before its ways open —
- *  long enough that a hand passing over it on the way to another key does
- *  not open them over that key. */
-const FLYOUT_OPEN_MS = 250
-const FLYOUT_CLOSE_MS = 180
-
-/**
- * A shape tool's key, as CAD has it: the picture of the way it draws now,
- * and — while the cursor rests on it, while the keys are tabbed into, or
- * when it is pressed again while in hand — a strip of the ways under it. The
- * way picked takes the tool up in that way and becomes the key's picture.
- */
-function ShapeToolKey({ shape, label, title, inHand, onPress }: { shape: keyof DrawModes; label: string; title: string; inHand: boolean; onPress: () => void }) {
-  const current = useRePrefs((s) => s.drawModes[shape])
-  const modes: DrawMode[] = DRAW_MODES[shape]
-  const mode = modes.find((m) => m.id === current) ?? modes[0]
-  const [open, setOpen] = useState(false)
-  const timer = useRef<number | null>(null)
-  /** Open or close after `ms`, whatever was waiting called off. */
-  const after = (ms: number, to: boolean) => {
-    if (timer.current !== null) window.clearTimeout(timer.current)
-    timer.current = null
-    if (ms <= 0) setOpen(to)
-    else timer.current = window.setTimeout(() => setOpen(to), ms)
-  }
-  useEffect(
-    () => () => {
-      if (timer.current !== null) window.clearTimeout(timer.current)
-    },
-    [],
-  )
-  return (
-    <div
-      className="toolfly"
-      onPointerEnter={(e) => {
-        if (e.pointerType === 'mouse') after(open ? 0 : FLYOUT_OPEN_MS, true)
-      }}
-      onPointerLeave={() => after(FLYOUT_CLOSE_MS, false)}
-      onFocus={(e) => {
-        if (e.target.matches(':focus-visible')) after(0, true)
-      }}
-      onBlur={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) after(0, false)
-      }}
-    >
-      <button
-        data-test={`sketch-tool-${shape}`}
-        className={inHand ? 'on' : undefined}
-        aria-pressed={inHand}
-        aria-haspopup="true"
-        aria-expanded={open}
-        title={`${label} — ${title}`}
-        aria-label={label}
-        onClick={() => {
-          // On a touch screen there is no resting on a key: pressed again
-          // while in hand, it opens its ways.
-          if (inHand) after(0, true)
-          onPress()
-        }}
-      >
-        <KeyIcon name={mode.icon} size={22} />
-      </button>
-      {open && (
-        <div className="flyout" role="radiogroup" aria-label={`How the ${shape} is drawn`} data-test="sketch-draw-modes">
-          {modes.map((m) => (
-            <button
-              key={m.id}
-              role="radio"
-              aria-checked={mode.id === m.id}
-              className={mode.id === m.id ? 'on' : undefined}
-              data-test={`sketch-mode-${m.id}`}
-              title={`${m.label} — ${m.title}`}
-              aria-label={m.label}
-              onClick={() => {
-                // A way chosen half way through starts the shape afresh.
-                useRePrefs.getState().setDrawMode(shape, m.id as never)
-                useReverse.getState().setSketchTool(shape)
-                after(0, false)
-              }}
-            >
-              <KeyIcon name={m.icon} size={22} />
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-const DIMENSION_TITLE =
-  'Dimension (D) — click a line for its length, an arc for its radius, a circle for its diameter (Ø — typed as R… it goes by the radius instead); click a second piece for what lies between the two: the distance between parallel lines, the angle between others, the distance from an end or a centre to a line or to another, or to one of the part’s coordinate planes (the amber lines named XY, YZ, ZX). The number then follows the cursor: click where it goes, and type the value; Escape takes it back. With pieces selected, the key dimensions those.'
 
 function constraintLabel(c: Constraint, sketch: Sketch): string {
   const name = (id: number) => {
@@ -408,7 +292,6 @@ export function SketchEditor({ chainsOf }: { chainsOf: () => SketchChains | null
   const chainCount = useReverse((s) => s.chainCount)
   const chainsStatus = useReverse((s) => s.chainsStatus)
   const gridSnap = useRePrefs((s) => s.gridSnap)
-  const showRelations = useRePrefs((s) => s.sketchRelations)
   const drawModes = useRePrefs((s) => s.drawModes)
   const polygonSides = useRePrefs((s) => s.polygonSides)
   const len = useLength()
@@ -442,8 +325,10 @@ export function SketchEditor({ chainsOf }: { chainsOf: () => SketchChains | null
     // Runs on the listed dependencies only, not on everything it reads.
   }, [dimensionKey, selectedConstraint, inHand])
   const [fitOptionsOpen, setFitOptionsOpen] = useState(false)
+  const extracting = useSketchBrush((s) => s.open)
 
   if (!draft) return null
+  if (extracting) return <SketchExtractPanel chainsOf={chainsOf} />
 
   const sketch = draft.sketch
   const relations = sketch.constraints.filter((c) => !isDimension(c) && !c.inferred)
@@ -540,7 +425,9 @@ export function SketchEditor({ chainsOf }: { chainsOf: () => SketchChains | null
   )
 
   return (
-    <div className="draftbox" data-test="sketch-editor" ref={boxRef}>
+    <div className="draftbox sketch-editor-parity" data-test="sketch-editor" ref={boxRef}>
+      <SketchControls chainsOf={chainsOf} />
+      <details className="sketch-advanced"><summary>Sketch settings and additional tools</summary>
       <div className="sec-head">
         {draft.featureId !== undefined ? `Edit ${draft.name}` : 'New sketch'}
         <InfoDot title="Sketching">
@@ -659,51 +546,6 @@ export function SketchEditor({ chainsOf }: { chainsOf: () => SketchChains | null
       </button>
       <FitOptionsModal open={fitOptionsOpen} onClose={() => setFitOptionsOpen(false)} chainsOf={chainsOf} />
 
-      <div className="iconrow" data-test="sketch-tools">
-        {TOOLS.map((t) =>
-          isShapeTool(t.id) ? (
-            <ShapeToolKey key={t.id} shape={t.id} label={t.label} title={t.title} inHand={draft.tool === t.id} onPress={() => re.getState().setSketchTool(t.id)} />
-          ) : (
-          <button
-            key={t.id}
-            data-test={`sketch-tool-${t.id}`}
-            className={draft.tool === t.id ? 'on' : undefined}
-            aria-pressed={draft.tool === t.id}
-            title={`${t.label} — ${t.title}`}
-            aria-label={t.label}
-            onClick={() => {
-              // A corner tool on two lines already selected works on those;
-              // pressed again while in hand it is put down.
-              const corner = t.id === 'fillet' || t.id === 'chamfer'
-              if (corner && draft.selection.length === 2 && draft.tool !== t.id) return t.id === 'fillet' ? re.getState().filletSelected() : re.getState().chamferSelected()
-              re.getState().setSketchTool(corner && draft.tool === t.id ? 'select' : t.id)
-            }}
-          >
-            <KeyIcon name={t.icon} size={22} />
-          </button>
-          ),
-        )}
-        <button
-          data-test="sketch-grid-snap"
-          className={gridSnap ? 'on' : undefined}
-          aria-pressed={gridSnap}
-          aria-label="Snap to grid"
-          title="Snap to grid — drawn and dragged points snap to the grid as well as to ends, the slice and pieces — off, the grid is only there to read against"
-          onClick={() => useRePrefs.getState().setGridSnap(!gridSnap)}
-        >
-          <Icon name="gridSnap" size={22} />
-        </button>
-        <button
-          data-test="sketch-show-relations"
-          className={showRelations ? 'on' : undefined}
-          aria-pressed={showRelations}
-          aria-label="Show relations"
-          title="Show relations — draw every relation beside its piece as a glyph. Off, only the one selected in the list below is drawn; the dimensions are always shown"
-          onClick={() => useRePrefs.getState().setSketchRelations(!showRelations)}
-        >
-          <Icon name={showRelations ? 'eye' : 'eyeOff'} size={22} />
-        </button>
-      </div>
       {draft.tool === 'polygon' && (
         <label className="kv" data-test="sketch-polygon-sides" title="How many sides the polygon has — three and up">
           <span className="name">Sides</span>
@@ -738,61 +580,21 @@ export function SketchEditor({ chainsOf }: { chainsOf: () => SketchChains | null
         </p>
       )}
 
-      <div className="g-label">
-        <span>Dimension · Relations</span>
-        <b>{draft.selection.length} selected</b>
+      <div className="toolrow">
+        <button data-test="sketch-delete" disabled={!hasSelection} onClick={()=>re.getState().deleteSelected()}>Delete selected</button>
+        <button data-test="sketch-tool-chamfer" onClick={()=>re.getState().setSketchTool('chamfer')}>Chamfer</button>
+        <button data-test="sketch-pattern" disabled={!hasSelection} onClick={()=>re.getState().openSketchPattern()}>Pattern…</button>
+        <button data-test="sketch-align" disabled={!oneLine} onClick={()=>re.getState().alignToSelected()}>Align sheet</button>
       </div>
-      <div className="iconrow ten" data-test="sketch-relations">
-        <button
-          data-test="sketch-dimension"
-          className={draft.tool === 'dimension' ? 'on' : undefined}
-          aria-pressed={draft.tool === 'dimension'}
-          title={DIMENSION_TITLE}
-          aria-label="Dimension"
-          onClick={() => (hasSelection ? re.getState().dimensionSelection() : re.getState().setSketchTool(draft.tool === 'dimension' ? 'select' : 'dimension'))}
-        >
-          <Icon name="dimDistance" size={20} />
-        </button>
-        {RELATIONS.map((r) => {
-          const armed = draft.tool === 'relation' && draft.armedRelation === r.kind
-          return (
-            <button
-              key={r.kind}
-              data-test={`sketch-rel-${r.kind}`}
-              className={armed ? 'on' : undefined}
-              aria-pressed={armed}
-              title={r.label}
-              aria-label={r.label}
-              onClick={() => (hasSelection && !armed ? re.getState().addRelation(r.kind) : armed ? re.getState().setSketchTool('select') : re.getState().armRelation(r.kind))}
-            >
-              <KeyIcon name={r.icon} size={20} />
-            </button>
-          )
-        })}
-      </div>
-      <div className="iconrow" data-test="sketch-edit">
-        <button data-test="sketch-delete" disabled={!hasSelection} aria-label="Delete" title="Delete the selected pieces" onClick={() => re.getState().deleteSelected()}>
-          <Icon name="del" size={22} />
-        </button>
-        <button data-test="sketch-sharpen" disabled={!hasSelection} aria-label="Sharp corner" title="Sharp corner — Remove the selected fillet arc or chamfer line and carry its two lines to the corner" onClick={() => re.getState().sharpenSelected()}>
-          <Icon name="sharpCorner" size={22} />
-        </button>
-        <button data-test="sketch-fix" disabled={!hasSelection} aria-label="Fix" title="Fix — Lock the selected pieces where they are" onClick={() => re.getState().toggleFixedSelected()}>
-          <Icon name="fix" size={22} />
-        </button>
-        <button data-test="sketch-construction" disabled={!hasSelection} aria-label="Construction" title="Construction — Construction geometry takes no part in the regions — an axis to revolve about, a mirror line" onClick={() => re.getState().toggleConstructionSelected()}>
-          <Icon name="construction" size={22} />
-        </button>
-        <button data-test="sketch-pattern" disabled={!hasSelection} className={draft.pattern ? 'on' : undefined} aria-pressed={Boolean(draft.pattern)} aria-label="Pattern" title="Pattern — Repeat the selected pieces in a row, a grid or round a centre. Each copy is a piece of its own and keeps the relations and dimensions the pieces have among themselves" onClick={() => (draft.pattern ? re.getState().cancelSketchPattern() : re.getState().openSketchPattern())}>
-          <KeyIcon name="sketchPattern" size={22} />
-        </button>
-        <button data-test="sketch-align" disabled={!oneLine} aria-label="Align" title="Align — Turn the sheet so the selected line lies along its X axis — a crooked edge of the scan becomes the horizontal the rest is drawn against. Nothing moves on the part." onClick={() => re.getState().alignToSelected()}>
-          <Icon name="alignSheet" size={22} />
-        </button>
+      <div className="toolrow">
+        <label><input data-test="sketch-grid-snap" type="checkbox" checked={gridSnap} onChange={e=>useRePrefs.getState().setGridSnap(e.target.checked)}/> Snap to grid</label>
+        <button data-test="sketch-rel-coincident" onClick={()=>hasSelection?re.getState().addRelation('coincident'):re.getState().armRelation('coincident')}>Coincident</button>
+        <button data-test="sketch-rel-concentric" onClick={()=>hasSelection?re.getState().addRelation('concentric'):re.getState().armRelation('concentric')}>Concentric</button>
       </div>
 
       {draft.pattern && <PatternBox spec={draft.pattern} selected={draft.selection.length} />}
 
+      </details>
       {inferred.length > 0 && (
         <div className="chiprow" data-test="sketch-inferred">
           {inferred.map((c) => (

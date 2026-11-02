@@ -13,6 +13,7 @@ import type { PluginRuntime } from '../plugins/api'
 import { CREATION_METHODS } from '../core/elements/construct'
 import { Icon, type IconName } from './icons'
 import { AiWizard } from './AiWizard'
+import { useAgentConnectionHint } from '../commands/agentSetup'
 import { useUpdater } from './UpdateButton'
 import { REFERENCE_EXAMPLES } from '../app/referenceExamples'
 import { APP_VERSION } from '../version'
@@ -69,6 +70,7 @@ export function DesktopRibbon({ onFit, onSection, onAlign, onFineAlign, onPointA
   const agentLink = usePrefs(s => s.agentLink)
   const units = usePrefs(s => s.units)
   const agent = useAgentLink()
+  const agentHint = useAgentConnectionHint()
   const modelRolled = useDocumentOrder(s => s.rollbackAt !== null)
   const rolledTools = modelRolled && !['view', 'help', 'settings', 'ai'].includes(tab)
   const locked = busy || picking || drafting || modelRolled
@@ -386,7 +388,7 @@ export function DesktopRibbon({ onFit, onSection, onAlign, onFineAlign, onPointA
         <Group label="Connection">{tool(agentLink ? 'Disconnect AI' : 'Connect AI', 'navigate', () => usePrefs.getState().setAgentLink(!agentLink), busy, agentLink ? `${AGENT_STATUS[agent.status]} — click to switch the AI connection off` : 'Let an AI app on this computer drive Quick Scan (scanruler connector)')}{tool('AI settings', 'settings', () => usePrefs.getState().openSettings(true), false, 'Port, token and data permissions (Settings → Agents)')}</Group>
         <Group label="Rebuild">{tool('Rebuild with AI', 'model', () => setAiWizard(true), false, 'Step by step: connect, add the connector to your AI app, leave notes, ask it to rebuild')}</Group>
         <Group label="Notes">{agentLink ? <>{cad('note', 'Add note', 'note')}{cad('notes', 'Notes', 'labels')}</> : <>{tool('Add note', 'note', () => {}, true, 'Switch the AI connection on first')}{tool('Notes', 'labels', () => {}, true, 'Switch the AI connection on first')}</>}</Group>
-        <div className="desktop-ribbon-group ai-status" data-test="ai-ribbon-status"><span>{agentLink ? `AI: ${AGENT_STATUS[agent.status]}` : 'AI connection off'}</span></div></>
+        <div className="desktop-ribbon-group ai-status" data-test="ai-ribbon-status"><span title={agentHint}>{!agentLink?'AI connection off':agent.status==='refused'?'AI: check pairing':agentHint.includes("isn't running")?'AI: restart your AI app':`AI: ${AGENT_STATUS[agent.status]}`}</span>{agentLink&&(agent.status==='refused'||agentHint.includes("isn't running"))&&<button onClick={()=>setAiWizard(true)}>Set up my AI app</button>}</div></>
       // Analysis, and the former Wall Thickness / 2D Measure tabs, which now live in it.
       : analysisTab}
     {helpDialog && <HelpDialog id={helpDialog} onClose={() => setHelpDialog(null)} />}

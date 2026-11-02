@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
+contextBridge.exposeInMainWorld('quickScanAgent', {
+  setup: () => ipcRenderer.invoke('agent:setup'),
+  remembered: () => ipcRenderer.invoke('agent:remembered'),
+  remember: state => ipcRenderer.invoke('agent:remember', state),
+});
 contextBridge.exposeInMainWorld('quickScanUpdater', {
   check: () => ipcRenderer.invoke('updater:check'),
   download: () => ipcRenderer.invoke('updater:download'),

@@ -15,7 +15,7 @@
 
 import type { Vec2 } from '../../../src/core/flat/types'
 import { len2, sub2 } from '../../../src/core/flat/vec2'
-import { anchorPoint, anchorsOf, nearestOnEntity, type Anchor, type Sketch } from './sketch'
+import { anchorPoint, anchorsOf, axisRelationOf, nearestOnEntity, type Anchor, type Sketch, type SketchLine } from './sketch'
 import { traceFoot, traceNear, traceOffset, type DatumPlane, type DatumTrace } from './datums'
 
 /** What there is to snap to besides the sketch itself. */
@@ -39,6 +39,30 @@ const MIDPOINT_REACH = 0.5
 const DATUM_REACH = 0.75
 
 export type SnapKind = 'anchor' | 'origin' | 'midpoint' | 'datum' | 'edge' | 'entity' | 'grid'
+
+/** Preview only the axis relation the Line tool actually infers on commit.
+ *  Use the snapped destination, as the tool does, rather than the raw cursor.
+ *  This is feedback, not an extra snap or a change to constraint solving. */
+export function lineIntent(from: Vec2, to: Vec2): 'horizontal' | 'vertical' | null {
+  return axisRelationOf(from, to)
+}
+
+/** The original line is a temporary drawing aid, not a self-referencing
+ *  constraint. Its endpoint can return to its original position or extend
+ *  along its original infinite carrier. Radius is the caller's screen-pixel
+ *  reach converted to sheet units, so the acquisition distance follows zoom. */
+export function snapLineDrag(original: SketchLine, at: 'a' | 'b', spot: Vec2, radius: number, off = false): { point: Vec2; kind: 'original' | 'carrier' | null } {
+  if (off || !(radius > 0) || !Number.isFinite(radius)) return { point: spot, kind: null }
+  const held = original[at]
+  if (len2(sub2(spot, held)) <= radius) return { point: held, kind: 'original' }
+  const dx = original.b[0] - original.a[0]
+  const dy = original.b[1] - original.a[1]
+  const length = Math.hypot(dx, dy)
+  if (!(length > 1e-9)) return { point: spot, kind: null }
+  const t = ((spot[0] - original.a[0]) * dx + (spot[1] - original.a[1]) * dy) / (length * length)
+  const foot: Vec2 = [original.a[0] + t * dx, original.a[1] + t * dy]
+  return len2(sub2(spot, foot)) <= radius * 0.65 ? { point: foot, kind: 'carrier' } : { point: spot, kind: null }
+}
 
 export interface SnapResult {
   point: Vec2

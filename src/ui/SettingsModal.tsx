@@ -8,11 +8,12 @@
 // in the corner of the stage.
 
 import { useState, useSyncExternalStore } from 'react'
+import { useAgentConnectionHint } from '../commands/agentSetup'
 import { COLORMAPS, colormapById, cssRgb, legendGradient } from '../core/field/colormap'
 import { CREASE_ANGLE_DEG, CREASE_ANGLE_MAX, CREASE_ANGLE_MIN, CREASE_ANGLE_STEP, type CreaseMode } from '../core/geometry/crease'
 import { MESH_UNITS, type MeshUnits } from '../core/meshUnits'
 import { DISPLAY_UNITS } from '../core/units'
-import { AGENT_STATUS, useAgentLink } from '../commands/agentLink'
+import { useAgentLink } from '../commands/agentLink'
 import { betaOn, betaPlugins, pluginEnabled, plugins, setBetaOn } from '../plugins/registry'
 import { useHintPrefs } from '../state/hintStore'
 import { UI_THEMES, usePrefs } from '../state/prefsStore'
@@ -122,6 +123,7 @@ export function SettingsModal() {
   const agentToken = usePrefs((s) => s.agentToken)
   const setAgentToken = usePrefs((s) => s.setAgentToken)
   const link = useAgentLink()
+  const agentHint = useAgentConnectionHint()
   const puck = useSyncExternalStore(watchSpaceMouse, spaceMouseName)
   const puckSeen = usePrefs((s) => s.spaceMouseSeen)
   const puckSpeed = usePrefs((s) => s.spaceMouseSpeed)
@@ -518,7 +520,7 @@ export function SettingsModal() {
           <small data-test="agent-status">
             {agentLink ? (
               <b>
-                {AGENT_STATUS[link.status]}
+                {agentHint}
                 {link.status === 'connected' && link.server?.version ? ` (scanruler-mcp ${link.server.version})` : ''}.
               </b>
             ) : null}{' '}

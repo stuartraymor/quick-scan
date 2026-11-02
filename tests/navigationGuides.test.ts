@@ -27,88 +27,62 @@ function resources(group: THREE.Group) {
 }
 
 describe('navigation grid in world coordinates', () => {
-  it.each([
-    [0, -1], [0, 1], [1, -1], [1, 1], [2, -1], [2, 1],
-  ] as const)('covers the principal view on axis %i from sign %i', (axis, sign) => {
-    const layout = navigationGridLayout(principalCamera(axis, sign), 10)
-    expect(layout).not.toBeNull()
-    expect(layout!.normal).toBe(axis)
-    expect([layout!.u, layout!.v]).not.toContain(axis)
-    const spans = [layout!.maxU - layout!.minU, layout!.maxV - layout!.minV].sort((a, b) => a - b)
-    expect(spans[0]).toBeCloseTo(60)
-    expect(spans[1]).toBeCloseTo(100)
-    expect(layout!.firstU).toBeLessThanOrEqual(0)
-    expect(layout!.lastU).toBeGreaterThanOrEqual(0)
-    expect(layout!.firstV).toBeLessThanOrEqual(0)
-    expect(layout!.lastV).toBeGreaterThanOrEqual(0)
+  it('is a square symmetric about the origin with exact world-unit spacing', () => {
+    const layout = navigationGridLayout(principalCamera(), 7, 2, 103)!
+    expect(layout).toEqual({normal: 2, u: 0, v: 1, minU: -105, maxU: 105,
+      minV: -105, maxV: 105, firstU: -15, lastU: 15, firstV: -15, lastV: 15})
   })
 
-  it('keeps ruling attached to the world origin as the view pans and zooms', () => {
+  it('retains the same square through orbit, edge-on, below-plane, pan and zoom', () => {
     const camera = principalCamera()
-    camera.position.set(30, 40, 100)
-    camera.lookAt(30, 40, 0)
-    let layout = navigationGridLayout(camera, 10)!
-    expect([layout.firstU, layout.lastU, layout.firstV, layout.lastV]).toEqual([-2, 8, 1, 7])
-    camera.zoom = 2
-    camera.updateProjectionMatrix()
-    layout = navigationGridLayout(camera, 10)!
-    expect([layout.firstU, layout.lastU, layout.firstV, layout.lastV]).toEqual([1, 5, 3, 5])
-    expect(layout.minU).toBeCloseTo(5)
-    expect(layout.maxU).toBeCloseTo(55)
-    expect(layout.minV).toBeCloseTo(25)
-    expect(layout.maxV).toBeCloseTo(55)
-  })
-
-  it('covers the whole rolled viewport while preserving world-aligned ruling', () => {
-    const camera = principalCamera()
-    camera.rotateZ(Math.PI / 4)
-    const layout = navigationGridLayout(camera, 10)!
-    const half = 80 / Math.sqrt(2)
-    expect(layout.normal).toBe(2)
-    expect(layout.minU).toBeCloseTo(-half)
-    expect(layout.maxU).toBeCloseTo(half)
-    expect(layout.minV).toBeCloseTo(-half)
-    expect(layout.maxV).toBeCloseTo(half)
-    expect([layout.firstU, layout.lastU, layout.firstV, layout.lastV]).toEqual([-5, 5, -5, 5])
-  })
-
-  it('hides ruling in isometric and oblique views', () => {
-    const camera = principalCamera()
-    camera.position.set(100, 100, 100)
-    camera.lookAt(0, 0, 0)
-    expect(navigationGridLayout(camera, 10)).toBeNull()
-    camera.position.set(1, 0, 100)
-    camera.lookAt(0, 0, 0)
-    expect(navigationGridLayout(camera, 10)).toBeNull()
-  })
-
-  it('projects oblique frustum rays onto an explicitly requested world-zero plane', () => {
-    const camera = principalCamera()
-    camera.position.set(100, -100, 100)
-    camera.lookAt(0, 0, 0)
-    const layout = navigationGridLayout(camera, 10, 2)!
-    expect(layout.normal).toBe(2)
-    for (const x of [-1, 1]) for (const y of [-1, 1]) {
-      const point = new THREE.Vector3(x, y, 0).unproject(camera)
-      const ray = camera.getWorldDirection(new THREE.Vector3())
-      point.addScaledVector(ray, -point.z / ray.z)
-      expect(point.z).toBeCloseTo(0)
-      expect(point.x).toBeGreaterThanOrEqual(layout.minU - 1e-10)
-      expect(point.x).toBeLessThanOrEqual(layout.maxU + 1e-10)
-      expect(point.y).toBeGreaterThanOrEqual(layout.minV - 1e-10)
-      expect(point.y).toBeLessThanOrEqual(layout.maxV + 1e-10)
+    const baseline = navigationGridLayout(camera, 10)
+    for (const position of [[100,100,100], [100,0,1e-10], [100,0,0],
+      [100,0,-1e-10], [0,0,-100], [30,40,100]]) {
+      camera.position.fromArray(position)
+      camera.lookAt(0,0,0)
+      for (const zoom of [0.01, 1, 100]) {
+        camera.zoom = zoom
+        camera.updateProjectionMatrix()
+        expect(navigationGridLayout(camera, 10)).toEqual(baseline)
+      }
     }
-    expect(navigationGridLayout(principalCamera(0), 10, 2)).toBeNull()
+    camera.position.set(1000,2000,100)
+    camera.lookAt(1000,2000,0)
+    camera.rotateZ(Math.PI/4)
+    expect(navigationGridLayout(camera, 10)).toEqual(baseline)
   })
 
   it.each([0, -10, Number.NaN, Number.POSITIVE_INFINITY, 1e-9, Number.MIN_VALUE])(
-    'rejects invalid or excessively dense spacing %s without substituting a new spacing', (spacing) => {
+    'rejects invalid or excessively dense spacing %s without unbounded allocations', (spacing) => {
       expect(navigationGridLayout(principalCamera(), spacing)).toBeNull()
     },
   )
 })
 
 describe('navigation guide geometry and lifetime', () => {
+  it('keeps enabled grid geometry alive through a complete orbit without rebuilding or disabling depth testing', () => {
+    const scene = new THREE.Scene(), guides = new NavigationGuides(scene)
+    const camera = principalCamera()
+    guides.setGrid(true, 10)
+    guides.update(camera, new THREE.Vector3(), 1000, 600)
+    const grid = gridGroup(scene), original = resources(grid)
+    for (let degrees = 0; degrees <= 360; degrees += 5) {
+      const angle = degrees * Math.PI / 180
+      camera.position.set(100 * Math.cos(angle), 40, 100 * Math.sin(angle))
+      camera.lookAt(0, 0, 0)
+      guides.update(camera, new THREE.Vector3(), 1000, 600)
+      expect(grid.visible).toBe(true)
+      expect(resources(grid)).toEqual(original)
+      for (const child of grid.children) {
+        const material = (child as THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>).material
+        expect(material.depthTest).toBe(true)
+        expect(material.depthWrite).toBe(false)
+      }
+    }
+    guides.setGrid(false, 10)
+    expect(grid.visible).toBe(false)
+    guides.dispose()
+  })
   it('draws lines at requested world-unit multiples and leaves the plane at world zero', () => {
     const scene = new THREE.Scene()
     const guides = new NavigationGuides(scene)
@@ -198,7 +172,7 @@ describe('navigation guide geometry and lifetime', () => {
     guides.dispose()
   })
 
-  it('adds exact fine XY ruling in iso only while the coordinate system is shown', () => {
+  it('keeps fine XY ruling in iso independent of coordinate-system visibility', () => {
     const scene = new THREE.Scene()
     const guides = new NavigationGuides(scene)
     const camera = principalCamera()
@@ -206,7 +180,7 @@ describe('navigation guide geometry and lifetime', () => {
     camera.lookAt(0, 0, 0)
     guides.setGrid(true, 7)
     guides.update(camera, new THREE.Vector3(), 1000, 600)
-    expect(gridGroup(scene).visible).toBe(false)
+    expect(gridGroup(scene).visible).toBe(true)
     guides.setCoordinates(true)
     guides.update(camera, new THREE.Vector3(), 1000, 600)
     const fine = gridGroup(scene)
@@ -225,8 +199,8 @@ describe('navigation guide geometry and lifetime', () => {
     }
     guides.setCoordinates(false)
     guides.update(camera, new THREE.Vector3(), 1000, 600)
-    expect(fine.visible).toBe(false)
-    // Principal-only Grid remains available when coordinates are hidden.
+    expect(fine.visible).toBe(true)
+    // Returning to a principal view must not change the plane or hide the grid.
     camera.position.set(0, 0, 100)
     camera.lookAt(0, 0, 0)
     guides.update(camera, new THREE.Vector3(), 1000, 600)

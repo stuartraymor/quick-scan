@@ -41,6 +41,7 @@ import { useUnits } from './useUnits'
 import { providersFor } from '../ui/RefSelect'
 import { MARK_COLOR, useDeviation } from '../state/deviationStore'
 import { sectionElementsOf, useFlat } from '../state/flatStore'
+import { useNavigationView } from '../state/navigationViewStore'
 import { useShell } from '../state/shellStore'
 import { EXTRACT_MARK_COLOR, useMark, wandDegreesOf } from '../state/markStore'
 import { useThickness } from '../state/thicknessStore'
@@ -302,6 +303,7 @@ export function useSceneSync({
   // is done by clicking one of them on the part. The one in use is outlined and
   // the rest are faded bodies on offer.
   const elementsWorkspace = useShell((s) => s.workspace === 'elements')
+  const coordinatesShown = useNavigationView(s => s.coordinates)
   // A plugin's workspace may show the measured elements and sections too, as
   // the datums it works against — without the readings, which are the
   // measure workspace's.
@@ -555,10 +557,11 @@ export function useSceneSync({
   // across yet, through the part's centre — the very point choosing one puts
   // the plane through, so what was clicked is what is cut.
   const modelCenter = useStore((s) => s.modelCenter)
-  const offerWorldPlanes = elementsWorkspace && sectionDraft !== null && sectionDraft.axis === null
+  const alignmentPlanes = alignDraft?.referencePickSlot != null && alignDraft.referencePickSlot !== 'origin' && coordinatesShown
+  const offerWorldPlanes = elementsWorkspace && ((sectionDraft !== null && sectionDraft.axis === null) || alignmentPlanes)
   useEffect(() => {
-    sceneRef.current?.setWorldPlanes(offerWorldPlanes ? modelCenter : null)
-  }, [offerWorldPlanes, modelCenter])
+    sceneRef.current?.setWorldPlanes(offerWorldPlanes ? alignmentPlanes ? [0,0,0] : modelCenter : null)
+  }, [offerWorldPlanes, alignmentPlanes, modelCenter])
 
   // Points picked for the alignment stay marked on the part, numbered in the
   // order they were clicked so the count is readable at a glance. A multi-point
@@ -677,14 +680,16 @@ export function useSceneSync({
   // was just placed) and in the plain broadside pose otherwise.
   const alignOpen = alignDraft !== null
   useEffect(() => {
+    sceneRef.current?.setDatumStage(alignOpen && coordinatesShown)
+  }, [alignOpen, coordinatesShown])
+  useEffect(() => {
     const scene = sceneRef.current
     if (!scene) return
-    scene.setDatumStage(alignOpen)
     if (!alignOpen) {
       if (useStore.getState().appliedAlignment) scene.frameAligned()
       else scene.frameAll()
     }
-    // Runs on the listed dependencies only, not on everything it reads.
+    // Reframe only when the alignment editor closes, never on a visibility toggle.
   }, [alignOpen])
 
   // A viewport click selects elements whenever a dimension is being assembled
@@ -705,6 +710,7 @@ export function useSceneSync({
     (elementsWorkspace &&
       (((dimDraft !== null ||
         sectionDraft !== null ||
+        (!extractSession && alignDraft === null) ||
         (alignDraft !== null && alignDraft.pickSlot === null)) &&
         draft === null) ||
         (draft !== null && creationMethod(draft.kind, draft.method).mode === 'construct')))
@@ -713,7 +719,7 @@ export function useSceneSync({
   }, [wantsElementPicks])
   // A section being made lights the element under the cursor, as it lights
   // the coordinate planes on offer: either is what a click would cut along.
-  const sectionLights = elementsWorkspace && sectionDraft !== null && draft === null
+  const sectionLights = elementsWorkspace && draft === null && !extractSession
   useEffect(() => {
     sceneRef.current?.setElementHoverLights(sectionLights)
   }, [sectionLights])

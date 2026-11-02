@@ -10,11 +10,12 @@ import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 're
 import { useStore } from '../state/store'
 import { useFlat } from '../state/flatStore'
 import { usePrefs } from '../state/prefsStore'
+import { useAgentConnectionHint } from '../commands/agentSetup'
 import { useDeviation } from '../state/deviationStore'
 import { useShell, type Workspace } from '../state/shellStore'
 import { plugins } from '../plugins/registry'
 import { UndoRedo } from './UndoRedo'
-import { AGENT_STATUS, useAgentLink } from '../commands/agentLink'
+import { useAgentLink } from '../commands/agentLink'
 import { Icon, type IconName } from './icons'
 import { IMAGE_ACCEPT, SCAN_ACCEPT, isImageFile, isModelFile, isTextureFile } from '../core/formats'
 import { bundleFiles } from '../app/scanFiles'
@@ -183,6 +184,7 @@ export function TopBar({
   const openSettings = usePrefs((s) => s.openSettings)
   const agentLink = usePrefs((s) => s.agentLink)
   const agent = useAgentLink()
+  const agentHint = useAgentConnectionHint()
   const openRef = useRef<HTMLInputElement>(null)
   const scanRef = useRef<HTMLInputElement>(null)
   const cadRef = useRef<HTMLInputElement>(null)
@@ -251,12 +253,12 @@ export function TopBar({
         <button
           className={`agentchip ${agent.status}`}
           data-test="agent-chip"
-          title={`${AGENT_STATUS[agent.status]}${agent.detail ? ` — ${agent.detail}` : ''}. Settings → Agents.`}
+          title={`${agentHint} Settings → Agents.`}
           onClick={() => openSettings(true)}
         >
           <span className="agentlamp" />
           <span className="btxt">
-            Agent: {agent.status === 'connected' ? 'connected' : agent.status === 'refused' ? 'turned away' : 'listening'}
+            Agent: {agent.status === 'connected' ? 'connected' : agent.status === 'refused' ? 'check pairing' : agentHint.includes("isn't running") ? 'restart AI app' : 'listening'}
           </span>
         </button>
       )}

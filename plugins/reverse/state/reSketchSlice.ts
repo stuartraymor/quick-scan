@@ -29,7 +29,7 @@ import { shadowPieceCount, shadowSketch } from '../core/shadowPieces'
 import { addConstraint, addEntity, addPolygon, addRectangle, addRectangleCentre, addTurnedRectangle, type Anchor, type AnchorAt, anchorPoint, anchorsOf, arcThrough, axisRelationOf, cloneSketch, type ConstraintInput, entityOf, fixedEntityOf, isDimension, lineDir, patternPieces, relationTakes, removeConstraint, removeEntities, type Sketch, sketchBounds, type SketchEntity, splineJoint, type SketchSpline } from '../core/sketch'
 import { fitSplineToPoints, splineScatter } from '../core/sketchSpline'
 import { levelImage, moveImage, scaleImage } from '../core/sketchImage'
-import { snapHold, type SnapHold, snapSketchPoint } from '../core/snap'
+import { snapHold, type SnapHold, snapLineDrag, snapSketchPoint } from '../core/snap'
 import { measureDimension, type Pull } from '../core/solver'
 import { everyRegion, nameFor, remember } from './reFeatureHelpers'
 import { useRePrefs } from './rePrefs'
@@ -45,7 +45,15 @@ type StoreGet = StoreApi<ReState>['getState']
 /** The drag in the hand. `rigid`, for a shape defined in all but its place
  *  (see rigidCluster), is every piece of it as it was when the drag began:
  *  the hand's move carries them all. */
-let sketchDrag: { entity: number; at: AnchorAt | 'body'; start: Vec2; origin: SketchEntity; last: Vec2; snapped: SnapHold | null; pull: Pull[]; begun: boolean; rigid: SketchEntity[] | null } | null = null
+let sketchDrag: { entity: number; at: AnchorAt | 'body'; start: Vec2; origin: SketchEntity; last: Vec2; snapped: SnapHold | null; pull: Pull[]; begun: boolean; rigid: SketchEntity[] | null; radius: number; guideSnap: 'original' | 'carrier' | null; raw: boolean } | null = null
+
+/** Transient geometry only: the scene reads the same original carrier and
+ *  acquired position used by the real drag. Never persisted into a project. */
+export function sketchDragGuide(): { a: Vec2; b: Vec2; at: Vec2; radius: number; snapped: 'original' | 'carrier' | null } | null {
+  const drag = sketchDrag
+  if (!drag?.begun || drag.raw || drag.origin.kind !== 'line' || (drag.rigid && drag.rigid.length > 1)) return null
+  return { a: drag.origin.a, b: drag.origin.b, at: drag.last, radius: drag.radius, snapped: drag.guideSnap }
+}
 
 /** Which chains were fitted when a history snapshot was taken by a fit or a
  *  refit — what undo puts back beside the sketch, so a refit undone leaves
@@ -374,12 +382,12 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
       }
       if (d.tool === 'select') {
         const hit = pieceNear(d.sketch, spot, radius)
-        if (!hit) return { sketchDraft: { ...d, selection: [], selectedConstraint: null, error: null } }
+        if (!hit) return additive ? {} : { sketchDraft: { ...d, selection: [], selectedConstraint: null, error: null } }
+        // Each click toggles its piece, regardless of how many are already
+        // selected. This lets a whole group be constrained without a box.
         const selection = d.selection.includes(hit.id)
           ? d.selection.filter((id) => id !== hit.id)
-          : additive || d.selection.length < 2
-            ? [...d.selection, hit.id]
-            : [hit.id]
+          : [...d.selection, hit.id]
         return { sketchDraft: { ...d, selection, selectedConstraint: null, error: null } }
       }
       // The Project tool's click is resolved against the part by the app,
@@ -582,7 +590,7 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
     // the click is what selects — a selection made here would be the one
     // that click then takes off again.
     const rigid = rigidCluster(d.sketch, handle)
-    sketchDrag = { entity: handle.entity, at: handle.at, start: spot, origin: detached(e), last: spot, snapped: null, pull: [], begun: false, rigid: rigid ? (JSON.parse(JSON.stringify(rigid.map((id) => entityOf(d.sketch, id)!))) as SketchEntity[]) : null }
+    sketchDrag = { entity: handle.entity, at: handle.at, start: spot, origin: detached(e), last: spot, snapped: null, pull: [], begun: false, radius, guideSnap: null, raw: false, rigid: rigid ? (JSON.parse(JSON.stringify(rigid.map((id) => entityOf(d.sketch, id)!))) as SketchEntity[]) : null }
     return true
   },
 
@@ -601,6 +609,9 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
       if (!e) return {}
       const sketch = d.sketch
       const pull: Pull[] = []
+      drag.radius = radius
+      drag.raw = Boolean(snapCtx.off)
+      drag.guideSnap = null
       if (drag.rigid) {
         // The whole shape goes with the hand, as it is: by the hand's move
         // for a piece carried, by where the end or centre snaps for a point
@@ -609,13 +620,21 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
         let delta: Vec2
         if (drag.at === 'body') {
           delta = sub2(spot, drag.start)
+          if (drag.rigid.length === 1 && !snapCtx.off && len2(delta) <= radius) {
+            delta = [0, 0]
+            drag.guideSnap = 'original'
+          }
           drag.snapped = null
-          drag.last = spot
+          drag.last = [drag.start[0] + delta[0], drag.start[1] + delta[1]]
         } else {
           const snap = snapSketchPoint(sketch, spot, radius, snapCtx, new Set(drag.rigid.map((x) => x.id)))
-          delta = sub2(snap.point, anchorPoint(drag.origin, drag.at))
-          drag.snapped = snapHold(snap)
-          drag.last = snap.point
+          const original = drag.rigid.length === 1 && drag.origin.kind === 'line' && (drag.at === 'a' || drag.at === 'b') ? snapLineDrag(drag.origin, drag.at, spot, radius, snapCtx.off) : null
+          const useOriginal = original?.kind && (snap.kind === null || snap.kind === 'edge' || snap.kind === 'grid')
+          const point = useOriginal ? original.point : snap.point
+          delta = sub2(point, anchorPoint(drag.origin, drag.at))
+          drag.snapped = useOriginal ? null : snapHold(snap)
+          drag.last = point
+          drag.guideSnap = useOriginal ? original.kind : null
         }
         const carried = new Map(drag.rigid.map((x) => [x.id, translateEntity(x, delta)]))
         sketch.entities = sketch.entities.map((x) => carried.get(x.id) ?? x)
@@ -634,13 +653,16 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
         // may stop short, and a piece carried on from where it got to would
         // fall behind the hand a little more at every step.
         let delta = sub2(spot, drag.start)
-        const dir = e.kind === 'line' && !snapCtx.off ? lineDir(e) : null
+        const dir = drag.origin.kind === 'line' && !snapCtx.off ? lineDir(drag.origin) : null
         if (dir) {
           const n = perp2(dir)
-          delta = scale2(n, dot2(delta, n))
+          const offset = dot2(delta, n)
+          const original = Math.abs(offset) <= radius * 0.65
+          delta = scale2(n, original ? 0 : offset)
+          drag.guideSnap = original ? 'original' : null
         }
         moved = translateEntity(drag.origin, delta)
-        drag.last = spot
+        drag.last = [drag.start[0] + delta[0], drag.start[1] + delta[1]]
         for (const at of anchorsOf(moved)) pull.push({ anchor: { entity: moved.id, at }, to: anchorPoint(moved, at) })
         drag.snapped = null
       } else {
@@ -648,10 +670,25 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
         // point, the grid — and the hand's piece is left out of the search,
         // or it would snap to itself.
         const snap = snapSketchPoint(sketch, spot, radius, snapCtx, new Set([e.id]))
-        moved = moveAnchor(detached(e), drag.at, snap.point)
-        drag.last = snap.point
-        drag.snapped = snapHold(snap)
-        pull.push({ anchor: { entity: moved.id, at: drag.at }, to: snap.point })
+        const original = drag.origin.kind === 'line' && (drag.at === 'a' || drag.at === 'b')
+          ? snapLineDrag(drag.origin, drag.at, spot, radius, snapCtx.off)
+          : null
+        // Existing real endpoints/curves/datums win over a carrier aid.
+        // The original endpoint itself has priority over slice/grid noise.
+        const useOriginal = original?.kind && (snap.kind === null || snap.kind === 'edge' || snap.kind === 'grid')
+        const point = useOriginal ? original.point : snap.point
+        drag.guideSnap = useOriginal ? original.kind : null
+        moved = moveAnchor(detached(e), drag.at, point)
+        drag.last = point
+        drag.snapped = useOriginal ? null : snapHold(snap)
+        pull.push({ anchor: { entity: moved.id, at: drag.at }, to: point })
+        // Extending the original carrier leaves the opposite endpoint at
+        // its original position. This is a temporary pull, never a Fix.
+        if (useOriginal && drag.origin.kind === 'line' && (drag.at === 'a' || drag.at === 'b')) {
+          const other = drag.at === 'a' ? 'b' : 'a'
+          moved = moveAnchor(moved, other, drag.origin[other])
+          pull.push({ anchor: { entity: moved.id, at: other }, to: drag.origin[other] })
+        }
       }
       drag.pull = pull
       sketch.entities = sketch.entities.map((x) => (x.id === moved.id ? moved : x))
@@ -810,6 +847,19 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
       if (!d) return {}
       const picked = d.selection.map((id) => entityOf(d.sketch, id)).filter((e): e is SketchEntity => Boolean(e))
       const before = cloneSketch(d.sketch)
+      // Binary relations on a group use its first piece as the reference.
+      // Validate every pair before changing any geometry or history; a
+      // mixed or stale selection must never apply to just its valid subset.
+      if (picked.length > 2 && (kind === 'parallel' || kind === 'perpendicular' || kind === 'equal' || kind === 'concentric')) {
+        const pairs = picked.slice(1).map((e) => [picked[0], e])
+        if (picked.length !== d.selection.length || pairs.some((pair) => !relationTakes(kind, pair))) {
+          return { sketchDraft: { ...d, error: `${kind[0].toUpperCase()}${kind.slice(1)} does not apply to every selected piece.` } }
+        }
+        const sketch = cloneSketch(d.sketch)
+        for (const [a, b] of pairs) addConstraint(sketch, { kind, a: a.id, b: b.id })
+        return { sketchDraft: settle({ ...d, sketch }, before) }
+      }
+      if (picked.length !== d.selection.length) return { sketchDraft: { ...d, error: 'The selection contains a piece that is no longer in this sketch.' } }
       if (kind === 'coincident') {
         // On two selected pieces: two lines lie along each other; a
         // circle meets by its centre; anything else meets at its nearest
