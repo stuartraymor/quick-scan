@@ -4,7 +4,7 @@
 // nothing selected, taken in hand and put on what is clicked next — the
 // list of them, and at the bottom the solver's verdict in two words: needs
 // input, or solved. The box says little in prose: what a key does is in its
-// tooltip, and only an error or a wait gets a line. Finish sketch is its one
+// tooltip, and only an error or a wait gets a line. OK at the bottom is its one
 // exit, at the top and at the bottom; Escape only leaves the tool in hand. Once a region
 // closes the box offers Extrude and Revolve straight away, which finish the
 // sketch and open the feature on it. The regions a feature uses are picked
@@ -40,10 +40,10 @@ import { CORNER_GAP_MM } from '../core/corners'
 const TOOLS: { id: SketchTool; icon: KeyIconName; label: string; title: string }[] = [
   { id: 'select', icon: 'select', label: 'Select', title: 'Click a piece to select it, a second to pair it; click empty sheet to clear. Drag over empty sheet for a box: rightward it takes what lies wholly inside, leftward whatever it touches; hold Shift or Ctrl to add to the selection. Drag an end, a centre or a piece to move it — it snaps to other ends, the slice and the pieces, and a line moves square to itself; hold Ctrl to move it freely. The right button pans' },
   { id: 'line', icon: 'line', label: 'Line (L)', title: 'Click the start, then every next corner — each line carries on from the last. Press on the last end and drag for an arc tangent to the piece before it. Escape, Enter or a second click on the last end ends the chain; so does landing on another piece’s end. Hold Ctrl to place a point without snapping' },
-  { id: 'rectangle', icon: 'rectangle', label: 'Rectangle (R)', title: 'Two opposite corners, the centre and a corner, or one side and the far side at any angle — rest the cursor on the key to choose; the key shows the way last chosen. The rectangle follows the cursor between the clicks' },
+  { id: 'rectangle', icon: 'rectangle', label: 'Rectangle', title: 'Two opposite corners, the centre and a corner, or one side and the far side at any angle — rest the cursor on the key to choose; the key shows the way last chosen. The rectangle follows the cursor between the clicks' },
   { id: 'polygon', icon: 'polygon', label: 'Polygon', title: 'A regular polygon: its centre, then a corner — or the middle of a side, for one sized across its flats like a hex nut. The sides are equal and drawn about a construction circle to dimension; how many there are is set under the keys while the tool is in hand' },
   { id: 'circle', icon: 'circle', label: 'Circle (C)', title: 'The centre and a point on the rim, the two ends of a diameter, or three points on the rim — rest the cursor on the key to choose; the key shows the way last chosen. The circle follows the cursor between the clicks' },
-  { id: 'arc', icon: 'arc', label: 'Arc', title: 'The start, the end and a point it passes through, or the centre, the start and where it ends — rest the cursor on the key to choose; the key shows the way last chosen. The arc follows the cursor' },
+  { id: 'arc', icon: 'arc', label: 'Arc (R)', title: 'The start, the end and a point it passes through, or the centre, the start and where it ends — rest the cursor on the key to choose; the key shows the way last chosen. The arc follows the cursor' },
   { id: 'spline', icon: 'spline', label: 'Spline (S)', title: 'A smooth curve through the points clicked: click each point in turn — the curve follows the cursor. Click the last point again (or double-click it), press Enter or Escape to end it open; click the first point to close it round. Drag a fit point to bend it. Joined to a line or an arc at an end, it can be held tangent there. With a spline selected, Fit to slice pulls it onto the slice it was drawn over' },
   { id: 'fillet', icon: 'filletCorner', label: 'Fillet (F)', title: 'Round a corner: click the corner point where two lines meet, or one line and then the other. With two lines selected, the key rounds those. The lines need not touch — a short piece bridging their ends is replaced by the round. The radius comes out as a dimension to type over; the next round starts with the last radius' },
   { id: 'chamfer', icon: 'chamferCorner', label: 'Chamfer', title: 'Cut a corner off straight: click the corner point where two lines meet, or one line and then the other. With two lines selected, the key chamfers those. The two distances come out as dimensions to type over — alike for an even chamfer, apart for an uneven one; the next chamfer starts with the last distance' },
@@ -527,10 +527,16 @@ export function SketchEditor({ chainsOf }: { chainsOf: () => SketchChains | null
                   : 'Click the piece to put it on.'
             : null)
 
+  // QUICKSURFACE closes the sketch editor with OK and Cancel at the bottom.
   const finishKey = (testId: string) => (
-    <button className="primary block" data-test={testId} title="Finish the sketch — Enter or a middle click does the same. With nothing drawn, nothing is made." onClick={() => re.getState().commitSketch()}>
-      Finish sketch
-    </button>
+    <div className="toolrow" data-test="sketch-ok-cancel">
+      <button className="primary" data-test={testId} title="Finish the sketch — Enter or a middle click does the same. With nothing drawn, nothing is made." onClick={() => re.getState().commitSketch()}>
+        OK
+      </button>
+      <button data-test="sketch-cancel" title="Close the sketch without keeping what was drawn in it" onClick={() => re.getState().discardSketch()}>
+        Cancel
+      </button>
+    </div>
   )
 
   return (
@@ -551,7 +557,7 @@ export function SketchEditor({ chainsOf }: { chainsOf: () => SketchChains | null
           </p>
           <p>
             Every closed region is filled faintly; <b>Extrude</b> and <b>Revolve</b> appear as soon
-            as one closes and take it straight into a feature. <b>Finish sketch</b> keeps the
+            as one closes and take it straight into a feature. <b>OK</b> keeps the
             drawing as a feature for later; Escape only puts the tool down, and a sketch you did not
             want is undone with Ctrl+Z from the feature list.
           </p>
@@ -566,7 +572,6 @@ export function SketchEditor({ chainsOf }: { chainsOf: () => SketchChains | null
         </InfoDot>
       </div>
 
-      {finishKey('sketch-finish-top')}
 
       {draft.featureId !== undefined && (
         <NameField value={draft.name} testId="sketch-name" onChange={(n) => re.getState().setSketchName(n)} />

@@ -1387,3 +1387,7 @@
   border: 1px solid currentColor;
   opacity: 0.85;
 }
+.re-place-offset { flex-wrap: nowrap; align-items: center; }
+.re-place-offset .field { flex: 1; min-width: 0; }
+.re-place-offset .field input[type='number'] { flex: 1; min-width: 0; width: 0; }
+.re-place-offset button { flex: 0 0 auto; }

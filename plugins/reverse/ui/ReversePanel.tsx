@@ -206,7 +206,7 @@ export function ReversePanel({ onOpenScan, onExportStep, onCompare, chainsOf }: 
   const featureMenu = useFeatureMenu(featureListRef, editorOpen)
 
   return (
-    <aside className="panel">
+    <aside className="panel" data-cad-command={editorOpen || undefined}>
       <div className="group">
         <div className="sec-head">
           Model
@@ -381,7 +381,7 @@ export function ReversePanel({ onOpenScan, onExportStep, onCompare, chainsOf }: 
       )}
 
       <ContextChips />
-      <div ref={editorRef} data-test="re-editor">
+      <div ref={editorRef} className="cad-command-content" data-test="re-editor">
         <PlaceSketch chainsOf={chainsOf} />
         {!sketchDraft?.placing && <SketchEditor chainsOf={chainsOf} />}
         <ExtrudeEditor />

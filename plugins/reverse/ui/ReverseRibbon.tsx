@@ -9,6 +9,7 @@ import type { PluginRuntime } from '../../../src/plugins/api'
 import { bodyMaker } from '../core/features'
 import { useNotes } from '../state/noteStore'
 import { usePrefs } from '../../../src/state/prefsStore'
+import { throughPart } from './PlaceSketch'
 
 /** Shared workflow buttons still call plugin-owned verbs and prerequisites. */
 export function useReverseRibbonActions(onExport: () => void): NonNullable<PluginRuntime['ribbonActions']> {
@@ -30,7 +31,7 @@ export function useReverseRibbonActions(onExport: () => void): NonNullable<Plugi
   })
   return {
     sketch: action(() => {
-      if (state.startSketchOn({ kind: 'world', axis: 'z', offset: 0 })) {
+      if (state.startSketchOn(throughPart('z'))) {
         useReverse.setState((s) => (s.sketchDraft ? { sketchDraft: { ...s.sketchDraft, placing: true } } : {}))
         useStore.getState().setStatus('Create Sketch: pick the plane, drag the yellow arrow through the part, then Create.')
       }
@@ -54,6 +55,11 @@ export function useReverseRibbonActions(onExport: () => void): NonNullable<Plugi
     boolean: action(() => state.startFeature('boolean'), state.bodies.length >= 2, 'Create or import at least two bodies first.'),
     pattern: action(() => state.startFeature('pattern'), state.bodies.length > 0, 'Create or import a body first.'),
     mirror: action(() => state.startFeature('mirror'), state.bodies.length > 0, 'Create or import a body first.'),
+    shell: action(() => state.startFeature('shell'), state.bodies.length > 0, 'Create or import a body first.'),
+    draft: action(() => state.startFeature('draft'), state.bodies.length > 0, 'Create or import a body first.'),
+    moveBody: action(() => state.startFeature('moveBody', { bodies: state.bodies.filter((b) => b.visible).map((b) => b.id) }), state.bodies.length > 0, 'Create or import a body first.'),
+    split: action(() => state.startFeature('split'), state.bodies.length > 0, 'Create or import a body first.'),
+    offsetBody: action(() => state.startFeature('offsetBody'), state.bodies.length > 0, 'Create or import a body first.'),
     export: action(onExport, state.bodies.some((b) => b.visible && (b.closed || (b.surface && state.features.some((f) => f.kind === 'network' && f.id === bodyMaker(b.id))))), 'Create a closed solid or a patch network first.'),
   }
 }
@@ -81,7 +87,7 @@ export function ReverseRibbon() {
     </button>
   }
   const startSketch = () => {
-    if (useReverse.getState().startSketchOn({ kind: 'world', axis: 'z', offset: 0 })) {
+    if (useReverse.getState().startSketchOn(throughPart('z'))) {
       useReverse.setState((s) => (s.sketchDraft ? { sketchDraft: { ...s.sketchDraft, placing: true } } : {}))
       useStore.getState().setStatus('Create Sketch: pick the plane, drag the yellow arrow through the part, then Create.')
     } else useStore.getState().setError('The XY sketch plane is not available.')

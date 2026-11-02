@@ -22,8 +22,24 @@ const TILES: { axis: 'z' | 'x' | 'y'; label: string; title: string }[] = [
   { axis: 'y', label: '(OXZ)', title: 'A plane parallel to OXZ — normal along Y' },
 ]
 const SHARE_MM = 0.05
+const NOT_BUILT = 'Not built in Quick Scan yet'
 
 const world = (plane: PlaneRef) => (plane.kind === 'world' ? plane : null)
+const AXES: { axis: 'x' | 'y' | 'z'; label: string; title: string }[] = [
+  { axis: 'x', label: 'X Axis', title: 'Revolve about the X axis: the sketch plane passes through it' },
+  { axis: 'y', label: 'Y Axis', title: 'Revolve about the Y axis: the sketch plane passes through it' },
+  { axis: 'z', label: 'Z Axis', title: 'Revolve about the Z axis: the sketch plane passes through it' },
+]
+/** A plane through a coordinate axis, turned about it — QUICKSURFACE's
+ *  "For Revolved Surface" plane. */
+const radialOn = (axis: 'x' | 'y' | 'z', angleDeg = 0): PlaneRef => ({ kind: 'radial', axis: { kind: 'world', axis }, angleDeg })
+/** Where QUICKSURFACE's slicing plane starts: through the middle of the part,
+ *  so the cut shows at once — not at the origin, which a scan may lie far off. */
+export const throughPart = (axis: 'x' | 'y' | 'z'): PlaneRef => {
+  const store = useStore.getState()
+  const c = store.fileName ? store.modelCenter : [0, 0, 0]
+  return { kind: 'world', axis, offset: c[axis === 'x' ? 0 : axis === 'y' ? 1 : 2] }
+}
 const placing = () => useReverse.setState((s) => (s.sketchDraft ? { sketchDraft: { ...s.sketchDraft, placing: true } } : {}))
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -39,6 +55,16 @@ async function chainsNow(chainsOf: () => { chains: Vec2[][] } | null): Promise<V
   return null
 }
 
+/** Original coordinate-plane glyphs; the highlighted sheet identifies the normal. */
+function PlaneTile({ axis }: { axis: 'x' | 'y' | 'z' }) {
+  const sheets = { z: '4,19 15,13 27,20 16,27', x: '15,4 15,18 27,25 27,11', y: '4,10 15,4 15,18 4,25' }
+  return <svg className="plane-tile-icon" viewBox="0 0 32 32" width="30" height="30" aria-hidden="true">
+    <path d="M15 18 29 26 M15 18 2 25 M15 18V2" fill="none" stroke="#777" strokeWidth=".8" />
+    <polygon points={sheets[axis]} fill="#d5d0c6" stroke="#777" strokeWidth=".7" />
+    <text x="26" y="31" fontSize="6" fill="#555">X</text><text x="0" y="29" fontSize="6" fill="#555">Y</text><text x="17" y="6" fontSize="6" fill="#555">Z</text>
+  </svg>
+}
+
 export function PlaceSketch({ chainsOf }: { chainsOf: () => { chains: Vec2[][] } | null }) {
   const draft = useReverse((s) => s.sketchDraft)
   const len = useLength()
@@ -47,10 +73,20 @@ export function PlaceSketch({ chainsOf }: { chainsOf: () => { chains: Vec2[][] }
   const [count, setCount] = useState(20)
   const [hideScan, setHideScan] = useState(false)
   const [working, setWorking] = useState<string | null>(null)
+  const [typedAngle, setTypedAngle] = useState<string | null>(null)
   if (!draft?.placing) return null
   const re = useReverse.getState()
   const plane = world(draft.plane)
   const offset = planeOffset(draft.plane)
+  const radial = draft.plane.kind === 'radial' ? draft.plane : null
+  const radialAxis = radial && radial.axis.kind === 'world' ? radial.axis.axis : null
+  const pendingOffset = typed !== null && typed.trim() !== '' ? len.fromDisplay(Number(typed)) : NaN
+  const canApplyOffset = Number.isFinite(pendingOffset) && pendingOffset !== offset
+  const commitAngle = () => {
+    const v = Number(typedAngle)
+    setTypedAngle(null)
+    if (typedAngle !== null && typedAngle.trim() !== '' && Number.isFinite(v)) re.setSketchAngle(v)
+  }
   const place = (ref: PlaneRef) => {
     // A new plane, the sketch drafted afresh on it, still placing.
     if (re.startSketchOn(ref)) placing()
@@ -118,55 +154,93 @@ export function PlaceSketch({ chainsOf }: { chainsOf: () => { chains: Vec2[][] }
   }
   return (
     <section className="re-place" data-test="place-sketch" aria-label="Create Sketch">
-      <h3>Create Sketch</h3>
       <div className="moderow">
-        <button className="on" disabled title="Sketch a profile to extrude">For Extruded Surface</button>
-        <button disabled title="Revolved-surface sketches start from the Revolve command in Quick Scan">For Revolved Surface</button>
+        <button className={radial ? undefined : 'on'} aria-pressed={!radial} data-test="place-mode-extruded" title="Sketch a profile to extrude: a plane parallel to a coordinate plane" onClick={() => radial && place(throughPart('z'))}>For Extruded Surface</button>
+        <button className={radial ? 'on' : undefined} aria-pressed={!!radial} data-test="place-mode-revolved" title="Sketch a profile to revolve: a plane through an axis, turned about it" onClick={() => !radial && place(radialOn('z'))}>For Revolved Surface</button>
       </div>
-      <div className="moderow" data-test="place-planes">
-        {TILES.map((t) => (
-          <button key={t.axis} className={plane?.axis === t.axis ? 'on' : undefined} aria-pressed={plane?.axis === t.axis} title={t.title} data-test={`place-plane-${t.axis}`} onClick={() => place({ kind: 'world', axis: t.axis, offset: 0 })}>
-            {t.label}
-          </button>
-        ))}
-      </div>
+      {radial ? (
+        <div className="moderow" data-test="place-planes">
+          {AXES.map((t) => (
+            <button key={t.axis} className={radialAxis === t.axis ? 'on' : undefined} aria-pressed={radialAxis === t.axis} title={t.title} data-test={`place-axis-${t.axis}`} onClick={() => place(radialOn(t.axis))}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="moderow" data-test="place-planes">
+          {TILES.map((t) => (
+            <button key={t.axis} className={plane?.axis === t.axis ? 'on' : undefined} aria-pressed={plane?.axis === t.axis} title={t.title} data-test={`place-plane-${t.axis}`} onClick={() => place(throughPart(t.axis))}>
+              <PlaneTile axis={t.axis} />
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
+      {radial && (
+        <label className="field">
+          <span>Rotation (deg)</span>
+          <input type="number" step="any" data-test="place-rotation" value={typedAngle ?? radial.angleDeg} onChange={(e) => setTypedAngle(e.target.value)} onBlur={commitAngle} onKeyDown={(e) => e.key === 'Enter' && commitAngle()} />
+        </label>
+      )}
       <label className="field" title="Parallel to a coordinate plane, or to a plane or section already made">
         <span>{plane ? `Parallel to ${plane.axis === 'z' ? 'OXY' : plane.axis === 'x' ? 'OYZ' : 'OXZ'}` : 'Parallel to'}</span>
         <PlaneSelect value={draft.plane} testId="place-pick" placeholder="Pick …" onChange={(ref) => place(ref)} />
       </label>
-      {planeTakesOffset(draft.plane) && (
+      {planeTakesOffset(draft.plane) && !radial && (
+        <div className="toolrow re-place-offset">
         <label className="field">
-          <span>Offset ({len.word()})</span>
+          <span>Offset</span>
           <input
             type="number"
             step="any"
             data-test="place-offset"
             value={typed ?? Number(len.toDisplay(offset).toFixed(len.decimals(3)))}
             onChange={(e) => setTyped(e.target.value)}
-            onBlur={commit}
             onKeyDown={(e) => e.key === 'Enter' && commit()}
           />
         </label>
+        <span className="re-place-unit">{len.word()}</span>
+        <button data-test="place-offset-apply" disabled={!!working || !canApplyOffset} onClick={commit}>Apply</button>
+        </div>
       )}
       <p className="hint">Drag the yellow arrow to carry the plane through the part; the cut is outlined in yellow.</p>
+      <button className="block" data-test="place-define-interactive" disabled title={NOT_BUILT}>Define interactive</button>
+      <label className="checkrow" title={NOT_BUILT}>
+        <input type="checkbox" data-test="place-snap-xy" checked disabled readOnly />
+        <span>Automatically snap to X or Y direction</span>
+      </label>
+      <hr className="re-place-rule" />
+      <div className="toolrow re-place-ignore">
+        <label className="checkrow" title="Put the scan away while the sketch is drawn, so the sketch is made on the plane alone">
+          <input type="checkbox" data-test="place-hide-scan" checked={hideScan} onChange={(e) => setHideScan(e.target.checked)} />
+          <span>Ignore scan data</span>
+        </label>
+        <button data-test="place-flip" disabled title={NOT_BUILT}>Flip orientation</button>
+      </div>
+      <label className="checkrow" title={NOT_BUILT}>
+        <input type="checkbox" data-test="place-on-slice" checked disabled readOnly />
+        <span>Create sketch on slicing plane</span>
+      </label>
+      <label className="checkrow" title={NOT_BUILT}>
+        <input type="checkbox" data-test="place-through-selection" checked={false} disabled readOnly />
+        <span>Through selection only</span>
+      </label>
       <label className="checkrow">
         <input type="checkbox" data-test="place-stacked" checked={stacked} onChange={(e) => setStacked(e.target.checked)} />
         <span>Stacked sections</span>
       </label>
-      {stacked && (
-        <div className="toolrow">
-          <label className="field">
-            <span>Sections</span>
-            <input type="number" min={2} max={200} step={1} value={count} data-test="place-stacked-count" onChange={(e) => setCount(Number(e.target.value))} />
-          </label>
-          <button data-test="place-stacked-apply" disabled={!!working || !useStore.getState().fileName} onClick={() => void createStacked()} title="Make that many sketches, evenly spaced through the part along the plane's normal, each fitted to its cut">
-            Apply
-          </button>
-        </div>
-      )}
-      <label className="checkrow">
-        <input type="checkbox" data-test="place-hide-scan" checked={hideScan} onChange={(e) => setHideScan(e.target.checked)} />
-        <span>Hide scan data when creating a sketch</span>
+      <div className="toolrow re-place-stack">
+        <label className="field">
+          <span>Sections</span>
+          <input type="number" min={2} max={200} step={1} value={count} disabled={!stacked || !!working} data-test="place-stacked-count" onChange={(e) => setCount(Number(e.target.value))} />
+        </label>
+        <button data-test="place-stacked-apply" disabled={!stacked || !!working || !useStore.getState().fileName} onClick={() => void createStacked()} title="Make that many sketches, evenly spaced through the part along the plane's normal, each fitted to its cut">
+          Apply
+        </button>
+      </div>
+      <label className="checkrow" title={NOT_BUILT}>
+        <input type="checkbox" data-test="place-outline-mode" checked={false} disabled readOnly />
+        <span>Outline Mode…</span>
       </label>
       {working && <p className="hint" data-test="place-working">{working}</p>}
       <div className="toolrow">
