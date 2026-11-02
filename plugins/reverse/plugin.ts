@@ -5,6 +5,8 @@
 import { registerBusy, registerCommands, registerMapReport, registerSectionLayers, registerSettle, registerSheetPlanes, registerStateSection, registerViewToggles, type ScanRulerPlugin } from '../../src/plugins/api'
 import { onScan } from '../../src/app/scanEvents'
 import { pick, registerHistory } from '../../src/state/historyStore'
+import { registerDocumentOrderProvider } from '../../src/state/documentOrderStore'
+import { reverseDocumentOrderProvider } from './state/reDocumentOrder'
 import { registerProjectSection } from '../../src/app/projectSections'
 import { reverseSection } from './app/projectSection'
 import { useReversePlugin } from './app/useReversePlugin'
@@ -67,6 +69,7 @@ const plugin: ScanRulerPlugin = {
   notices: ReverseNotices,
   install() {
     registerProjectSection(reverseSection)
+    registerDocumentOrderProvider(reverseDocumentOrderProvider)
     // The notes pinned on the part for an agent: saved with the project,
     // let go with the scan, moved with the part.
     registerProjectSection(notesSection)
