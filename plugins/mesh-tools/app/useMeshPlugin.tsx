@@ -192,11 +192,28 @@ export function useMeshPlugin(host: PluginHost): PluginRuntime {
     const value = values[a] * wa + values[b] * wb + values[c] * wc
     if (!Number.isFinite(value)) return null
     return {
-    toolContext: { title: tool ? `Edit scan · ${tool}` : 'Edit scan', key: tool ?? '', active: tool !== null }, value, x: hit.clientX, y: hit.clientY, text: `${signed(value)} ${len.word()}`, muted: false }
+    value, x: hit.clientX, y: hit.clientY, text: `${signed(value)} ${len.word()}`, muted: false }
   }
 
+  // The shared Scan Data ribbon's mesh keys: each puts its tool in hand in this
+  // workspace, as the panel's Tools row does.
+  const meshKey = (meshTool: 'reduce' | 'smooth' | 'flip', title: string) => ({
+    run: () => {
+      useMeshTools.getState().setTool(meshTool)
+      useShell.getState().setWorkspace('mesh')
+    },
+    disabled: !fileName,
+    title: fileName ? title : 'Load a scan first',
+  })
+
   return {
+    ribbonActions: {
+      meshReduce: meshKey('reduce', 'Reduce polygons: make a lighter mesh held within a tolerance of the scan'),
+      meshSmooth: meshKey('smooth', 'Reduce noise: smooth the scatter on the scan'),
+      meshFlip: meshKey('flip', 'Flip normals: turn a surface that faces the wrong way'),
+    },
     readingAt,
+    toolContext: { title: tool ? `Edit scan · ${tool}` : 'Edit scan', key: tool ?? '', active: tool !== null },
     // The maps are read by hovering; they have no pins to set.
     pick: () => {},
     hoverReadout: reduceMapShown || copyMapShown,
