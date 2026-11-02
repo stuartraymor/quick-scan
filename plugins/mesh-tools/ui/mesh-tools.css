@@ -47,3 +47,8 @@
   grid-template-columns: repeat(3, 1fr);
   margin-bottom: 8px;
 }
+
+/* Edit Scan's mesh-quality rows: count, then the tool that mends it. */
+.mesh-health-row { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 8px; }
+.mesh-health-row button { padding: 2px 10px; }
+.mesh-health-warn { color: #d58a00; }

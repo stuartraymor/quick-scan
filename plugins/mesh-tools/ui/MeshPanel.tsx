@@ -36,6 +36,7 @@ import { TrimTool } from './tools/TrimTool'
 import { HolesTool } from './tools/HolesTool'
 import { SmoothTool } from './tools/SmoothTool'
 import { OffsetTool } from './tools/OffsetTool'
+import { MeshHealth } from './MeshHealth'
 import { ShellTool } from './tools/ShellTool'
 import type { MeshFormat } from '../../../src/core/exportMesh'
 
@@ -164,7 +165,7 @@ export function MeshPanel({
   const busy = scanBusy || running
 
   return (
-    <aside className="panel">
+    <aside className="panel" data-mesh-widget={scanName ? 'loaded' : undefined}>
       <div className="group">
         <div className="sec-head">
           Model
@@ -194,6 +195,8 @@ export function MeshPanel({
         />
         {!scanName && <p className="hint">Drop it anywhere in the window.</p>}
       </div>
+
+      {scanName && <MeshHealth busy={busy} />}
 
       <div className="group">
         <div className="sec-head">
