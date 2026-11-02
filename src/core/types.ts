@@ -72,8 +72,8 @@ export interface AxialWindow {
 
 export type ElementKind = 'point' | 'line' | 'plane' | 'sphere' | 'cylinder' | 'cone' | 'circle' | 'torus'
 
-/** The kinds that are measured by fitting to the scan surface. Points are
- *  picked, lines only constructed; these five run the worker pipeline. */
+/** The kinds with a seeded scan-surface fitting pipeline. Lines separately
+ *  support fitting a marked edge; points are picked or constructed. */
 export type FittedElementKind = 'sphere' | 'cylinder' | 'cone' | 'plane' | 'torus'
 
 export interface Sphere {
@@ -161,8 +161,7 @@ export interface PointFit extends FitBase {
   center: Vec3
 }
 
-/** A reference line (an axis). Always constructed — from two points, a
- *  cylinder axis, or a plane–plane intersection. */
+/** A reference line (an axis), constructed from references or fitted to a marked edge. */
 export interface LineFit extends FitBase {
   kind: 'line'
   /** Midpoint of the drawn segment. */
