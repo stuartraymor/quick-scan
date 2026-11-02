@@ -14,12 +14,13 @@ import { NO_PICK } from '../core/bodyFolders'
 import { useNotes } from '../state/noteStore'
 import { networkFinishPlacing, networkKey } from './useNetworkLayer'
 
-/** The sketch's tools by the letters CAD has them on: D is the one asked for
+/** The sketch's tools by the letters QUICKSURFACE has them on (L, C, R = Arc,
+ *  D), plus S and F, which it leaves free in a sketch. D is the one asked for
  *  most — a dimension, on whatever is clicked next. */
 const SKETCH_TOOL_KEYS: Record<string, SketchTool> = {
   d: 'dimension',
   l: 'line',
-  r: 'rectangle',
+  r: 'arc',
   c: 'circle',
   s: 'spline',
   f: 'fillet',

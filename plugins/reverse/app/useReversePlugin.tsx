@@ -41,7 +41,7 @@ import { liveMapScale } from '../core/liveMap'
 import { snapFitKind, snapReading } from '../core/snapFace'
 import { ReversePanel } from '../ui/ReversePanel'
 import { ReverseRibbon, useReverseRibbonActions } from '../ui/ReverseRibbon'
-import { ReverseObjects, ReverseHistory } from '../ui/ReverseExplorer'
+import { ReverseObjects, useReverseExplorerHistoryEntries, useReverseExplorerVisibility } from '../ui/ReverseExplorer'
 import { PlaybackCaption } from '../ui/Playback'
 import { BuildChip } from '../ui/BuildChip'
 import { stopPlayback } from './playback'
@@ -125,6 +125,8 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
   const sketchPlacing = useReverse((s) => s.sketchDraft?.placing === true)
   const sketchModelShown = useReverse((s) => s.sketchModelShown)
   const featureCount = useReverse((s) => s.features.length + s.rolledBack.length)
+  const explorerVisibility = useReverseExplorerVisibility()
+  const explorerHistoryEntries = useReverseExplorerHistoryEntries()
   const onReverse = useShell((s) => s.workspace === 'reverse')
   const fileName = useStore((s) => s.fileName)
   // A playback is for this workspace's viewport: leaving it ends the
@@ -603,7 +605,7 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
 
   return {
     canSave: featureCount > 0,
-    toolContext: { title: contextKind ? contextKind[0].toUpperCase() + contextKind.slice(1) : 'CAD tools', key: contextKind, active: Boolean(contextKind) },
+    toolContext: { title: sketchPlacing ? 'Create Sketch' : contextKind ? contextKind[0].toUpperCase() + contextKind.slice(1) : 'CAD tools', key: `${contextKind}:${sketchPlacing}`, active: Boolean(contextKind) },
     ribbon: <ReverseRibbon />,
     ribbonActions,
     importCad: (file: File) => {
@@ -616,7 +618,9 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
       return true
     },
     explorerObjects: <ReverseObjects />,
-    explorerHistory: <ReverseHistory />,
+    explorerHistoryEntries,
+    explorerVisibility,
+    explorerCoreVisibility: { on: elementsShown, set: on => useReverse.getState().setElementsShown(on) },
     field: curvature ? { values: curvature.values, rgb: curvatureRgb, scale: curvatureScale(curvature.range) } : null,
     fieldVersion: curvature,
     marking: markColor !== null ? { color: markColor, gestures: markGestures } : null,
