@@ -243,6 +243,9 @@ export interface Sketch {
   entities: SketchEntity[]
   constraints: Constraint[]
   nextId: number
+  /** Frozen section data in this sketch's own (u,v) coordinates. Undefined
+   *  keeps legacy live-section behavior; [] explicitly clears reference data. */
+  referenceChains?: Vec2[][]
 }
 
 export function emptySketch(): Sketch {

@@ -99,6 +99,15 @@ export function validateFeatureJson(e: Record<string, unknown>): void {
     const sketch = object(e.sketch, 'feature.sketch')
     entries(sketch.entities, 'sketch.entities')
     entries(sketch.constraints, 'sketch.constraints')
+    if (sketch.referenceChains !== undefined) {
+      let count = 0
+      const chains = array(sketch.referenceChains, 'sketch.referenceChains')
+      if (chains.length > 100_000) invalid('sketch.referenceChains exceeds the supported chain count')
+      for (const [i, chain] of chains.entries()) for (const p of array(chain, `sketch.referenceChains[${i}]`)) {
+        if (++count > 1_000_000) invalid('sketch.referenceChains exceeds the supported point count')
+        vector(p, 2, `sketch.referenceChains[${i}]`)
+      }
+    }
     object(e.plane, 'sketch.plane')
     object(e.frame, 'sketch.frame')
   }

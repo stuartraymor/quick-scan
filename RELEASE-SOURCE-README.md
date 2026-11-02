@@ -1,6 +1,6 @@
-# Quick Scan 0.0.43 corresponding source
+# Quick Scan 0.0.44 corresponding source
 
-This source continues the verified v0.0.39 tag and the local 0.0.40–0.0.42 review increments. The release branch is based on that tag; the repository main branch contains older application source and was not overwritten.
+This source continues the verified v0.0.43 tag and the local 0.0.40–0.0.42 review increments. The release branch is based on that tag; the repository main branch contains older application source and was not overwritten.
 
 Build with Node.js 22+: npm ci, npm run build, node package-desktop.mjs; use installer/build-installer.ps1 for a Windows installer. The desktop package must include agent-setup.cjs, preload.cjs and recents.cjs. The MCP integration test additionally needs npm --prefix mcp ci.
 

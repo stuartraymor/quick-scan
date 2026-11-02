@@ -512,12 +512,16 @@ const ICONS = {
   ),
   compare: (
     <>
-      <path d="M3 17c5-8.5 13-8.5 18 0" />
-      <path className="i-a" d="M6.3 9.6v3.4M10.06 8.6v2.2M13.94 13.4v-2.2M17.7 9.2v3.5" />
-      <circle className="i-dt" cx="6.3" cy="9.6" r="1.05" />
-      <circle className="i-dt" cx="10.06" cy="8.6" r="1.05" />
-      <circle className="i-dt" cx="13.94" cy="13.5" r="1.05" />
-      <circle className="i-dt" cx="17.7" cy="9.2" r="1.05" />
+      {/* Original inspection-surface silhouette, using the same five stops
+          as the default Jet deviation map (blue/cyan/green/yellow/red). */}
+      <g stroke="none">
+        <path fill="#0000ff" d="M2 10 6 7v10l-4 2Z" />
+        <path fill="#00ffff" d="m6 7 4-2v10l-4 2Z" />
+        <path fill="#00c800" d="m10 5 4 1v10l-4-1Z" />
+        <path fill="#ffff00" d="m14 6 4 3v10l-4-3Z" />
+        <path fill="#ff0000" d="m18 9 4-2v10l-4 2Z" />
+      </g>
+      <path strokeWidth="1" d="m2 10 8-5 4 1 4 3 4-2v10l-4 2-4-3-4-1-8 4ZM2 14l8-5 4 1 4 3 4-2M6 7v10M10 5v10M14 6v10M18 9v10" />
     </>
   ),
   curvature: (

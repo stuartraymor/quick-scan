@@ -1,23 +1,24 @@
-# Quick Scan v0.0.43 â€” One-button AI setup
+# Quick Scan 0.0.44 - Sketch workflow preview
 
-Open AI â†’ Rebuild with AI â†’ Set up my AI app. Quick Scan configures installed Claude Code, Claude Desktop and Codex, shares the connector pairing values and reports each result. Existing settings are merged and backed up. Restart the AI app once after setup. Node.js 22+ and npx must already be installed.
+Windows x64 installer with branded modern wizard, optional desktop shortcut and project-file association, upgrade handling and uninstall support. The installer is unsigned.
 
-The existing data-sharing warning remains required. Accepted consent and the connection's on/off choice survive later Quick Scan version updates. Waiting and refused connections now show actionable guidance, and rerunning setup repairs mismatched pairing values. Browser users retain manual setup instructions.
+## Changes
 
-## Verified
+- Corner Trim now opens a dedicated intersection/fillet workflow with real reference-point radius fitting, green preview, Shift-box selection, Apply and Undo.
+- Project previews all other visible sketches and creates linked geometry in one operation. Unsupported projections report a blocker.
+- Stacked sections collect real cuts into one persistent reference cloud, without automatic geometry fitting or multiple sketch commits. Clear, Ignore scan and Hide scan have distinct effects.
+- Compare has a multicolor inspection-surface icon matching the default blue/cyan/green/yellow/red deviation map.
+- Retains the circular fitting brush, graphical multiselection constraints, driving dimensions, original-position drag guides and AI setup from 0.0.43.
 
-- Full unit/regression suite: 3,300 passed, 0 failed, 24 skipped across 410 files.
-- Real connector browser workflow: setup, consent, session read, new-version profile restoration, remembered off, actual token refusal and setup repair passed. Deliberate pre-start connection failures are recorded separately; no unexpected console errors.
-- Existing consent browser regression passed, including decline/Escape and reloading without repeat consent.
-- TypeScript, production build and plugin-boundary checks passed.
-- Packaged Windows smoke passed: native preload/IPC setup configured all three fixture apps, and OBJ import, save, reopen and OCCT initialization succeeded with no app errors.
+## Verified on Windows
 
-All setup tests used isolated configuration folders. The user's actual AI-app configuration was not changed by testing. Interactive fresh-user restarts of all three third-party clients remain a manual follow-up. Managed client policies and disabled-server choices can require additional client action.
+- Full regression suite: 3,331 passed, zero failed, 24 skipped across 414 files (401 passing, 13 skipped).
+- Complete actual-browser workflow: import mesh, circular brush fit, graphical Horizontal/Parallel constraints, driving diameter 20 mm, extrude 12 mm, save a real project archive, reopen and edit from History. Closed OCCT solid, volume 3,769.911184 mm3; topology and dimensions survive reopening. 13 checks passed, no console errors.
+- Corner Trim/Project: 22 UI checks; stacked sections: 13; brush fitting: 18; sketch controls: 47. No unexpected console errors.
+- TypeScript, production build, plugin-boundary check and packaged native import/save/reopen/OCCT smoke passed. Branded Windows installer completed successfully on this PC.
 
-## Included sketch improvements and remaining differences
+## Remaining differences
 
-Includes the local sketch increments since v0.0.39: a circular section-point brush with seven fit types and live previews, revised original SVG control rows, multi-entity constraints and on-canvas dimension editing, original-line drag guides, and independent mirror/duplicate/offset/trim/slot tools. The sketch controls and brush suites passed 47 and 18 browser checks respectively.
+This is a focused preview release, not an exact QUICKSURFACE mirror. Full primitive rotation/resize parity, complete alignment reference picking, Objects-tree appearance/context actions, Plane/Cylinder editor matching and broader complete-part reconstruction remain unfinished. Sketch differences include radial stacks, selected-region stacked filtering, graphical stack extent handles, full Auto Join/Sketch Assist matching, IGES export and several analysis/display controls. Corner Trim currently handles one line-line corner per selection. Some tilted projected curves are unsupported. Exact proprietary fitting algorithms and every reference workflow have not been reproduced or verified.
 
-This release does **not** certify an exact QuickSurface copy. The audit still finds differences in Create Sketch/stacked-section semantics, Auto Join, Corner Trim, Sketch assist, projection, curved offsets, tangent-arc workflow, reference-point cleanup, IGES export and some display/manipulation controls. Those controls/workflows are the next development task. No proprietary QuickSurface source or icons are shipped.
-
-The unsigned Windows installer and its SHA-256 are attached, with corresponding AGPL source, source hashes and validation notes. Builds 0.0.40â€“0.0.42 were local review increments; existing installed sessions were not replaced during this task.
+Original upstream ScanRuler attribution and AGPL-3.0-only licensing are preserved. Corresponding source and SHA-256 checksums accompany this release.

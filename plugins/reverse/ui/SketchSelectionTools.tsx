@@ -6,6 +6,8 @@ import { datumTraces } from '../core/datums'
 import { constraintEntities, entityOf, relationTakes, sketchBounds, splineJoint, type ConstraintKind, type SketchEntity } from '../core/sketch'
 import { useReverse } from '../state/reStore'
 import { useSketchBrush } from '../state/sketchBrushStore'
+import { useSketchCornerTrim } from '../state/sketchCornerTrimStore'
+import { useSketchProject } from '../state/sketchProjectStore'
 import { useSketchPresentation } from '../state/sketchPresentation'
 import { SketchCommandIcon, type SketchCommandIconName } from './SketchCommandIcon'
 
@@ -13,9 +15,11 @@ import { SketchCommandIcon, type SketchCommandIconName } from './SketchCommandIc
 export function SketchSelectionTools({ scene }: { scene: FlatScene | null }) {
   const draft = useReverse(s => s.sketchDraft)
   const brush = useSketchBrush(s => s.open)
+  const corner = useSketchCornerTrim(s => s.open)
+  const project = useSketchProject(s => s.open)
   const extra = useSketchPresentation(s => s.tool)
   const toolbar = useRef<HTMLDivElement>(null)
-  const visible = Boolean(scene && draft?.tool === 'select' && draft.selection.length && !draft.imagePick && !draft.pattern && !brush && !extra)
+  const visible = Boolean(scene && draft?.tool === 'select' && draft.selection.length && !draft.imagePick && !draft.pattern && !brush && !extra && !corner && !project)
   useEffect(() => {
     const el = toolbar.current, host = el?.parentElement
     if (!visible || !scene || !el || !host) return

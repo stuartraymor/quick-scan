@@ -5,15 +5,19 @@
 // the part by the offset or by dragging the yellow arrow, with the scan's cut
 // outlined in yellow where it lies. Create opens the sketch editor on that
 // plane; Create & Stay makes the sketch from the cut there and stays, for the
-// next; Stacked sections makes a run of them through the part at once.
+// next. Stacked sections collect projected reference points into ONE sketch;
+// fitting remains an explicit later operation in the sketch editor.
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useReverse } from '../state/reStore'
 import { planeOffset, planeTakesOffset, type PlaneRef } from '../core/features'
 import { useLength } from '../../../src/app/useUnits'
 import { useStore } from '../../../src/state/store'
 import { PlaneSelect } from './PlaneSelect'
-import { useRePrefs } from '../state/rePrefs'
+import { commandHost } from '../../../src/commands/host'
+import { cloneSketch } from '../core/sketch'
+import { collectExtrudedReference, ReferenceCancelled, type StackExtent } from '../core/stackedReference'
+import { frameKey } from '../../../src/core/section/frame'
 import type { Vec2 } from '../../../src/core/flat/types'
 
 const TILES: { axis: 'z' | 'x' | 'y'; label: string; title: string }[] = [
@@ -21,7 +25,6 @@ const TILES: { axis: 'z' | 'x' | 'y'; label: string; title: string }[] = [
   { axis: 'x', label: '(OYZ)', title: 'A plane parallel to OYZ — normal along X' },
   { axis: 'y', label: '(OXZ)', title: 'A plane parallel to OXZ — normal along Y' },
 ]
-const SHARE_MM = 0.05
 const NOT_BUILT = 'Not built in Quick Scan yet'
 
 const world = (plane: PlaneRef) => (plane.kind === 'world' ? plane : null)
@@ -44,12 +47,16 @@ const placing = () => useReverse.setState((s) => (s.sketchDraft ? { sketchDraft:
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 /** Wait for the slice chains of the sketch draft as it stands now. */
-async function chainsNow(chainsOf: () => { chains: Vec2[][] } | null): Promise<Vec2[][] | null> {
+async function chainsNow(chainsOf: () => { chains: Vec2[][]; key?: string } | null): Promise<Vec2[][] | null> {
   const version = useReverse.getState().chainsVersion
+  const draft = useReverse.getState().sketchDraft
+  const expected = draft ? `${JSON.stringify(draft.plane)}|${frameKey(draft.frame)}|${draft.level ?? 0}` : null
   for (let i = 0; i < 400; i++) {
     const s = useReverse.getState()
+    if (s.sketchDraft !== draft) return null
     if (s.chainsStatus === 'failed') return null
-    if (s.chainsStatus === 'ready' && (s.chainsVersion !== version || i > 2)) return chainsOf()?.chains ?? null
+    const chains = chainsOf()
+    if (s.chainsStatus === 'ready' && chains && (chains.key === undefined || chains.key === expected) && (s.chainsVersion !== version || i > 2)) return chains.chains
     await sleep(50)
   }
   return null
@@ -72,8 +79,27 @@ export function PlaceSketch({ chainsOf }: { chainsOf: () => { chains: Vec2[][] }
   const [stacked, setStacked] = useState(false)
   const [count, setCount] = useState(20)
   const [hideScan, setHideScan] = useState(false)
+  const [ignoreScan, setIgnoreScan] = useState(false)
+  const [extent, setExtent] = useState<StackExtent | undefined>()
   const [working, setWorking] = useState<string | null>(null)
+  const [referenceMessage, setReferenceMessage] = useState<string | null>(null)
+  const run = useRef(0)
+  const appliedStack = useRef<string | null>(null)
+  const collectStack = useRef<(() => Promise<boolean>) | null>(null)
+  const previousFrame = useRef<string | null>(null)
   const [typedAngle, setTypedAngle] = useState<string | null>(null)
+  useEffect(() => () => { run.current++ }, [])
+  const currentFrame = draft?.placing ? frameKey(draft.frame) : null
+  useEffect(() => {
+    const moved = previousFrame.current !== null && previousFrame.current !== currentFrame
+    previousFrame.current = currentFrame
+    if (!moved || !currentFrame || !stacked || ignoreScan || draft?.plane.kind === 'radial') return
+    run.current++; setWorking(null); appliedStack.current = null
+    // Moving the plane translates the bounded volume too. Recollect only
+    // when the arrow settles; no per-slice feature/history revisions.
+    const timer = setTimeout(() => { void collectStack.current?.() }, 220)
+    return () => clearTimeout(timer)
+  }, [currentFrame, stacked, ignoreScan])
   if (!draft?.placing) return null
   const re = useReverse.getState()
   const plane = world(draft.plane)
@@ -83,74 +109,90 @@ export function PlaceSketch({ chainsOf }: { chainsOf: () => { chains: Vec2[][] }
   const pendingOffset = typed !== null && typed.trim() !== '' ? len.fromDisplay(Number(typed)) : NaN
   const canApplyOffset = Number.isFinite(pendingOffset) && pendingOffset !== offset
   const commitAngle = () => {
+    run.current++; setWorking(null); appliedStack.current = null
     const v = Number(typedAngle)
     setTypedAngle(null)
     if (typedAngle !== null && typedAngle.trim() !== '' && Number.isFinite(v)) re.setSketchAngle(v)
   }
   const place = (ref: PlaneRef) => {
+    run.current++; setWorking(null); setExtent(undefined); setStacked(false); setReferenceMessage(null); appliedStack.current = null
     // A new plane, the sketch drafted afresh on it, still placing.
     if (re.startSketchOn(ref)) placing()
   }
   const commit = () => {
+    run.current++; setWorking(null); appliedStack.current = null
     const v = len.fromDisplay(Number(typed))
     setTyped(null)
     if (typed !== null && typed.trim() !== '' && Number.isFinite(v)) re.setSketchOffset(v)
   }
-  const create = () => {
+  const stackKey = () => {
+    const d = useReverse.getState().sketchDraft
+    return JSON.stringify([d?.plane, d?.frame, count, extent ?? null])
+  }
+  /** Apply is one provisional reference-data change, never a feature loop. */
+  const createStacked = async (): Promise<boolean> => {
+    const d = useReverse.getState().sketchDraft
+    if (!d?.placing) return false
+    if (d.plane.kind === 'radial') {
+      setReferenceMessage('Revolved stacked-section projection is awaiting reference verification. Use a single revolved section or an extruded stack.')
+      return false
+    }
+    let worker
+    try { worker = commandHost().session.clientRef.current } catch { worker = null }
+    if (!worker || !useStore.getState().fileName) { setReferenceMessage('Load a scan before collecting stacked reference points.'); return false }
+    const token = ++run.current, version = worker.scanVersion
+    const current = () => run.current === token && useReverse.getState().sketchDraft === d && worker.scanVersion === version
+    setWorking(`Stacked sections: 0 of ${count}`); setReferenceMessage(null)
+    try {
+      const result = await collectExtrudedReference(worker, d.frame, count, { extent, isCurrent: current, onProgress: (done, total) => { if (current()) setWorking(`Stacked sections: ${done} of ${total}`) } })
+      if (!current()) return false
+      const sketch = cloneSketch(d.sketch)
+      sketch.referenceChains = result.chains
+      useReverse.getState().setSketch(sketch)
+      setExtent(result.extent)
+      appliedStack.current = JSON.stringify([d.plane, d.frame, count, result.extent])
+      const message = `${result.sections} sections · ${result.points.toLocaleString()} reference points in one sketch. No primitives fitted.`
+      setReferenceMessage(message); useStore.getState().setStatus(message)
+      return true
+    } catch (error) {
+      if (!(error instanceof ReferenceCancelled) && current()) setReferenceMessage(error instanceof Error ? error.message : 'Reference points could not be collected.')
+      return false
+    } finally {
+      if (run.current === token) setWorking(null)
+    }
+  }
+  collectStack.current = createStacked
+  const prepareReference = async (): Promise<boolean> => {
+    const d = useReverse.getState().sketchDraft
+    if (!d?.placing) return false
+    if (ignoreScan) {
+      const sketch = cloneSketch(d.sketch); sketch.referenceChains = []
+      useReverse.getState().setSketch(sketch); return true
+    }
+    if (stacked) return appliedStack.current === stackKey() && d.sketch.referenceChains !== undefined ? true : createStacked()
+    // Preserve the current single cut too, so reference points survive a
+    // project round trip without requiring the scan worker to recut it.
+    const token = ++run.current
+    setWorking('Collecting sketch reference points…')
+    try {
+      const chains = useStore.getState().fileName ? await chainsNow(chainsOf) : []
+      if (run.current !== token || useReverse.getState().sketchDraft !== d) return false
+      if (chains === null) { setReferenceMessage('The section is not ready. Move the plane through the scan and try again.'); return false }
+      const sketch = cloneSketch(d.sketch); sketch.referenceChains = chains.map((chain) => chain.map((p) => [...p]))
+      useReverse.getState().setSketch(sketch); return true
+    } finally { if (run.current === token) setWorking(null) }
+  }
+  const create = async () => {
+    if (!await prepareReference()) return
     if (hideScan) useReverse.getState().setSketchModelShown(false)
     useReverse.setState((s) => (s.sketchDraft ? { sketchDraft: { ...s.sketchDraft, placing: false } } : {}))
   }
-  /** The sketch made from the cut where the plane lies — every chain fitted —
-   *  and kept; a fresh one is started on the same plane. False when nothing
-   *  of the scan lies on it. */
-  const makeHere = async (): Promise<boolean> => {
-    const chains = await chainsNow(chainsOf)
-    if (!chains || chains.length === 0) return false
-    const s = useReverse.getState()
-    s.autoFit(chains, 'all', useRePrefs.getState().fitOptions, SHARE_MM)
-    return s.commitSketch() !== null
-  }
   const createAndStay = async () => {
     const d = useReverse.getState().sketchDraft
-    if (!d) return
-    setWorking('Creating the sketch…')
-    try {
-      const keepPlane = d.plane
-      const made = await makeHere()
-      useStore.getState().setStatus(made ? `${d.name} made from the cut — move the plane for the next one.` : 'Nothing of the scan lies on this plane — move it into the part.')
-      if (useReverse.getState().sketchDraft === null && re.startSketchOn(keepPlane)) placing()
-    } finally {
-      setWorking(null)
-    }
-  }
-  const createStacked = async () => {
-    const d = useReverse.getState().sketchDraft
-    if (!d || !planeTakesOffset(d.plane)) return
-    const store = useStore.getState()
-    const n = Math.max(2, Math.min(200, Math.round(count)))
-    // Through the part along the plane's normal: the scan's bounding sphere,
-    // a little inside its ends, in steps of equal length.
-    const [nx, ny, nz] = d.frame.normal
-    const c = store.modelCenter
-    const at = c[0] * nx + c[1] * ny + c[2] * nz
-    const base = planeOffset(d.plane) - ((d.frame.origin[0] * nx + d.frame.origin[1] * ny + d.frame.origin[2] * nz) - at)
-    const reach = store.modelSize * 0.98
-    const keepPlane = d.plane
-    let made = 0
-    setWorking(`Stacked sections: 0 of ${n}`)
-    try {
-      for (let i = 0; i < n; i++) {
-        const off = base - reach + (2 * reach * (i + 0.5)) / n
-        if (useReverse.getState().sketchDraft === null && re.startSketchOn(keepPlane)) placing()
-        useReverse.getState().setSketchOffset(off)
-        if (await makeHere()) made++
-        setWorking(`Stacked sections: ${i + 1} of ${n}`)
-      }
-    } finally {
-      setWorking(null)
-      if (useReverse.getState().sketchDraft === null && re.startSketchOn(keepPlane)) placing()
-      useStore.getState().setStatus(`Stacked sections: ${made} sketches made through the part.`)
-    }
+    if (!d || !await prepareReference()) return
+    const id = useReverse.getState().commitSketch()
+    if (id !== null && re.startSketchOn(d.plane)) { placing(); appliedStack.current = null }
+    useStore.getState().setStatus(id !== null ? 'One reference sketch created. No primitives fitted; move the plane for the next sketch.' : 'No reference points on this plane; no sketch created.')
   }
   return (
     <section className="re-place" data-test="place-sketch" aria-label="Create Sketch">
@@ -211,8 +253,13 @@ export function PlaceSketch({ chainsOf }: { chainsOf: () => { chains: Vec2[][] }
       </label>
       <hr className="re-place-rule" />
       <div className="toolrow re-place-ignore">
-        <label className="checkrow" title="Put the scan away while the sketch is drawn, so the sketch is made on the plane alone">
-          <input type="checkbox" data-test="place-hide-scan" checked={hideScan} onChange={(e) => setHideScan(e.target.checked)} />
+        <label className="checkrow" title="Create the sketch without extracting scan reference points. This does not hide the scan.">
+          <input type="checkbox" data-test="place-ignore-scan" checked={ignoreScan} onChange={(e) => {
+            run.current++; setWorking(null); appliedStack.current = null
+            const on = e.target.checked; setIgnoreScan(on)
+            const d = useReverse.getState().sketchDraft
+            if (d) { const sketch = cloneSketch(d.sketch); if (on) sketch.referenceChains = []; else delete sketch.referenceChains; useReverse.getState().setSketch(sketch) }
+          }} />
           <span>Ignore scan data</span>
         </label>
         <button data-test="place-flip" disabled title={NOT_BUILT}>Flip orientation</button>
@@ -226,31 +273,43 @@ export function PlaceSketch({ chainsOf }: { chainsOf: () => { chains: Vec2[][] }
         <span>Through selection only</span>
       </label>
       <label className="checkrow">
-        <input type="checkbox" data-test="place-stacked" checked={stacked} onChange={(e) => setStacked(e.target.checked)} />
+        <input type="checkbox" data-test="place-stacked" disabled={!!radial || ignoreScan} checked={stacked && !radial} onChange={(e) => {
+          const on = e.target.checked; setStacked(on); appliedStack.current = null
+          if (on) void createStacked()
+          else { run.current++; setWorking(null); setExtent(undefined); setReferenceMessage(null); const d = useReverse.getState().sketchDraft; if (d) { const sketch = cloneSketch(d.sketch); delete sketch.referenceChains; useReverse.getState().setSketch(sketch) } }
+        }} />
         <span>Stacked sections</span>
       </label>
       <div className="toolrow re-place-stack">
         <label className="field">
           <span>Sections</span>
-          <input type="number" min={2} max={200} step={1} value={count} disabled={!stacked || !!working} data-test="place-stacked-count" onChange={(e) => setCount(Number(e.target.value))} />
+          <input type="number" min={2} max={200} step={1} value={count} disabled={!stacked || !!working || !!radial || ignoreScan} data-test="place-stacked-count" onChange={(e) => { appliedStack.current = null; setCount(Number(e.target.value)) }} />
         </label>
-        <button data-test="place-stacked-apply" disabled={!stacked || !!working || !useStore.getState().fileName} onClick={() => void createStacked()} title="Make that many sketches, evenly spaced through the part along the plane's normal, each fitted to its cut">
+        <button data-test="place-stacked-apply" disabled={!stacked || !!working || !!radial || ignoreScan || !useStore.getState().fileName} onClick={() => void createStacked()} title="Project all section points onto this one reference sketch. No primitives are fitted.">
           Apply
         </button>
       </div>
+      {!!radial && <p className="hint" data-test="place-radial-stack-unavailable">Revolved stacked-section projection awaits reference verification. Single revolved sections are available.</p>}
+      {stacked && !radial && extent && <div className="toolrow re-place-stack-extent" data-test="place-stack-extent">
+        <label className="field"><span>Lower extent</span><input type="number" step="any" aria-label="Lower stack extent" value={Number(len.toDisplay(extent.min).toFixed(4))} disabled={!!working} onChange={(e) => { appliedStack.current = null; setExtent({ ...extent, min: len.fromDisplay(Number(e.target.value)) }) }} /></label>
+        <label className="field"><span>Upper extent</span><input type="number" step="any" aria-label="Upper stack extent" value={Number(len.toDisplay(extent.max).toFixed(4))} disabled={!!working} onChange={(e) => { appliedStack.current = null; setExtent({ ...extent, max: len.fromDisplay(Number(e.target.value)) }) }} /></label>
+        <span>{len.word()}</span>
+      </div>}
       <label className="checkrow" title={NOT_BUILT}>
         <input type="checkbox" data-test="place-outline-mode" checked={false} disabled readOnly />
         <span>Outline Mode…</span>
       </label>
+      <label className="checkrow" title="Hide the scan when the sketch editor opens; its reference points are kept."><input type="checkbox" data-test="place-hide-scan" checked={hideScan} onChange={(e) => setHideScan(e.target.checked)} /><span>Hide scan data when creating a sketch</span></label>
       {working && <p className="hint" data-test="place-working">{working}</p>}
+      {referenceMessage && <p className="hint" data-test="place-reference-status" role="status">{referenceMessage}</p>}
       <div className="toolrow">
-        <button data-test="place-create-stay" disabled={!!working || !useStore.getState().fileName} onClick={() => void createAndStay()} title="Make the sketch from the cut here, fitted, and stay to place the next">
+        <button data-test="place-create-stay" disabled={!!working || !useStore.getState().fileName} onClick={() => void createAndStay()} title="Keep one reference sketch without fitting primitives, and stay to place the next">
           Create &amp; Stay
         </button>
-        <button className="primary" data-test="place-create" disabled={!!working} onClick={create}>Create</button>
+        <button className="primary" data-test="place-create" disabled={!!working} onClick={() => void create()}>Create</button>
       </div>
       <div className="toolrow">
-        <button data-test="place-cancel" disabled={!!working} onClick={() => re.discardSketch()}>Cancel</button>
+        <button data-test="place-cancel" onClick={() => { run.current++; setWorking(null); re.discardSketch() }}>Cancel</button>
       </div>
     </section>
   )

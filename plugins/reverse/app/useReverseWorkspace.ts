@@ -24,6 +24,7 @@ import { cornerUnreadable, readCornerCut } from '../core/filletEstimate'
 import { FACE_SLICE_INSET_MM, liftPoint, planeOffset, planeTakesOffset, type Feature, type PlaneRef, type SketchFeature } from '../core/features'
 import { resolveAxis, resolveFeatures, resolvePlaneFrame } from '../core/resolve'
 import { chainsOfEdges } from '../core/segment'
+import { referenceCut, referenceEdges } from '../core/stackedReference'
 import { imageCorners } from '../core/sketchImage'
 import { edgeGrip, extrudeGrips, extrudeGripsAt, faceGrip, moveGrip, moveGrips, prismStretch, revolveGrip, taperGrip, type FeatureGrip } from '../core/preview'
 import { matrix4Of, mergeMeshes, movedFaceMesh, moveMatrix } from '../core/move'
@@ -120,6 +121,8 @@ export function useReverseWorkspace({
   }, [workspace, kernelStatus, session])
 
   // ---- the slice chains under the sketch --------------------------------------------
+  const referenceChains = useReverse((s) => s.sketchDraft?.sketch.referenceChains)
+  const referenceStamp = useRef(0)
   const draftPlaneKey = useReverse((s) =>
     s.sketchDraft ? `${JSON.stringify(s.sketchDraft.plane)}|${frameKey(s.sketchDraft.frame)}|${s.sketchDraft.level ?? 0}` : null,
   )
@@ -134,15 +137,22 @@ export function useReverseWorkspace({
       chainsRef.current = null
       return
     }
-    const key = draftPlaneKey!
+    const key = referenceChains !== undefined ? `${draftPlaneKey}|reference:${++referenceStamp.current}` : draftPlaneKey!
     if (chainsRef.current?.key === key) return
     const land = (edges: EdgeChains) => {
-      if (useReverse.getState().sketchDraft === null) return
+      const current = useReverse.getState().sketchDraft
+      if (!current || current.sketch.referenceChains !== referenceChains || `${JSON.stringify(current.plane)}|${frameKey(current.frame)}|${current.level ?? 0}` !== draftPlaneKey) return
       chainsRef.current = { key, chains: chainsOfEdges(edges), edges }
       useReverse.getState().setChains(chainsRef.current.chains.length, 'ready')
     }
     const plane = draft.plane
     const level = draft.level
+    // Saved/projected reference data is authoritative, including explicit
+    // empty data after Clear or Ignore scan. It never triggers a fresh cut.
+    if (referenceChains !== undefined) {
+      land(referenceEdges(referenceChains))
+      return
+    }
     if (plane.kind === 'section' && level === undefined) {
       const sec = useStore.getState().sections.find((x) => x.id === plane.id)
       if (sec?.cut) land(projectCut(sec.cut, draft.frame))
@@ -175,7 +185,7 @@ export function useReverseWorkspace({
     return () => {
       stale = true
     }
-  }, [draftPlaneKey, sectionCutKey])
+  }, [draftPlaneKey, sectionCutKey, referenceChains])
 
   // ---- a datum alignment carries the sketches with the part ------------------------
   const appliedAlignment = useStore((s) => s.appliedAlignment)
@@ -500,6 +510,12 @@ export function useReverseWorkspace({
       return
     }
     let stale = false
+    const reference = useReverse.getState().sketchDraft?.sketch.referenceChains
+    if (reference !== undefined) {
+      const d = useReverse.getState().sketchDraft
+      if (d) scene.setCutPreview(d.frame, referenceCut(reference, d.frame), '#ffd400')
+      return () => { stale = true }
+    }
     const timer = setTimeout(() => {
       const d = useReverse.getState().sketchDraft
       const worker = commandHost().session.clientRef.current
@@ -515,7 +531,7 @@ export function useReverseWorkspace({
       stale = true
       clearTimeout(timer)
     }
-  }, [placingKey, onReverse, sceneRef])
+  }, [placingKey, onReverse, sceneRef, referenceChains])
   useEffect(() => () => sceneRef.current?.setCutPreview(null, null, ''), [sceneRef])
   const dark = usePrefs((s) => s.dark)
   const unitsShown = usePrefs((s) => s.units)

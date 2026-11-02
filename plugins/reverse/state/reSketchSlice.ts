@@ -1192,7 +1192,7 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
     // A sketch that held only a picture, the picture taken away, is
     // written back so: empty.
     const held = d.featureId !== undefined ? s.features.find((f) => f.id === d.featureId) : undefined
-    if (d.sketch.entities.length === 0 && !d.image && !(held?.kind === 'sketch' && held.image)) {
+    if (d.sketch.entities.length === 0 && !d.sketch.referenceChains?.some((chain) => chain.length > 0) && !d.image && !(held?.kind === 'sketch' && (held.image || held.sketch.referenceChains !== undefined))) {
       set({ sketchDraft: null, ...(d.featureId !== undefined ? { buildVersion: s.buildVersion + 1 } : {}) })
       return null
     }

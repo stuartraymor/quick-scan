@@ -5,6 +5,8 @@ import { addConstraint, cloneSketch, entityOf, type ConstraintKind } from '../co
 import { useReverse } from '../state/reStore'
 import { useRePrefs } from '../state/rePrefs'
 import { useSketchBrush } from '../state/sketchBrushStore'
+import { useSketchCornerTrim } from '../state/sketchCornerTrimStore'
+import { useSketchProject } from '../state/sketchProjectStore'
 import { useSketchPresentation } from '../state/sketchPresentation'
 import { mirrorSketchSelection, duplicateSketchSelection, offsetSketchSelection, middleLineSketchSelection } from '../state/sketchExtraTools'
 import { SketchCommandIcon, type SketchCommandIconName } from './SketchCommandIcon'
@@ -57,8 +59,8 @@ export function SketchControls({chainsOf}:{chainsOf:()=>SketchChains|null}) {
    {key('mirror','Mirror selected entities — include a construction line','sketch-mirror',()=>mirrorSketchSelection(),false,!has)}
    {key('duplicate','Duplicate selected entities','sketch-duplicate',()=>setEdit(edit==='duplicate'?null:'duplicate'),edit==='duplicate',!has)}
    {key('offset','Offset selected entities','sketch-offset-entities',()=>setEdit(edit==='offset'?null:'offset'),edit==='offset',!has)}
-   {key('corner','Corner Trim — remove selected fillet or chamfer','sketch-sharpen',()=>re.sharpenSelected(),false,!has)}
-   {key('project','Project another sketch or body edge','sketch-tool-project',()=>tool('project'),active('project'))}
+   {key('corner','Corner Trim','sketch-sharpen',()=>{tool('select');useSketchProject.getState().setOpen(false);useSketchCornerTrim.getState().setOpen(true)})}
+   {key('project','Project other visible sketches','sketch-tool-project',()=>{tool('select');useSketchCornerTrim.getState().setOpen(false);useSketchProject.getState().setOpen(true)})}
   </div>
   {edit&&<div className="sketch-edit-values" data-test="sketch-edit-values">
    {edit==='offset'?<label>Offset <input data-test="sketch-offset-distance" type="number" value={distance} step="0.1" onChange={e=>setDistance(Number(e.target.value))}/> mm <button onClick={()=>setDistance(-distance)}>Flip</button></label>:<><label>X <input data-test="sketch-duplicate-x" type="number" value={dx} onChange={e=>setDx(Number(e.target.value))}/></label><label>Y <input data-test="sketch-duplicate-y" type="number" value={dy} onChange={e=>setDy(Number(e.target.value))}/></label></>}
@@ -84,5 +86,7 @@ export function SketchControls({chainsOf}:{chainsOf:()=>SketchChains|null}) {
    </div>
   </fieldset>
   <button className="sketch-overdefined" data-test="sketch-overdefined" disabled={!d.report?.unmet.length} onClick={()=>{const id=d.report?.unmet[0]?.id;if(id!==undefined)re.selectConstraint(id)}}>Select overdefining constraints</button>
+  <div className="sketch-section-label">Sketch Reference points</div>
+  <div className="sketch-entry-row"><button data-test="sketch-reference-clear" disabled={!chainsOf()?.chains.length} onClick={()=>{const sketch=cloneSketch(d.sketch);sketch.referenceChains=[];re.setSketch(sketch)}}>Clear</button><button disabled title="Reference-point cleanup behavior is still being compared with QUICKSURFACE">Clean up reference points …</button></div>
  </div>
 }

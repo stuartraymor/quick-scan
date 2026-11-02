@@ -52,6 +52,8 @@ import { pinNoteOnBody, useNotePins, useNotesOn } from './useNotePins'
 import { useNetworkLayer } from './useNetworkLayer'
 import { readField } from '../ui/reLength'
 import { useSketchBrush } from '../state/sketchBrushStore'
+import { useSketchCornerTrim } from '../state/sketchCornerTrimStore'
+import { useSketchProject } from '../state/sketchProjectStore'
 import { useSketchPresentation } from '../state/sketchPresentation'
 
 /** A scale held per millimetre — a deviation in millimetres, a curvature
@@ -127,7 +129,7 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
   const sketchOpen = useReverse((s) => s.sketchDraft !== null)
   const extractingSketch = useSketchBrush((s) => s.open)
   useEffect(() => {
-    if (!sketchOpen) { useSketchBrush.getState().setOpen(false); useSketchPresentation.getState().setTool(null) }
+    if (!sketchOpen) { useSketchBrush.getState().setOpen(false); useSketchCornerTrim.getState().setOpen(false); useSketchProject.getState().setOpen(false); useSketchPresentation.getState().setTool(null) }
   }, [sketchOpen])
   useEffect(() => {
     const normal = () => {

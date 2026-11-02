@@ -1,3 +1,8 @@
+## 0.0.44 - 2026-11-02
+
+- Correct Corner Trim, visible sketch projection and single-cloud stacked sections; add multicolor Compare icon.
+- Full fit/constrain/dimension/extrude/save/reopen workflow and release verification passed. See RELEASE-VERIFICATION.md for evidence and remaining differences.
+
 ## 0.0.43 — 2026-11-02
 
 - Desktop Rebuild with AI adds Set up my AI app for installed Claude Code, Claude Desktop and Codex configurations. Merges preserve other settings, back up changed files, report per-app failures, and share the connector pairing values.
