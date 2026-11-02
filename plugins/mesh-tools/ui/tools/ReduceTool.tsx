@@ -10,6 +10,7 @@ import { ExportMeshButton } from '../../../../src/ui/ExportMeshButton'
 import type { MeshFormat } from '../../../../src/core/exportMesh'
 import { reductionStale, useMeshTools } from '../../state/meshStore'
 import { count, SHARE, typedLen } from '../meshFormat'
+import { useStore } from '../../../../src/state/store'
 
 export function ReduceTool({
   ready,
@@ -29,6 +30,9 @@ export function ReduceTool({
   const len = useLength()
   const mm = (v: number) => len.fmt(v, 3)
   const tol = r ? typedLen(r.settings.tolerance, len.units) : ''
+  const scanTriangles = useStore((s) => s.triangleCount)
+  // QUICKSURFACE's "Reduce down to … %": the limit as a share of the scan.
+  const percent = scanTriangles > 0 ? Math.round((m.maxTriangles / scanTriangles) * 1000) / 10 : 0
 
   return (
     <>
@@ -96,6 +100,18 @@ export function ReduceTool({
               </p>
             </>
           }
+        />
+
+        <NumberField
+          label="Reduce down to"
+          testId="reduce-percent"
+          value={percent}
+          step={5}
+          min={0.01}
+          unit="%"
+          disabled={busy || scanTriangles === 0}
+          onCommit={(p) => m.setMaxTriangles(Math.max(4, Math.round((scanTriangles * Math.min(p, 100)) / 100)))}
+          hint={<p>The triangle limit as a share of the scan's {count(scanTriangles)} triangles; it sets the limit above.</p>}
         />
 
         <button
