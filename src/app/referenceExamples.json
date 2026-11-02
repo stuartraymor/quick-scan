@@ -1,0 +1,82 @@
+[
+  {
+    "id": "lego",
+    "label": "Lego block",
+    "file": "lego.stl",
+    "bytes": 13391784,
+    "sha256": "fa9f320db3b776c2b6298ba6f7608456cc6e37826a330cccf40e85e3edd898a7",
+    "triangles": 267834
+  },
+  {
+    "id": "basic_part",
+    "label": "Basic part",
+    "file": "basic_part.stl",
+    "bytes": 10672484,
+    "sha256": "a67c53d4c67df67c2f161697f370eacebea89375147bb912e465df2e3f662de6",
+    "triangles": 213448
+  },
+  {
+    "id": "aerosol_knob",
+    "label": "Aerosol knob",
+    "file": "aerosol_knob.stl",
+    "bytes": 9294184,
+    "sha256": "28240afd7bb6201bb73694ec04327e6b56c18a64b5837cf99f7e2d0ee9045105",
+    "triangles": 185882
+  },
+  {
+    "id": "bearinghousing",
+    "label": "Bearing housing",
+    "file": "bearinghousing.stl",
+    "bytes": 8221334,
+    "sha256": "6f2cebf81b4255d23fe141fde01b1f6e496fbdb1316bca48990c1f2071d6ab19",
+    "triangles": 164425
+  },
+  {
+    "id": "machine_part",
+    "label": "Machine part",
+    "file": "machine_part.stl",
+    "bytes": 32565284,
+    "sha256": "05839e0c326c9762dab1eecf5b13fc4090eb8ac727631fcd273d558f30d84c16",
+    "triangles": 651304
+  },
+  {
+    "id": "tool",
+    "label": "Tool",
+    "file": "tool.stl",
+    "bytes": 14364584,
+    "sha256": "4b380e58f714f0ddce2c7dc117229ad4f0b7af6fe0bbb0f8e61eba8f2d472853",
+    "triangles": 287290
+  },
+  {
+    "id": "steel",
+    "label": "Steel",
+    "file": "steel.stl",
+    "bytes": 31884084,
+    "sha256": "53f7e4e7eb97fa490ceccf77b514ade3cd2e4a93e519a3350278777b28e7bb57",
+    "triangles": 637680
+  },
+  {
+    "id": "impeller",
+    "label": "Impeller",
+    "file": "impeller.stl",
+    "bytes": 4944084,
+    "sha256": "f28181a3226f5a35ece1671e87ab3dc9b0c6dfce2f6c968037333eba8ff06bf1",
+    "triangles": 98880
+  },
+  {
+    "id": "yholder",
+    "label": "Y shape holder",
+    "file": "yholder.stl",
+    "bytes": 11510584,
+    "sha256": "d533217a2bbb411b017ce5ef29b7528b5a2252bf884dc87622919376498deab9",
+    "triangles": 230210
+  },
+  {
+    "id": "qsm",
+    "label": "QS Practice part",
+    "file": "qsm.stl",
+    "bytes": 21569384,
+    "sha256": "2554a0b64ee7a8c9670a5e6fa527697098125ac3b5cba85bd6e16a70aa75a50f",
+    "triangles": 431386
+  }
+]

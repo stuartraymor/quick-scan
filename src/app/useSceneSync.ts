@@ -42,7 +42,7 @@ import { providersFor } from '../ui/RefSelect'
 import { MARK_COLOR, useDeviation } from '../state/deviationStore'
 import { sectionElementsOf, useFlat } from '../state/flatStore'
 import { useShell } from '../state/shellStore'
-import { useMark, wandDegreesOf } from '../state/markStore'
+import { EXTRACT_MARK_COLOR, useMark, wandDegreesOf } from '../state/markStore'
 import { useThickness } from '../state/thicknessStore'
 import { colormapById, paintField, type FieldScale } from '../core/field/colormap'
 import { fieldHistogram } from '../core/field/stats'
@@ -53,7 +53,10 @@ import {
   suggestDeflectionScale,
 } from '../core/deviation/deflection'
 import { thicknessStats } from '../core/thickness/thickness'
-import { identityRigid, rigidCompose, rigidInvert, rigidToColumnMajor } from '../core/deviation/rigid'
+import { identityRigid, rigidCompose, rigidInvert, rigidRotate, rigidToColumnMajor } from '../core/deviation/rigid'
+import {useInteractiveAlign} from '../state/interactiveAlignStore'
+import type {Vec3} from '../core/types'
+import type {PluginGrip} from '../viewer/extendGrips'
 import { sectionViewFrames, useSectionView } from '../state/sectionViewStore'
 import type { RefObject } from 'react'
 import type { PluginRuntime } from '../plugins/api'
@@ -191,7 +194,7 @@ export function useSceneSync({
       return
     }
     scene.setPaintBrush({
-      color: paintSession ? draftColor : (pluginMarkColor ?? MARK_COLOR),
+      color: extractSession || paintSession ? EXTRACT_MARK_COLOR : (pluginMarkColor ?? MARK_COLOR),
       diameter: brushDiameter,
       erase: markErase,
       gesture: pluginMarkColor !== null && !pluginGestures ? null : markGesture,
@@ -535,6 +538,7 @@ export function useSceneSync({
   const scanName = useStore((s) => s.fileName)
   useEffect(() => {
     useSectionView.getState().close()
+    useInteractiveAlign.getState().close()
   }, [scanName])
   useEffect(
     () =>
@@ -614,16 +618,35 @@ export function useSceneSync({
   // underneath it. Applying (or cancelling) lifts it again.
   const modelSize = useStore((s) => s.modelSize)
   const centerOf = useStore(alignCenterOf)
+  const interactive = useInteractiveAlign(s => s.open)
+  const interactiveRigid = useInteractiveAlign(s => s.rigid)
+  const interactiveCenter = useInteractiveAlign(s => s.center)
+  const interactiveMirror = useInteractiveAlign(s => s.mirror)
+  const interactiveMirrorPlane = useInteractiveAlign(s => s.mirrorPlane)
+  useEffect(() => { if (interactive && !elementsWorkspace) useInteractiveAlign.getState().close() }, [interactive, elementsWorkspace])
   useEffect(() => {
     // Before anything is picked, a first alignment already centres the part on
     // the datum stage — the "here is where your part is going" opening move.
     // The computed preview then takes over and keeps the same centring rule.
-    const rigid = alignDraft
+    const rigid = interactive ? interactiveRigid : alignDraft
       ? (alignmentPreview(alignDraft, elements, modelSize, centerOf).preview?.rigid ??
         (centerOf ? translationToOrigin(centerOf) : null))
       : null
     sceneRef.current?.setAlignPreview(rigid ? rigidToColumnMajor(rigid) : null)
-  }, [alignDraft, elements, modelSize, centerOf])
+    const grips:PluginGrip[] = []
+    if (interactive) {
+      const inv = rigidInvert(interactiveRigid)
+      const local = (v:Vec3):Vec3 => { const out = new Float64Array(3); rigidRotate(inv,...v,out); return [out[0],out[1],out[2]] }
+      const axes:Vec3[] = [[1,0,0],[0,1,0],[0,0,1]]
+      for (let i=0;i<3;i++) {
+        const axis = 'xyz'[i], color = ['#d92121','#20b833','#2545df'][i]
+        grips.push({side:`align-m${axis}`,shape:'arrow',shaft:true,position:interactiveCenter,dir:local(axes[i]),size:84,pixels:true,color})
+        grips.push({side:`align-r${axis}`,shape:'arc',position:interactiveCenter,dir:local(axes[i]),basis:local(axes[(i+1)%3]),size:76,pixels:true,color})
+      }
+    }
+    sceneRef.current?.setAlignmentGrips(grips)
+    sceneRef.current?.setAlignMirror(interactive && interactiveMirror ? interactiveMirrorPlane : null)
+  }, [alignDraft, elements, modelSize, centerOf, interactive, interactiveRigid, interactiveCenter, interactiveMirror, interactiveMirrorPlane])
 
   // The scan-to-reference best fit is a pose on the scan's group: the reference
   // stays put and the scan is carried onto it, taking the map and any elements
@@ -642,7 +665,7 @@ export function useSceneSync({
   // off" the first time and right the second, when there was no pose left.
   // This runs ahead of the stage below, so the stage is framed around the
   // part where it stands for the alignment, not where the pose had it.
-  const shownAlign = source === 'element' || alignDraft !== null ? null : align
+  const shownAlign = source === 'element' || alignDraft !== null || interactive ? null : align
   useEffect(() => {
     sceneRef.current?.setAlignment(shownAlign ? rigidToColumnMajor(shownAlign.transform) : null)
   }, [shownAlign])
@@ -987,6 +1010,12 @@ export function useSceneSync({
     if (useStore.getState().sectionDraft) useStore.getState().cancelSection()
     // Runs on the listed dependencies only, not on everything it reads.
   }, [workspace, source])
+
+  // Extract primitives opens ready to pick a surface. The explicit Navigate
+  // key still returns the mouse to the camera; re-renders must not re-arm it.
+  useEffect(() => {
+    if (extractSession) useMark.getState().setGesture('wand')
+  }, [extractSession, source])
 
   // While the split picker is up the main viewport is hidden behind it; stop
   // rendering it rather than paying for a 1.4-million-triangle frame nobody

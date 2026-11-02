@@ -24,6 +24,7 @@ import { useFlat } from '../state/flatStore'
 import { useShell } from '../state/shellStore'
 import { plugins } from '../plugins/registry'
 import { undo, redo } from '../state/historyStore'
+import { useDocumentOrder } from '../state/documentOrderStore'
 import type { StandardView } from '../viewer/orthoViewport'
 
 /** The keys of the plugin whose workspace is on screen, if one is. */
@@ -43,6 +44,19 @@ const VIEW_KEYS: Record<string, StandardView> = {
   '9': 'iso-rear-right',
 }
 
+/** QUICKSURFACE's letter keys for the standard views (Help > Shortcuts there:
+ *  T top, M bottom, F front, K back, L left, R right, I isometric). A, zoom
+ *  all, is handled beside it. Bare keys only, so Shift+L and the like stay free. */
+const VIEW_LETTERS: Record<string, StandardView> = {
+  t: 'top',
+  m: 'bottom',
+  f: 'front',
+  k: 'rear',
+  l: 'left',
+  r: 'right',
+  i: 'iso',
+}
+
 /** The arrow keys, as steps through what lies under the cursor: down and
  *  right go further back, up and left come forward again. */
 const ARROW_STEPS: Record<string, 1 | -1> = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }
@@ -57,6 +71,8 @@ export function useGlobalShortcuts({
   cancelSection,
   confirmSection,
   viewFrom,
+  fitView,
+  deselectAll,
   cycleUnderCursor,
 }: {
   /** Close the deviation workspace's local fine fit marking session. */
@@ -74,6 +90,10 @@ export function useGlobalShortcuts({
   confirmSection: () => void
   /** Turn the 3D viewport's camera to a standard view. */
   viewFrom: (view: StandardView) => void
+  /** A: fit everything in the 3D viewport. */
+  fitView: () => void
+  /** Ctrl+Q: clear the painted selection on the scan. */
+  deselectAll: () => void
   /** Step through what lies under the cursor in the 3D viewport — see
    *  SceneManager.cycleUnderCursor. True when something was stepped to. */
   cycleUnderCursor: (step: 1 | -1) => boolean
@@ -130,11 +150,19 @@ export function useGlobalShortcuts({
       // The view keys belong to the 3D viewport alone: the 2D workspace has no
       // camera to turn, and the split picker's halves are posed by hand. Bare
       // keys only — Ctrl+1 and the like are the browser's tab switching.
-      const view = VIEW_KEYS[e.key]
-      if (view && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      const letter = !e.shiftKey ? e.key.toLowerCase() : ''
+      const view = VIEW_KEYS[e.key] ?? VIEW_LETTERS[letter]
+      if ((view || letter === 'a') && !e.ctrlKey && !e.altKey && !e.metaKey) {
         if (useShell.getState().workspace === 'flat' || useDeviation.getState().picking) return
         if (plugins().some((p) => p.keyboard?.holdsViewKeys?.())) return
-        viewFrom(view)
+        if (view) viewFrom(view)
+        else fitView()
+        return
+      }
+      if (useDocumentOrder.getState().rollbackAt !== null) return
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'q') {
+        e.preventDefault()
+        deselectAll()
         return
       }
       // The arrow keys step through what lies under the cursor in the 3D
@@ -233,6 +261,7 @@ export function useGlobalShortcuts({
     }
     /** What a confirm would land on right now, if anything. */
     const confirmable = (): 'draft' | 'dimension' | 'section' | 'flat' | 'plugin' | 'button' | null => {
+      if (useDocumentOrder.getState().rollbackAt !== null) return null
       const button = () => (confirmButton() ? 'button' : null)
       if (useShell.getState().workspace === 'flat') return flatConfirmable() ? 'flat' : button()
       // A plugin's workspace confirms by the middle button like everything
