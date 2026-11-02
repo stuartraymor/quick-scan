@@ -1,0 +1,88 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+name: QUICKSURFACE parity finding
+description: A place where Quick Scan looks, is named or behaves differently from QUICKSURFACE.
+title: "[Parity] <area>: <short description>"
+labels: ["parity"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        One difference per issue. See [docs/REVIEWER_HANDOVER.md](https://github.com/stuartraymor/quick-scan/blob/main/docs/REVIEWER_HANDOVER.md).
+        Please attach your own screenshots or recordings only — no QUICKSURFACE files, manuals, icons or decompiled material.
+  - type: input
+    id: reviewer_id
+    attributes:
+      label: Your item ID
+      description: Your own numbering, so we can match this issue to your list.
+      placeholder: QS-012
+  - type: input
+    id: version
+    attributes:
+      label: Quick Scan version
+      description: Title bar, or Help → About.
+      placeholder: v0.0.14
+    validations:
+      required: true
+  - type: input
+    id: area
+    attributes:
+      label: Area / command
+      placeholder: Extract primitives → Magic Wand
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind of difference
+      options:
+        - Placement or naming (tab, group, button, menu, label, icon)
+        - Dialog (fields, order, defaults, units, buttons)
+        - Workflow (selection, preview, Apply/Cancel, what stays open, tree/history)
+        - Mouse or keyboard
+        - Result (geometry or numbers)
+        - Feel (slow, jumpy, confusing)
+        - Missing feature
+    validations:
+      required: true
+  - type: textarea
+    id: quicksurface
+    attributes:
+      label: QUICKSURFACE behaviour
+      description: What QUICKSURFACE does, step by step, and its version.
+    validations:
+      required: true
+  - type: textarea
+    id: quickscan
+    attributes:
+      label: Quick Scan behaviour
+      description: What Quick Scan does instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the part
+        2. Extract primitives → Magic Wand
+        3. Click the top face
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - Blocker — cannot do the task
+        - Major — task possible but clearly different workflow
+        - Minor — small difference a QUICKSURFACE user notices
+        - Cosmetic — wording, spacing, icon
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested change
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Your own screenshots or recordings of each application (drag files here), with timestamps for videos.

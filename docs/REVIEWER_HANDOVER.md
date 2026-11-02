@@ -65,7 +65,7 @@ Please use your own test parts. Do not send us customer data you are not allowed
 
 ### Findings (everyone)
 
-One item per difference, either as a GitHub issue on [stuartraymor/quick-scan](https://github.com/stuartraymor/quick-scan/issues) (label it `parity`) or collected in one spreadsheet / Markdown file. For each item:
+One item per difference, either as a [**QUICKSURFACE parity finding** issue](https://github.com/stuartraymor/quick-scan/issues/new?template=parity.yml) (the form asks for every field below and labels it `parity`), or collected in one spreadsheet using [docs/parity-findings-template.csv](parity-findings-template.csv). For each item:
 
 | Field | Example |
 |---|---|

@@ -1,0 +1,2 @@
+ID,Quick Scan version,Area / command,Kind of difference,QUICKSURFACE behaviour (and version),Quick Scan behaviour,Steps to reproduce,Severity (Blocker/Major/Minor/Cosmetic),Suggested change,Evidence file names
+QS-001,v0.0.14,Extract primitives > Magic Wand,Workflow,"After a wand click the quick-tools box appears at the cursor (Pro 8.0.127)","The box appears 40 px to the right of the cursor","Open part; Extract primitives; Magic Wand; click top face",Minor,Place the box at the cursor,qs-001-quicksurface.png; qs-001-quickscan.png
