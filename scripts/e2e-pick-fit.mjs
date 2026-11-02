@@ -150,7 +150,8 @@ check(
   lost.share < framed.share / 2,
   `zooming out shrinks the models (${framed.share} → ${lost.share})`,
 )
-await page.click('.viewport > [data-test=fit-view]')
+await page.click('[aria-label="View navigation menu"]')
+await page.click('[data-test=corner-fit]')
 await sleep(500)
 const refitted = await partShare('.viewport')
 check(

@@ -303,35 +303,35 @@ const front = await sample()
 check(top.hash !== front.hash, 'the 3 key turns from top to front')
 check(front.area > 0.005, `the part is on screen from the front — area ${front.area.toFixed(4)}`)
 
-// ---- the gizmo arrows are buttons for the same views ----
-// From the front the Z arrow points straight up the gizmo: it sits in the
-// bottom-right corner at gizmoSize(w, h) with a 14px pad, its tip 1.1 of 1.75
-// half-extents above the centre. One click looks down Z (top); the arrow then
-// points straight at the viewer, its tip on the gizmo centre, and a second
-// click there turns the part over (bottom) — which the 2 key then holds.
-const gizmoSize = Math.min(120, Math.max(74, Math.min(rect.w, rect.h) * 0.18))
-const gizmoCentre = [rect.x + rect.w - 14 - gizmoSize / 2, rect.y + rect.h - 14 - gizmoSize / 2]
-const zTip = [gizmoCentre[0], gizmoCentre[1] - (1.1 / 1.75) * (gizmoSize / 2)]
+// ---- the top-right gizmo and its view menu ----
+const zTip = await page.evaluate(() => {
+  const g = window.__scanruler.scene().gizmo
+  const p = g.camera.position.clone().set(0, 0, 1.1).project(g.camera)
+  const r = document.querySelector('.viewport canvas').getBoundingClientRect()
+  return [r.x + g.drawn.x + (p.x + 1) * g.drawn.size / 2, r.y + g.drawn.y + (1 - p.y) * g.drawn.size / 2]
+})
 const canvasCursor = () => page.evaluate(() => document.querySelector('.viewport canvas').style.cursor)
 await page.mouse.move(...zTip)
 await sleep(150)
-const cursor = await canvasCursor()
-check(cursor === 'pointer', `hovering the Z arrow shows a pointer (cursor "${cursor}")`)
+check((await canvasCursor()) === 'pointer', 'hovering the Z arrow shows a pointer')
 await page.mouse.click(...zTip)
 await sleep(250)
 const zOnce = await sample()
 check(zOnce.hash !== front.hash, 'clicking the Z arrow turns the view')
-await page.mouse.click(...gizmoCentre)
+await page.waitForSelector('.navigation-menu')
+// Resolve the visible label rather than the geometry of the animated cube.
+for (const button of await page.$$('.navigation-menu button')) {
+  if (await button.evaluate(el => el.textContent.trim() === 'Bottom')) { await button.click(); break }
+}
 await sleep(250)
 const zTwice = await sample()
-check(zTwice.hash !== zOnce.hash, 'clicking it again turns the part over')
+check(zTwice.hash !== zOnce.hash, 'the corner Bottom action turns the part over')
+await page.mouse.move(...mid)
 await page.keyboard.press('2')
 await sleep(250)
 const bottom = await sample()
 const bottomDiff = await pixelDiff(page, bottom.png, zTwice.png)
-check(bottomDiff < 0.5, `and that is the bottom view the 2 key holds (${bottomDiff.toFixed(3)}% off)`)
-await page.mouse.move(...mid)
-await sleep(150)
+check(bottomDiff < 0.5, `the corner and 2 key agree on Bottom (${bottomDiff.toFixed(3)}% off)`)
 check((await canvasCursor()) === '', 'the pointer goes back to normal off the gizmo')
 
 // ---- picking still works after all that ----
