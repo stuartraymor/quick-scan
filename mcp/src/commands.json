@@ -1,6 +1,6 @@
 {
-  "app": "0.9.4",
-  "saved": "2026-11-01T11:15:10.614Z",
+  "app": "0.0.39",
+  "saved": "2026-11-02T18:28:20.755Z",
   "commands": [
     {
       "name": "align.auto",
@@ -1469,7 +1469,7 @@
     {
       "name": "element.fit_marked",
       "title": "Fit an element to a marked surface",
-      "description": "Fit a plane, sphere, cylinder, cone or torus to exactly the scan vertices given, with no search for the surface — vertices, or marked: true for the points the last element.fit { mark: true }, scan.segment { mark } or scan.query { mark: true } left marked, or box (with normal: only those facing a way) for every vertex inside it. The element keeps the marking as its recipe. Returns the element, and with box how many points it took. One undo step.",
+      "description": "Fit a plane, sphere, cylinder, cone, torus or line to exactly the scan vertices given, with no search for the surface — vertices, or marked: true for the points the last element.fit { mark: true }, scan.segment { mark } or scan.query { mark: true } left marked, or box (with normal: only those facing a way) for every vertex inside it. Mark a narrow edge for a line. The element keeps the marking as its recipe. Returns the element, and with box how many points it took. One undo step.",
       "input": {
         "type": "object",
         "properties": {
@@ -1480,7 +1480,8 @@
               "sphere",
               "cylinder",
               "cone",
-              "torus"
+              "torus",
+              "line"
             ],
             "description": "What to fit."
           },
