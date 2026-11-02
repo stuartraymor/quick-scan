@@ -27,6 +27,17 @@ import { CommandError, type Command, type CommandContext, type CommandInfo } fro
 
 const commands = new Map<string, Command>()
 
+/** Document policies checked before any changing command settles or runs.
+ * They do not mark the session busy: navigation and Undo remain available. */
+const mutationGuards = new Set<(name: string, command: Command, input: Record<string, unknown>) => void>()
+export function registerMutationGuard(guard: (name: string, command: Command, input: Record<string, unknown>) => void): () => void {
+  mutationGuards.add(guard)
+  return () => { mutationGuards.delete(guard) }
+}
+function checkMutationGuards(name: string, command: Command, input: Record<string, unknown>): void {
+  for (const guard of mutationGuards) guard(name, command, input)
+}
+
 /** Command names: namespace and verb, dotted, lower case. */
 const NAME = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/
 
@@ -227,6 +238,7 @@ function settle(name: string, command: Command): Promise<void> | null {
  *  it stops — and over the busy guard; its undo step the running change's,
  *  when one is, else its own. */
 async function interrupt(name: string, command: Command, input: Record<string, unknown>, onProgress: ((text: string) => void) | undefined): Promise<unknown> {
+  checkMutationGuards(name, command, input)
   const abort = new AbortController()
   const ctx: CommandContext = { progress: (text) => onProgress?.(text), signal: abort.signal }
   const run = () => limited(name, command.timeoutMs ?? COMMAND_TIMEOUT_MS, abort, () => command.run(input, ctx))
@@ -252,6 +264,7 @@ async function execute(
   // A change that throws the session's work away stops what the plugins
   // are busy with rather than wait for it: that goes with the rest. What
   // they start again meanwhile waits for the change to have run.
+  checkMutationGuards(name, command, input)
   const stops = command.discards?.(input) === true && commandGuard().busy() !== null
   let ran!: () => void
   const done = new Promise<void>((resolve) => (ran = resolve))
