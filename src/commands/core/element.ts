@@ -436,14 +436,15 @@ async function fitRim(input: Finishing & { kind: FitKind; at?: unknown; rim: num
 
 // ---- element.fit_marked -------------------------------------------------------
 
-const fitMarked: Command<{ kind: (typeof SURFACE_KINDS)[number]; vertices?: number[]; marked?: boolean; box?: { min: Vec3; max: Vec3 }; normal?: { dir: Vec3; withinDeg?: number } } & Finishing> = {
+const MARKED_KINDS = [...SURFACE_KINDS, 'line'] as const
+const fitMarked: Command<{ kind: (typeof MARKED_KINDS)[number]; vertices?: number[]; marked?: boolean; box?: { min: Vec3; max: Vec3 }; normal?: { dir: Vec3; withinDeg?: number } } & Finishing> = {
   name: 'fit_marked',
   title: 'Fit an element to a marked surface',
   description:
-    'Fit a plane, sphere, cylinder, cone or torus to exactly the scan vertices given, with no search for the surface — vertices, or marked: true for the points the last element.fit { mark: true }, scan.segment { mark } or scan.query { mark: true } left marked, or box (with normal: only those facing a way) for every vertex inside it. The element keeps the marking as its recipe. Returns the element, and with box how many points it took. One undo step.',
+    'Fit a plane, sphere, cylinder, cone, torus or line to exactly the scan vertices given, with no search for the surface — vertices, or marked: true for the points the last element.fit { mark: true }, scan.segment { mark } or scan.query { mark: true } left marked, or box (with normal: only those facing a way) for every vertex inside it. Mark a narrow edge for a line. The element keeps the marking as its recipe. Returns the element, and with box how many points it took. One undo step.',
   input: obj(
     {
-      kind: enumOf(SURFACE_KINDS, 'What to fit.'),
+      kind: enumOf(MARKED_KINDS, 'What to fit.'),
       vertices: arr(int(undefined, { minimum: 0 }), 'The scan vertices of the surface.', { minItems: 3 }),
       marked: bool('The points left marked, in place of vertices.'),
       box: obj({ min: vec3('Lowest corner, mm.'), max: vec3('Highest corner, mm.') }, ['min', 'max'], 'The scan inside a box, in place of vertices.'),
@@ -468,6 +469,7 @@ const fitMarked: Command<{ kind: (typeof SURFACE_KINDS)[number]; vertices?: numb
     showWorkspace('elements')
     try {
       m.startDraft(input.kind)
+      if (input.kind === 'line') useStore.getState().setDraftMethod('fit')
       if (input.sigma !== undefined) useStore.getState().setDraftSigma(input.sigma)
       if (input.knownDiameter !== undefined) useStore.getState().setDraftKnownDiameter(input.knownDiameter)
       await m.runDraftPaintFit(input.kind, vertices)
