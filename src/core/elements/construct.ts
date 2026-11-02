@@ -172,6 +172,15 @@ export const CREATION_METHODS: readonly CreationMethod[] = [
   // ---- Plane ---------------------------------------------------------------
   {
     id: 'fit',
+    kind: 'line',
+    mode: 'fit',
+    label: 'Fit marked edge',
+    hint: 'Mark a narrow edge, then fit a line to those points.',
+    slots: [],
+    params: [],
+  },
+  {
+    id: 'fit',
     kind: 'plane',
     mode: 'fit',
     label: 'Fit to scan',

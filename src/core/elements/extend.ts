@@ -26,7 +26,7 @@ import { addScaled } from '../vec'
  *  the fit, which is how a badly captured rim is kept from bending the axis. */
 export type Extension =
   | { kind: 'cylinder'; start: number; end: number; fitInside?: boolean }
-  | { kind: 'plane'; uMin: number; uMax: number; vMin: number; vMax: number }
+  | { kind: 'plane'; uMin: number; uMax: number; vMin: number; vMax: number; rotation?: number }
 
 export type CylinderSide = 'start' | 'end'
 export type PlaneSide = 'uMin' | 'uMax' | 'vMin' | 'vMax'
@@ -67,7 +67,7 @@ export function extensionOf(fit: ExtendableFit, ext: Extension | undefined): Ext
  *  mention it when it has. */
 export function isExtended(ext: Extension | undefined): boolean {
   if (!ext) return false
-  return sides(ext).some((s) => sideValue(ext, s) !== 0)
+  return sides(ext).some((s) => sideValue(ext, s) !== 0) || (ext.kind === 'plane' && !!ext.rotation)
 }
 
 /** Whether the extension also confines the fit — a cylinder with the option
@@ -166,9 +166,13 @@ export function applyExtension(fit: FitData, ext: Extension | undefined): FitDat
   if (fit.kind === 'plane' && ext.kind === 'plane') {
     const extentU = Math.max(fit.extentU + (ext.uMin + ext.uMax) / 2, MIN_SIZE / 2)
     const extentV = Math.max(fit.extentV + (ext.vMin + ext.vMax) / 2, MIN_SIZE / 2)
-    let center = addScaled(fit.center, fit.basisU, (ext.uMax - ext.uMin) / 2)
-    center = addScaled(center, fit.basisV, (ext.vMax - ext.vMin) / 2)
-    return { ...fit, extentU, extentV, center }
+    const angle = (ext.rotation ?? 0) * Math.PI / 180
+    const c = Math.cos(angle), s = Math.sin(angle)
+    const basisU = addScaled(fit.basisU.map(v => v * c) as typeof fit.basisU, fit.basisV, s)
+    const basisV = addScaled(fit.basisV.map(v => v * c) as typeof fit.basisV, fit.basisU, -s)
+    let center = addScaled(fit.center, basisU, (ext.uMax - ext.uMin) / 2)
+    center = addScaled(center, basisV, (ext.vMax - ext.vMin) / 2)
+    return { ...fit, extentU, extentV, center, basisU, basisV }
   }
 
   return fit
@@ -198,10 +202,23 @@ export function squareExtension(fit: PlaneFit, ext: Extension | undefined): Exte
   const du = (side - u) / 2
   const dv = (side - v) / 2
   return {
+    ...e,
     kind: 'plane',
     uMin: e.uMin + du,
     uMax: e.uMax + du,
     vMin: e.vMin + dv,
     vMax: e.vMax + dv,
   }
+}
+
+/** Spin a rectangular patch about its current centre, without refitting the plane. */
+export function withPlaneRotation(fit: PlaneFit, ext: Extension | undefined, degrees: number): Extension {
+  const e = extensionOf(fit, ext)
+  if (e.kind !== 'plane' || !Number.isFinite(degrees)) return e
+  const delta = (degrees - (e.rotation ?? 0)) * Math.PI / 180
+  const a = (e.uMax - e.uMin) / 2, b = (e.vMax - e.vMin) / 2
+  const u = a * Math.cos(delta) + b * Math.sin(delta)
+  const v = -a * Math.sin(delta) + b * Math.cos(delta)
+  const su = (e.uMin + e.uMax) / 2, sv = (e.vMin + e.vMax) / 2
+  return { ...e, rotation: degrees, uMin: su - u, uMax: su + u, vMin: sv - v, vMax: sv + v }
 }

@@ -2,7 +2,8 @@
 // The fitter behind each kind of element measured by fitting it to the scan —
 // sphere, cylinder, cone, plane, torus — one started from a clicked seed, one
 // run on a surface marked by hand. Only the mesh worker reads it; points,
-// lines and circles are picked or constructed on the main thread, and the
+// circles are picked or constructed on the main thread; lines additionally
+// support a marked-edge fit. The
 // names the interface shows live apart, in kinds.ts.
 
 import type { AxialWindow, FittedElementKind, FitOutput, FitSettings, MeshGraph } from '../types'
@@ -11,13 +12,14 @@ import { fitCylinderFromSeed, fitCylinderOnSelection } from '../fit/fitCylinderF
 import { fitPlaneFromSeed, fitPlaneOnSelection } from '../fit/fitPlaneFromSeed'
 import { fitSphereFromSeed, fitSphereOnSelection } from '../fit/fitSphereFromSeed'
 import { fitTorusFromSeed, fitTorusOnSelection } from '../fit/fitTorusFromSeed'
+import { fitLineOnSelection } from '../fit/fitLineOnSelection'
 import type { FitGuide } from '../fit/guide'
 
 /** The extension seam for measurement primitives: each fitted element type
  *  provides a click-seeded auto-fit and inherits the whole pick → fit →
  *  display pipeline. Cones, slots and circles slot in here the same way.
- *  Points and lines never reach the worker — they are picked or constructed
- *  on the main thread. */
+ *  Points are picked or constructed on the main thread. Lines have a
+ *  marked-edge fitter only, with no automatic seeded region search. */
 export type FitFromSeed = (
   graph: MeshGraph,
   seeds: number[],
@@ -47,7 +49,8 @@ const FITTERS: Record<FittedElementKind, FitFromSeed> = {
   torus: fitTorusFromSeed,
 }
 
-const SELECTION_FITTERS: Record<FittedElementKind, FitOnSelection> = {
+const SELECTION_FITTERS: Record<FittedElementKind | 'line', FitOnSelection> = {
+  line: fitLineOnSelection,
   sphere: fitSphereOnSelection,
   cylinder: fitCylinderOnSelection,
   cone: fitConeOnSelection,
@@ -65,7 +68,7 @@ export function getFitter(id: string): FitFromSeed {
 
 export function getSelectionFitter(id: string): FitOnSelection {
   const fit = Object.prototype.hasOwnProperty.call(SELECTION_FITTERS, id)
-    ? SELECTION_FITTERS[id as FittedElementKind]
+    ? SELECTION_FITTERS[id as FittedElementKind | 'line']
     : undefined
   if (!fit) throw new Error(`Element type "${id}" cannot be fitted to a marked surface.`)
   return fit
