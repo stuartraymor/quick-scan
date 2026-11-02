@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { readFileSync } from 'node:fs'
+import { readFileSync, realpathSync } from 'node:fs'
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 
@@ -10,10 +10,24 @@ const { version } = JSON.parse(readFileSync(new URL('./package.json', import.met
   version: string
 }
 
+// node_modules may be a link into another checkout (the work copy shares
+// ScanRuler's). Vite then sees package files at their real location, outside
+// this root, and refuses to serve them (a package's .wasm?url, say); the real
+// folder is allowed by name so a linked install behaves like a local one.
+let linkedModules: string[] = []
+try {
+  linkedModules = [realpathSync(new URL('./node_modules', import.meta.url))]
+} catch {
+  /* no node_modules yet */
+}
+
 export default defineConfig({
   plugins: [react()],
   define: {
     __APP_VERSION__: JSON.stringify(version),
+  },
+  server: {
+    fs: { allow: ['.', ...linkedModules] },
   },
   build: {
     chunkSizeWarningLimit: 1500,
@@ -36,7 +50,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     // Each plugin keeps its tests beside it.
-    include: ['tests/**/*.test.ts', 'plugins/*/tests/**/*.test.ts'],
+    include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx', 'plugins/*/tests/**/*.test.ts'],
     // Long enough for any test that is not slow by nature, short enough that a
     // hang is found quickly. The files whose tests build solids in the kernel
     // or fit real scans raise it for themselves.

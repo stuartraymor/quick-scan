@@ -41,3 +41,6 @@ dist/
 Thumbs.db
 .vscode/
 .idea/
+
+# Local installed reference models used for side-by-side comparison
+/public/reference-examples/

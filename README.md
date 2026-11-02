@@ -110,8 +110,16 @@ Plain statements, so you do not discover them the hard way:
 - **Not a QUICKSURFACE clone and not affiliated with it.** Quick Scan is an
   independent implementation whose command placement and terminology take
   inspiration from familiar scan-to-CAD workflows. It does not contain code or
-  assets from any commercial product, and exact feature or algorithm parity
-  with one has not been achieved or tested.
+  assets from any commercial product. Version 0.0.39 verifies selected Objects,
+  History and navigation workflows against observed reference behavior; full
+  feature, algorithm and graphical parity has not been achieved or certified.
+- **Partial model history is read-only.** Back/Forward and dragging the End of
+  Model marker change the active core/CAD model. Restore End of Model before
+  creating, editing or importing CAD. Editing a rolled-back branch is not
+  supported. Older projects lack a shared cross-workspace creation order; their
+  recovered order is approximate.
+- Context menus remain incomplete; the verified Edit, visibility and existing
+  CAD sketch deletion workflows do not certify every reference menu command.
 - True quad / SubD freeform and automatic surfacing is **not implemented**.
   The patch-network and fit-surface tools are different capabilities.
 - Stacked sections are not implemented. Tertiary alignment is point-based, not
@@ -119,7 +127,8 @@ Plain statements, so you do not discover them the hard way:
 - Windows 64-bit only. Quick Scan is packaged as an Electron app; there are no
   macOS or Linux builds.
 - Test coverage is focused (unit tests, scripted browser checks, a packaged-app
-  smoke test), not exhaustive. Expect rough edges and report them.
+  smoke test and installed Windows acceptance), not exhaustive. See
+  [0.0.39 verification](RELEASE-VERIFICATION.md) for the tested scope and counts.
 - Version 0.0.x file and profile formats may change. Keep your source scans.
 - Installers are unsigned (see above).
 

@@ -1,9 +1,214 @@
+## 0.0.39 — 2026-11-02
+
+- Objects now uses compact per-type groups, counts, and real visibility checkboxes for scan, measured elements, sections, sketches, surfaces and solids. ALL and History visibility synchronize across core and CAD objects while leaving Coordinate System independent.
+- History now lists scan, core and CAD recipes in a persisted common order, with shared selection, visibility, and existing-object Edit actions. It retains future records and offers actual model rollback through Back/Forward and a draggable End of Model marker.
+- Parent/Child mode reads real recipe dependencies and supports expand/collapse. Save/reopen and Undo/Redo preserve the common order and rollback boundary.
+- Geometry editing is guarded while the common timeline is partial; restore End of Model before editing. Core/CAD store actions, command entrypoints, CAD import, ribbon and inspector enforce the guard.
+- Includes the tested explorer Edit and confirmed sketch/feature Delete improvements, plus the top-right shaded view cube, navigation menu, real coordinate axes and grid controls developed since0.0.31.
+
+Known limitations: older projects did not store mixed core/CAD chronology, so their recovered order is approximate. Multiple-parent recipes appear once under the earliest valid parent. Editing a partial common timeline is not yet supported. Complete context-menu, plane/sketch graphics, and full QuickSurface parity remain unfinished; this release does not claim otherwise. Full validation and installed-test results accompany the release.
+
+## 0.0.38
+
+- Match the reference navigation corner with a top-right shaded cube, signed face navigation, xyz axes, hover menu, standard views, quarter turns and Zoom to Fit.
+- Add real coordinate visibility shared with Objects and Grid Enable/Spacing/OK/Cancel, with exact world-unit ruling in principal views and XY ruling in isometric views when coordinates are visible.
+- Keep the dark theme and move display switches clear of the navigation corner.
+
+## 0.0.31 — 2026-11-02
+
+- Extract primitives: the constraint dropdown (Not constrained, Parallel to / Perpendicular to OXY, OYZ, OXZ) now holds a plane's normal or a cylinder's axis, re-measuring σ honestly on the same points. Auto Constrain snaps a new plane parallel, perpendicular or coincident to the primitives already made, inside its Tilt (0.5 degrees) and Coincidence (1 mm) tolerances, and the status line says what was snapped. Analysis lists the points further than a tolerance (0.1 mm) from the previewed primitive.
+- Created and previewed primitives (plane, cylinder, cone, sphere) are drawn in a deeper shade of their colour and more solid, and a plane is drawn 1.6 times larger than the patch it was fitted to so it reads as the plane it defines. Drawing only: the fit, its measurements and exports keep the real extent.
+- Construct tab laid out as QUICKSURFACE: From scan data and Primitives groups in the reference key order (unbuilt keys greyed).
+- 2D Sketch opens a Create Sketch panel in the reference's order (plane, offset, Define interactive, snap, Ignore scan data, Flip, slicing plane, Through selection only, Stacked sections, Outline Mode). Controls Quick Scan does not have yet are greyed with a "Not built in Quick Scan yet" tooltip.
+- Test setup: Vite is told to serve the real folder of a linked node_modules, so the unit suite runs clean in a work copy that shares another checkout's install (it previously failed 70+ files on the manifold wasm).
+- Added `scripts/e2e-qs-extract-constrain.mjs` and unit tests for the constraint maths and the primitive look.
+
+- Edit / View tab laid out as QUICKSURFACE: Edit (Undo, Redo, Rebuild), View (Zoom To Fit, Isometric, six standard views, Coordinate System), Background style (Linear, Studio); Display kept as an extra group. Rebuild, Coordinate System and the two background styles are greyed, not built.
+- Analysis tab laid out as QUICKSURFACE: Tools (Measure, Surface Area, Volume, Zebra Stripes, Environment Map, Draft, Snapshot) and Control (Compare, Compare to other meshes), with the Inspection group kept. The five unbuilt tools are greyed.
+- Fixed: the sketch plane list offered the same coordinate plane twice when an aligned scan was centred on the origin, which made React report duplicate keys.
+- Added `scripts/e2e-fit-accuracy.mjs` (independent least-squares check of plane and cylinder fits on the example meshes) and `plugins/reverse/scripts/e2e-bearing-housing.mjs` (section, extrude, STEP export and read-back on the Bearing housing example).
+
+## 0.0.30 — 2026-11-02 (private comparison release)
+
+- Main ribbon fits from 1366 px; Extrude, Revolve and Move face are QUICKSURFACE-style small stacked keys.
+- Edit Scan and Extract primitives are greyed with no scan; Deselect All stays greyed until triangles are painted.
+- Removed the CNC Kitchen support card, the save/export popup and their Settings switches. Attribution stays in About, Credits and ATTRIBUTION.md.
+- Help tab rebuilt as Help / System / About: Shortcuts, System Log (console warnings and errors), Reset layout and an in-app Change log. Video Tutorials omitted until there is content.
+- Keys: A zoom all, T / M / F / K / L / R / I standard views (digits kept), Ctrl+Q deselect.
+- Scan Data tab laid out as QUICKSURFACE: Edit Scan data, Tools, Align, Colors, Export Visible. Reduce polygons, Reduce noise and Flip Normals open the mesh tools; Invert Hidden, Scale, Re-polygonize, Average Mesh, Mirror, Unroll, Global Fine Align, Auto colorize and Set Default Color are shown greyed until built.
+- Not done: Edit / View tab, Analysis tab states and the STEP comparison (see analysis/parity-audit/ui-parity-checklist.md rows 28-30).
+
+## 0.0.29 — 2026-11-02 (local comparison installer)
+
+- Align Interactive uses the observed 385-pixel dialog layout, compact manual controls and literal << / >> step buttons. Preserve charcoal styling.
+- Enable temporary mirrored point previews in OYZ/OXZ/OXY and As Current View (view-frame orientation, centre at origin, XY-facing refit). Preserve the mirrored-display preference between command openings. Drag strength now includes the observed zero endpoint.
+- Fix Align OK to await the actual operation and keep the preview open when applying fails. Block repeated submission while pending.
+- Example-model regression covers Basic Part, Lego and Impeller; extraction on Basic Part and Lego; all six alignment drags, manual steps, commit/cancel, undo/redo and project restoration.
+- Local-only Windows installer includes the exact installed comparison models, with original provenance; no push or publication.
+
+## 0.0.28 — 2026-11-02 (local only)
+
+- Help > Examples now lists all ten installed reference examples in the observed order. Uses exact original STL bytes with length and SHA-256 validation, opening in millimetres through the shared importer.
+- Local comparison build contains the installed reference meshes; those third-party assets are excluded from Git and retain separate provenance. No public redistribution or push.
+- All ten examples checked for successful opening and reference triangle counts, plus menu bounds, dismissal, integrity failure and preservation of the current model.
+
+## 0.0.27 — 2026-11-02 (local only)
+
+- Match observed 186 × 70 quick-tools popup above and centred on a wand click, with viewport and inspector avoidance. Preserve dark theme and white selection.
+- Use equal fixed icon cells and remove inherited text-button padding that pushed glyphs beyond their borders. Primitive buttons use consistent 4-pixel gaps.
+- Match empty-space click repositioning after selection; suppress popup creation before selection, on modified camera clicks and after drags. Real surface-pick notification replaces fabricated pointer-release dependency.
+- Add geometry and browser layout coverage at 900, 1139 and 1500 pixels. No push.
+
+## 0.0.26 — 2026-11-02 (local only)
+
+- Extract Primitives opens with Magic Wand armed so the first surface click selects immediately. Re-clicking an active selection tool keeps it selected; Navigate explicitly returns to camera control.
+- Preserve white selected scan data against the dark viewport. Independently drawn extraction glyphs follow the observed cube, starburst, selection options and primitive silhouettes.
+- Regression covers first-click selection, repeated wand activation, white selection, live degrees and primitive creation. No push.
+
 # Changelog
 
 ## Quick Scan releases
 
+### 0.0.24 — local interactive-alignment candidate, 2026-11-01
+
+- Align Interactive opens a dedicated compact widget with the observed control
+  order, three colored translation arrows and three quarter-circle rotation arcs.
+- Axis drags preview motion about the moved model center. Drag Strength scales
+  pointer motion; manual axis/increment controls support rotation and movement.
+- OK commits through the existing alignment session; Cancel, Escape and title X
+  discard the preview. Commit, Undo/Redo and project roundtrip are exercised.
+- Align menu uses the four observed reference entries and omits their icons.
+  Automatic alignment remains available in the normal Alignment panel.
+- Dark gray/black styling and white entity selection retained. Mirrored-mesh
+  preview and As Current View remain disabled pending implementation/validation;
+  exact icon, spacing and full workflow parity are not claimed.
+
+### 0.0.23 — local UI/selection candidate, 2026-11-01
+
+- Charcoal is the default interface theme. Compact dialogs, inputs and menus
+  follow dark gray/black with blue and white accents; saved light/system choices remain.
+- Entity and extraction selections are white, including restored fitting selections.
+  Deviation maps and entity colors continue to carry their measurement meanings.
+- Magic Wand accepts partial decimal input, updates valid angles live and clamps
+  on blur/Enter. Connected mode and quick-slider synchronization retained.
+- Four plane corner arrows resize adjoining edges independently. A small curved
+  control spins the patch in its plane, stays clear of the command panel and
+  preserves the measured normal, position and residual statistics.
+- Patch rotation survives commit, undo/redo, edit and project save/reopen; rotating
+  an asymmetric patch preserves its drawn center. Original handle geometry retained.
+- Full Quick Surface widget/workflow parity remains incomplete; see handoff evidence.
+
+### 0.0.22 — local UI candidate, 2026-11-01
+
+- Compact light command dialogs, fields, checkboxes, menus and footer buttons;
+  command editors show their own controls instead of the unrelated dashboard.
+- Extraction puts Clear beside the primitive icons and Create & Stay above
+  Create / Close. Create Sketch has plane icons and visible inactive stack fields.
+- Title-bar X uses the command's Cancel path. Docking preserves pending input.
+- Plane edge grips use yellow shaft-and-head arrows with constant pixel sizing;
+  dragging resizes the preview without changing the measured fit.
+- Mesh tools now publish their command context through the runtime correctly.
+- Visual parity remains incomplete: corner/rotation handles, remaining command
+  dialogs and native interaction details require further reference comparison.
+
+### 0.0.21 — local candidate, 2026-11-01
+
+- Shared basic_part test confirms exact input coordinates in both applications;
+  the first fitted plane agrees within the predeclared 0.01 mm / 0.01 degree limits.
+- Extraction selection stays blue before and after fitting, including Clear;
+  deviation and ordinary primitive editing retain their existing colours.
+- Quick tools dismiss when a primitive preview appears. Preview controls wrap
+  within the command panel instead of crowding the fit readout.
+- Undo/Redo occupy one row in Edit / View, preventing a doubled ribbon height.
+- Missing reference constraint/analysis controls remain a recorded workflow failure.
+
+### 0.0.20 — local candidate, 2026-11-01
+
+- Line extraction now fits the marked points instead of invoking an unsupported
+  worker operation. Uses orthogonal least squares with the shared sigma clipping.
+- The fit retains its marked-vertex recipe for reopening projects; the existing
+  two-point constructor remains the default for ordinary Reference Line creation.
+- `element.fit_marked` also supports lines through the same session path.
+- Added numerical fit/degeneracy/outlier tests and browser checks for preview,
+  commit, project round trip and the agent command. Exact reference algorithm,
+  line constraints and Coincident axis behavior remain unverified/unimplemented.
+
+### 0.0.19 — local candidate, 2026-11-01
+
+- Edit / View now exposes shared Undo/Redo and working Zoom To Fit, Isometric,
+  Top, Left, Front, Bottom, Right and Back ribbon controls in reference order.
+- Camera actions reuse the existing viewport; changing view keeps zoom, and
+  Zoom To Fit returns to the model without changing orientation or geometry.
+- Browser regression verifies camera axes, zoom, displaced-model framing and
+  ribbon Undo/Redo. Rebuild, coordinate-system and background-style parity remain open.
+
+### 0.0.18 — local candidate, 2026-11-01
+
+- Extract primitives: Clear removes the fit preview while retaining the selected
+  mesh area. Create commits and exits; Create & Stay commits and resets the command.
+- Removed the fresh hidden primitive draft left after extraction commits, so the
+  next extraction can actually start.
+- The extraction panel's X now follows the command's close/confirmation flow.
+- Browser regression covers Clear/refit, repeated extraction, commit/exit, Undo/Redo
+  and all preview-close choices against a synthetic scan.
+
+### 0.0.17 — local candidate, 2026-11-01
+
+- Create Sketch exposes Offset → Apply. Pending values wait for Apply or Enter;
+  leaving the field no longer moves the plane. Apply disables at the current value.
+- Primitive fit-error previews and their status message follow Display Units;
+  geometry and stored measurements remain in millimetres.
+- Closing Extract primitives with a preview asks Yes / No / Cancel. Yes commits
+  before exiting, No discards, and Cancel keeps the operation and preview.
+- Moved the Edit Scan parity test into its owning plugin to satisfy the plugin boundary.
+- Added a browser regression for offset application, frame movement, inch
+  conversion, negative/empty input and cancellation, plus inch-preview coverage.
+- Reference: live QUICKSURFACE Pro 8.0.127 Create Sketch and Extract primitives
+  inspection. Remaining options and full geometry parity are still open.
+
 Quick Scan versions (0.0.x) are the fork's own numbering. Entries below the
 "Upstream ScanRuler history" heading are ScanRuler's, kept unchanged.
+
+### 0.0.16 — QUICKSURFACE parity pass 4 (2026-11-01)
+
+- Extract primitives docks in the tool panel and takes it over while open —
+  one command panel, as in QUICKSURFACE, not a dialog over a second panel.
+- Create Sketch: For Revolved Surface works — X / Y / Z Axis and Rotation
+  (degrees) place the sketch plane through the axis, turned about it.
+
+### 0.0.15 — QUICKSURFACE parity pass 1 (2026-11-01)
+
+- Ribbon drop-down menus (Construct ▾, Align ▾, Surfacing ▾, Pattern ▾)
+  draw above the tool panels instead of behind them.
+- Freeform, Surfacing and CAD tabs each carry QUICKSURFACE's own groups and
+  order (Create New Freeform / Tools; Create / Tools; Cross sections /
+  Create / Edges / Patterns). Shell, Draft, Move body, Split solid and Offset
+  get ribbon buttons; commands not built yet sit greyed in their place.
+- Settings is a ribbon tab: Display Units and Software Options.
+- Wall Thickness and 2D Measure move into the Analysis tab (Inspection
+  group); their top-level tabs are gone. Auto-align and the AI tab stay.
+- Starting a command no longer switches the ribbon tab.
+- Extract primitives: Close ends the mode completely (no element editor is
+  left open to grey out the ribbon); Magic Wand default 3.04°; the options
+  row ends with Select all; the quick-tools box opens at the cursor.
+- History names extracted primitives "Primitives: create primitive".
+- Extract primitives previews the fit (with its σ) when a type is clicked;
+  Create keeps it, another type replaces the preview — as QUICKSURFACE does.
+- Prepare Scan is QUICKSURFACE's four-step wizard — Mesh quality, Object
+  symmetry (Skip), Alignment primitives, Alignment of scan data — with a
+  banner over the view and Next / Skip / Back / Finish.
+- Reduce mesh takes "Reduce down to … %" of the scan's triangles.
+- Sketch shortcuts follow QUICKSURFACE: R is Arc (Rectangle has no letter).
+- The status line clears when a ribbon command starts.
+- Edit Scan opens on Mesh quality: individual meshes, holes, boundaries and
+  edges on three or more triangles, each with the tool that mends it.
+- Extract primitives: Select by drawing a line and Select by drawing a
+  circle work.
+- Create Sketch starts its plane through the middle of the part, so the cut
+  and the yellow arrow show at once; OXY / OYZ / OXZ sit in one row.
+- The sketch editor closes with OK and Cancel at the bottom, as QUICKSURFACE's.
+- Parity tests: tests/qsParity*.test.tsx render the ribbon, Extract
+  primitives and Prepare Scan and check them against QUICKSURFACE's layout.
 
 ### Unreleased — launch packaging (2026-11-01)
 
@@ -2462,3 +2667,9 @@ The unnumbered first release at scanruler.com: ball bars and other artefacts
 measured by fitted elements, deviation from a nominal part, wall thickness,
 and STEP export. Deployed from every push, so no single commit is 0.1.0; it
 is everything before the first numbered release.
+## 0.0.37 — 2026-11-02 (local parity checkpoint)
+
+- Measured elements and cross sections now have a real right-click Edit action in Objects. An idle user can reopen them from another workspace; selection remains separate from opening an editor.
+- Tree editing and visibility respect actual drafts and running session/plugin work. Core menus render outside clipped panels and retain the existing dark theme without depending on optional plugin CSS.
+- Includes the 0.0.36 checkpoint: persistent sketch and feature rows, existing-feature context editing, synchronized sketch visibility, confirmed tree deletion, undo/redo, dependency refusal and stale-confirmation protection.
+- Full QUICKSURFACE parity remains incomplete. Other context commands and dependent-datum deletion need further paired testing; no placeholder commands were added.
