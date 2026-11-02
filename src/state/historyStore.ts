@@ -115,7 +115,7 @@ interface HistoryState { past: Entry[]; future: Entry[]; restoring: boolean; imp
 export const useHistory = create<HistoryState>(() => ({ past: [], future: [], restoring: false, importing: false, revision: 0 }))
 const LIMIT = 64
 const actionLabels: Record<string, string> = {
-  commitDraft: 'save element', commitDimension: 'save dimension', commitDim: 'save dimension',
+  commitDraft: 'create primitive', commitDimension: 'save dimension', commitDim: 'save dimension',
   commitSection: 'save section', resolveAlign: 'best-fit alignment', addPickPoint: 'add alignment pair',
 }
 let depth = 0
@@ -318,7 +318,7 @@ export function installHistory(): () => void {
       }
     }
   }
-  wrap(useStore, ['commitDraft', 'pickDraftPoint', 'removeElement', 'toggleElementVisible', 'setAllElementsVisible', 'commitDimension', 'removeDimension', 'toggleDimensionVisible', 'setAllDimensionsVisible', 'commitSection', 'removeSection', 'toggleSectionVisible', 'setAllSectionsVisible'], '3D Measure')
+  wrap(useStore, ['commitDraft', 'pickDraftPoint', 'removeElement', 'toggleElementVisible', 'setAllElementsVisible', 'commitDimension', 'removeDimension', 'toggleDimensionVisible', 'setAllDimensionsVisible', 'commitSection', 'removeSection', 'toggleSectionVisible', 'setAllSectionsVisible'], 'Primitives')
   wrap(useFlat, ['commitDraft', 'deleteElement', 'toggleElementVisible', 'setAllElementsVisible', 'commitDim', 'deleteDimension', 'toggleDimensionVisible', 'setAllDimensionsVisible', 'finishCount', 'deleteCount', 'toggleCountVisible', 'addNote', 'setNoteText', 'moveNote', 'finishNote', 'deleteNote', 'toggleNoteVisible', 'addDatumPick', 'clearDatum', 'turnSheet', 'mirrorSheet', 'applyCalibration', 'applyProfile', 'setSplitAxes', 'setEdgeSensitivity', 'setShowEdges', 'setSnapToEdge', 'setShowGrid'], '2D Measure')
   wrap(useDeviation, ['setSource', 'setTarget', 'flipTargetSide', 'setTargetFacing', 'setMapFacing', 'setShowElement', 'setTargetScope', 'markScope', 'clearScope', 'resolveAlign', 'revertToGlobal', 'clearAlign', 'setLocalMaxDistance', 'setRange', 'setMaxDistance', 'setBands', 'setTolerance', 'setShowHistogram', 'setShowNominal', 'setShowScan', 'setShowMap', 'setMapOn', 'setSplit', 'addProbe', 'removeProbe', 'clearProbes', 'addPickPoint', 'undoPair', 'clearPairs'], 'Deviation')
   wrap(useThickness, ['setMethod', 'setMaxThickness', 'setConeRays', 'setConeAngle', 'setNormalDeviation', 'setLow', 'setHigh', 'setBands', 'setLimit', 'setShowHistogram', 'addProbe', 'removeProbe', 'clearProbes'], 'Thickness')

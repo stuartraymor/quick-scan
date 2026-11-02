@@ -20,6 +20,8 @@ export type { MarkGesture }
 /** The Magic Wand's sensitivity range in degrees — fine steps, as the user asked. */
 export const WAND_MIN_DEG = 0.1
 export const WAND_MAX_DEG = 10
+/** White selected scan data contrasts with charcoal and the entity preview. */
+export const EXTRACT_MARK_COLOR = '#ffffff'
 /** The degrees the wand spreads within: all of a connected piece with "Select all
  *  connected triangles", else the slider's. */
 export const wandDegreesOf = (s: { wandConnected: boolean; wandDegrees: number }) => (s.wandConnected ? 180 : s.wandDegrees)
@@ -87,7 +89,7 @@ export const useMark = create<MarkState>((set) => ({
   diameter: 2,
   count: 0,
   inverts: 0,
-  wandDegrees: 2,
+  wandDegrees: 3.04,
   wandConnected: false,
   quickTools: true,
   resizes: { n: 0, direction: 1 },
@@ -99,7 +101,7 @@ export const useMark = create<MarkState>((set) => ({
   setCount: (count) => set({ count }),
   setWandConnected: (wandConnected) => set({ wandConnected }),
   setQuickTools: (quickTools) => set({ quickTools }),
-  setWandDegrees: (d) => set({ wandDegrees: Number.isFinite(d) ? Math.min(Math.max(d, WAND_MIN_DEG), WAND_MAX_DEG) : 2 }),
+  setWandDegrees: (d) => set({ wandDegrees: Number.isFinite(d) ? Math.min(Math.max(d, WAND_MIN_DEG), WAND_MAX_DEG) : 3.04 }),
   resize: (direction) => set((s) => ({ resizes: { n: s.resizes.n + 1, direction } })),
   invert: () => set((s) => ({ inverts: s.inverts + 1 })),
   reset: () => set({ gesture: null, erase: false, count: 0 }),

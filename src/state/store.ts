@@ -31,6 +31,7 @@ import {
   squareExtension,
   withFitInside,
   withSide,
+  withPlaneRotation,
   zeroExtension,
   type ExtendSide,
 } from '../core/elements/extend'
@@ -261,6 +262,7 @@ interface AppState {
    *  past the measured surface. Driven by both the panel's fields and the
    *  handles dragged in the viewport. */
   setDraftExtend: (side: ExtendSide, value: number) => void
+  setDraftPlaneRotation: (degrees: number) => void
   /** Grow the shorter axis of the open plane draft out to the longer one. */
   squareDraftExtend: () => void
   /** Confine the open cylinder draft's fit to its drawn span, or let it take
@@ -852,6 +854,12 @@ export const useStore = create<AppState>()((set, get) => ({
       const ext = extensionOf(d.fit, d.extend)
       return { draft: { ...d, extend: withSide(d.fit, ext, side, value) } }
     }),
+
+  setDraftPlaneRotation: (degrees) => set((s) => {
+    const d = s.draft
+    if (d?.fit?.kind !== 'plane' || !Number.isFinite(degrees)) return {}
+    return { draft: { ...d, extend: withPlaneRotation(d.fit, d.extend, degrees) } }
+  }),
 
   squareDraftExtend: () =>
     set((s) => {

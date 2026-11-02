@@ -33,10 +33,15 @@ interface ShellState {
   hiddenTriangles: number
   setHiddenTriangles: (n: number) => void
   setExtractOpen: (open: boolean) => void
+  /** The Prepare Scan wizard's step (0–3), or null when it is not running. */
+  prepareStep: number | null
+  setPrepareStep: (step: number | null) => void
   setAppMenuOpen: (open: boolean) => void
   inspectorMode: 'floating' | 'docked'
   setInspectorOpen: (open: boolean) => void
   setInspectorMode: (mode: 'floating' | 'docked') => void
+  /** Help > Reset layout: back to the Main tab, the tool panel open and floating. */
+  resetLayout: () => void
 }
 
 export const useShell = create<ShellState>()((set) => ({
@@ -45,13 +50,17 @@ export const useShell = create<ShellState>()((set) => ({
   inspectorOpen: true,
   appMenuOpen: false,
   extractOpen: false,
+  prepareStep: null,
+  setPrepareStep: (prepareStep) => set({ prepareStep }),
   hiddenTriangles: 0,
   setHiddenTriangles: (hiddenTriangles) => set({ hiddenTriangles }),
   setExtractOpen: (extractOpen) => set({ extractOpen, ...(extractOpen ? { inspectorOpen: true } : {}) }),
   setAppMenuOpen: (appMenuOpen) => set({ appMenuOpen }),
   inspectorMode: 'floating',
   setInspectorOpen: (inspectorOpen) => set({ inspectorOpen }),
+  resetLayout: () => set({ ribbonTab: 'main', workspace: 'elements', inspectorMode: 'floating', inspectorOpen: true, appMenuOpen: false }),
   setInspectorMode: (inspectorMode) => set({ inspectorMode, inspectorOpen: true }),
   setRibbonTab: (ribbonTab, workspace) => set({ ribbonTab, inspectorOpen: true, ...(workspace ? { workspace } : {}) }),
-  setWorkspace: (workspace) => set({ workspace, inspectorOpen: true, ribbonTab: ({ elements: 'main', reverse: 'cad', mesh: 'scan', deviation: 'analysis', thickness: 'thickness', flat: 'flat' } as Record<string, string>)[workspace] ?? workspace }),
+  // Starting a command keeps the ribbon tab it was started from, as in QUICKSURFACE.
+  setWorkspace: (workspace) => set({ workspace, inspectorOpen: true }),
 }))
