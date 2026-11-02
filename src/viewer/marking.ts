@@ -19,7 +19,7 @@ import { DEFAULT_THEME, type ViewTheme } from './viewThemes'
  *  swept with a rectangular window, or ringed with a freehand lasso. The last
  *  two are screen-space and take everything they enclose in one go, which is
  *  what makes excluding a whole riser or a run of spray practical. */
-export type MarkGesture = 'brush' | 'window' | 'lasso' | 'wand'
+export type MarkGesture = 'brush' | 'window' | 'lasso' | 'wand' | 'circle' | 'line'
 
 /** The surface marking: a fit is measured on exactly what it covers, instead
  *  of on a region grown from a click or on the whole scan. */
@@ -54,7 +54,7 @@ export interface PaintBrush {
  *  which way it will go — decided when the button went down, so that letting
  *  go of Alt half way through does not turn a rub-out into a marking. */
 interface Marquee {
-  gesture: 'window' | 'lasso'
+  gesture: 'window' | 'lasso' | 'circle' | 'line'
   erase: boolean
   /** Container-local pixels, the same frame the outline is drawn in. */
   points: { x: number; y: number }[]
@@ -80,6 +80,26 @@ function rectanglePoints(
     { x: b.x, y: b.y },
     { x: a.x, y: b.y },
   ]
+}
+
+/** A circle drawn from its centre out to the cursor, as a polygon. */
+function circlePoints(c: { x: number; y: number }, rim: { x: number; y: number }): { x: number; y: number }[] {
+  const r = Math.hypot(rim.x - c.x, rim.y - c.y)
+  const n = 48
+  return Array.from({ length: n }, (_, i) => ({ x: c.x + r * Math.cos((2 * Math.PI * i) / n), y: c.y + r * Math.sin((2 * Math.PI * i) / n) }))
+}
+
+/** QUICKSURFACE's "select by drawing a line": a narrow band along it. */
+const LINE_HALF_WIDTH = 6
+function linePoints(a: { x: number; y: number }, b: { x: number; y: number }): { x: number; y: number }[] {
+  const len = Math.hypot(b.x - a.x, b.y - a.y) || 1
+  const nx = (-(b.y - a.y) / len) * LINE_HALF_WIDTH, ny = ((b.x - a.x) / len) * LINE_HALF_WIDTH
+  return [{ x: a.x + nx, y: a.y + ny }, { x: b.x + nx, y: b.y + ny }, { x: b.x - nx, y: b.y - ny }, { x: a.x - nx, y: a.y - ny }]
+}
+
+/** The closed outline a two-point marquee gesture stands for. */
+function twoPointOutline(gesture: 'window' | 'circle' | 'line', a: { x: number; y: number }, b: { x: number; y: number }) {
+  return gesture === 'window' ? rectanglePoints(a, b) : gesture === 'circle' ? circlePoints(a, b) : linePoints(a, b)
 }
 
 /** Point-in-polygon by crossing number, with the outline's bounding box in
@@ -166,6 +186,8 @@ export interface MarkingContext {
   requestHover(): void
   /** How many vertices the marking covers, reported when a gesture ends. */
   onPaintChange(count: number): void
+  /** A successful additive wand hit, in viewport client coordinates. */
+  onWandPick?(point: { x: number; y: number }): void
 }
 
 export class SurfaceMarking {
@@ -399,6 +421,7 @@ export class SurfaceMarking {
     // Remembered so the degrees slider can grow or shrink this pick live.
     this.lastWand = { seed: hit.faceIndex, erase, before: this.ctx.regions.paintedVertices() }
     this.applyWand()
+    if (!erase) this.ctx.onWandPick?.({ x: clientX, y: clientY })
   }
 
   /** The triangle graph of the scan as drawn, built once and kept until the
@@ -594,7 +617,7 @@ export class SurfaceMarking {
   // ---- window and lasso ----------------------------------------------------
 
   private beginMarquee(
-    gesture: 'window' | 'lasso',
+    gesture: 'window' | 'lasso' | 'circle' | 'line',
     erase: boolean,
     clientX: number,
     clientY: number,
@@ -616,9 +639,9 @@ export class SurfaceMarking {
     const m = this.marquee
     if (!m) return
     const p = { x: clientX - m.origin.left, y: clientY - m.origin.top }
-    if (m.gesture === 'window') {
-      // A window is its two corners and nothing else, however the cursor got
-      // from one to the other.
+    if (m.gesture !== 'lasso') {
+      // A window, a circle and a line are two points and nothing else,
+      // however the cursor got from one to the other.
       m.points[1] = p
     } else {
       // Thinning the trail keeps the point-in-polygon test — which runs once
@@ -635,7 +658,7 @@ export class SurfaceMarking {
     const m = this.marquee
     if (!m) return
     const outline =
-      m.gesture === 'window' ? rectanglePoints(m.points[0], m.points[1] ?? m.points[0]) : m.points
+      m.gesture !== 'lasso' ? twoPointOutline(m.gesture, m.points[0], m.points[1] ?? m.points[0]) : m.points
     this.marqueeShape.setAttribute('points', outline.map((p) => `${p.x},${p.y}`).join(' '))
   }
 
@@ -807,9 +830,9 @@ export class SurfaceMarking {
       // enclose anything; either way an accidental click marks nothing rather
       // than sweeping the whole part.
       const outline =
-        m.gesture === 'window'
+        m.gesture !== 'lasso'
           ? m.points.length > 1
-            ? rectanglePoints(m.points[0], m.points[1])
+            ? twoPointOutline(m.gesture, m.points[0], m.points[1])
             : []
           : m.points
       this.endMarquee()

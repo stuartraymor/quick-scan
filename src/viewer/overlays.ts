@@ -48,7 +48,21 @@ const RIM_TUBE_PX = 1.5
 /** How solid the ghost of a pending fit is, and how solid while the brush is in
  *  hand: the fit of a first stroke can be far larger than what is being brushed,
  *  and it keeps its true size, so it is what must stand back. */
-const GHOST_OPACITY = 0.4
+const GHOST_OPACITY = 0.55
+/** A created primitive is drawn in a deeper shade of its palette colour and more
+ *  solid than a see-through wash, so it stands out from the scan under it at a
+ *  glance — and a plane runs past the patch it was fitted to, so a flat face
+ *  reads as the plane it defines rather than a sticker on the scan. These are
+ *  for the eye only: the fit, its measurements and exports keep the real extent. */
+export const PRIMITIVE_SHADE = 0.68
+export const PRIMITIVE_OPACITY = 0.5
+export const PRIMITIVE_OPACITY_SELECTED = 0.72
+export const PLANE_OVERHANG = 1.6
+
+/** A colour deepened by `shade` (0 to 1): the palette colour as a primitive's body. */
+export function deepen(color: string | number, shade = PRIMITIVE_SHADE): number {
+  return new THREE.Color(color).multiplyScalar(shade).getHex()
+}
 const GHOST_BRUSHING_OPACITY = 0.1
 
 export interface OverlayElement {
@@ -306,9 +320,9 @@ export class Overlays {
         // fighting the depth buffer along a surface it was fitted to and lies
         // exactly on: coplanar with the scan, the two would stripe.
         const shell = new THREE.MeshStandardMaterial({
-          color: el.color,
+          color: deepen(el.color),
           transparent: true,
-          opacity: el.muted ? 0.22 : 0.3,
+          opacity: el.muted ? 0.3 : PRIMITIVE_OPACITY,
           depthWrite: false,
           polygonOffset: true,
           polygonOffsetFactor: -1,
@@ -317,7 +331,7 @@ export class Overlays {
           metalness: 0,
           side: THREE.DoubleSide,
         })
-        const shape = this.buildShape(el.fit, shell)
+        const shape = this.buildShape(el.fit, shell, true)
         this.holdShape(this.overlayHeld, shape, el.fit)
         shape.userData.elementId = el.id
         this.overlayGroup.add(shape)
@@ -455,7 +469,7 @@ export class Overlays {
     this.accents = theme.accents
     for (const mat of this.calloutMaterials) mat.color.setHex(theme.accents.callout)
     if (this.previewShape)
-      (this.previewShape.material as THREE.MeshStandardMaterial).color.setHex(theme.accents.ghost)
+      (this.previewShape.material as THREE.MeshStandardMaterial).color.setHex(deepen(theme.accents.ghost, 0.8))
     this.ctx.invalidate()
   }
 
@@ -470,7 +484,7 @@ export class Overlays {
 
   private applyHighlight(id: number, entry: { material: THREE.MeshStandardMaterial; color: string }): void {
     const on = this.highlightIds.has(id)
-    entry.material.opacity = on ? 0.55 : 0.3
+    entry.material.opacity = on ? PRIMITIVE_OPACITY_SELECTED : PRIMITIVE_OPACITY
     entry.material.emissive.set(on ? entry.color : 0x000000)
     entry.material.emissiveIntensity = 0.45
   }
@@ -649,7 +663,7 @@ export class Overlays {
    *  patch of a plane, a small ball for a point, a thin rod for a line — in
    *  the pose the geometry reports. A point's and a line's thickness goes with
    *  the zoom: see holdShape, for one that stays on the screen. */
-  private buildShape(fit: FitData, material: THREE.Material): THREE.Mesh {
+  private buildShape(fit: FitData, material: THREE.Material, overhang = false): THREE.Mesh {
     if (fit.kind === 'sphere') {
       const mesh = new THREE.Mesh(this.unitSphere, material)
       mesh.position.set(...fit.center)
@@ -731,7 +745,8 @@ export class Overlays {
     // The unit quad lies in XY, so its own axes are mapped onto the patch's.
     mesh.quaternion.copy(frameQuaternion(fit))
     mesh.position.set(...fit.center)
-    mesh.scale.set(Math.max(2 * fit.extentU, 1e-5), Math.max(2 * fit.extentV, 1e-5), 1)
+    const grow = overhang ? PLANE_OVERHANG : 1
+    mesh.scale.set(Math.max(2 * fit.extentU * grow, 1e-5), Math.max(2 * fit.extentV * grow, 1e-5), 1)
     return mesh
   }
 
@@ -871,7 +886,7 @@ export class Overlays {
     this.rebuildPreviewEnds()
     if (!fit) return
     const mat = new THREE.MeshStandardMaterial({
-      color: this.accents.ghost,
+      color: deepen(this.accents.ghost, 0.8),
       transparent: true,
       opacity: this.previewBrushing ? GHOST_BRUSHING_OPACITY : GHOST_OPACITY,
       depthWrite: false,
@@ -879,7 +894,7 @@ export class Overlays {
       metalness: 0,
       side: THREE.DoubleSide,
     })
-    this.previewShape = this.buildShape(fit, mat)
+    this.previewShape = this.buildShape(fit, mat, true)
     this.holdShape(this.previewHeld, this.previewShape, fit)
     this.previewGroup.add(this.previewShape)
   }

@@ -28,7 +28,9 @@ export type GripSide = ExtendSide | 'offset' | 'tiltU' | 'tiltV' | PluginGripSid
  *  ring about it, in the part's coordinates. */
 export interface PluginGrip {
   side: PluginGripSide
-  shape: 'arrow' | 'ring'
+  shape: 'arrow' | 'ring' | 'arc'
+  basis?: Vec3
+  shaft?: boolean
   position: Vec3
   dir: Vec3
   /** An arrow's length, or a ring's radius: millimetres on the part, or
@@ -58,6 +60,7 @@ const SECTION_RING_PX = 90
  *  on the part, a grip on a bore in a large scan was wider than the bore; held on
  *  the screen it covers none of it zoomed in and can be taken hold of zoomed out. */
 const END_ARROW_PX = 28
+const PLANE_ARROW_PX = 18
 const EDGE_BAR_PX = 6
 /** An edge's bar is never shorter than this on the screen, or it could not be
  *  taken hold of on a small patch seen from far off. */
@@ -98,6 +101,9 @@ interface ExtendGrip {
   screen: { size: number; standoff: number } | null
   /** A bar along an edge, its length the edge's own and its thickness in pixels. */
   bar?: { span: number }
+  corner?: { uSide: ExtendSide; vSide: ExtendSide; u: THREE.Vector3; v: THREE.Vector3 }
+  anchor?: { position: THREE.Vector3; dir: THREE.Vector3; standoff: number }
+  anchors?: { position: THREE.Vector3; dir: THREE.Vector3; standoff: number }[]
 }
 
 /** Everything the grips are allowed to touch outside themselves. */
@@ -150,6 +156,7 @@ export class ExtendGrips {
   private plane: SectionFrame | null = null
   private planeSlides = true
   private feature: readonly PluginGrip[] = []
+  private alignment: readonly PluginGrip[] = []
   /** The number field on a feature grip — its DOM label, the input in it,
    *  and which grip it stands on. Kept apart from the grips, which are
    *  rebuilt on every change of the number: the field moves with its grip
@@ -179,10 +186,30 @@ export class ExtendGrips {
      *  back modulo a full circle and are unwrapped step by step, so a hand
      *  that goes round past the seam is not thrown back. */
     ring: { b1: THREE.Vector3; b2: THREE.Vector3; last: number; turned: number } | null
+    corner?: { plane: THREE.Plane; start: THREE.Vector3; u: THREE.Vector3; v: THREE.Vector3; uSide: ExtendSide; vSide: ExtendSide }
   } | null = null
   /** Grip shapes: an arrow for an end that grows along an axis, a bar for an
    *  edge that grows across itself. Both unit-sized about their own middle. */
   private unitCone = new THREE.ConeGeometry(0.5, 1, 20)
+  /** Original shaft-and-head shape for the reference-style plane edge arrows. */
+  private unitPlaneArrow = (() => {
+    const shaftSource = new THREE.CylinderGeometry(0.045, 0.045, 0.65, 12).translate(0, -0.175, 0)
+    const headSource = new THREE.ConeGeometry(0.18, 0.35, 16).translate(0, 0.325, 0)
+    const shaft = shaftSource.toNonIndexed()
+    const head = headSource.toNonIndexed()
+    shaftSource.dispose()
+    headSource.dispose()
+    const positions = new Float32Array(shaft.attributes.position.array.length + head.attributes.position.array.length)
+    positions.set(shaft.attributes.position.array)
+    positions.set(head.attributes.position.array, shaft.attributes.position.array.length)
+    const geometry = new THREE.BufferGeometry()
+    geometry.name = 'plane-arrow-handle'
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+    geometry.computeVertexNormals()
+    shaft.dispose()
+    head.dispose()
+    return geometry
+  })()
   /** A feature's arrow: longer and slimmer than an element's grip, the
    *  shape of a CAD manipulator, so it reads as a direction and leaves the
    *  face it stands on in view. */
@@ -191,6 +218,27 @@ export class ExtendGrips {
   /** A ring of unit radius, its tube a fixed share of it — thick enough to
    *  take hold of, thin enough to read as a line. */
   private unitRing = new THREE.TorusGeometry(1, 0.045, 10, 72)
+  private unitAxisArc = new THREE.TorusGeometry(1, 0.065, 10, 32, Math.PI / 2)
+  private unitPlaneTurn = (() => {
+    const arc = new THREE.TorusGeometry(1, 0.12, 8, 32, Math.PI * 1.4)
+    const parts: THREE.BufferGeometry[] = [arc]
+    for (const [angle, sign] of [[0, -1], [Math.PI * 1.4, 1]]) {
+      const direction = new THREE.Vector3(-Math.sin(angle) * sign, Math.cos(angle) * sign, 0)
+      const head = new THREE.ConeGeometry(0.34, 0.65, 12)
+      head.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction))
+      head.translate(Math.cos(angle), Math.sin(angle), 0)
+      parts.push(head)
+    }
+    const arrays = parts.map(p => { const flat = p.toNonIndexed(); const a = new Float32Array(flat.attributes.position.array); flat.dispose(); p.dispose(); return a })
+    const positions = new Float32Array(arrays.reduce((n,a) => n+a.length,0))
+    let offset = 0
+    for (const a of arrays) { positions.set(a, offset); offset += a.length }
+    const result = new THREE.BufferGeometry()
+    result.name = 'plane-rotation-handle'
+    result.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+    result.computeVertexNormals()
+    return result
+  })()
 
   constructor(private ctx: ExtendGripsContext) {
     ctx.partGroup.add(this.handleGroup)
@@ -233,6 +281,11 @@ export class ExtendGrips {
   setFeatureGrips(grips: readonly PluginGrip[], color: string): void {
     this.feature = grips
     this.handleColor = color
+    this.rebuild()
+  }
+
+  setAlignmentGrips(grips: readonly PluginGrip[]): void {
+    this.alignment = grips
     this.rebuild()
   }
 
@@ -363,7 +416,7 @@ export class ExtendGrips {
     if (!zoomed && !turned) return
     this.pixel = pixel
     this.viewTurn.copy(this.ctx.camera.quaternion)
-    if (zoomed) {
+    if (zoomed || turned) {
       let held = false
       for (const h of this.handles) {
         if (!h.screen && !h.bar) continue
@@ -388,6 +441,16 @@ export class ExtendGrips {
     const size = Math.max(h.screen.size * this.pixel, 1e-5)
     h.mesh.scale.setScalar(size)
     if (!h.ring) h.mesh.position.copy(h.position).addScaledVector(h.dir, h.screen.standoff * this.pixel + size / 2)
+    if (h.anchors) {
+      // Keep the small turn control on the rightmost edge in the current view,
+      // away from the command panel at the left of the viewport.
+      this.ctx.partGroup.updateWorldMatrix(true, false)
+      h.anchor = h.anchors.reduce((best, a) => {
+        const x = (p: THREE.Vector3) => p.clone().applyMatrix4(this.ctx.partGroup.matrixWorld).project(this.ctx.camera).x
+        return x(a.position) > x(best.position) ? a : best
+      })
+    }
+    if (h.anchor) h.mesh.position.copy(h.anchor.position).addScaledVector(h.anchor.dir, h.anchor.standoff * this.pixel)
   }
 
   private rebuild(): void {
@@ -402,15 +465,25 @@ export class ExtendGrips {
     queueMicrotask(() => this.placeField())
     this.pixel = this.ctx.worldPerPixel()
 
-    for (const g of this.feature) {
+    for (const g of [...this.feature, ...this.alignment]) {
       const position = new THREE.Vector3(...g.position)
       const dir = new THREE.Vector3(...g.dir).normalize()
       const screen = g.pixels ? { size: g.size, standoff: g.standoff ?? 0 } : null
-      if (g.shape === 'ring') this.addRing(g.side, position, dir, Math.max(g.size, 1e-5), { color: g.color, screen })
+      if (g.shape === 'ring' || g.shape === 'arc') {
+        this.addRing(g.side, position, dir, Math.max(g.size, 1e-5), { color: g.color, screen })
+        if (g.shape === 'arc') {
+          const h = this.handles[this.handles.length - 1]
+          h.mesh.geometry = this.unitAxisArc
+          if (g.basis) {
+            const u = new THREE.Vector3(...g.basis).normalize()
+            h.mesh.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(u, dir.clone().cross(u).normalize(), dir))
+          }
+        }
+      }
       // On the part, sized to what the arrow stands on, never smaller than
       // a grip on the part would be — a hairline profile still needs a
       // handle.
-      else this.addGrip(g.side, position, dir, Math.max(g.size, this.ctx.modelRadius() * 0.05, 1e-5), { slim: true, color: g.color, standoff: g.standoff, screen })
+      else this.addGrip(g.side, position, dir, Math.max(g.size, this.ctx.modelRadius() * 0.05, 1e-5), { slim: true, planeArrow: g.shaft, color: g.color, standoff: g.standoff, screen })
     }
 
     if (this.plane) {
@@ -453,14 +526,25 @@ export class ExtendGrips {
       const eu = Math.max(fit.extentU, 1e-5)
       const ev = Math.max(fit.extentV, 1e-5)
       const centre = new THREE.Vector3(...fit.center)
-      // A bar lying along each edge: the grip is the edge, which is the thing
-      // being dragged. Half the edge long, so all four stay clear of the
-      // corners even on a patch that is much longer than it is wide.
-      const bar = (along: THREE.Vector3, span: number) => ({ along, span })
-      this.addGrip('uMin', centre.clone().addScaledVector(u, -eu), u.clone().negate(), EDGE_BAR_PX, { edge: bar(v, ev) })
-      this.addGrip('uMax', centre.clone().addScaledVector(u, eu), u.clone(), EDGE_BAR_PX, { edge: bar(v, ev) })
-      this.addGrip('vMin', centre.clone().addScaledVector(v, -ev), v.clone().negate(), EDGE_BAR_PX, { edge: bar(u, eu) })
-      this.addGrip('vMax', centre.clone().addScaledVector(v, ev), v.clone(), EDGE_BAR_PX, { edge: bar(u, eu) })
+      // An outward arrow at each edge, held at a usable size while zooming.
+      // Keep the existing side identities and drag maths: resizing is not refitting.
+      const options = { planeArrow: true, color: '#ffd400', screen: { size: PLANE_ARROW_PX, standoff: 2 } }
+      this.addGrip('uMin', centre.clone().addScaledVector(u, -eu), u.clone().negate(), PLANE_ARROW_PX, options)
+      this.addGrip('uMax', centre.clone().addScaledVector(u, eu), u.clone(), PLANE_ARROW_PX, options)
+      this.addGrip('vMin', centre.clone().addScaledVector(v, -ev), v.clone().negate(), PLANE_ARROW_PX, options)
+      this.addGrip('vMax', centre.clone().addScaledVector(v, ev), v.clone(), PLANE_ARROW_PX, options)
+      for (const su of [-1, 1]) for (const sv of [-1, 1]) {
+        const uSide = su < 0 ? 'uMin' : 'uMax', vSide = sv < 0 ? 'vMin' : 'vMax'
+        const du = u.clone().multiplyScalar(su), dv = v.clone().multiplyScalar(sv)
+        this.addGrip(`${uSide}:${vSide}`, centre.clone().addScaledVector(u, su * eu).addScaledVector(v, sv * ev), du.clone().add(dv).normalize(), PLANE_ARROW_PX, options)
+        this.handles[this.handles.length - 1].corner = { uSide, vSide, u: du, v: dv }
+      }
+      this.addRing('planeRotate', centre, new THREE.Vector3(...fit.normal), 9, { color: '#ffd400', screen: { size: 9, standoff: 0 } })
+      const turn = this.handles[this.handles.length - 1]
+      turn.mesh.geometry = this.unitPlaneTurn
+      turn.mesh.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(u, v, new THREE.Vector3(...fit.normal)))
+      turn.anchors = [u.clone(), u.clone().negate(), v.clone(), v.clone().negate()].map((dir, i) => ({ position: centre.clone().addScaledVector(dir, i < 2 ? eu : ev), dir, standoff: 26 }))
+      this.fitToScreen(turn)
     }
   }
 
@@ -475,12 +559,14 @@ export class ExtendGrips {
     {
       edge,
       slim = false,
+      planeArrow = false,
       color = this.handleColor,
       standoff = 0,
       screen = null,
     }: {
       edge?: { along: THREE.Vector3; span: number }
       slim?: boolean
+      planeArrow?: boolean
       color?: string
       standoff?: number
       screen?: { size: number; standoff: number } | null
@@ -488,14 +574,14 @@ export class ExtendGrips {
   ): void {
     const material = new THREE.MeshBasicMaterial({
       // A rebuild in the middle of a drag must not put the lit grip out.
-      color: side === this.hoveredHandle ? 0xffffff : color,
+      color: side === this.hoveredHandle ? (side.startsWith('align-') ? 0xffff00 : 0xffffff) : color,
       transparent: true,
       opacity: 0.95,
       depthTest: false,
       depthWrite: false,
       side: THREE.DoubleSide,
     })
-    const mesh = new THREE.Mesh(edge ? this.unitBox : slim ? this.unitSlimCone : this.unitCone, material)
+    const mesh = new THREE.Mesh(edge ? this.unitBox : planeArrow ? this.unitPlaneArrow : slim ? this.unitSlimCone : this.unitCone, material)
     if (edge) {
       // The bar lies in the plane, along the edge, and reaches a little past it
       // on the outside so the shape it will grow into is legible.
@@ -529,7 +615,7 @@ export class ExtendGrips {
     { color = this.handleColor, screen = null }: { color?: string; screen?: { size: number; standoff: number } | null } = {},
   ): void {
     const material = new THREE.MeshBasicMaterial({
-      color: side === this.hoveredHandle ? 0xffffff : color,
+      color: side === this.hoveredHandle ? (side.startsWith('align-') ? 0xffff00 : 0xffffff) : color,
       transparent: true,
       opacity: 0.85,
       depthTest: false,
@@ -582,7 +668,7 @@ export class ExtendGrips {
     if (this.hoveredHandle === side) return
     this.hoveredHandle = side
     this.ctx.invalidate()
-    for (const h of this.handles) h.material.color.set(h.side === side ? 0xffffff : h.color)
+    for (const h of this.handles) h.material.color.set(h.side === side ? (h.side.startsWith('align-') ? 0xffff00 : 0xffffff) : h.color)
     this.ctx.claimDrag(side !== null)
     this.ctx.canvas.style.cursor = side !== null ? 'grab' : ''
     this.syncActiveSide()
@@ -617,7 +703,16 @@ export class ExtendGrips {
 
   private beginHandleDrag(grip: ExtendGrip, clientX: number, clientY: number): void {
     const world = this.gripLine(grip)
-    if (grip.ring) {
+    if (grip.corner) {
+      const c = grip.corner
+      const u = c.u.clone().transformDirection(this.ctx.partGroup.matrixWorld)
+      const v = c.v.clone().transformDirection(this.ctx.partGroup.matrixWorld)
+      const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(u.clone().cross(v).normalize(), world.origin)
+      this.ctx.setPickRay(clientX, clientY)
+      const start = this.ctx.raycaster.ray.intersectPlane(plane, new THREE.Vector3())
+      if (!start) return
+      this.handleDrag = { side: grip.side, origin: world.origin, dir: world.dir, start: 0, ring: null, corner: { plane, start, u, v, uSide: c.uSide, vSide: c.vSide } }
+    } else if (grip.ring) {
       // Any two perpendiculars of the axis do for reading angles — only
       // differences are reported — as long as (b1, b2, axis) is right-handed,
       // so the angle grows with the turn it is asking for.
@@ -639,7 +734,10 @@ export class ExtendGrips {
     }
     this.ctx.canvas.style.cursor = 'grabbing'
     this.syncActiveSide()
-    this.ctx.onExtendDrag(grip.side, 0, 'start')
+    if (grip.corner) {
+      this.ctx.onExtendDrag(grip.corner.uSide, 0, 'start')
+      this.ctx.onExtendDrag(grip.corner.vSide, 0, 'start')
+    } else this.ctx.onExtendDrag(grip.side, 0, 'start')
     if (this.field) this.field.input.readOnly = true
   }
 
@@ -709,6 +807,15 @@ export class ExtendGrips {
   private onHandleMove = (e: PointerEvent): void => {
     const drag = this.handleDrag
     if (!drag) return
+    if (drag.corner) {
+      this.ctx.setPickRay(e.clientX, e.clientY)
+      const hit = this.ctx.raycaster.ray.intersectPlane(drag.corner.plane, new THREE.Vector3())
+      if (!hit) return
+      const delta = hit.sub(drag.corner.start)
+      this.ctx.onExtendDrag(drag.corner.uSide, delta.dot(drag.corner.u), 'move')
+      this.ctx.onExtendDrag(drag.corner.vSide, delta.dot(drag.corner.v), 'move')
+      return
+    }
     if (drag.ring) {
       const a = this.angleAround(drag.origin, drag.dir, drag.ring.b1, drag.ring.b2, e.clientX, e.clientY)
       if (a === null) return
@@ -732,7 +839,10 @@ export class ExtendGrips {
     this.handleDrag = null
     this.ctx.canvas.style.cursor = this.hoveredHandle !== null ? 'grab' : ''
     this.syncActiveSide()
-    this.ctx.onExtendDrag(drag.side, 0, 'end')
+    if (drag.corner) {
+      this.ctx.onExtendDrag(drag.corner.uSide, 0, 'end')
+      this.ctx.onExtendDrag(drag.corner.vSide, 0, 'end')
+    } else this.ctx.onExtendDrag(drag.side, 0, 'end')
     // The hand let go: the field on the grip takes typing now, and the
     // cursor is put in it so the number can be typed straight over.
     if (this.field && this.field.side === drag.side) {
@@ -751,12 +861,16 @@ export class ExtendGrips {
     document.removeEventListener('pointercancel', this.onHandleUp)
     this.plane = null
     this.feature = []
+    this.alignment = []
     this.dropField()
     this.setHandles(null, '#ffffff')
     this.unitCone.dispose()
+    this.unitPlaneArrow.dispose()
     this.unitSlimCone.dispose()
     this.unitBox.dispose()
     this.unitRing.dispose()
+    this.unitAxisArc.dispose()
+    this.unitPlaneTurn.dispose()
   }
 }
 

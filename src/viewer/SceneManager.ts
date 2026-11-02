@@ -11,7 +11,8 @@
 import * as THREE from 'three'
 import type { LinkedView } from './cameraLink'
 import { OrthoViewport, STANDARD_VIEWS, viewAcross, type StandardView } from './orthoViewport'
-import { AxisGizmo, type GizmoAxis } from './axisGizmo'
+import { AxisGizmo, type GizmoAxis, type GizmoTarget } from './axisGizmo'
+import { NavigationGuides } from './navigationGuides'
 import { DatumStage } from './datumStage'
 import { RegionColors } from './regionColors'
 import { SurfaceMarking, colorToRgb, type PaintBrush } from './marking'
@@ -214,6 +215,7 @@ export class SceneManager {
   private gizmoCorner = 0
   /** The target coordinate frame, shown while an alignment is being set up. */
   private stage: DatumStage
+  private navigationGuides: NavigationGuides
   /** Stage, lights and surface colours — see viewThemes. Held here as well as
    *  in the viewport because a scan or a reference loaded later has to be
    *  dressed in whatever scheme is current. */
@@ -221,6 +223,8 @@ export class SceneManager {
   /** Who owns each vertex's colour, and every tint layered over it. */
   private regions = new RegionColors(DEFAULT_THEME.surface)
   private marking: SurfaceMarking
+  private alignMirror: THREE.Points | null = null
+  private alignMirrorPlane: 'OYZ' | 'OXZ' | 'OXY' | null = null
   private grips: ExtendGrips
   private overlays: Overlays
   private sections: SectionOverlay
@@ -478,6 +482,7 @@ export class SceneManager {
         // The section curves are fat lines sized in pixels and need the canvas.
         const el = this.viewport.renderer.domElement
         this.sections.setResolution(el.clientWidth || 1, el.clientHeight || 1)
+        this.navigationGuides.update(this.camera, this.controls.target, el.clientWidth || 1, el.clientHeight || 1)
         for (const layer of this.layers) layer.tick?.(el.clientWidth || 1, el.clientHeight || 1)
         // A viewport that follows a sheet re-reads its scale when its own
         // size changes — shown again after being put away, or the window
@@ -500,6 +505,7 @@ export class SceneManager {
     this.container = container
     this.gizmo = new AxisGizmo()
     this.stage = new DatumStage(this.scene)
+    this.navigationGuides = new NavigationGuides(this.scene)
     // A material may carry a clip plane of its own — the slice through the
     // part at a sketch plane. Nothing is clipped until one is set.
     this.viewport.renderer.localClippingEnabled = true
@@ -528,6 +534,7 @@ export class SceneManager {
         this.hoverDirty = true
       },
       onPaintChange: (count) => this.onPaintChange?.(count),
+      onWandPick: (point) => container.dispatchEvent(new CustomEvent('scanruler:wand-pick', { bubbles: true, detail: point })),
     })
     this.overlays = new Overlays({
       partGroup: this.partGroup,
@@ -657,7 +664,8 @@ export class SceneManager {
     if (e.button === 0 && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
       const axis = this.gizmoAt(e.clientX, e.clientY)
       if (axis !== null) {
-        this.viewAlong(axis)
+        if (axis.length === 1) this.viewAlong(axis as GizmoAxis)
+        else this.viewFrom(({ '+x': 'right', '-x': 'left', '+y': 'rear', '-y': 'front', '+z': 'top', '-z': 'bottom' } as const)[axis as Exclude<GizmoTarget, GizmoAxis>])
         return true
       }
     }
@@ -668,7 +676,7 @@ export class SceneManager {
   }
 
   /** The gizmo arrow under a client point, if any. */
-  private gizmoAt(clientX: number, clientY: number): GizmoAxis | null {
+  private gizmoAt(clientX: number, clientY: number): GizmoTarget | null {
     const rect = this.viewport.renderer.domElement.getBoundingClientRect()
     return this.gizmo.hitTest(clientX - rect.left, clientY - rect.top)
   }
@@ -1312,10 +1320,63 @@ export class SceneManager {
     this.framedClip.radius = this.clipSphere.radius
   }
 
+  /** Rotate the current view's right/up/eye basis onto global X/Y/Z. */
+  alignmentFromCurrentView(): Rigid {
+    this.camera.updateMatrixWorld(true)
+    const m = new THREE.Matrix4().extractRotation(this.camera.matrixWorld).transpose().elements
+    return { r: new Float64Array([m[0],m[4],m[8],m[1],m[5],m[9],m[2],m[6],m[10]]), t: new Float64Array(3) }
+  }
+
+  /** Non-destructive reflected point preview; never enters the worker/export mesh. */
+  setAlignMirror(plane: 'OYZ' | 'OXZ' | 'OXY' | null): void {
+    this.alignMirrorPlane = plane
+    if (!plane || !this.mesh) {
+      if (this.alignMirror) { this.scene.remove(this.alignMirror); (this.alignMirror.material as THREE.Material).dispose(); this.alignMirror = null }
+      this.invalidate(); return
+    }
+    if (!this.alignMirror) {
+      this.alignMirror = new THREE.Points(this.mesh.geometry, new THREE.PointsMaterial({ color: 0xffff00, size: 1, sizeAttenuation: false, transparent: true, opacity: .75, depthTest: false, depthWrite: false }))
+      this.alignMirror.name = 'alignment-mirror-preview'
+      this.alignMirror.matrixAutoUpdate = false
+      this.alignMirror.renderOrder = 3
+      this.scene.add(this.alignMirror)
+    }
+    const scale = new THREE.Matrix4().makeScale(plane === 'OYZ' ? -1 : 1, plane === 'OXZ' ? -1 : 1, plane === 'OXY' ? -1 : 1)
+    this.alignMirror.matrix.multiplyMatrices(scale, this.partGroup.matrixWorld)
+    this.alignMirror.matrixWorldNeedsUpdate = true
+    this.invalidate()
+  }
+
   /** Turn to one of the standard views — top, front, iso and so on — about
    *  the point the camera is looking at, keeping the zoom. */
   viewFrom(view: StandardView): void {
     this.viewport.viewFrom(view)
+  }
+
+  /** A screen-space quarter turn, preserving the target and magnification. */
+  rollView(degrees: number): void {
+    const direction = new THREE.Vector3().subVectors(this.camera.position, this.controls.target).normalize()
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion)
+    this.viewport.rollTo(up.applyAxisAngle(direction, THREE.MathUtils.degToRad(degrees)))
+  }
+
+  orbitView(side: 'up' | 'down' | 'left' | 'right'): void {
+    const direction = new THREE.Vector3().subVectors(this.camera.position, this.controls.target).normalize()
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion)
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion)
+    const axis = side === 'up' || side === 'down' ? right : up
+    const radians = (side === 'up' || side === 'left' ? 1 : -1) * Math.PI / 2
+    this.viewport.lookFrom(direction.applyAxisAngle(axis, radians), up.applyAxisAngle(axis, radians))
+  }
+
+  setNavigationCoordinates(on: boolean): void {
+    this.navigationGuides.setCoordinates(on)
+    this.invalidate()
+  }
+
+  setNavigationGrid(on: boolean, spacing: number): void {
+    this.navigationGuides.setGrid(on, spacing)
+    this.invalidate()
   }
 
   /** The canvas's size on screen, in CSS pixels. */
@@ -2107,6 +2168,10 @@ export class SceneManager {
     this.grips.setFeatureGrips(grips, color)
   }
 
+  setAlignmentGrips(grips: readonly PluginGrip[]): void {
+    this.grips.setAlignmentGrips(grips)
+  }
+
   /** A number field on a plugin's grip: the grip's value while it is
    *  dragged, and a field to type into once the hand lets go — Enter
    *  commits through onGripFieldCommit, Escape closes through
@@ -2472,6 +2537,7 @@ export class SceneManager {
     this.partGroup.matrix.multiplyMatrices(this.alignMatrix, this.previewMatrix)
     this.partGroup.matrixWorldNeedsUpdate = true
     this.partGroup.updateMatrixWorld(true)
+    if (this.alignMirrorPlane) this.setAlignMirror(this.alignMirrorPlane)
     // The cut is a world plane through a part that just moved.
     if (this.slice || this.sectionView) this.applySlice()
     this.invalidate()
@@ -3015,6 +3081,7 @@ export class SceneManager {
   }
 
   private disposeMesh(): void {
+    this.setAlignMirror(null)
     this.fullIndex = null
     this.setEditedMesh(null)
     this.regions.detach()
@@ -3046,6 +3113,7 @@ export class SceneManager {
     this.overlays.dispose()
     this.sections.dispose()
     this.stage.dispose()
+    this.navigationGuides.dispose()
     this.gizmo.dispose()
     this.disposeNominal()
     this.disposeMesh()
