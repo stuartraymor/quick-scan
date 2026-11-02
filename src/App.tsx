@@ -8,8 +8,9 @@
 // its edges, project files, each plugin's hook (called in the same order
 // every render) and the agent connection.
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { useProjectHistory } from './app/useProjectHistory'
+import { useDocumentOrder } from './state/documentOrderStore'
 import { clearHistory, historyAction } from './state/historyStore'
 import { MeshWorkerClient } from './core/workerClient'
 import { creaseSetting, type CreaseSetting } from './core/geometry/crease'
@@ -35,12 +36,13 @@ import { elementKindInfo } from './core/elements/kinds'
 import { creationMethod, takesSurface } from './core/elements/construct'
 import { extensionOf, fitWindow, isExtendable, sideValue } from './core/elements/extend'
 import { roleOf } from './core/elements/refs'
+import { autoConstrainFit, canConstrain, CONSTRAINTS, constrainFit, pointsBeyond } from './core/elements/constrain'
+import { useExtract } from './state/extractStore'
 import { evaluateDimensions } from './core/dimensions'
 import { attachSurfaceScene, forgetSurface, surfaceSource } from './app/surfaces'
-import type { ElementKind, PointFit, SigmaPreset, Vec3 } from './core/types'
+import type { ElementKind, FitData, PointFit, SigmaPreset, Vec3 } from './core/types'
 import {
   blockedRefs,
-  draftColorOf,
   sectionDraftReady,
   useStore,
   type SelectMode,
@@ -64,7 +66,6 @@ import { BusyOverlay } from './ui/BusyOverlay'
 import { ImprintModal } from './ui/Imprint'
 import { SettingsModal } from './ui/SettingsModal'
 import { UnitsModal } from './ui/UnitsModal'
-import { SupportAsk, SupportCard } from './ui/SupportCard'
 import { ViewBar } from './ui/ViewBar'
 import { DeviationPanel } from './ui/DeviationPanel'
 import { ThicknessPanel } from './ui/ThicknessPanel'
@@ -72,6 +73,7 @@ import { FlatPanel } from './ui/FlatPanel'
 import { FlatViewer } from './ui/FlatViewer'
 import type { FlatScene } from './viewer/FlatScene'
 import { MapLegend, type LegendStat } from './ui/MapLegend'
+import { fetchReferenceExample } from './app/referenceExamples'
 import { fetchSampleScan } from './app/sampleScan'
 import { StartPane, type StartSlot } from './ui/StartPane'
 import { CompareView } from './ui/CompareView'
@@ -83,7 +85,9 @@ import { usePrefs } from './state/prefsStore'
 import { boundLength, useLength } from './app/useUnits'
 import { lengthInputText, unitWord, type DisplayUnits } from './core/units'
 import { useShell } from './state/shellStore'
-import { useMark } from './state/markStore'
+import { EXTRACT_MARK_COLOR, useMark } from './state/markStore'
+import {useInteractiveAlign} from './state/interactiveAlignStore'
+import { PrepareScanWizard } from './ui/PrepareScanWizard'
 import { ExtractPrimitives } from './ui/ExtractPrimitives'
 import { useThickness } from './state/thicknessStore'
 import { imageScaleX, useFlat } from './state/flatStore'
@@ -918,7 +922,7 @@ export default function App() {
       if (draft.selection) {
         // Straight back onto the part, in the element's own colour: the brush
         // arms itself around it on the next render.
-        sceneRef.current?.setPaintedVertices(draft.selection, el.color)
+        sceneRef.current?.setPaintedVertices(draft.selection, EXTRACT_MARK_COLOR)
         useMark.getState().setCount(draft.selection.length)
       } else if (method.mode === 'fit' && draft.picks.length > 0) {
         // Back on the part go the spots the element was measured from. Only the
@@ -954,26 +958,117 @@ export default function App() {
    *  start the fit over: what one of them collected means nothing to the
    *  other. */
   /** Extract primitives, step 2: the type clicked is fitted to the area
-   *  selected in step 1 and created at once, as QUICKSURFACE does; the dialog
-   *  stays open for the next area. */
+   *  selected in step 1 and previewed until Create or Create & Stay. */
   const [extractFitting, setExtractFitting] = useState(false)
+  /** The primitive fitted in Extract primitives and shown, not yet created. */
+  const [extractPreview, setExtractPreview] = useState<{ kind: ElementKind; sigma: number | null; selection: Uint32Array } | null>(null)
+  const createExtracted = () => {
+    if (!extractPreview || handleConfirmDraft() === null) return false
+    // Ordinary primitive editing keeps the same type armed after a commit.
+    // Extraction owns the next type choice; a fresh hidden draft blocks it.
+    if (useStore.getState().draft) useStore.getState().cancelDraft()
+    const name = extractPreview.kind[0].toUpperCase() + extractPreview.kind.slice(1)
+    setExtractPreview(null)
+    useExtract.getState().setAnalysed(null)
+    clearPaint()
+    useStore.getState().setStatus(`${name} created — select the next area, or Close.`)
+    return true
+  }
+  /** Clear the fit, keeping the marked area available for the next type. */
+  const clearExtractedPreview = () => {
+    if (!extractPreview || extractFitting) return
+    const selection = extractPreview.selection.slice()
+    handleCancelDraft()
+    setExtractPreview(null)
+    useExtract.getState().setAnalysed(null)
+    sceneRef.current?.setPaintedVertices(selection, EXTRACT_MARK_COLOR)
+    useMark.getState().setCount(selection.length)
+    useStore.getState().setStatus('Preview cleared — the selected area is kept. Choose a primitive type to fit it again.')
+  }
+  /** The fit held to the constraint chosen in step 2 and, with Auto Constrain on,
+   *  snapped to the primitives already made — measured again on the same marked
+   *  points. Null when nothing applies. */
+  const constrainedPreview = (fit: FitData, selection: Uint32Array): { fit: FitData; notes: string[] } | null => {
+    const ex = useExtract.getState()
+    const pos = sceneRef.current?.scanPositions()
+    if (!pos || !canConstrain(fit) || (ex.constraint === 'none' && !ex.autoConstrain)) return null
+    let next = fit
+    const notes: string[] = []
+    if (ex.constraint !== 'none') {
+      const label = CONSTRAINTS.find((c) => c.id === ex.constraint)!.label.toLowerCase()
+      const held = constrainFit(next, pos, selection, ex.constraint)
+      if (held) { next = held; notes.push(label) }
+      else notes.push(`could not be held ${label}`)
+    }
+    if (ex.autoConstrain) {
+      const others = useStore.getState().elements.filter((e) => e.fit).map((e) => ({ name: e.name, fit: e.fit as FitData }))
+      const auto = autoConstrainFit(next, pos, selection, others, { tiltDeg: ex.tiltDeg, coincidenceMm: ex.coincidenceMm })
+      next = auto.fit
+      notes.push(...auto.notes)
+    }
+    return next === fit && notes.length === 0 ? null : { fit: next, notes }
+  }
+  /** Analysis: the marked points further than the tolerance from the previewed
+   *  primitive, shown in orange; the rest of the marking waits for the next type. */
+  const applyExtractAnalysis = () => {
+    const fit = useStore.getState().draft?.fit
+    const pos = sceneRef.current?.scanPositions()
+    if (!extractPreview || !fit || !pos) return
+    const ex = useExtract.getState()
+    const { far, worst } = pointsBeyond(fit, pos, extractPreview.selection, ex.analysisMm)
+    const units = boundLength(usePrefs.getState().units)
+    ex.setAnalysed({ far: far.length, total: extractPreview.selection.length, worst })
+    if (far.length === 0) {
+      sceneRef.current?.setPaintedVertices(extractPreview.selection, EXTRACT_MARK_COLOR)
+      useMark.getState().setCount(extractPreview.selection.length)
+    } else {
+      sceneRef.current?.setPaintedVertices(Uint32Array.from(far, (i) => extractPreview.selection[i]), '#ff7a2f')
+      useMark.getState().setCount(far.length)
+    }
+    useStore.getState().setStatus(`${far.length.toLocaleString('en-US')} of ${extractPreview.selection.length.toLocaleString('en-US')} marked points lie more than ${units.fmt(ex.analysisMm, 3)} from the ${extractPreview.kind} — the worst ${units.fmt(worst, 3)}.`)
+  }
+  /** Analysis off, or its tolerance changed: the marked area comes back whole. */
+  const clearExtractAnalysis = () => {
+    const ex = useExtract.getState()
+    if (!ex.analysed || !extractPreview) return
+    ex.setAnalysed(null)
+    sceneRef.current?.setPaintedVertices(extractPreview.selection, EXTRACT_MARK_COLOR)
+    useMark.getState().setCount(extractPreview.selection.length)
+  }
   const handleExtractType = async (kind: ElementKind) => {
-    const selection = sceneRef.current?.paintedVertices() ?? new Uint32Array(0)
+    // While Analysis shows only the far points, the marked area is the one the
+    // preview was fitted to.
+    const selection = (useExtract.getState().analysed && extractPreview ? extractPreview.selection : sceneRef.current?.paintedVertices()) ?? new Uint32Array(0)
+    useExtract.getState().setAnalysed(null)
     const store = useStore.getState()
-    if (selection.length === 0 || store.draft || extractFitting) return
+    if (extractFitting) return
+    // Another type while one is previewed: drop that preview and fit this one.
+    if (store.draft && extractPreview) { store.cancelDraft(); setExtractPreview(null) }
+    if (selection.length === 0 || useStore.getState().draft) return
     setExtractFitting(true)
     try {
       store.startDraft(kind)
+      if (kind === 'line') store.setDraftMethod('fit')
       store.setSelectMode('paint')
       await runDraftPaintFit(kind, selection)
-      const d = useStore.getState().draft
-      if (d && d.status !== 'failed' && handleConfirmDraft() !== null) {
-        useStore.getState().setStatus(`${kind[0].toUpperCase() + kind.slice(1)} extracted — select the next area, or Close.`)
+      let d = useStore.getState().draft
+      const held = d && d.status !== 'failed' && d.fit ? constrainedPreview(d.fit, selection) : null
+      if (held) {
+        useStore.setState((s) => (s.draft ? { draft: { ...s.draft, fit: held.fit } } : {}))
+        d = useStore.getState().draft
+      }
+      if (d && d.status !== 'failed') {
+        // As in QUICKSURFACE: the fit is a preview until Create.
+        setExtractPreview({ kind, sigma: d.fit?.sigma ?? null, selection })
+        const name = kind[0].toUpperCase() + kind.slice(1)
+        useStore.getState().setStatus(`${name} preview${d.fit?.sigma != null ? ` — σ ${boundLength(usePrefs.getState().units).fmt(d.fit.sigma, 4)}` : ''}${held?.notes.length ? ` — ${held.notes.join(', ')}` : ''}. Create to keep it, or pick another type.`)
+        sceneRef.current?.setPaintedVertices(selection, EXTRACT_MARK_COLOR)
+        useMark.getState().setCount(selection.length)
       } else {
         const why = d && 'message' in d ? String((d as { message?: string }).message ?? '') : ''
         useStore.getState().cancelDraft()
         useStore.getState().setStatus(`Could not fit a ${kind} to the selection${why ? `: ${why}` : '.'} The selection is kept — adjust it and try again.`)
-        sceneRef.current?.setPaintedVertices(selection, MARK_COLOR)
+        sceneRef.current?.setPaintedVertices(selection, EXTRACT_MARK_COLOR)
         useMark.getState().setCount(selection.length)
       }
     } finally {
@@ -1019,6 +1114,12 @@ export default function App() {
   }
   /** File → Import CAD: the STEP goes to the CAD plugin as bodies once its kernel is up. */
   const handleImportCad = (file: File) => {
+    const blockedImport = () => {
+      if (useDocumentOrder.getState().rollbackAt === null) return false
+      useStore.getState().setStatus('Restore End of Model in History before importing CAD into this document.')
+      return true
+    }
+    if (blockedImport()) return
     if (!runtimesRef.current.some((r) => r.importCad)) {
       void openFile(file)
       return
@@ -1027,6 +1128,7 @@ export default function App() {
     useStore.getState().setStatus(`Preparing the CAD tools to import ${file.name}…`)
     let tries = 0
     const attempt = () => {
+      if (blockedImport()) return
       if (runtimesRef.current.find((r) => r.importCad)?.importCad?.(file)) {
         useStore.getState().setStatus(`Importing ${file.name} as CAD bodies.`)
         return
@@ -1039,8 +1141,23 @@ export default function App() {
     }
     attempt()
   }
+  /** Each Prepare Scan step opens the tool it guides through. */
+  const handlePrepareStep = (step: number) => {
+    const shell = useShell.getState()
+    if (step !== 2 && shell.extractOpen) closeExtract()
+    const mesh = plugins().find((p) => p.id === 'mesh-tools')?.workspace
+    if (step === 0) shell.setWorkspace(mesh ? mesh.id : 'elements')
+    if (step === 1) { shell.setWorkspace('elements'); handleStartDraft('plane'); useStore.getState().setDraftMethod('plane-symmetry') }
+    if (step === 2) { if (useStore.getState().draft) useStore.getState().cancelDraft(); shell.setWorkspace('elements'); shell.setExtractOpen(true) }
+    if (step === 3) { shell.setWorkspace('elements'); handleStartAlignment() }
+  }
   const closeExtract = () => {
     useShell.getState().setExtractOpen(false)
+    // Close ends the mode entirely, as QUICKSURFACE's does: no element editor
+    // is left open to grey out the ribbon.
+    if (useStore.getState().draft) useStore.getState().cancelDraft()
+    setExtractPreview(null)
+    useExtract.getState().setAnalysed(null)
     clearPaint()
     useMark.getState().setGesture(null)
   }
@@ -1101,7 +1218,7 @@ export default function App() {
     if (!draft) return
     // Straight back onto the part; the brush arms itself around it on the
     // next render, the way a re-opened element's marking does.
-    sceneRef.current?.setPaintedVertices(selection, draftColorOf(useStore.getState()))
+    sceneRef.current?.setPaintedVertices(selection, EXTRACT_MARK_COLOR)
     useMark.getState().setCount(selection.length)
     const method = creationMethod(draft.kind, draft.method)
     if (method.mode === 'fit') void runDraftPaintFit(draft.kind, selection)
@@ -1203,7 +1320,7 @@ export default function App() {
   // reports how far the grip has come rather than where it is, so every move
   // is start + delta — which is what lets a drag run into the clamp and come
   // back out again without losing anything on the way.
-  const extendStart = useRef(0)
+  const extendStart = useRef<Record<string, number>>({})
   /** A grip is held: the span moves every frame, and a fit confined to it
    *  waits for the hand to let go rather than running under it. */
   const extendDragging = useRef(false)
@@ -1214,8 +1331,16 @@ export default function App() {
    *  back and forth. */
   const turnStart = useRef<{ axis: CutAxis; about: Vec3; offset: number } | null>(null)
   const handleExtendDrag =(side: GripSide, delta: number, phase: 'start' | 'move' | 'end') => {
+    if (side.startsWith('align-')) { useInteractiveAlign.getState().drag(side, delta, phase); return }
     // A plugin's manipulator — see PluginRuntime.gripDrag.
     for (const r of runtimesRef.current) if (r.gripDrag?.(side, delta, phase)) return
+    if (side === 'planeRotate') {
+      const store = useStore.getState()
+      if (store.draft?.fit?.kind !== 'plane') return
+      if (phase === 'start') extendStart.current[side] = store.draft.extend?.kind === 'plane' ? store.draft.extend.rotation ?? 0 : 0
+      else if (phase === 'move') store.setDraftPlaneRotation(extendStart.current[side] + delta)
+      return
+    }
     // A plugin's grip no plugin took has nowhere to go.
     if (!isCoreSide(side)) return
     const store = useStore.getState()
@@ -1237,8 +1362,8 @@ export default function App() {
     // the worker cuts a section being made again behind it — see useSections.
     if (side === 'offset') {
       if (!plane) return
-      if (phase === 'start') extendStart.current = plane.offset
-      else if (phase === 'move') plane.setOffset(extendStart.current + delta)
+      if (phase === 'start') extendStart.current[side] = plane.offset
+      else if (phase === 'move') plane.setOffset(extendStart.current[side] + delta)
       return
     }
     // A ring on it: the drag tilts the plane about one of its own axes,
@@ -1262,11 +1387,11 @@ export default function App() {
     const fit = store.draft?.fit
     if (!isExtendable(fit)) return
     if (phase === 'start') {
-      extendStart.current = sideValue(extensionOf(fit, store.draft?.extend), side)
+      extendStart.current[side] = sideValue(extensionOf(fit, store.draft?.extend), side)
       extendDragging.current = true
       refitAfterDrag.current = false
     } else if (phase === 'move') {
-      store.setDraftExtend(side, extendStart.current + delta)
+      store.setDraftExtend(side, extendStart.current[side] + delta)
     } else {
       extendDragging.current = false
       if (refitAfterDrag.current) {
@@ -1375,6 +1500,8 @@ export default function App() {
 
   // Enter or a middle-mouse click confirms the pending element, Escape backs
   // out — the whole keymap lives in useGlobalShortcuts.
+  // Every plugin's named ribbon actions in one lookup (ids are distinct per plugin).
+  const ribbonActions = Object.assign({}, ...runtimes.map((r) => r.ribbonActions ?? {})) as NonNullable<PluginRuntime['ribbonActions']>
   useGlobalShortcuts({
     stopMarking: handleStopMarking,
     abortAlign,
@@ -1385,6 +1512,8 @@ export default function App() {
     cancelSection: handleCancelSection,
     confirmSection: handleConfirmSection,
     viewFrom: (view) => sceneRef.current?.viewFrom(view),
+    fitView: () => sceneRef.current?.fitToView(),
+    deselectAll: clearPaint,
     cycleUnderCursor: (step) => sceneRef.current?.cycleUnderCursor(step) ?? false,
   })
 
@@ -1513,6 +1642,7 @@ export default function App() {
   const markCount = useMark((s) => s.count)
   const editingDraft = draft?.editId !== undefined
   const paintHint = paintHintOf({ draft, painting, markGesture, markCount, editingDraft })
+  const interactiveAlignOpen = useInteractiveAlign(s => s.open)
   const stageHint = stageHintOf({ draft, draftMode, openSlotHint, painting, paintHint, editingDraft })
   const markHint = markHintOf({ marking, markGesture, markCount, source: useDeviation.getState().source })
 
@@ -1635,6 +1765,17 @@ export default function App() {
   // over the thing the user came to see, and whatever else the workspace still
   // needs has its own row in the panel to say so.
   const needsModels = !fileName
+  const [exampleBusy, setExampleBusy] = useState(false)
+  const openExample = async (id: string) => {
+    if (exampleBusy || useStore.getState().busy) return
+    setExampleBusy(true)
+    try {
+      const file = await fetchReferenceExample(id)
+      await openFile(file, 'mm')
+    } catch (error) {
+      useStore.setState({ errorText: error instanceof Error ? error.message : String(error) })
+    } finally { setExampleBusy(false) }
+  }
   const openSample = () =>
     fetchSampleScan()
       .then(openFile)
@@ -1649,12 +1790,16 @@ export default function App() {
         onOpenProject={openProject}
         onOpenScan={openFile}
         onOpenImage={openImage}
-        onExportModel={() => { const cad = runtimes.find((r) => r.ribbonActions)?.ribbonActions?.export; if (cad) cad.run(); else handleExportStep() }}
+        onExportModel={() => { const cad = ribbonActions.export; if (cad) cad.run(); else handleExportStep() }}
         onExportMesh={handleExportMesh}
         onImportCadFile={handleImportCad}
         savable={(fileName !== null && vertexCountLoaded) || flatImageName !== null || runtimes.some((r) => r.canSave)}
       />
       <DesktopRibbon
+        onExample={id => void openExample(id)}
+        exampleBusy={exampleBusy}
+        onView={(view) => sceneRef.current?.viewFrom(view)}
+        onFitView={() => sceneRef.current?.fitToView()}
         onOpen={() => document.querySelector<HTMLInputElement>('[data-test="project-input"]')?.click()}
         onFit={handleStartDraft}
         onSection={handleStartSection}
@@ -1664,7 +1809,7 @@ export default function App() {
         onPointAlign={startPicking}
         onExport={handleExportStep}
         pluginTools={active?.ribbon}
-        cadActions={runtimes.find(r => r.ribbonActions)?.ribbonActions}
+        cadActions={ribbonActions}
         onSave={saveProject}
         savable={(fileName !== null && vertexCountLoaded) || flatImageName !== null || runtimes.some((r) => r.canSave)}
         onDeselect={clearPaint}
@@ -1675,14 +1820,17 @@ export default function App() {
       />
       <RecoveryBar recovery={recovery} />
       <ConnectorBar />
-      <ExtractPrimitives onType={(k) => void handleExtractType(k)} onClose={closeExtract} onClear={clearPaint} fitting={extractFitting} onHide={() => handleHideTriangles('selected')} onIsolate={() => handleHideTriangles('unselected')} onShowAll={handleShowHidden} />
+      <PrepareScanWizard onStep={handlePrepareStep} />
+      <ExtractPrimitives onType={(k) => void handleExtractType(k)} preview={extractPreview} onCreate={createExtracted} onClearPreview={clearExtractedPreview} onClose={closeExtract} onClear={clearPaint} fitting={extractFitting} onHide={() => handleHideTriangles('selected')} onIsolate={() => handleHideTriangles('unselected')} onShowAll={handleShowHidden} onAnalyse={applyExtractAnalysis} onAnalysisOff={clearExtractAnalysis} />
       <div className="mid desktop-mid">
         <ObjectExplorer
-          pluginObjects={active?.explorerObjects}
-          pluginHistory={active?.explorerHistory}
+          pluginObjects={runtimes.map((runtime, index) => <Fragment key={index}>{runtime.explorerObjects}</Fragment>)}
+          pluginHistoryEntries={runtimes.flatMap(runtime => [...(runtime.explorerHistoryEntries ?? [])])}
+          pluginVisibility={runtimes.flatMap(runtime => runtime.explorerVisibility ? [runtime.explorerVisibility] : [])}
+          coreVisibility={active?.explorerCoreVisibility}
           onEditElement={handleEditElement}
           onEditSection={handleEditSection}
-          interactionBlocked={workspace !== 'elements' || picking}
+          interactionBlocked={picking}
           scanVisibility={active?.scanKey?.shown ? { shown: active.scanKey.shown.on, toggle: () => active.scanKey!.shown!.set(!active.scanKey!.shown!.on), disabled: Boolean(active.scanKey.shown.disabled) } : undefined}
         />
         <ToolInspector context={active?.toolContext}>
@@ -1751,7 +1899,8 @@ export default function App() {
             onAlignSymmetry={() => void session.alignment.proposeSymmetry()}
             onStartAlignment={handleStartAlignment}
             onApplyAlignment={(m) => void handleApplyAlignment(m)}
-            onApplyManual={(m) => void handleApplyManual(m)}
+            onApplyManual={handleApplyManual}
+            onAlignCurrentView={() => { const scene = sceneRef.current; if (scene) { useInteractiveAlign.getState().orientToView(scene.alignmentFromCurrentView()); scene.setAlignPreview(rigidToColumnMajor(useInteractiveAlign.getState().rigid)); scene.viewFrom('top'); scene.fitToView() } }}
             onResetAlignment={() => void handleResetAlignment()}
             onExportStep={handleExportStep}
             onExportMesh={handleExportMesh}
@@ -1926,7 +2075,6 @@ export default function App() {
               the stage and both go with it; the 2D sheet has no surface for
               the bar's switches to act on. */}
           <div className="stagecorner">
-            {!picking && <SupportCard />}
             {!picking && !onFlat && <ViewBar partKeys={active?.partKeys} sideKeys={active?.viewKeys} scanKey={active?.scanKey} hideModelKeys={active?.hideModelKeys} viewDirection={() => sceneRef.current?.viewDirection() ?? [0, 0, -1]} stageCentre={() => sceneRef.current?.stageCentre() ?? [0, 0, 0]} />}
           </div>
           {/* With no card on the stage any more, the step that is still
@@ -1964,8 +2112,8 @@ export default function App() {
                 : 'UNCALIBRATED — the file declares no scale, so sizes are pixels. Calibrate against a known length in the panel.'}
             </div>
           )}
-          {stageHint && workspace === 'elements' && <div className="hintchip">{stageHint}</div>}
-          {!stageHint && workspace === 'elements' && fileName && hintText && (
+          {!interactiveAlignOpen && stageHint && workspace === 'elements' && <div className="hintchip">{stageHint}</div>}
+          {!interactiveAlignOpen && !stageHint && workspace === 'elements' && fileName && hintText && (
             <div className="hintchip" data-test="hint-chip">
               {hintText}
             </div>
@@ -1987,9 +2135,6 @@ export default function App() {
         </div>
       </div>
       <StatusStrip />
-      {/* First of the windows: same height, so a question it comes up against
-          stays on top of it. */}
-      <SupportAsk />
       <SettingsModal />
       <UnitsModal />
       <AgentDataWarning />
