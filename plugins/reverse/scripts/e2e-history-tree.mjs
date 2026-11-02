@@ -1,0 +1,117 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Restart the dev server after changing store modules before running: dynamic
+// test setup imports must share the same module identity as application code.
+import { mkdirSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs'
+import { resolve, join } from 'node:path'
+import { launchApp, loadScan, repoFile, check, fail, finish, shotPath } from '../../../scripts/e2e-lib.mjs'
+import { openReverse } from './lib.mjs'
+
+const {browser,page,consoleErrors}=await launchApp({protocolTimeout:180000})
+const results=[]
+const record=(ok,label)=>{check(ok,label);results.push({ok:Boolean(ok),label})}
+const keys=()=>page.$$eval('#explorer-history [data-order-key]',rows=>rows.map(row=>row.dataset.orderKey))
+const settle=()=>page.waitForFunction(()=>!window.__re.store.getState().building,{timeout:120000})
+const corePlane=async offset=>page.evaluate(async offset=>{
+  const {useShell}=await import('/src/state/shellStore.ts');useShell.getState().setWorkspace('elements')
+  const s=window.__scanruler.measure.getState();s.startDraft('plane');s.setDraftMethod('plane-coords');s.setDraftParams([0,0,1,0,0,offset]);const id=s.commitDraft();s.cancelDraft();return id
+},offset)
+try{
+ await loadScan(page,repoFile(process.env.SCAN??'public/reference-examples/basic_part.stl'))
+ const p1=await corePlane(0)
+ await openReverse(page)
+ const sketch=await page.evaluate(async()=>{
+  const {emptySketch,addRectangle}=await import('/plugins/reverse/core/sketch.ts');const s=window.__re.store.getState()
+  s.startSketch({kind:'world',axis:'z',offset:0},{origin:[0,0,0],normal:[0,0,1],basisU:[1,0,0],basisV:[0,1,0]})
+  const geometry=emptySketch();addRectangle(geometry,[0,0],[12,8]);s.setSketch(geometry);return s.commitSketch()
+ })
+ const extrude=await page.evaluate(id=>{const s=window.__re.store.getState();s.startExtrude(id);s.setExtrude({op:'new',extent:{kind:'distance',from:0,to:5}});return s.commitExtrude()},sketch)
+ await settle()
+ const p2=await corePlane(3)
+ const expected=['scan',`core:element:${p1}`,`reverse:feature:${sketch}`,`reverse:feature:${extrude}`,`core:element:${p2}`]
+ record(JSON.stringify(await keys())===JSON.stringify(expected),'History records actual interleaved scan/core/CAD creation order')
+ record(await page.$('.explorer-cad-history')===null&&await page.$eval('#explorer-history',el=>!el.textContent.includes('Session edits')),'History is one model tree without extra session/feature groups')
+ record(await page.$('[data-test=explorer-end-model]'),'real End of Model marker is present')
+ await page.click('[aria-label="Parent/Child View"]')
+ record(await page.$('[data-test=explorer-end-model]')===null&&await page.$('[aria-label="Previous model step"]')===null,'Parent/Child mode removes model boundary and navigation')
+ record(await page.$eval(`[data-test=explorer-history-feature-${extrude}]`,(row,sketch)=>row.closest('.explorer-dependency-children')?.parentElement?.dataset.orderKey===`reverse:feature:${sketch}`,sketch),'Parent/Child nests extrusion under its actual sketch dependency')
+ record(await page.$eval(`[data-order-key="core:element:${p1}"]`,row=>!row.parentElement.closest('.explorer-dependency-children')),'independent coordinate plane remains a root in Parent/Child mode')
+ await page.click('[aria-label="Collapse History"]')
+ record(await page.$(`[data-test=explorer-history-feature-${extrude}]`)===null,'Collapse hides actual dependency children')
+ await page.click('[aria-label="Expand History"]')
+ record(await page.$(`[data-test=explorer-history-feature-${extrude}]`),'Expand restores actual dependency children')
+ await page.click('[aria-label="History View"]')
+ record(JSON.stringify(await keys())===JSON.stringify(expected),'History View restores flat creation order')
+
+ await page.click('[data-test=undo]')
+ await page.waitForFunction(id=>!window.__scanruler.measure.getState().elements.some(e=>e.id===id),{},p2)
+ record(!(await keys()).includes(`core:element:${p2}`),'Undo removes the newly committed core plane and its History entry')
+ await page.click('[data-test=redo]')
+ await page.waitForFunction(id=>window.__scanruler.measure.getState().elements.some(e=>e.id===id),{},p2)
+ record(JSON.stringify(await keys())===JSON.stringify(expected),'Redo restores the plane at its actual shared History position')
+ const objectPlane=`[data-test=explorer-element-${p1}]`,historyPlane=`[data-test=explorer-history-element-${p1}]`
+ await page.click(historyPlane)
+ record(await page.$eval(objectPlane,e=>e.getAttribute('aria-pressed')==='true'),'History plane selection synchronizes its Objects row')
+ await page.click(`[data-test=explorer-history-element-row-${p1}] input`)
+ record(await page.$eval(`[data-test=explorer-element-row-${p1}] input`,e=>!e.checked),'History checkbox hides the same core plane shown in Objects')
+ await page.click(`[data-test=explorer-element-row-${p1}] input`)
+ record(await page.$eval(`[data-test=explorer-history-element-row-${p1}] input`,e=>e.checked),'Objects checkbox restores History visibility')
+ await page.click(historyPlane,{button:'right'});await page.click('[data-test=explorer-core-edit]');await page.waitForSelector('[data-test=cancel-draft]',{visible:true})
+ record(await page.evaluate(id=>window.__scanruler.measure.getState().draft?.editId===id,p1),'History context Edit opens the existing core plane')
+ await page.click('[data-test=cancel-draft]')
+ const featureEye=`[data-test=explorer-history-row-${extrude}] input`
+ await page.click(featureEye)
+ record(await page.evaluate(()=>window.__re.store.getState().bodies.every(b=>!b.visible)&&window.__re.store.getState().features.every(f=>!f.suppressed)),'non-sketch History checkbox controls actual output visibility without suppressing geometry')
+ await page.click(featureEye)
+ record(await page.evaluate(()=>window.__re.store.getState().bodies.every(b=>b.visible)),'History output visibility restores the existing solid')
+ await page.click('[data-test=explorer-history-visible]')
+ record(await page.$eval('[data-test=explorer-all-visible]',e=>e.checked),'History root show synchronizes ALL including core and plugin data')
+ await page.click('[data-test=explorer-history-visible]')
+ record(await page.$eval('[data-test=explorer-all-visible]',e=>!e.checked&&!e.indeterminate),'History root hide synchronizes ALL')
+ await page.click('[data-test=explorer-all-visible]')
+ await page.click('[aria-label="Previous model step"]')
+ record(await page.evaluate(id=>!window.__scanruler.measure.getState().elements.some(e=>e.id===id),p2),'Previous actually removes the future plane from active core records')
+ record(await page.$(`[data-test=explorer-element-${p2}]`)===null&&await page.$(`[data-test=explorer-history-element-row-${p2}].is-rolled`),'future plane disappears from Objects and remains gray in History')
+ record(await page.$eval('.inspector-body [inert]',el=>el.inert),'global rollback makes model inspector controls inert')
+ record(await page.$eval('[data-test=undo]',el=>!el.disabled)&&await page.$eval('[aria-label="Next model step"]',el=>!el.disabled),'Undo and model Forward remain available during rollback')
+ await page.evaluate(()=>document.activeElement?.blur())
+ await page.keyboard.press('1')
+ record(await page.evaluate(()=>window.__scanruler.scene().viewDirection().every((v,i)=>Math.abs(v-[0,0,-1][i])<1e-5)),'Top view keyboard shortcut remains functional during rollback')
+ await page.evaluate(()=>{const input=document.querySelector('[data-test=import-cad-input]'),files=new DataTransfer();files.items.add(new File(['ISO-10303-21;'],'blocked-history.step',{type:'application/step'}));input.files=files.files;input.dispatchEvent(new Event('change',{bubbles:true}))})
+ record(await page.evaluate(()=>window.__scanruler.measure.getState().statusText?.includes('Restore End of Model')||document.querySelector('.strip')?.textContent.includes('Restore End of Model')),'File Import CAD refuses a partial document before starting asynchronous import')
+
+
+ record(await page.$eval('[data-test=explorer-end-model]',(marker,id)=>Boolean(marker.compareDocumentPosition(document.querySelector(`[data-order-key="core:element:${id}"]`))&Node.DOCUMENT_POSITION_FOLLOWING),p2),'End marker moves before the rolled-back plane')
+ await page.click('[aria-label="Next model step"]')
+ record(await page.evaluate(id=>window.__scanruler.measure.getState().elements.some(e=>e.id===id),p2),'Next restores the same plane record and Objects row')
+ await page.click('[aria-label="Previous model step"]');await page.click('[aria-label="Previous model step"]');await settle()
+ record(await page.evaluate(()=>window.__re.store.getState().rolledBack.some(f=>f.kind==='extrude')&&window.__re.store.getState().bodies.length===0),'global Previous uses real CAD rollback and removes its built solid')
+ record(await page.$(`[data-test=explorer-history-row-${extrude}].is-rolled`),'rolled CAD feature remains gray below End marker')
+ await page.focus('[data-test=explorer-end-model]');await page.keyboard.press('End');await settle()
+ record(await page.evaluate(()=>window.__re.store.getState().rolledBack.length===0&&window.__re.store.getState().bodies.length===1),'End restores actual core/CAD model')
+ await page.click(`[data-test=explorer-history-feature-${sketch}]`,{button:'right'});await page.click('[data-test=explorer-delete]');await page.click('[data-test=explorer-delete-no]')
+ record(await page.evaluate(id=>window.__re.store.getState().features.some(f=>f.id===id),sketch),'History Delete cancellation preserves the existing sketch')
+ await page.click(`[data-test=explorer-history-feature-${sketch}]`,{button:'right'});await page.click('[data-test=explorer-delete]');await page.click('[data-test=explorer-delete-yes]')
+ record(await page.evaluate(id=>window.__re.store.getState().features.some(f=>f.id===id),sketch),'History Delete refuses a sketch used by extrusion without partial deletion')
+ await page.click('[aria-label="Previous model step"]')
+ const out=resolve(process.env.SHOT_DIR??'e2e-out');mkdirSync(out,{recursive:true});const downloads=mkdtempSync(join(out,'saved-'))
+ await(await page.createCDPSession()).send('Browser.setDownloadBehavior',{behavior:'allow',downloadPath:downloads})
+ await page.click('[data-test=save-project]')
+ for(let n=0;n<120&&!readdirSync(downloads).some(f=>f.endsWith('.scanruler'));n++)await new Promise(done=>setTimeout(done,250))
+ const file=readdirSync(downloads).find(f=>f.endsWith('.scanruler'));if(!file)throw Error('History project did not save')
+ writeFileSync(shotPath('history-fixture-location.txt'),join(downloads,file))
+ await page.reload({waitUntil:'networkidle0'});await page.waitForSelector('.panel');await(await page.$('[data-test=project-input]')).uploadFile(join(downloads,file))
+ await page.waitForFunction(()=>/Project opened/.test(document.querySelector('.strip')?.textContent??''),{timeout:120000});await settle();await page.waitForFunction(async()=>{const s=(await import('/src/state/documentOrderStore.ts')).useDocumentOrder.getState();return s.rollbackAt===4&&s.coreArchive?.elements.length===2},{timeout:15000})
+ record(JSON.stringify(await keys())===JSON.stringify(expected),'save/reopen retains common model-history order including future records')
+ record(await page.evaluate(async()=>{const s=(await import('/src/state/documentOrderStore.ts')).useDocumentOrder.getState();return s.rollbackAt===4&&s.coreArchive.elements.length===2&&window.__scanruler.measure.getState().elements.length===1}),'save/reopen retains real rolled boundary and parked core recipes')
+ await page.focus('[data-test=explorer-end-model]');await page.keyboard.press('End');await settle()
+ record(await page.evaluate(()=>window.__scanruler.measure.getState().elements.length===2),'End restores archived plane after project reopen')
+ await page.setDragInterception(true)
+ await(await page.$('[data-test=explorer-end-model]')).dragAndDrop(await page.$(`[data-order-key="core:element:${p2}"]`))
+ record(await page.evaluate(id=>!window.__scanruler.measure.getState().elements.some(e=>e.id===id),p2),'dragging End marker before the last plane actually rolls it back')
+ await(await page.$('[data-test=explorer-end-model]')).dragAndDrop(await page.$('[data-test=explorer-history-end-drop]'))
+ await settle()
+ record(await page.evaluate(()=>window.__scanruler.measure.getState().elements.length===2),'dragging End marker below the last row restores the actual model')
+
+ await page.$eval('#explorer-history',el=>{el.scrollTop=0})
+ await page.screenshot({path:shotPath('history-tree.png')})
+}catch(error){fail(error.stack??String(error))}finally{writeFileSync(shotPath('history-tree-results.json'),JSON.stringify(results,null,2));await finish(browser,consoleErrors)}

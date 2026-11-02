@@ -663,7 +663,7 @@ await page.keyboard.press('Escape')
 await sleep(200)
 check((await page.$('[data-test=sketch-editor]')) !== null, 'and does not close the sketch')
 check((await page.$('[data-test=sketch-cancel]')) === null, 'there is no Cancel key in the sketch')
-check((await page.$('[data-test=sketch-finish-top]')) !== null && (await page.$('[data-test=sketch-finish]')) !== null, 'Finish sketch stands at the top and the bottom of the box')
+check((await page.$('[data-test=sketch-finish]')) !== null && (await page.$('[data-test=sketch-cancel]')) !== null, 'OK and Cancel stand at the bottom of the box, as in QUICKSURFACE')
 
 // Extrude in the sketch box finishes the sketch and opens the extrude on
 // it with its one region picked — no visit to the panel's keys.
