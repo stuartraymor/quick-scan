@@ -162,6 +162,13 @@ export interface PluginRuntime {
   /** Plugin-owned rows in the document explorer's Objects and History tabs. */
   explorerObjects?: ReactNode
   explorerHistory?: ReactNode
+  /** Flat model-history rows keyed in the common document-order namespace. */
+  explorerHistoryEntries?: readonly { key: string; node: ReactNode; label?: string; parents?: readonly string[] }[]
+  /** Plugin-owned object visibility; used by the document browser's ALL
+   *  checkbox without reaching into plugin stores. Never suppression. */
+  explorerVisibility?: { values: readonly boolean[]; disabled: boolean; setVisible(on: boolean): void }
+  /** Explicit view mask for core measured datums in the active workspace. */
+  explorerCoreVisibility?: { on: boolean; set(on: boolean): void }
   /** The workspace's panel. */
   panel?: ReactNode
   /** Drawn on the stage just above the viewport — a sheet of the plugin's
