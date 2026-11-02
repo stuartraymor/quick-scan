@@ -943,6 +943,16 @@ describe('where a sketch’s zero is', () => {
     expect(coordinatePlaneOffers({ centre: null, atZero: true }).map((o) => o.label)).toEqual(['YZ plane', 'XZ plane', 'XY plane'])
   })
 
+  it('offers a plane once when the aligned scan is centred on the origin', () => {
+    const centred = coordinatePlaneOffers({ centre: [0, 0.0004, 0], atZero: true })
+    expect(centred.map((o) => o.label)).toEqual(['YZ plane', 'XZ plane', 'XY plane'])
+    expect(new Set(centred.map((o) => o.key)).size).toBe(centred.length)
+    // Off-centre on one axis only: that axis keeps its slice through the centre.
+    const partly = coordinatePlaneOffers({ centre: [0, 5, 0], atZero: true })
+    expect(partly.map((o) => o.label)).toEqual(['YZ plane', 'XZ plane', 'XY plane', 'XZ plane through the centre'])
+    expect(new Set(partly.map((o) => o.key)).size).toBe(4)
+  })
+
   it('carries a sketch on a face into its features, and a revolve’s sketch-line axis with it', () => {
     const top: FaceFingerprint = { kind: 'plane', centroid: [20, 10, 10], dir: [0, 0, 1], area: 800, origin: 2 }
     const ref = bodyFacePlane(2, top)!
