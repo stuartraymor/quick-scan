@@ -73,7 +73,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "associate"; Description: "Open .scanruler project files with {#AppName}"; GroupDescription: "File associations:"; Flags: unchecked
 
 [Files]
-Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#SourceDir}\*"; DestDir: "{app}"; Excludes: "debug.log,chrome_debug.log"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\ATTRIBUTION.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE-AGPL-3.0.txt"; Flags: ignoreversion
 
