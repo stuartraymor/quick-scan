@@ -77,6 +77,9 @@ export function coordinatePlaneOffers(opts: { centre: Vec3 | null; atZero: boole
   if (opts.centre) {
     for (const axis of WORLD_AXES) {
       const offset = opts.centre[axis === 'x' ? 0 : axis === 'y' ? 1 : 2]
+      // A scan centred on the origin has its middle slice on the coordinate
+      // plane already offered; one plane is one offer (and one list key).
+      if (out.some((o) => o.key === worldPlaneKey(axis, offset))) continue
       out.push({ key: worldPlaneKey(axis, offset), label: `${worldPlaneName(axis)} through the centre`, ref: { kind: 'world', axis, offset } })
     }
   }
