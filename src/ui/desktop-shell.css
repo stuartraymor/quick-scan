@@ -76,25 +76,32 @@
   box-shadow: 0 2px 4px #182e4610;
   overflow-x: auto;
   scrollbar-width: thin;
-  z-index: 3;
+  /* Above the tool panels and dialogs: the ribbon's drop-down menus are
+     fixed-position children and inherit this stacking level. */
+  position: relative;
+  z-index: 50;
 }
 .desktop-ribbon-group {
   display: flex;
   flex-direction: column;
   flex: none;
-  padding: 0 4px;
+  padding: 0 3px;
   border-right: 1px solid var(--line);
-  min-width: 74px;
+  min-width: 70px;
 }
 .desktop-ribbon-group:last-child { border-right: 0; }
 .desktop-ribbon-tools { display: flex; flex: 1; gap: 2px; align-items: flex-start; }
+.desktop-ribbon .undokeys { display: flex; gap: 2px; }
 button.desktop-ribbon-tool {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
-  width: 54px;
+  /* Icon pinned to the top, so a row of icons lines up whatever the label. */
+  justify-content: flex-start;
+  gap: 5px;
+  width: auto;
+  min-width: 52px;
+  max-width: 64px;
   min-height: 70px;
   padding: 7px 3px 5px;
   border: 1px solid transparent;
@@ -108,7 +115,19 @@ button.desktop-ribbon-tool {
 button.desktop-ribbon-tool:hover:not(:disabled) { border-color: #abc9e8; background: var(--accent-soft); }
 button.desktop-ribbon-tool:active:not(:disabled) { background: #cbdff4; }
 button.desktop-ribbon-tool:disabled { opacity: .4; cursor: default; }
-.desktop-ribbon-tool .icon { width: 27px; height: 27px; color: var(--accent); }
+.desktop-ribbon-tool .icon { flex: none; width: 27px; height: 27px; color: var(--accent); }
+/* Every label keeps two lines' room and wraps within them: tools stay one
+   height and the group names one line, as in QUICKSURFACE's ribbon. */
+button.desktop-ribbon-tool > span, .ribbon-dropdown > summary > span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; min-height: 2.5em; line-height: 1.25; overflow-wrap: anywhere; hyphens: auto; }
+.ribbon-stack { display: flex; flex-direction: column; gap: 2px; padding-top: 3px; }
+button.desktop-ribbon-tool.ribbon-stack-tool { flex-direction: row; justify-content: center; align-items: center; gap: 0; min-width: 30px; max-width: 30px; min-height: 22px; height: 22px; padding: 0; }
+button.desktop-ribbon-tool.ribbon-stack-tool .icon { width: 18px; height: 18px; }
+button.desktop-ribbon-tool.ribbon-stack-tool > span { position: absolute; width: 1px; height: 1px; min-height: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+/* QUICKSURFACE's small text keys (the standard views): two columns of three. */
+.ribbon-small-grid { display: grid; grid-template-columns: repeat(2, auto); grid-auto-rows: 22px; gap: 1px 2px; align-content: start; padding-top: 3px; }
+.ribbon-small { border: 1px solid transparent; border-radius: 3px; background: transparent; box-shadow: none; color: var(--ink); font: 11px/1 var(--ui); padding: 0 9px; text-align: left; }
+.ribbon-small:hover:not(:disabled) { border-color: #abc9e8; background: var(--accent-soft); }
+.ribbon-small:disabled { opacity: .4; cursor: default; }
 .desktop-ribbon-tool[data-test='ribbon-open'] { --accent: #c58b22; }
 .desktop-ribbon-tool[data-test='ribbon-save'] { --accent: #7a6ab0; }
 .desktop-ribbon-tool[data-test='ribbon-prepare-scan'] { --accent: #b17d44; }
@@ -125,7 +144,7 @@ button.desktop-ribbon-tool:disabled { opacity: .4; cursor: default; }
 }
 .desktop-ribbon-assistant { margin-left: auto; }
 .ribbon-dropdown { position: relative; }
-.ribbon-dropdown > summary { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; width: 59px; min-height: 70px; padding: 7px 3px 5px; border: 1px solid transparent; border-radius: 4px; font-size: 10px; text-align: center; cursor: pointer; list-style: none; }
+.ribbon-dropdown > summary { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 5px; min-width: 52px; max-width: 64px; min-height: 70px; padding: 7px 3px 5px; border: 1px solid transparent; border-radius: 4px; font-size: 10px; text-align: center; cursor: pointer; list-style: none; }
 .ribbon-dropdown > summary::-webkit-details-marker { display: none; }
 .ribbon-dropdown > summary:hover { background: var(--accent-soft); border-color: var(--line-strong); }
 .ribbon-dropdown[open] > summary { background: var(--accent-soft); }
@@ -214,6 +233,8 @@ button.desktop-ribbon-tool:disabled { opacity: .4; cursor: default; }
 /* The inspector now owns tool-panel chrome; its legacy pseudo-title is unused. */
 
 .ribbon-menu .desktop-ribbon-tool { width: 100%; min-height: 32px; flex-direction: row; justify-content: flex-start; text-align: left; gap: 9px; padding: 6px 10px; font-size: 12px; }
+.ribbon-menu .desktop-ribbon-tool { max-width: none; align-items: center; }
+.ribbon-menu .desktop-ribbon-tool > span { display: inline; min-height: 0; -webkit-line-clamp: unset; overflow: visible; }
 .ribbon-menu .desktop-ribbon-tool .icon { width: 18px; height: 18px; }
 
 /* Application menu: commands left, recent documents right */
@@ -248,6 +269,8 @@ button.desktop-ribbon-tool:disabled { opacity: .4; cursor: default; }
 .re-place { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
 .re-place h3 { margin: 0; font-size: 13px; }
 .re-place .moderow { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; }
+/* OXY, OYZ, OXZ in one row, as in QUICKSURFACE. */
+.re-place .moderow[data-test='place-planes'] { grid-template-columns: repeat(3, 1fr); }
 .ribbon-menu { max-height: calc(100vh - 12px); overflow-y: auto; }
 
 .ai-status { justify-content: center; padding: 0 12px; font-size: 12px; opacity: .8; }
@@ -269,6 +292,8 @@ button.desktop-ribbon-tool:disabled { opacity: .4; cursor: default; }
 .qs-dialog button:disabled { opacity: .4; }
 .qs-dialog .qs-degrees { display: grid; grid-template-columns: 1fr 64px auto; gap: 6px; align-items: center; }
 .qs-dialog .qs-count { margin: 0; opacity: .7; }
+.qs-dialog .qs-preview { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.qs-dialog .qs-preview > .qs-count { flex-basis: 100%; }
 .qs-dialog hr { width: 100%; border: 0; border-top: 1px solid var(--line-strong); margin: 4px 0; }
 .qs-dialog .qs-spacer { min-height: 12px; }
 .qs-dialog footer { display: flex; justify-content: space-between; align-items: center; }
@@ -287,3 +312,28 @@ button.desktop-ribbon-tool:disabled { opacity: .4; cursor: default; }
 .qs-quick-types button { width: 38px; height: 34px; padding: 0; display: grid; place-items: center; border: 1px solid transparent; background: transparent; }
 .qs-quick-types button:hover:not(:disabled) { border-color: var(--line-strong); background: var(--accent-soft); }
 .qs-quick input[type=range] { width: 100%; }
+
+/* Prepare Scan wizard: a banner over the view and a small step card. */
+.qs-wizard-banner { position: fixed; z-index: 44; top: 186px; left: 50%; transform: translateX(-50%); max-width: 680px; padding: 10px 16px; background: #f4efb8; color: #222; border: 1px solid #c9bf6a; border-radius: 6px; box-shadow: 0 6px 20px #0003; font-size: 13px; }
+.qs-wizard-banner b { font-size: 15px; }
+.qs-wizard-banner p { margin: 4px 0 0; }
+.qs-wizard-card { position: fixed; z-index: 46; right: 24px; bottom: 60px; width: 300px; padding: 8px 12px 10px; background: var(--panel); border: 1px solid var(--line-strong); border-radius: 6px; box-shadow: 0 10px 30px #0005; font-size: 12px; }
+.qs-wizard-card header, .qs-wizard-card footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.qs-wizard-card footer { justify-content: flex-end; margin-top: 10px; }
+
+/* A command dialog docked in the tool panel (QUICKSURFACE layout). */
+.qs-dialog.docked { position: static; width: auto; max-height: none; top: auto; left: auto; border: 0; border-radius: 0; box-shadow: none; padding: 0 12px 10px; }
+.qs-dialog.docked > header { display: none; }
+
+/* Help tab: QUICKSURFACE's System and About groups are columns of small text keys. */
+.ribbon-text-stack { display: flex; flex-direction: column; gap: 1px; padding-top: 3px; align-items: flex-start; }
+button.ribbon-text-key { background: transparent; border: 0; padding: 1px 6px; font-size: 13px; text-align: left; color: inherit; cursor: pointer; }
+button.ribbon-text-key:hover:not(:disabled) { background: var(--hover, rgba(127,127,127,.2)); }
+button.ribbon-text-key:disabled { opacity: .45; cursor: default; }
+.modal.text-dialog { width: min(760px, 92vw); padding: 14px 18px; }
+.text-dialog pre { height: 360px; overflow: auto; margin: 8px 0 12px; padding: 8px 10px; font: 13px/1.45 Consolas, 'Cascadia Mono', monospace; white-space: pre-wrap; background: var(--bg-inset, rgba(0,0,0,.25)); border: 1px solid var(--border, rgba(127,127,127,.35)); user-select: text; }
+.text-dialog .toolrow { justify-content: flex-end; }
+
+/* Scan Data: small keys that keep their label, three to a column. */
+button.ribbon-text-key.with-icon { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.ribbon-text-grid { display: grid; grid-auto-flow: column; grid-template-rows: repeat(3, auto); column-gap: 10px; padding-top: 3px; align-items: start; justify-items: start; }

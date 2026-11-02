@@ -9,7 +9,7 @@
 .inspector-titlebar > button { display: grid; place-items: center; width: 23px; height: 23px; padding: 0; border: 1px solid transparent; background: transparent; box-shadow: none; color: var(--dim); }
 .inspector-titlebar > button:hover { background: var(--well-deep); border-color: var(--line); color: var(--ink); }
 .inspector-body { min-height: 0; overflow: auto; overscroll-behavior: contain; }
-.inspector-body > .panel { width: 100%; min-width: 0; max-width: none; padding: 12px; border: 0; overflow: visible; resize: none; font-size: 12px; }
+.inspector-body > .panel, .inspector-body > .inspector-model-controls > .panel { width: 100%; min-width: 0; max-width: none; padding: 12px; border: 0; overflow: visible; resize: none; font-size: 12px; }
 .inspector-operation-hint { flex: none; padding: 7px 10px; border-top: 1px solid var(--line); color: var(--dim); background: var(--well); font-size: 10px; }
 .inspector-reopen { position: absolute; right: 12px; top: 10px; z-index: 8; display: flex; align-items: center; gap: 7px; background: var(--panel); padding: 8px 10px; box-shadow: 0 2px 8px #12233520; }
 .desktop-mid .stagecorner { top: auto; bottom: 12px; left: auto; right: 12px; align-items: flex-end; }

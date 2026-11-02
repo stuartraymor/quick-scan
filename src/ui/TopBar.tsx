@@ -356,11 +356,8 @@ export function TopBar({
           { tab: 'ai', label: 'AI', workspace: undefined },
           { tab: 'settings', label: 'Settings', workspace: undefined },
           { tab: 'help', label: 'Help', workspace: undefined },
-          { tab: 'thickness', label: 'Wall Thickness', workspace: 'thickness' },
-          { tab: 'flat', label: '2D Measure', workspace: 'flat' },
-        ].filter(w => !['mesh','reverse'].includes(w.workspace ?? '') || workspaceTabs().some(t => t.id === w.workspace)).map(w => w.tab === 'settings' ? (
-          <button key="settings" data-test="ribbon-tab-settings" onClick={() => openSettings(true)} disabled={picking}><span>Settings</span></button>
-        ) : (
+          // Wall Thickness and 2D Measure live in the Analysis tab (Inspection group).
+        ].filter(w => !['mesh','reverse'].includes(w.workspace ?? '') || workspaceTabs().some(t => t.id === w.workspace)).map(w => (
           <button key={w.tab} role="tab" aria-selected={ribbonTab === w.tab}
             className={ribbonTab === w.tab ? 'on' : undefined}
             data-test={['main','scan','cad','analysis','thickness','flat'].includes(w.tab) ? `workspace-${w.workspace}` : `ribbon-tab-${w.tab}`}

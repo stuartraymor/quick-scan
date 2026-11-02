@@ -1,0 +1,27 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+.navigation-corner { position: absolute; right: 14px; top: 14px; width: var(--gizmo-size,120px); height: var(--gizmo-size,120px); z-index: 6; pointer-events: none; }
+.navigation-corner button { pointer-events: auto; color: var(--ink); font: inherit; font-size: 12px; border: 0; border-radius: 0; box-shadow: none; background: transparent; cursor: pointer; }
+.navigation-corner button:hover { background: var(--well); color: var(--accent); }
+.navigation-home { position: absolute; top: 0; left: -20px; width: 20px; height: 22px; padding: 0; opacity: 0; }
+.navigation-toggle { position: absolute; top: 0; right: 0; width: 20px; height: 20px; padding: 0; opacity: 0; }
+.navigation-corner.expanded .navigation-home, .navigation-home:focus-visible, .navigation-toggle:focus-visible { opacity: 1; }
+.navigation-ring { position: absolute; inset: 0; border: 1px solid var(--line-strong); border-radius: 50%; }
+.navigation-orbit { position: absolute; padding: 0; width: 16px; height: 16px; font-size: 10px !important; }
+.navigation-orbit.up { top: calc(50% - 35px); left: calc(50% - 8px); }
+.navigation-orbit.down { bottom: calc(50% - 35px); left: calc(50% - 8px); }
+.navigation-orbit.left { left: calc(50% - 35px); top: calc(50% - 8px); }
+.navigation-orbit.right { right: calc(50% - 35px); top: calc(50% - 8px); }
+.navigation-menu { position: absolute; right: 0; top: calc(100% + 8px); width: 150px; padding: 2px 0; border: 1px solid var(--line-strong); background: var(--panel); box-shadow: 0 3px 8px #0003; pointer-events: auto; }
+.navigation-menu > button { display: block; width: 100%; text-align: left; padding: 7px 12px; min-height: 30px; }
+.navigation-menu > div { display: grid; grid-template-columns: 1fr 1fr; }
+.navigation-menu > div > button { text-align: left; padding: 7px 12px; min-height: 30px; white-space: nowrap; }
+.navigation-grid-dialog { color: var(--ink); background: var(--panel); border: 1px solid var(--line-strong); border-radius: 4px; padding: 12px; width: 220px; pointer-events: auto; }
+.navigation-grid-dialog::backdrop { background: #0003; }
+.navigation-grid-dialog form { display: flex; flex-direction: column; gap: 12px; }
+.navigation-grid-dialog header { font-weight: 600; }
+.navigation-grid-dialog label { display: flex; align-items: center; gap: 6px; }
+.navigation-grid-dialog input[type=number] { width: 90px; min-width: 0; }
+.navigation-grid-dialog footer { display: flex; justify-content: flex-end; gap: 6px; }
+.navigation-grid-dialog footer button { background: var(--well); border: 1px solid var(--line-strong); padding: 4px 12px; }
+/* Keep the display switches clear of the top-right navigation corner. */
+.desktop-mid .stage .stagecorner { top: auto; bottom: 12px; }

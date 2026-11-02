@@ -8,7 +8,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { WorldAxis } from '../core/section/frame'
 import { SceneManager, type GripSide, type PickHit } from '../viewer/SceneManager'
-import { FitButton } from './FitButton'
+import { NavigationCorner } from './NavigationCorner'
+import { useNavigationView } from '../state/navigationViewStore'
 
 export function Viewer({
   onReady,
@@ -55,6 +56,12 @@ export function Viewer({
   // this catch that exception would take down the whole React tree and leave
   // a bare grey page, which is indistinguishable from a hung app.
   const [webglError, setWebglError] = useState<string | null>(null)
+  const [cornerOpen, setCornerOpen] = useState(false)
+  const coordinates = useNavigationView(s => s.coordinates)
+  const grid = useNavigationView(s => s.grid)
+  const spacing = useNavigationView(s => s.spacing)
+  useEffect(() => { sceneRef.current?.setNavigationCoordinates(coordinates) }, [coordinates, webglError])
+  useEffect(() => { sceneRef.current?.setNavigationGrid(grid, spacing) }, [grid, spacing, webglError])
 
   useEffect(() => {
     let scene: SceneManager
@@ -72,6 +79,9 @@ export function Viewer({
     scene.onPaintChange = (count) => paintRef.current?.(count)
     scene.onExtendDrag = (side, delta, phase) => extendRef.current?.(side, delta, phase)
     sceneRef.current = scene
+    const aids = useNavigationView.getState()
+    scene.setNavigationCoordinates(aids.coordinates)
+    scene.setNavigationGrid(aids.grid, aids.spacing)
     readyRef.current(scene)
     return () => {
       sceneRef.current = null
@@ -80,8 +90,14 @@ export function Viewer({
   }, [])
 
   return (
-    <div className="viewport" ref={containerRef}>
-      {webglError === null && <FitButton onFit={() => sceneRef.current?.fitToView()} />}
+    <div className="viewport" ref={containerRef} onPointerMove={event => {
+      const rect = event.currentTarget.getBoundingClientRect()
+      const size = parseFloat(getComputedStyle(event.currentTarget).getPropertyValue('--gizmo-size')) || 120
+      const x = event.clientX - rect.left
+      const y = event.clientY - rect.top
+      setCornerOpen(x > rect.width - 164 && y < size + (cornerOpen ? 265 : 28))
+    }} onPointerLeave={() => setCornerOpen(false)}>
+      {webglError === null && <NavigationCorner scene={() => sceneRef.current} open={cornerOpen} />}
       {webglError !== null && (
         <div className="webgl-missing" role="alert">
           <b>The 3D view could not be started.</b>

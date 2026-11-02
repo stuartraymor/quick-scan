@@ -1,0 +1,202 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+/* A compact desktop dialog face, independently styled from live reference
+   observations. Scoped tokens leave viewport, AI and stored theme unchanged. */
+.tool-inspector, .qs-quick, .modalback > .modal, .ribbon-menu, .re-menu, .picklist, .partmenu, .appmenu {
+  --chassis: #f0f0f0; --panel: #f0f0f0; --well: #fff; --well-deep: #e5e5e5;
+  --ink: #171717; --dim: #666; --faint: #929292;
+  --line: #ccc; --line-strong: #a6a6a6;
+  --accent: #1679bd; --accent-d: #12649c; --accent-soft: #cce8ff;
+  --glass: 240,240,240; --strip: #e4e4e4;
+  --ui: 'Segoe UI', Tahoma, sans-serif; --cond: var(--ui); --mono: var(--ui);
+  color-scheme: light;
+  color: var(--ink); background: var(--panel);
+  font-family: var(--ui); font-size: 11px; line-height: 1.4;
+}
+.desktop-ribbon .ribbon-menu button { font: 11px/1.4 var(--ui); min-height: 22px; padding: 2px 10px; color: #171717; border-radius: 0; }
+.desktop-ribbon .ribbon-menu button:not(:disabled) { background: transparent; }
+.desktop-ribbon .ribbon-menu button:hover:not(:disabled) { background: #cce8ff; }
+.desktop-ribbon .ribbon-menu button:disabled { color: #999; opacity: 1; }
+.re-menu, .picklist, .partmenu { border-radius: 0; }
+.tool-inspector[data-mode='floating'] { width: 286px; border-radius: 1px; box-shadow: 0 3px 12px #0003; }
+.tool-inspector .inspector-titlebar { min-height: 28px; padding: 0 2px 0 8px; gap: 3px; border-bottom: 0; background: #f0f0f0; }
+.tool-inspector .inspector-titlebar > .icon { display: none; }
+.tool-inspector .inspector-titlebar > strong { font: 11px/1.4 var(--ui); }
+.tool-inspector .inspector-titlebar > button { width: 26px; height: 26px; border-radius: 0; font-size: 17px; }
+.tool-inspector .inspector-titlebar > button:last-child:hover { background: #c42b1c; color: #fff; border-color: transparent; }
+.tool-inspector [data-test='toggle-inspector-dock'] { opacity: 0; }
+.tool-inspector:hover [data-test='toggle-inspector-dock'], .tool-inspector:focus-within [data-test='toggle-inspector-dock'] { opacity: 1; }
+.tool-inspector .inspector-body > .panel { padding: 8px 10px 10px; font: 11px/1.4 var(--ui); }
+.tool-inspector .inspector-body[hidden], .tool-inspector .inspector-command-slot[hidden] { display: none; }
+.tool-inspector .group { padding: 0 0 9px; margin: 0 0 9px; gap: 5px; }
+.tool-inspector :is(.sec-head,.g-label,.stephead,.dro-label,h3) { font-family: var(--ui); font-size: 11px; text-transform: none; letter-spacing: 0; font-weight: 400; }
+.tool-inspector :is(button,select,input,textarea), .qs-quick :is(button,input), .modalback > .modal :is(button,input,select) { font-family: var(--ui); font-size: 11px; border-radius: 2px; }
+.tool-inspector button:not(.infodot):not(.explorer-eye):not(.qs-x) { min-height: 22px; padding: 2px 7px; box-shadow: none; }
+.tool-inspector button:not(.on):not(:disabled):not(.infodot):not(.qs-x) { background: linear-gradient(#fff,#f5f5f5); color: #171717; }
+.tool-inspector button.primary:not(:disabled) { border-color: #8a8a8a; color: #171717; background: linear-gradient(#fff,#f4f4f4); }
+.tool-inspector button:hover:not(:disabled):not(.infodot) { background: #e5f1fb; border-color: #7ab4df; }
+.tool-inspector button.on, .tool-inspector button[aria-pressed='true'] { background: #cce8ff; border-color: #333; color: #171717; }
+.tool-inspector button:disabled { color: #999; opacity: 1; background: #f5f5f5; border-color: #ddd; }
+.tool-inspector :is(input:not([type='checkbox']):not([type='radio']):not([type='range']), select, textarea) { min-height: 21px; padding: 1px 4px; background: #fff; color: #171717; border: 1px solid #b4b4b4; box-shadow: none; }
+.tool-inspector :is(input,select):disabled { color: #999; background: #f6f6f6; border-color: #ddd; }
+.tool-inspector :is(input[type='checkbox'],input[type='radio']) { width: 13px; height: 13px; min-height: 0; margin: 0; accent-color: #0078d7; flex: none; }
+.tool-inspector .field { gap: 5px; margin: 5px 0; }
+.tool-inspector .field > span:first-child { font-family: var(--ui); font-size: 11px; }
+.tool-inspector .checkrow { gap: 5px; min-height: 21px; margin: 0; }
+.tool-inspector .hint { font: 10px/1.4 var(--ui); color: #666; }
+.tool-inspector :is(.draftbox,.dro) { background: transparent; border-radius: 0; box-shadow: none; }
+.tool-inspector .draftbox { border: 0; padding: 0; }
+.tool-inspector .toolrow { gap: 5px; }
+.tool-inspector :is(.core-command-draft,.core-command-section,.core-command-dimension,.cad-command-content):empty { display: none; }
+.tool-inspector .featurekeys button { border-radius: 0; font-size: 11px; }
+
+/* Keep the active widget at the top, without unmounting other editors. */
+.tool-inspector .panel[data-core-command='draft'] > :not(.core-command-draft),
+.tool-inspector .panel[data-core-command='section'] > :not(.core-command-section),
+.tool-inspector .panel[data-core-command='align'] > :not(.core-command-align),
+.tool-inspector .panel[data-core-command='dimension'] > :not(.core-command-dimension),
+.tool-inspector .panel[data-cad-command='true'] > :not(.cad-command-content),
+.tool-inspector .panel:has(> .core-command-align .draftbox):not([data-core-command]) > :not(.core-command-align) { display: none; }
+.tool-inspector .panel[data-mesh-widget='loaded'] > .group:first-child { display: none; }
+
+/* Extract primitives: compact icon rows, Clear beside types, creation at foot. */
+.tool-inspector[data-command='extract'] { height: 580px; }
+.tool-inspector .inspector-command-slot { min-height: 0; overflow: auto; display: flex; flex: 1; }
+.tool-inspector .qs-dialog.docked { width: 100%; min-height: 480px; flex: 1; padding: 0 9px 8px; gap: 5px; font: 11px/1.4 var(--ui); }
+.tool-inspector .qs-dialog .qs-step { white-space: normal; margin: 5px 0 2px; }
+.tool-inspector .qs-dialog .qs-iconrow { gap: 1px; flex-wrap: nowrap; }
+.tool-inspector .qs-dialog .qs-iconrow button { width: 26px; min-width: 0; height: 26px; min-height: 26px; padding: 0; background: transparent; border-color: transparent; }
+.tool-inspector .qs-dialog .qs-typerow { gap: 2px; flex-wrap: nowrap; }
+.tool-inspector .qs-dialog .qs-typerow button { width: 35px; height: 35px; min-height: 35px; padding: 0; border-radius: 0; background: transparent; }
+.tool-inspector .qs-dialog .qs-typerow button.qs-clear { width: auto; height: 22px; min-height: 22px; flex: 1; align-self: center; font-size: 10px; }
+.tool-inspector .qs-dialog .qs-degrees { grid-template-columns: 1fr 46px auto; gap: 5px; }
+.tool-inspector .qs-dialog .qs-count { font-size: 10px; }
+.tool-inspector .qs-dialog .qs-constraint { width: 100%; min-height: 22px; font-size: 11px; }
+.tool-inspector .qs-dialog .qs-tol { display: grid; grid-template-columns: 1fr 56px 44px; align-items: center; gap: 5px; font-size: 11px; }
+.tool-inspector .qs-dialog .qs-tol input { width: 100%; min-width: 0; }
+.tool-inspector .qs-dialog .qs-tol > span:first-child { white-space: nowrap; }
+.tool-inspector .qs-dialog .qs-tol:has(> input[disabled]) > span { opacity: .55; }
+.tool-inspector .qs-dialog .qs-tol.qs-analysis { grid-template-columns: auto 52px auto 1fr; }
+.tool-inspector .qs-dialog .qs-tol.qs-analysis button { min-height: 22px; font-size: 10px; }
+
+.tool-inspector .qs-dialog .qs-spacer { flex: 1; min-height: 40px; }
+.tool-inspector .qs-dialog footer { align-items: flex-end; gap: 5px; }
+.tool-inspector .qs-command-actions { display: flex; flex-direction: column; gap: 4px; width: 148px; }
+.tool-inspector .qs-command-end { display: flex; gap: 4px; justify-content: flex-end; }
+.tool-inspector .qs-command-end button { min-width: 68px; }
+.tool-inspector .qs-dialog footer button:last-child { min-width: 68px; }
+.tool-inspector .qs-dialog .qs-help { border-radius: 50%; width: 19px; height: 19px; min-height: 19px; padding: 0; color: #777; }
+.qs-quick { padding: 4px 6px 5px 2px; border-radius: 0; gap: 5px; }
+.qs-quick .qs-quick-types { gap: 1px; }
+.qs-quick .qs-quick-types button { width: 32px; height: 29px; background: transparent; }
+.qs-quick .qs-quick-body { gap: 3px; }
+
+/* Create Sketch uses the same compact two modes and three plane tiles. */
+.tool-inspector .re-place { display: flex; flex-direction: column; gap: 6px; min-height: 350px; }
+.tool-inspector .re-place .moderow { display: flex; gap: 3px; }
+.tool-inspector .inspector-body .re-place .moderow button { flex: 1; font-size: 10px; min-height: 31px; white-space: normal; }
+.tool-inspector .inspector-body .re-place [data-test='place-planes'] button { min-height: 50px; border-radius: 0; display: flex; flex-direction: row; gap: 3px; align-items: center; justify-content: center; padding: 2px; }
+.tool-inspector .re-place .plane-tile-icon { flex: 0 0 30px; }
+.tool-inspector .re-place-offset { display: flex; flex-wrap: nowrap; align-items: center; gap: 5px; }
+.tool-inspector .re-place-offset .field { flex: 1; display: flex; min-width: 0; }
+.tool-inspector .re-place-offset .field > span { flex: 1; }
+.tool-inspector .re-place-offset .field input { width: 52px; flex: 0 1 52px; }
+.tool-inspector .re-place-offset button { width: 75px; }
+.tool-inspector .re-place-rule { width: 100%; border: 0; border-top: 1px solid #aaa; margin: 2px 0; }
+.tool-inspector .re-place-ignore { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.tool-inspector .re-place button.block { width: 100%; }
+.tool-inspector .re-place-stack { display: flex; align-items: center; }
+.tool-inspector .re-place-stack .field { flex: 1; min-width: 0; }
+.tool-inspector .re-place-stack input { width: 55px; }
+.tool-inspector .re-place > .toolrow:last-child { justify-content: flex-end; margin-top: 3px; border-top: 1px solid #aaa; padding-top: 7px; }
+.tool-inspector .re-place [data-test='place-cancel'] { flex: 0 0 85px; }
+
+@media (max-height: 740px) { .tool-inspector .qs-dialog.docked { min-height: 430px; } }
+
+.tool-inspector .panel[data-core-command='interactive'] > :not(.core-command-interactive) { display: none; }
+.core-command-interactive:empty { display: none; }
+.tool-inspector .interactive-align { display: flex; flex-direction: column; gap: 9px; min-height: 334px; }
+.interactive-align > div:first-child { display: grid; grid-template-columns: 90px 1fr; }
+.desktop-ribbon [data-test='align-menu'] .ribbon-menu { width: 180px; }
+.desktop-ribbon [data-test='align-menu'] .ribbon-menu .icon { display: none; }
+.desktop-ribbon [data-test='align-menu'] .ribbon-menu button { min-height: 20px; height: 20px; padding: 1px 10px; }
+.desktop-ribbon [data-test='align-menu'] .ribbon-menu button span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.interactive-align .interactive-strength { display: flex; flex-direction: column; gap: 8px; }
+.interactive-align .interactive-strength input { width: 100%; }
+.interactive-align .checkrow select { margin-left: auto; width: 80px; }
+.interactive-align fieldset { min-width: 0; margin: 0; padding: 7px; border: 1px solid var(--line); }
+.interactive-align legend { font-size: 10px; }
+.interactive-align .field { display: grid; grid-template-columns: 85px minmax(0,1fr); }
+.interactive-align .field select { min-width: 0; width: 100%; }
+.interactive-align .interactive-step { display: grid; grid-template-columns: 40px 1fr 27px 27px; gap: 4px; align-items: center; margin: 5px 0 14px 85px; }
+.interactive-align .interactive-step input { width: 40px; }
+.tool-inspector .interactive-step button { padding: 1px; min-width: 0; }
+.interactive-align footer { display: flex; gap: 6px; margin-top: auto; }
+.interactive-align footer > span { flex: 1; }
+.interactive-align footer > button { width: 78px; }
+
+/* User's charcoal/black presentation keeps the reference control geometry. */
+:root[data-theme='dark'] :is(.tool-inspector,.qs-quick,.modalback > .modal,.ribbon-menu,.re-menu,.picklist,.partmenu,.appmenu) {
+  --chassis: #1b1d20; --panel: #25282c; --well: #17191c; --well-deep: #121416;
+  --ink: #f4f5f6; --dim: #b5bbc2; --faint: #8c949e;
+  --line: #414750; --line-strong: #69737f;
+  --accent: #3f9ee8; --accent-d: #79c5ff; --accent-soft: #223e58;
+  --glass: 37,40,44; --strip: #121416;
+  color-scheme: dark; color: var(--ink); background: var(--panel);
+}
+:root[data-theme='dark'] .tool-inspector .inspector-titlebar { background: #1b1d20; color: #fff; }
+:root[data-theme='dark'] .tool-inspector button:not(.on):not(:disabled):not(.infodot):not(.qs-x) { color: var(--ink); background: linear-gradient(#343a42,#292e35); border-color: #69737f; }
+:root[data-theme='dark'] .tool-inspector button.primary:not(:disabled) { color: #fff; background: #205f91; border-color: #69baff; }
+:root[data-theme='dark'] .tool-inspector button:hover:not(:disabled):not(.infodot) { background: #284e6c; border-color: #79c5ff; }
+:root[data-theme='dark'] .tool-inspector button.on,
+:root[data-theme='dark'] .tool-inspector button[aria-pressed='true'] { color: #fff; background: #205f91; border-color: #a4d9ff; }
+:root[data-theme='dark'] .tool-inspector button:disabled { color: #969fa9; background: #25292e; border-color: #444a52; }
+:root[data-theme='dark'] .tool-inspector :is(input:not([type='checkbox']):not([type='radio']):not([type='range']),select,textarea) { background: #17191c; color: #fff; border-color: #69737f; }
+:root[data-theme='dark'] .tool-inspector :is(input,select):disabled { color: #969fa9; background: #25292e; border-color: #444a52; }
+:root[data-theme='dark'] .tool-inspector :is(.hint,.qs-help) { color: var(--dim); }
+:root[data-theme='dark'] .tool-inspector .re-place > .toolrow:last-child { border-color: #414750; }
+:root[data-theme='dark'] .tool-inspector .re-place-rule { border-top-color: #414750; }
+:root[data-theme='dark'] :is(.ribbon-menu,.re-menu,.picklist,.partmenu,.appmenu) button { color: #f4f5f6; }
+:root[data-theme='dark'] .desktop-ribbon .ribbon-menu button:hover:not(:disabled) { background: #223e58; }
+:root[data-theme='dark'] .desktop-ribbon .ribbon-menu button:disabled { color: #969fa9; }
+:root[data-theme='dark'] :is(.tool-inspector,.qs-quick,.modalback > .modal,.ribbon-menu) :focus-visible { outline: 2px solid #79c5ff; outline-offset: 1px; }
+
+/* Original extraction glyphs: pale primitive faces and blue selection tools. */
+.extract-dialog, .qs-quick { --extract-blue: #2388c9; --extract-pale: #e7f3fc; --extract-edge: #2a4354; --extract-well: #183347; --extract-muted: #86929c; }
+:root[data-theme='dark'] :is(.extract-dialog,.qs-quick) { --extract-blue: #58b7f5; --extract-pale: #fff; --extract-edge: #daeaff; --extract-well: #183347; --extract-muted: #969fa9; }
+.extract-icon { display: block; flex-shrink: 0; }
+/* Extraction controls have fixed cells: glyphs cannot squeeze or touch. */
+.tool-inspector .qs-dialog .qs-iconrow { display: grid; grid-template-columns: repeat(8, 26px); gap: 1px; }
+.tool-inspector .qs-dialog .qs-iconrow button { box-sizing: border-box; display: grid; place-items: center; flex: none; }
+.tool-inspector .qs-dialog .qs-typerow { gap: 4px; }
+.tool-inspector .qs-dialog .qs-typerow button:not(.qs-clear) { flex: 0 0 35px; box-sizing: border-box; }
+.tool-inspector .qs-dialog .qs-typerow button.qs-clear { min-width: 0; }
+.qs-quick { box-sizing: border-box; height: 70px; padding: 1px; gap: 4px; }
+.qs-quick .qs-quick-bar { flex: 0 0 10px; border-radius: 0; }
+.qs-quick .qs-quick-body { flex: 1; min-width: 0; gap: 2px; padding: 0 3px 3px 0; }
+.qs-quick .qs-quick-types { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 1px; }
+.qs-quick .qs-quick-types button { box-sizing: border-box; width: 100%; min-width: 0; height: 32px; padding: 0; display: grid; place-items: center; border-radius: 0; }
+.qs-quick input[type='range'] { display: block; box-sizing: border-box; min-width: 0; width: 100%; height: 26px; margin: 0; }
+/* Override the shared inspector's text-button padding for icon cells. */
+.tool-inspector .extract-dialog .qs-iconrow button:not(.qs-x),
+.tool-inspector .extract-dialog .qs-typerow button:not(.qs-clear) { padding: 0; min-width: 0; }
+
+/* Keep popup geometry independent of shell stylesheet import order. */
+.qs-quick[data-test='extract-quick'] { padding: 0; gap: 4px; border-radius: 0; }
+.qs-quick[data-test='extract-quick'] .qs-quick-body { padding: 0; }
+.qs-quick[data-test='extract-quick'] .qs-quick-types button { height: 30px; }
+/* Help > Examples: observed compact, text-only reference menu. */
+.desktop-ribbon [data-test='examples-menu'] .ribbon-menu { box-sizing: border-box; width: 112px; min-width: 112px; padding: 0; }
+.desktop-ribbon [data-test='examples-menu'] .ribbon-menu button { width: 100%; height: 20px; min-height: 20px; padding: 0 8px 0 24px; white-space: nowrap; }
+/* Align Interactive: reference control positions inside the dark shell. */
+.tool-inspector[aria-label='Align Interactive'] { height: 385px; }
+.tool-inspector .interactive-align { min-height: 337px; gap: 0; }
+.interactive-align > div:first-child { min-height: 18px; }
+.interactive-align .interactive-strength { height: 60px; gap: 12px; }
+.interactive-align .interactive-strength input { height: 26px; margin: 0; }
+.interactive-align > .checkrow { min-height: 30px; }
+.interactive-align > .checkrow select { width: 80px; height: 20px; min-height: 20px; }
+.tool-inspector .interactive-align > button.block { height: 31px; min-height: 31px; margin: 0 0 7px; }
+.interactive-align fieldset { padding: 7px; }
+.interactive-align fieldset .field select { height: 20px; min-height: 20px; }
+.interactive-align footer { min-height: 22px; }
+.interactive-align footer > span { display: grid; place-items: center; flex: 0 0 19px; width: 19px; height: 19px; border: 1px solid var(--line-strong); border-radius: 50%; margin-right: auto; }

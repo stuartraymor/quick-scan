@@ -14,7 +14,9 @@ import { useThickness } from '../state/thicknessStore'
 import { Icon } from './icons'
 import { modLabel } from './platform'
 
-export function UndoRedo() {
+/** `text`: QUICKSURFACE's Edit group on the Edit / View tab, two small keys with
+ *  a 16 px icon and the name, stacked above Rebuild. */
+export function UndoRedo({ ribbon = false, text = false }: { ribbon?: boolean; text?: boolean } = {}) {
   const history = useHistory()
   // Re-evaluate availability as computations and editors start or finish.
   useStore((s) => !!(s.busy || s.draft || s.dimDraft || s.alignDraft || s.sectionDraft))
@@ -30,12 +32,22 @@ export function UndoRedo() {
   const canUndo = !blocked && (local ? local.canUndo() : history.past.length > 0)
   const canRedo = !blocked && (local ? local.canRedo() : history.future.length > 0)
   const hint = blocked ? 'Finish the active operation or close its editor first' : null
-  return <div className="undokeys" data-test="undo-keys">
-    <button className="ghost" data-test="undo" aria-label="Undo" disabled={!canUndo}
+  if (text) {
+    return <>
+      <button className="ribbon-text-key with-icon" data-test="ribbon-undo" aria-label="Undo" disabled={!canUndo}
+        title={hint ?? `Undo${local ? ` ${local.label}` : history.past.at(-1) ? `: ${history.past.at(-1)!.label}` : ''} — ${modLabel}+Z`}
+        onClick={() => void undo()}><Icon name="undo" size={16} /><span>Undo</span></button>
+      <button className="ribbon-text-key with-icon" data-test="ribbon-redo" aria-label="Redo" disabled={!canRedo}
+        title={hint ?? `Redo${local ? ` ${local.label}` : history.future.at(-1) ? `: ${history.future.at(-1)!.label}` : ''} — ${modLabel}+Y / ${modLabel}+Shift+Z`}
+        onClick={() => void redo()}><Icon name="redo" size={16} /><span>Redo</span></button>
+    </>
+  }
+  return <div className="undokeys" data-test={ribbon ? 'ribbon-undo-keys' : 'undo-keys'}>
+    <button className={ribbon ? 'desktop-ribbon-tool' : 'ghost'} data-test={ribbon ? 'ribbon-undo' : 'undo'} aria-label="Undo" disabled={!canUndo}
       title={hint ?? `Undo${local ? ` ${local.label}` : history.past.at(-1) ? `: ${history.past.at(-1)!.label}` : ''} — ${modLabel}+Z`}
-      onClick={() => void undo()}><Icon name="undo" size={16} /></button>
-    <button className="ghost" data-test="redo" aria-label="Redo" disabled={!canRedo}
+      onClick={() => void undo()}><Icon name="undo" size={ribbon ? 25 : 16} />{ribbon && <span>Undo</span>}</button>
+    <button className={ribbon ? 'desktop-ribbon-tool' : 'ghost'} data-test={ribbon ? 'ribbon-redo' : 'redo'} aria-label="Redo" disabled={!canRedo}
       title={hint ?? `Redo${local ? ` ${local.label}` : history.future.at(-1) ? `: ${history.future.at(-1)!.label}` : ''} — ${modLabel}+Y / ${modLabel}+Shift+Z`}
-      onClick={() => void redo()}><Icon name="redo" size={16} /></button>
+      onClick={() => void redo()}><Icon name="redo" size={ribbon ? 25 : 16} />{ribbon && <span>Redo</span>}</button>
   </div>
 }

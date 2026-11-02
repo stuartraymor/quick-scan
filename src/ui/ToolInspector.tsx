@@ -2,28 +2,42 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { useShell } from '../state/shellStore'
 import { useStore } from '../state/store'
+import { useDocumentOrder } from '../state/documentOrderStore'
+import {useInteractiveAlign} from '../state/interactiveAlignStore'
 import type { PluginRuntime } from '../plugins/api'
 import { Icon } from './icons'
 import './tool-inspector.css'
+import './command-widgets.css'
 
 /** Modeless controls: docking changes CSS, never the editor or viewport tree. */
 export function ToolInspector({ context, children }: { context?: PluginRuntime['toolContext']; children: ReactNode }) {
+  const modelRolled = useDocumentOrder(s => s.rollbackAt !== null)
   const open = useShell(s => s.inspectorOpen)
   const mode = useShell(s => s.inspectorMode)
   const workspace = useShell(s => s.workspace)
+  // A command takes over this modeless container; docking remains an extra
+  // QuickScan option, while the reference normally uses floating dialogs.
+  const docked = useShell(s => s.extractOpen)
   const draft = useStore(s => s.draft)
   const section = useStore(s => s.sectionDraft)
   const align = useStore(s => s.alignDraft)
   const dimension = useStore(s => s.dimDraft)
-  const coreTitle = draft ? `${draft.kind[0].toUpperCase()}${draft.kind.slice(1)}` : section ? 'Cross section' : align ? 'Align by coordinate system' : dimension ? 'Dimension' : null
-  const title = context?.title || coreTitle || ({ elements: 'Primitives & measurement', deviation: 'Compare', thickness: 'Wall thickness', flat: '2D Measure', reverse: 'CAD tools', mesh: 'Edit scan' } as Record<string, string>)[workspace] || 'Tool properties'
+  const interactive = useInteractiveAlign(s => s.open)
+  const coreTitle = interactive ? 'Align Interactive' : draft ? `${draft.kind[0].toUpperCase()}${draft.kind.slice(1)}` : section ? 'Cross section' : align ? 'Align by coordinate system' : dimension ? 'Dimension' : null
+  const title = docked ? 'Extract primitives' : context?.title || coreTitle || ({ elements: 'Primitives & measurement', deviation: 'Compare', thickness: 'Wall thickness', flat: '2D Measure', reverse: 'CAD tools', mesh: 'Edit scan' } as Record<string, string>)[workspace] || 'Tool properties'
   const activity = context?.key || coreTitle || ''
   const active = Boolean(context?.active || coreTitle)
   const node = useRef<HTMLElement>(null)
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null)
   const drag = useRef<{ x: number; y: number; startX: number; startY: number } | null>(null)
 
-  useEffect(() => { if (active) useShell.getState().setInspectorOpen(true) }, [activity, active, workspace])
+  useEffect(() => { if (active || docked) useShell.getState().setInspectorOpen(true) }, [activity, active, workspace, docked])
+  useLayoutEffect(() => {
+    // A command opens at its first parameter, even if the preceding panel
+    // was scrolled to the bottom. Keep the mounted editor and canvas intact.
+    const body = node.current?.querySelector('.inspector-body')
+    if (body) body.scrollTop = 0
+  }, [activity, workspace, docked])
   useLayoutEffect(() => {
     const parent = node.current?.parentElement
     if (!parent) return
@@ -41,7 +55,7 @@ export function ToolInspector({ context, children }: { context?: PluginRuntime['
 
   return <>
     {!open && <button className="inspector-reopen" data-test="show-tool-inspector" onClick={() => useShell.getState().setInspectorOpen(true)} title={`Show ${title}`}><Icon name="settings" size={16}/><span>{title}</span></button>}
-    <section ref={node} className="tool-inspector" hidden={!open} data-mode={mode} data-test="tool-inspector" aria-label={title}
+    <section ref={node} className="tool-inspector" hidden={!open} data-mode={mode} data-command={docked ? 'extract' : active ? 'active' : 'dashboard'} data-test="tool-inspector" aria-label={title}
       style={mode === 'floating' && position ? { left: position.x, top: position.y } : undefined}>
       <div className="inspector-titlebar" data-test="inspector-drag-handle"
         onPointerDown={event => {
@@ -59,10 +73,17 @@ export function ToolInspector({ context, children }: { context?: PluginRuntime['
         onPointerUp={() => { drag.current = null }} onLostPointerCapture={() => { drag.current = null }}>
         <Icon name="settings" size={14}/><strong>{title}</strong>
         <button data-test="toggle-inspector-dock" title={mode === 'floating' ? 'Dock tool controls on the right' : 'Float tool controls beside Objects'} aria-label={mode === 'floating' ? 'Dock tool controls' : 'Float tool controls'} onClick={() => useShell.getState().setInspectorMode(mode === 'floating' ? 'docked' : 'floating')}><Icon name="splitView" size={14}/></button>
-        <button data-test="hide-tool-inspector" aria-label="Hide tool controls" title="Hide controls; the current operation stays open" onClick={() => useShell.getState().setInspectorOpen(false)}>×</button>
+        <button data-test="hide-tool-inspector" aria-label={docked || active ? 'Close command' : 'Hide tool controls'} title={docked || active ? 'Close the current command' : 'Hide controls; the current operation stays open'} onClick={() => {
+          if (docked) node.current?.querySelector<HTMLButtonElement>('[data-command-close]')?.click()
+          else {
+            const cancel = Array.from(node.current?.querySelectorAll<HTMLButtonElement>('button[data-command-close],button[data-test^="cancel-"],button[data-test$="-cancel"]') ?? []).find(button => !button.disabled && button.getClientRects().length > 0)
+            if (active && cancel) cancel.click()
+            useShell.getState().setInspectorOpen(false)
+          }
+        }}>×</button>
       </div>
-      <div className="inspector-body">{children}</div>
-      {active && <div className="inspector-operation-hint">Use the tool’s confirm or cancel controls to finish.</div>}
+      <div id="inspector-command-slot" className="inspector-command-slot" data-test="inspector-command-slot" hidden={!docked} />
+      <div className="inspector-body" hidden={docked}>{modelRolled && <p className="empty" data-test="model-history-edit-lock">Restore End of Model in History before creating or editing geometry.</p>}<div className="inspector-model-controls" style={{ display: 'contents' }} inert={modelRolled || undefined} aria-disabled={modelRolled || undefined}>{children}</div></div>
     </section>
   </>
 }

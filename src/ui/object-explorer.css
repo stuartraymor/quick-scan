@@ -74,4 +74,79 @@
 .object-explorer .explorer-history-entry { display: flex; align-items: baseline; gap: 8px; padding: 5px 8px; font-size: 11px; }
 .object-explorer .explorer-history-entry small { color: var(--faint); font: 9px var(--mono); min-width: 14px; }
 .object-explorer .explorer-footer { display: flex; justify-content: space-between; gap: 8px; padding: 7px 10px; border-top: 1px solid var(--line); background: var(--well); color: var(--dim); font-size: 10px; }
+/* Model hierarchy follows the reference's compact checkbox rows. History
+   remains its own feature/session presentation until order is established. */
+.object-explorer .explorer-object-toolbar { display: flex; gap: 3px; padding: 3px 5px; }
+.object-explorer .explorer-object-toolbar button { padding: 0; width: 16px; height: 16px; min-height: 0; border: 1px solid var(--line-strong); border-radius: 0; color: var(--ink); background: var(--panel); }
+.object-explorer .explorer-objects { padding: 0 2px 8px; }
+.object-explorer .explorer-objects .explorer-row { min-height: 23px; gap: 3px; }
+.object-explorer .explorer-objects .explorer-item { min-height: 23px; padding: 3px 2px; gap: 4px; }
+.object-explorer .explorer-objects .explorer-item > small { display: none; }
+.object-explorer .explorer-root-children { padding-left: 16px; }
+.object-explorer .explorer-all { padding-left: 4px; }
+.object-explorer .explorer-coordinate { padding-left: 14px; }
+.object-explorer .explorer-objects .explorer-group > summary { padding: 3px 2px; gap: 3px; font-size: 12px; font-weight: 400; }
+.object-explorer .explorer-objects .explorer-group > summary::before { flex: 0 0 5px; margin-right: 3px; }
+.object-explorer .explorer-objects .explorer-children { border-left: 0; margin: 0 0 0 27px; padding-left: 0; }
+.object-explorer .explorer-checkbox { accent-color: var(--accent); width: 13px; height: 13px; min-width: 13px; padding: 0; margin: 0 2px 0 0; flex: 0 0 13px; cursor: pointer; }
+.object-explorer .explorer-checkbox:disabled { cursor: default; opacity: .45; }
+.object-explorer .explorer-checkbox:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.object-explorer .explorer-history-panel .explorer-row { min-height: 23px; gap: 3px; }
+.object-explorer .explorer-history-panel .explorer-item { min-height: 23px; padding: 3px 2px; gap: 4px; }
+.object-explorer .explorer-history-panel .explorer-item > small { display: none; }
+.object-explorer .explorer-history-panel .explorer-row.is-rolled { opacity: .45; }
+.object-explorer .explorer-history-root > summary { padding: 3px 4px; gap: 3px; font-size: 12px; }
+.object-explorer .explorer-history-entries { padding-left: 24px; }
+.object-explorer .explorer-end-model { padding: 4px 0; white-space: nowrap; font-size: 12px; }
+.object-explorer .explorer-end-model > span { color: var(--accent); }
 @media (max-width: 1150px) { .object-explorer { width: 210px; flex-basis: 210px; } }
+
+/* Portalled menus live under body, independently of optional workspaces. */
+.explorer-core-menu {
+  position: fixed;
+  min-width: 200px;
+  max-width: 260px;
+  padding: 4px 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r);
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 6px 22px #0003;
+  font: 13px var(--ui);
+}
+.explorer-core-menu-head {
+  padding: 3px 12px 5px;
+  color: var(--dim);
+  font: 10px var(--cond);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.explorer-core-menu button {
+  display: block;
+  width: 100%;
+  padding: 5px 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.explorer-core-menu button:hover { background: var(--well); color: var(--accent-d); }
+.explorer-core-menu button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.explorer-core-menu button:disabled { opacity: .45; cursor: default; }
+
+.explorer-object-toolbar button[aria-pressed="true"] { background: var(--well); color: var(--accent-d); }
+.explorer-dependency-row { display: flex; align-items: center; min-width: 0; }
+.explorer-dependency-row > .explorer-row { flex: 1; min-width: 0; }
+.explorer-dependency-toggle, .explorer-dependency-spacer { flex: 0 0 13px; width: 13px; }
+.explorer-dependency-toggle { border: 0; padding: 0; background: transparent; color: var(--dim); cursor: pointer; font-size: 11px; }
+.explorer-dependency-children { padding-left: 13px; }
+
+.explorer-end-model[draggable="true"] { cursor: grab; }
+.explorer-end-model:focus-visible { outline: 1px solid var(--accent); }
+.explorer-history-end-drop { height: 10px; }

@@ -16,6 +16,8 @@ import type { Rigid } from '../core/deviation/rigid'
 import type { StepStyle } from '../core/exportStep'
 import type { ElementKind, SigmaPreset } from '../core/types'
 import { AlignmentSection } from './AlignmentSection'
+import {InteractiveAlign} from './InteractiveAlign'
+import {useInteractiveAlign} from '../state/interactiveAlignStore'
 import { CopyButton } from './CopyButton'
 import { DimensionSection } from './DimensionSection'
 import { ToleranceSection } from './ToleranceSection'
@@ -67,6 +69,7 @@ export function Panel({
   onStartAlignment,
   onApplyAlignment,
   onApplyManual,
+  onAlignCurrentView,
   onResetAlignment,
   onExportStep,
   onExportMesh,
@@ -108,7 +111,8 @@ export function Panel({
   /** Bake the computed datum alignment into the part. */
   onApplyAlignment: (m: Rigid) => void
   /** Bake a typed-in move / rotate into the part. */
-  onApplyManual: (m: Rigid) => void
+  onApplyManual: (m: Rigid) => void | Promise<boolean>
+  onAlignCurrentView?: () => void
   onResetAlignment: () => void
   onExportStep: () => void
   /** Save the scan as an STL in the pose it is currently shown in. */
@@ -120,6 +124,7 @@ export function Panel({
 }) {
   const fileName = useStore((s) => s.fileName)
   const busy = useStore((s) => s.busy)
+  const interactive = useInteractiveAlign(s => s.open)
   // Every reading in the lists is written in the units shown.
   const units = useUnits()
   const triangleCount = useStore((s) => s.triangleCount)
@@ -175,7 +180,8 @@ export function Panel({
   )
 
   return (
-    <aside className="panel">
+    <aside className="panel" data-core-command={interactive ? 'interactive' : draft ? 'draft' : sectionDraft ? 'section' : alignDraft ? 'align' : dimDraft ? 'dimension' : undefined}>
+      <div className="core-command-interactive">{interactive && <InteractiveAlign onApply={onApplyManual} onCurrentView={onAlignCurrentView}/>}</div>
       <div className="group">
         <div className="sec-head">
           Model
@@ -198,14 +204,14 @@ export function Panel({
         />
       </div>
 
-      <AlignmentSection
+      <div className="core-command-align"><AlignmentSection
         onAutoAlign={onAutoAlign}
         onAlignSymmetry={onAlignSymmetry}
         onStartAlignment={onStartAlignment}
         onApplyAlignment={onApplyAlignment}
         onApplyManual={onApplyManual}
         onResetAlignment={onResetAlignment}
-      />
+      /></div>
 
       {sectionDraft === null && (
         <div className="group">
@@ -300,7 +306,7 @@ export function Panel({
         </div>
       )}
 
-      <DraftEditor
+      <div className="core-command-draft"><DraftEditor
         onSelectMode={onSelectMode}
         onDraftSigma={onDraftSigma}
         onDraftKnownDiameter={onDraftKnownDiameter}
@@ -309,9 +315,9 @@ export function Panel({
         onCancelDraft={onCancelDraft}
         onConfirmDraft={onConfirmDraft}
         onFindSymmetry={onFindSymmetry}
-      />
+      /></div>
 
-      <SectionEditor onCancel={onCancelSection} onConfirm={onConfirmSection} />
+      <div className="core-command-section"><SectionEditor onCancel={onCancelSection} onConfirm={onConfirmSection} /></div>
 
       {elements.length > 0 && (
         <div className="group">
@@ -418,7 +424,7 @@ export function Panel({
         </div>
       )}
 
-      <DimensionSection editorOpen={editorOpen} onPickPoint={onPickPoint} />
+      <div className="core-command-dimension"><DimensionSection editorOpen={editorOpen} onPickPoint={onPickPoint} /></div>
       <ToleranceSection editorOpen={editorOpen} />
 
       {fileName && (
