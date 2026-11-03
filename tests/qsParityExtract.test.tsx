@@ -74,7 +74,7 @@ describe('Extract primitives — QUICKSURFACE parity', () => {
   })
 
   it('has QUICKSURFACE’s constraint dropdown, Auto Constrain with its tolerances, and Analysis, in order', () => {
-    const html = render()
+    const html = render({ kind: 'plane', sigma: 0 })
     const order = tests(html)
     const want = ['extract-type-plane', 'extract-constraint', 'extract-auto-constrain', 'extract-tilt', 'extract-coincidence', 'extract-analysis', 'extract-analysis-tolerance', 'extract-analysis-apply', 'extract-quick-tools', 'extract-labels']
     const at = want.map((k) => order.indexOf(k))
@@ -85,5 +85,15 @@ describe('Extract primitives — QUICKSURFACE parity', () => {
     expect(html).toMatch(/data-test="extract-tilt"[^>]*value="0.5"[^>]*disabled|disabled[^>]*data-test="extract-tilt"/)
     expect(html).toMatch(/data-test="extract-analysis-tolerance"[^>]*value="0.1"/)
     expect(html).toMatch(/data-test="extract-analysis-apply"[^>]*disabled/)
+  })
+
+  it('reveals constraint and analysis controls only while a fitted preview exists', () => {
+    const controls = ['extract-constraint', 'extract-auto-constrain', 'extract-tilt', 'extract-coincidence', 'extract-analysis', 'extract-analysis-tolerance']
+    for (const id of controls) expect(tests(render())).not.toContain(id)
+    const fitted = tests(render({ kind: 'plane', sigma: 0 }))
+    for (const id of controls) expect(fitted).toContain(id)
+    for (const id of controls) expect(tests(render())).not.toContain(id)
+    expect(tests(render())).toContain('extract-quick-tools')
+    expect(tests(render())).toContain('extract-labels')
   })
 })

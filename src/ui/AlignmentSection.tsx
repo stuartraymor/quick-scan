@@ -9,7 +9,8 @@ import {
   manualRigid,
   type AxisDir,
 } from '../core/alignment'
-import { rigidApply, type Rigid } from '../core/deviation/rigid'
+import { rigidApply, rigidRotate, type Rigid } from '../core/deviation/rigid'
+import type { Vec3 } from '../core/types'
 import { useShell } from '../state/shellStore'
 import type { RefRole } from '../core/elements/refs'
 import {
@@ -19,7 +20,7 @@ import {
   useStore,
   type Element,
 } from '../state/store'
-import { alignmentReferences } from '../state/alignModel'
+import { alignmentReferences, alignmentTileAxis } from '../state/alignModel'
 import { InfoDot } from './InfoDot'
 import { providersFor } from './RefSelect'
 import { useLength } from '../app/useUnits'
@@ -141,7 +142,7 @@ export function AlignmentSection({
   onAlignSymmetry: () => void
   onStartAlignment: () => void
   /** Bake the computed datum alignment into the part. */
-  onApplyAlignment: (m: Rigid) => void
+  onApplyAlignment: (m: Rigid) => Promise<boolean>
   /** Bake a typed-in move / rotate into the part. */
   onApplyManual: (m: Rigid) => void
   onResetAlignment: () => void
@@ -365,6 +366,7 @@ export function AlignmentSection({
               onClick={() => {
                 const st = useStore.getState()
                 for (const slot of ['primary', 'secondary', 'origin'] as const) st.setAlignmentRef(slot, null)
+                st.beginAlignmentReferencePick('primary')
                 setShift(['0', '0', '0'])
               }}
             >
@@ -423,6 +425,13 @@ export function AlignmentSection({
             referencePicking={alignDraft.referencePickSlot === 'secondary'}
             onFlip={() => useStore.getState().flipAlignmentAxis('secondary')}
           />
+          {(alignDraft.secondary !== null || alignDraft.secondaryPicks.length >= ALIGN_PICK_COUNT.secondary) && <div className="toolrow" role="group" aria-label="Secondary feature becomes" data-test="align-secondary-tiles">
+            {PLANE_TILES.map(({ label, axis }) => <button key={label} type="button"
+              data-test={`align-secondary-${label.toLowerCase()}`} disabled={axisIndex(axis) === axisIndex(alignDraft.primaryAxis)}
+              className={axisIndex(alignDraft.secondaryAxis) === axisIndex(axis) ? 'on' : undefined}
+              aria-pressed={axisIndex(alignDraft.secondaryAxis) === axisIndex(axis)}
+              onClick={() => setAlignmentAxis('secondary', alignmentTileAxis(alignDraft.secondaryAxis, axis))}>{label}</button>)}
+          </div>}
           <StepHead text="Tertiary feature" />
           <AlignSelect
             label="Zero point"
@@ -502,11 +511,26 @@ export function AlignmentSection({
             data-test="apply-alignment"
             data-confirm={1}
             disabled={!alignReady || busy}
-            onClick={() => {
+            onClick={async () => {
               if (!alignReady) return
               const m = { r: alignReady.rigid.r.slice(), t: alignReady.rigid.t.slice() }
               shift.forEach((v, i) => { const n = Number(v); if (Number.isFinite(n)) m.t[i] += len.fromDisplay(n) })
-              onApplyAlignment(m)
+              const draft = alignDraft
+              if (!await onApplyAlignment(m)) return
+              // Retain choices in the committed frame; never reuse a stale
+              // transform or the translation typed for the previous Apply.
+              const moved = (v: Vec3, normal = false): Vec3 => {
+                const out = new Float64Array(3)
+                ;(normal ? rigidRotate : rigidApply)(m, ...v, out)
+                return [out[0], out[1], out[2]]
+              }
+              useStore.setState({ alignDraft: { ...draft, pickSlot: null, referencePickSlot: null, proposal: undefined,
+                primaryPicks: draft.primaryPicks.map(v => moved(v)),
+                primaryPickNormals: draft.primaryPickNormals.map(v => moved(v, true)),
+                secondaryPicks: draft.secondaryPicks.map(v => moved(v)),
+                originPicks: draft.originPicks.map(v => moved(v)),
+              } })
+              setShift(['0', '0', '0'])
             }}
           >
             Apply

@@ -702,13 +702,15 @@ export function SketchEditor({ chainsOf }: { chainsOf: () => SketchChains | null
           {status === 'ready' && <b style={{ fontSize: 13 }}>Solved{found > 0 ? ` · ${found} closed region${found === 1 ? '' : 's'}` : ' · no closed region yet'}</b>}
         </div>
       </div>
-      {found > 0 && (
+      {/* Always there, as in QUICKSURFACE's Edit Sketch — offered once the
+          sketch closes a region. */}
+      {(
         <div className="toolrow" data-test="sketch-feature-keys">
-          <button className="primary withicon" data-test="sketch-extrude" title="Finish the sketch and extrude every region of it — the body shows as a ghost with arrows to drag; a click on a region lets it go" onClick={() => re.getState().finishAndExtrude()}>
+          <button className="primary withicon" data-test="sketch-extrude" disabled={found === 0} title={found === 0 ? 'Close a region first — a rectangle, or lines and arcs end to end' : 'Finish the sketch and extrude every region of it — the body shows as a ghost with arrows to drag; a click on a region lets it go'} onClick={() => re.getState().finishAndExtrude()}>
             <Icon name="extrude" size={18} />
             Extrude
           </button>
-          <button className="primary withicon" data-test="sketch-revolve" title="Finish the sketch and revolve every region of it about an axis picked next" onClick={() => re.getState().finishAndRevolve()}>
+          <button className="primary withicon" data-test="sketch-revolve" disabled={found === 0} title="Finish the sketch and revolve every region of it about an axis picked next" onClick={() => re.getState().finishAndRevolve()}>
             <Icon name="revolve" size={18} />
             Revolve
           </button>

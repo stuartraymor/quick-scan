@@ -224,6 +224,7 @@ export function ExtractPrimitives({ onType, preview, onCreate, onClearPreview, o
         ))}
         {preview && !fitting && <button data-test="extract-clear-preview" className="qs-clear" onClick={onClearPreview}>Clear</button>}
       </div>
+      {preview && <>
       <select className="qs-constraint" data-test="extract-constraint" aria-label="Constraint" value={ex.constraint} disabled={fitting}
         title="Hold the fitted primitive parallel or perpendicular to a coordinate plane: a plane by its normal, a cylinder or line by its axis"
         onChange={(e) => { ex.setConstraint(e.target.value as ConstraintId); if (preview) onType(preview.kind) }}>
@@ -244,6 +245,7 @@ export function ExtractPrimitives({ onType, preview, onCreate, onClearPreview, o
         <NumberField value={len.toDisplay(ex.coincidenceMm)} min={0} label="Coincidence tolerance" test="extract-coincidence" disabled={!ex.autoConstrain} onValid={(v) => ex.setCoincidenceMm(len.fromDisplay(v))} />
         <span>{len.word()}</span>
       </div>
+      </>}
       {fitting && <p className="qs-count">Fitting…</p>}
       {preview && !fitting && (
         <div className="qs-preview" data-test="extract-preview">
@@ -252,6 +254,7 @@ export function ExtractPrimitives({ onType, preview, onCreate, onClearPreview, o
       )}
       <div className="qs-spacer" />
       <hr />
+      {preview && <>
       <div className="qs-tol qs-analysis">
         <label className="checkrow">
           <input type="checkbox" checked={ex.analysis} data-test="extract-analysis" onChange={(e) => { ex.setAnalysis(e.target.checked); if (!e.target.checked) onAnalysisOff() }} />
@@ -262,6 +265,7 @@ export function ExtractPrimitives({ onType, preview, onCreate, onClearPreview, o
         <button data-test="extract-analysis-apply" disabled={!ex.analysis || !preview || fitting} title="Show the marked points that lie further than this from the previewed primitive" onClick={onAnalyse}>Apply</button>
       </div>
       {ex.analysis && ex.analysed && <p className="qs-count" data-test="extract-analysis-result">{ex.analysed.far === 0 ? `All ${ex.analysed.total.toLocaleString('en-US')} points are within the tolerance.` : `${ex.analysed.far.toLocaleString('en-US')} of ${ex.analysed.total.toLocaleString('en-US')} points beyond it, the worst ${len.fmt(ex.analysed.worst, 3)}.`}</p>}
+      </>}
       <label className="checkrow">
         <input type="checkbox" checked={m.quickTools} data-test="extract-quick-tools" onChange={(e) => m.setQuickTools(e.target.checked)} />
         <span>Show quick tools dialog</span>

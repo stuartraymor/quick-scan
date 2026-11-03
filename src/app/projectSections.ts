@@ -86,7 +86,7 @@ export function registerProjectSection<J>(section: ProjectSection<J>): () => voi
 export const projectSections = (): readonly ProjectSection[] => sections
 
 /** The manifest keys the app writes itself. */
-const CORE_KEYS = new Set(['app', 'schemaVersion', 'appVersion', 'name', 'workspace', 'scan', 'deviation', 'thickness', 'flat'])
+const CORE_KEYS = new Set(['app', 'schemaVersion', 'appVersion', 'name', 'workspace', 'scan', 'deviation', 'thickness', 'flat', 'viewport'])
 
 // ---- Parts no section here owns -------------------------------------------------
 

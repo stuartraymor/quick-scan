@@ -1,12 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {beforeEach, describe, expect, it} from 'vitest'
 import {useStore, type Element} from '../src/state/store'
-import {alignmentReferences, alignmentPreview, alignmentSlotAccepts} from '../src/state/alignModel'
+import {alignmentReferences, alignmentPreview, alignmentSlotAccepts, alignmentTileAxis} from '../src/state/alignModel'
 import {transformFit} from '../src/core/alignment'
 const m=()=>useStore.getState()
 const objects=()=>alignmentReferences([]).slice(0,4).map((e,i)=>({...e,id:i+1,name:`Test ${i+1}`}))
 beforeEach(()=>{useStore.setState(useStore.getInitialState(),true);useStore.setState({elements:objects()});m().startAlignment()})
 describe('explicit alignment reference interaction',()=>{
+ it('keeps Flip relative to Top/Right/Front when changing target tiles',()=>{
+  expect(alignmentTileAxis('y-','x+')).toBe('x+')
+  expect(alignmentTileAxis('y+','x+')).toBe('x-')
+  expect(alignmentTileAxis('x-','y-')).toBe('y+')
+  expect(alignmentTileAxis('x+','y-')).toBe('y-')
+  expect(alignmentTileAxis('z-','x+')).toBe('x-')
+ })
  it('refuses a stale assigned datum instead of silently applying a partial transform',()=>{
   m().setAlignmentRef('primary',1)
   m().setAlignmentRef('origin',-1020)
@@ -45,6 +52,15 @@ describe('explicit alignment reference interaction',()=>{
   m().selectAlignmentElement(-1020)
   expect(m().alignDraft?.origin).toBe(-1020)
   expect(m().alignDraft?.referencePickSlot).toBeNull()
+ })
+ it('advances viewport datum picking through all three slots without replacing secondary',()=>{
+  m().beginAlignmentReferencePick('primary')
+  m().selectAlignmentElement(1)
+  expect(m().alignDraft?.referencePickSlot).toBe('secondary')
+  m().selectAlignmentElement(2)
+  expect(m().alignDraft?.referencePickSlot).toBe('origin')
+  m().selectAlignmentElement(3)
+  expect(m().alignDraft).toMatchObject({primary:1,secondary:2,origin:3,referencePickSlot:null})
  })
  it('uses cylinder axes for directional slots, and its centre as a tertiary zero point',()=>{
   const cylinder:Element={...objects()[0],kind:'cylinder',fit:{kind:'cylinder',axis:[0,0,1],center:[4,5,6],radius:2,length:10,coverage:360,sigma:0,usedPoints:12,regionSize:12}}

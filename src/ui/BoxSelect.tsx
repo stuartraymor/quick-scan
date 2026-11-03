@@ -21,6 +21,9 @@ function boxFree(): boolean {
   const s = useStore.getState()
   if (s.draft || s.alignDraft || s.dimDraft || s.sectionDraft || s.busy) return false
   if (useShell.getState().extractOpen || useMark.getState().gesture !== null) return false
+  // Objects are boxed in the 3D view of the measuring workspace; a CAD
+  // sketch, an edit of the scan or a map owns its own drags.
+  if (useShell.getState().workspace !== 'elements') return false
   // A scheme that orbits or pans on the bare left button keeps it.
   return !schemeById(s.navScheme).bindings.some((b) => b.buttons === 1 && !b.shift && !b.ctrl && !b.alt)
 }

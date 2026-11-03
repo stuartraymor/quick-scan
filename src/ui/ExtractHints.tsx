@@ -18,6 +18,12 @@ export const EXTRACT_HINT_LINES = [
   'Use Ctrl + mouse wheel to change the sensitivity for Magic Wand',
 ]
 
+/** What QUICKSURFACE's Align by Coordinate System says in the same corner. */
+export const ALIGN_HINT_LINES = [
+  'Select primary, secondary and tertiary features to define coordinate system.',
+  'Press Apply to apply the transformation to the scene objects',
+]
+
 /** One Ctrl + wheel notch: the wand's degrees in 0.1° steps, the brush by a
  *  tenth of its width, both held to their ranges. Up (a negative deltaY)
  *  grows either. */
@@ -36,7 +42,10 @@ export function ctrlWheelStep(deltaY: number): void {
 }
 
 export function ExtractHints() {
-  const open = useShell((s) => s.extractOpen)
+  const extracting = useShell((s) => s.extractOpen)
+  const aligning = useStore((s) => s.alignDraft !== null)
+  const open = extracting || aligning
+  const lines = extracting ? EXTRACT_HINT_LINES : ALIGN_HINT_LINES
   const gesture = useMark((s) => s.gesture)
   const help = usePrefs((s) => s.onScreenHelp)
   const [rect, setRect] = useState<DOMRect | null>(null)
@@ -79,7 +88,7 @@ export function ExtractHints() {
         opacity: gesture ? 1 : 0.85,
       }}
     >
-      {EXTRACT_HINT_LINES.map((l) => <div key={l}>{l}</div>)}
+      {lines.map((l) => <div key={l}>{l}</div>)}
     </div>,
     document.body,
   )

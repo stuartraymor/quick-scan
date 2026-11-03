@@ -1101,6 +1101,8 @@ export const useStore = create<AppState>()((set, get) => ({
         primaryPickNormals: [],
         // The face the part stands on is the one beginners are told to pick,
         // so "bottom" — outward normal down — is the default reading of it.
+        // (The Align by Coordinate System dialog opens on Top instead, as
+        // QUICKSURFACE's does — see AlignmentSection.)
         primaryAxis: 'z-',
         secondary: null,
         secondaryPicks: [],
@@ -1444,7 +1446,13 @@ export const useStore = create<AppState>()((set, get) => ({
       if (!el?.fit) return {}
       if (ad.referencePickSlot) {
         if (!alignmentSlotAccepts(ad.referencePickSlot, el)) return {statusText:'That reference is not valid for the active alignment slot.'}
-        return {alignDraft:withSlotRef(ad, ad.referencePickSlot, id)}
+        const next = withSlotRef(ad, ad.referencePickSlot, id)
+        // The modeless datum picker proceeds primary → secondary → tertiary.
+        // Explicit Pick can still revisit any slot; raw scan-point collection
+        // remains a separate operation.
+        next.referencePickSlot = ad.referencePickSlot === 'primary' ? 'secondary'
+          : ad.referencePickSlot === 'secondary' ? 'origin' : null
+        return {alignDraft:next}
       }
       // Clicking a chosen element takes it out of its slot.
       if (ad.primary === id) return { alignDraft: withSlotRef(ad, 'primary', null) }

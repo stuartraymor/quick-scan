@@ -87,6 +87,12 @@ else {
           return {mesh:document.querySelector('.file-info').textContent, kernel:document.querySelector('[data-test="kernel-status"]').textContent};
         })()`);
         result.errors = errors;
+        // Kernel readiness can precede the compositor's first frame after
+        // reload. Make the verification window visible and wait for paint
+        // before requesting screenshot evidence.
+        win.show();
+        win.focus();
+        await win.webContents.executeJavaScript('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
         const image = await win.webContents.capturePage();
         fs.writeFileSync(path.join(app.getPath('userData'), 'desktop-smoke.png'), image.toPNG());
         fs.writeFileSync(path.join(app.getPath('userData'), 'desktop-smoke.json'), JSON.stringify(result,null,2));

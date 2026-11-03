@@ -64,7 +64,7 @@ import { ConnectorBar } from './ui/ConnectorBar'
 import { StatusStrip } from './ui/StatusStrip'
 import { ViewportMenu } from './ui/ViewportMenu'
 import { BoxSelect } from './ui/BoxSelect'
-import { ExtractHints } from './ui/ExtractHints'
+import { ALIGN_HINT_LINES, ExtractHints } from './ui/ExtractHints'
 import { MeasureDialog } from './ui/MeasureDialog'
 import { MultipleSections } from './ui/MultipleSections'
 import { BusyOverlay } from './ui/BusyOverlay'
@@ -592,11 +592,12 @@ export default function App() {
   const handleStartAlignment = () => {
     clearPreview()
     useStore.getState().startAlignment()
-    useStore
-      .getState()
-      .setStatus(
-        'Step 1 — pick 3 points on the face the part stands on, or choose a measured element.',
-      )
+    // The dialog opens on Top, as QUICKSURFACE's does: the primary's outward
+    // normal becomes +Z.
+    useStore.getState().setAlignmentAxis('primary', 'z+')
+    useStore.getState().setAlignmentAxis('secondary', 'y-')
+    useStore.getState().beginAlignmentReferencePick('primary')
+    useStore.getState().setStatus(ALIGN_HINT_LINES.join(' '))
   }
 
   // The exports live in src/app/exports.ts — they read the stores directly,
@@ -1958,7 +1959,7 @@ export default function App() {
             onAutoAlign={() => void session.alignment.proposeAutoAlign()}
             onAlignSymmetry={() => void session.alignment.proposeSymmetry()}
             onStartAlignment={handleStartAlignment}
-            onApplyAlignment={(m) => void handleApplyAlignment(m)}
+            onApplyAlignment={handleApplyAlignment}
             onApplyManual={handleApplyManual}
             onAlignCurrentView={() => { const scene = sceneRef.current; if (scene) { useInteractiveAlign.getState().orientToView(scene.alignmentFromCurrentView()); scene.setAlignPreview(rigidToColumnMajor(useInteractiveAlign.getState().rigid)); scene.viewFrom('top'); scene.fitToView() } }}
             onResetAlignment={() => void handleResetAlignment()}

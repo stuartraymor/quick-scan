@@ -177,3 +177,10 @@ export function alignmentSlotAccepts(slot: AlignSlot, element: Element): boolean
 export function flippedAlignmentAxis(axis: AxisDir): AxisDir {
   return (axis[0] + (axis[1] === '+' ? '-' : '+')) as AxisDir
 }
+
+/** Top/Right use positive normals; Front uses -Y. Changing the target
+ * plane preserves whether Flip was applied relative to those base poses. */
+export function alignmentTileAxis(current: AxisDir, tile: AxisDir): AxisDir {
+  const baseSign = current[0] === 'y' ? '-' : '+'
+  return current[1] === baseSign ? tile : flippedAlignmentAxis(tile)
+}

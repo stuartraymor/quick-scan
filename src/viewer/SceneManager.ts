@@ -11,6 +11,7 @@
 import * as THREE from 'three'
 import type { LinkedView } from './cameraLink'
 import { OrthoViewport, STANDARD_VIEWS, viewAcross, type StandardView } from './orthoViewport'
+import type { ProjectView } from './projectView'
 import { AxisGizmo, type GizmoAxis, type GizmoTarget } from './axisGizmo'
 import { NavigationGuides } from './navigationGuides'
 import { WandCursorOwner } from './cursorOwner'
@@ -667,6 +668,10 @@ export class SceneManager {
     return this.viewport.viewLink()
   }
 
+  restoreProjectView(view: ProjectView): void {
+    this.viewport.restoreProjectView(view)
+  }
+
   /** With the brush armed, a plain press starts a stroke or a marquee; a grip
    *  under the cursor takes the plain left-drag — the navigator has stepped
    *  aside for both. While a marking gesture is live the grips never get a
@@ -991,7 +996,9 @@ export class SceneManager {
         1e-4,
       )
       this.scanAxis = axis
-      this.frameCamera(geometry.boundingBox!, this.scanAxis)
+      // New imports open from the same Z-up three-quarter view as the
+      // isometric command, rather than rotating a long scan broadside.
+      this.frameCamera(geometry.boundingBox!, null, STAGE_VIEW)
     })
   }
 
@@ -3064,7 +3071,7 @@ export class SceneManager {
 
   /** Frame the camera so that both models are on screen, wherever the
    *  reference happens to sit before anything has been fitted. */
-  frameAll(): void {
+  frameAll(view?: StandardView): void {
     const box = new THREE.Box3()
     this.partGroup.updateMatrixWorld(true)
     if (this.mesh) {
@@ -3084,7 +3091,8 @@ export class SceneManager {
     if (box.isEmpty()) return
     // A scan is framed across its long axis; anything else on a blank stage
     // from the standard three-quarter view, with room round it to work into.
-    if (this.mesh || this.nominalMesh) this.frameCamera(box, this.scanAxis)
+    if (view) this.frameCamera(box, null, STANDARD_VIEWS[view])
+    else if (this.mesh || this.nominalMesh) this.frameCamera(box, this.scanAxis)
     else this.frameCamera(box.clone().expandByScalar(box.min.distanceTo(box.max) * 0.3), null)
   }
 

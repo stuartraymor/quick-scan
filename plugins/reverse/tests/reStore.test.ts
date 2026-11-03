@@ -56,7 +56,7 @@ describe('feature undo', () => {
     expect(s().canRedo()).toBe(true)
     s().redoFeatures()
     expect(s().features).toHaveLength(1)
-    expect(s().features[0].name).toBe('Sketch 1')
+    expect(s().features[0].name).toBe('Sketch(1)')
   })
 
   it('restores the names and ids the list had, so a redone feature is the same feature', () => {

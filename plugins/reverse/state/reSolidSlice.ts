@@ -2,6 +2,7 @@
 // The Extrude and Revolve boxes' actions: started on a sketch or a face,
 // edited, their profiles picked, their numbers set, and committed.
 
+import { scanReach } from './scanReach'
 import type { StoreApi } from 'zustand'
 import { dot, sub } from '../../../src/core/vec'
 import { fmtLen } from '../../../src/core/units'
@@ -27,6 +28,11 @@ export const solidSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'extrude
     set((s) => {
       const sketches = s.features.filter((f): f is SketchFeature => f.kind === 'sketch')
       const sketch = sketchId !== null ? sketches.find((f) => f.id === sketchId) : sketches[sketches.length - 1]
+      // QUICKSURFACE opens an extrude on the part's full depth — from the
+      // sketch plane to the far side of the scan along its normal (22.559 mm
+      // on the sample bracket, recorded live). With no scan to measure, 10.
+      const reach = sketch ? scanReach(sketch.frame.origin, sketch.frame.normal) : null
+      const to = reach !== null && reach > 1e-3 ? Math.round(reach * 1e4) / 1e4 : 10
       // Join, as a CAD extrude does: every body it meets, a body of its own
       // where it meets none — the first one makes the first body.
       return {
@@ -40,7 +46,7 @@ export const solidSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'extrude
         extrudeDraft: {
           sketchId: sketch?.id ?? null,
           regions: regions ?? autoRegions(sketch?.sketch),
-          extent: { kind: 'distance', from: 0, to: 10 },
+          extent: { kind: 'distance', from: 0, to },
           draftDeg: 0,
           op: 'join',
         },

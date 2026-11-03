@@ -37,11 +37,11 @@ const AXES: { axis: 'x' | 'y' | 'z'; label: string; title: string }[] = [
 /** A plane through a coordinate axis, turned about it — QUICKSURFACE's
  *  "For Revolved Surface" plane. */
 const radialOn = (axis: 'x' | 'y' | 'z', angleDeg = 0): PlaneRef => ({ kind: 'radial', axis: { kind: 'world', axis }, angleDeg })
-/** Where QUICKSURFACE's slicing plane starts: through the middle of the part,
- *  so the cut shows at once — not at the origin, which a scan may lie far off. */
+/** Aligned parts use their coordinate origin. Before alignment the middle
+ * of an arbitrarily positioned scan gives a useful initial section. */
 export const throughPart = (axis: 'x' | 'y' | 'z'): PlaneRef => {
   const store = useStore.getState()
-  const c = store.fileName ? store.modelCenter : [0, 0, 0]
+  const c = store.fileName && store.appliedAlignment === null ? store.modelCenter : [0, 0, 0]
   return { kind: 'world', axis, offset: c[axis === 'x' ? 0 : axis === 'y' ? 1 : 2] }
 }
 const placing = () => useReverse.setState((s) => (s.sketchDraft ? { sketchDraft: { ...s.sketchDraft, placing: true } } : {}))

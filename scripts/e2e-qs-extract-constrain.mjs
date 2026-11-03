@@ -64,24 +64,27 @@ try {
   check(first?.kind === 'plane' && Math.abs(first.n[2]) < 1 && Math.abs(first.n[1]) > 1e-3, 'Plane 1 is fitted tilted, as the scan is')
 
   // Auto Constrain: the second patch is 0.2 degrees from parallel and 0.4 mm away.
-  check(await page.$eval('[data-test=extract-tilt]', e => e.disabled), 'Tilt tolerance stays greyed until Auto Constrain is on')
-  await page.click('[data-test=extract-auto-constrain]')
-  check(await page.$eval('[data-test=extract-tilt]', e => !e.disabled && e.value === '0.5') && await page.$eval('[data-test=extract-coincidence]', e => !e.disabled && e.value === '1'), 'Auto Constrain opens Tilt 0.5 degrees and Coincidence 1 mm')
+  check(await page.$('[data-test=extract-tilt]') === null, 'Create & Stay hides fit-only controls until the next fit')
   await clickAt(12, 52, 3.4 + 12 * T2)
   await page.waitForSelector('[data-test=extract-quick]')
   await fitPlane()
+  check(await page.$eval('[data-test=extract-tilt]', e => e.disabled), 'Tilt tolerance stays greyed until Auto Constrain is on')
+  await page.click('[data-test=extract-auto-constrain]')
+  check(await page.$eval('[data-test=extract-tilt]', e => !e.disabled && e.value === '0.5') && await page.$eval('[data-test=extract-coincidence]', e => !e.disabled && e.value === '1'), 'Auto Constrain opens Tilt 0.5 degrees and Coincidence 1 mm')
+  await page.waitForFunction(() => !document.querySelector('[data-test=extract-create-stay]')?.disabled && !!document.querySelector('[data-test=extract-preview]'))
   let st = await state()
-  check(/parallel to Plane 1/.test(st.status) && /coincident with Plane 1/.test(st.status), `the status says what was snapped: ${st.status}`)
+  check(st.status.includes(`parallel to ${first.name}`) && st.status.includes(`coincident with ${first.name}`), `the status says what was snapped: ${st.status}`)
   check(Math.abs(dot(st.draft.n, first.n)) > 1 - 1e-9, 'the new plane is exactly parallel to Plane 1')
   check(Math.abs(dot(first.n, [st.draft.c[0] - first.c[0], st.draft.c[1] - first.c[1], st.draft.c[2] - first.c[2]])) < 1e-6, 'and lies in Plane 1 (coincident)')
   await page.click('[data-test=extract-create-stay]')
   check((await state()).elements.length === 2, 'it is created as a second plane')
 
   // Dropdown: hold the first patch's plane parallel to OXY.
-  await page.click('[data-test=extract-auto-constrain]')
   await clickAt(12, 12, 3 + 12 * T1)
   await page.waitForSelector('[data-test=extract-quick]')
   await fitPlane()
+  await page.click('[data-test=extract-auto-constrain]')
+  await page.waitForSelector('[data-test=extract-preview]')
   const free = (await state()).draft
   await page.select('[data-test=extract-constraint]', 'parallel-oxy')
   await page.waitForFunction(async () => (await import('/src/state/store.ts')).useStore.getState().draft?.fit?.normal?.[2] === 1)

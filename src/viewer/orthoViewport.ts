@@ -11,6 +11,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js'
 import { spreadLabels } from './labelSpread'
 import type { LinkedView } from './cameraLink'
+import type { ProjectView } from './projectView'
 import type { ControlScheme } from './navSchemes'
 import { OrthoNavigator } from './orthoNav'
 import {
@@ -767,6 +768,19 @@ export class OrthoViewport {
   setExtents(halfW: number, halfH: number): void {
     this.fitExtent = { halfW, halfH }
     this.applyFrustum()
+    this.invalidate()
+  }
+
+  restoreProjectView(view: ProjectView): void {
+    this.flight = null
+    this.camera.position.fromArray(view.position)
+    this.camera.up.fromArray(view.up)
+    this.controls.target.fromArray(view.target)
+    this.camera.zoom = view.zoom
+    this.setExtents(view.halfW, view.halfH)
+    this.camera.lookAt(this.controls.target)
+    this.camera.updateMatrixWorld(true)
+    this.controls.update()
     this.invalidate()
   }
 

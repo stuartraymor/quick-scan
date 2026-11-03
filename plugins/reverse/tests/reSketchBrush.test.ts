@@ -102,6 +102,24 @@ describe('section-point brush geometry', () => {
     const incomplete = fitBrushClosedShape('rectangle', Array.from({ length: 30 }, (_, i): Vec2 => [i / 3, 2]), 0.1)
     expect(typeof incomplete).toBe('string')
   })
+  it('closes a rectangle brushed on three sides where the points end, as QUICKSURFACE does', () => {
+    // A bar's outline from its section: both long sides and one end, the
+    // other end running on into the head and left out.
+    const u: Vec2[] = []
+    for (let i = 0; i <= 40; i++) u.push([0, i * 2], [10, i * 2])
+    for (let i = 1; i < 10; i++) u.push([i, 0])
+    const fit = fitBrushClosedShape('rectangle', u, 0.1)
+    if (typeof fit === 'string') throw new Error(fit)
+    const xs = fit.sketch.entities.flatMap((e) => (e.kind === 'line' ? [e.a[0], e.b[0]] : []))
+    const ys = fit.sketch.entities.flatMap((e) => (e.kind === 'line' ? [e.a[1], e.b[1]] : []))
+    expect(Math.min(...xs)).toBeCloseTo(0, 1)
+    expect(Math.max(...xs)).toBeCloseTo(10, 1)
+    expect(Math.min(...ys)).toBeCloseTo(0, 1)
+    expect(Math.max(...ys)).toBeCloseTo(80, 0)
+    // Two sides missing is still too little to say what the rectangle is.
+    const two: Vec2[] = Array.from({ length: 41 }, (_, i): Vec2 => [0, i * 2]).concat(Array.from({ length: 9 }, (_, i): Vec2 => [i + 1, 0]))
+    expect(typeof fitBrushClosedShape('rectangle', two, 0.1)).toBe('string')
+  })
 })
 
 beforeEach(() => {

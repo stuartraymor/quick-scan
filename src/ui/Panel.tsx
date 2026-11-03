@@ -109,7 +109,7 @@ export function Panel({
   onAlignSymmetry: () => void
   onStartAlignment: () => void
   /** Bake the computed datum alignment into the part. */
-  onApplyAlignment: (m: Rigid) => void
+  onApplyAlignment: (m: Rigid) => Promise<boolean>
   /** Bake a typed-in move / rotate into the part. */
   onApplyManual: (m: Rigid) => void | Promise<boolean>
   onAlignCurrentView?: () => void

@@ -1448,3 +1448,11 @@
 .re-place-offset .field { flex: 1; min-width: 0; }
 .re-place-offset .field input[type='number'] { flex: 1; min-width: 0; width: 0; }
 .re-place-offset button { flex: 0 0 auto; }
+
+/* Create Sketch, as QUICKSURFACE draws it: a field whose box is off (Sections
+   until Stacked sections, Ignore small segments until Outline Mesh) greys its
+   words and its box, and every row fits the dialog's width. */
+.re-place .field:has(> input:disabled) > span { color: var(--muted, #8a9099); }
+.re-place .field > input:disabled { opacity: 0.45; }
+.re-place .field { min-width: 0; }
+.re-place .field > input[type='number'] { min-width: 0; flex: 1 1 40px; width: auto !important; }

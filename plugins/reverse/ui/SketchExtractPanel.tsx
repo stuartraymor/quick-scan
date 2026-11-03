@@ -7,7 +7,7 @@ import { useSketchBrush } from '../state/sketchBrushStore'
 export function SketchExtractPanel({ chainsOf }: { chainsOf: () => SketchChains | null }) {
   const s = useSketchBrush()
   if (!s.open) return null
-  const supported = (id: 'line' | 'arc' | 'circle' | 'curve' | 'rectangle' | 'slot' | 'hexagon', label: string) => <button type="button" data-test={`sketch-fit-${id}`} aria-pressed={s.primitive === id} className={s.primitive === id ? 'on' : undefined} onClick={() => s.setPrimitive(id)}>{label}</button>
+  const supported = (id: 'line' | 'arc' | 'circle' | 'curve' | 'rectangle' | 'slot' | 'hexagon', label: string) => <button type="button" data-test={`sketch-fit-${id}`} aria-pressed={s.primitive === id} className={s.primitive === id ? 'on' : undefined} onClick={() => { s.setPrimitive(id); if (!s.instant && s.selected.length) useSketchBrush.getState().apply() }}>{label}</button>
   return <div className="sketch-extract-panel" data-test="sketch-extract-panel" style={{ display: 'grid', gap: 8 }}>
     <label className="checkrow"><input type="checkbox" data-test="sketch-fit-instant" checked={s.instant} onChange={(e) => s.setInstant(e.target.checked)} />Instant Fit (hold Shift to disable temporarily)</label>
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 3 }}>

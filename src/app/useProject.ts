@@ -9,6 +9,7 @@ import { useRef, type RefObject } from 'react'
 import type { ElementKind } from '../core/types'
 import type { MeshWorkerClient } from '../core/workerClient'
 import type { SceneManager } from '../viewer/SceneManager'
+import { captureProjectView, readProjectView } from '../viewer/projectView'
 import { useStore } from '../state/store'
 import { creaseSetting } from '../core/geometry/crease'
 import { useDeviation } from '../state/deviationStore'
@@ -66,7 +67,11 @@ export function useProject({
 }) {
   const projectClient = useRef<ProjectClient | null>(null)
   const client = () => (projectClient.current ??= new ProjectClient())
-  const capture = () => collectProject(sources.current, elementScope.current, APP_VERSION)
+  const capture = () => {
+    const snapshot = collectProject(sources.current, elementScope.current, APP_VERSION)
+    if (sceneRef.current) snapshot.manifest.viewport = captureProjectView(sceneRef.current.viewLink())
+    return snapshot
+  }
   const recovery = useRecovery(capture, () => imports.busy || useStore.getState().busy, (file) => openProject(file, true))
 
   /** The session as a project file, and the session marked saved — what
@@ -175,7 +180,10 @@ export function useProject({
       useThickness.setState({ probes: manifest.thickness.probes })
       useDeviation.setState({ probes: manifest.deviation.probes })
 
-      sceneRef.current?.frameAll()
+      // Establish navigation bounds first; old files share the import pose.
+      sceneRef.current?.frameAll('iso')
+      const view = readProjectView(manifest.viewport)
+      if (view) sceneRef.current?.restoreProjectView(view)
       useStore.setState({
         busy: false,
         statusText: `Project opened — ${file.name}.${unowned.length > 0 ? ' It also holds work this build has no workspace for; that is kept, and saved with the project.' : ''}`,

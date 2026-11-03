@@ -215,7 +215,7 @@ describe('a sketch dimension reading a parameter', () => {
     expect(sketch().sketch.constraints.find((c) => c.id === dim)).toMatchObject({ value: 30 })
     expect(s().buildVersion).toBe(built + 1)
     expect((s().features.find((f) => f.id === extrude) as ExtrudeFeature).regions).toHaveLength(1)
-    expect(s().removeParameter(width)).toContain('Sketch 1')
+    expect(s().removeParameter(width)).toContain('Sketch(1)')
     s().undoFeatures()
     expect(bottomLength(sketch())).toBeCloseTo(10, 6)
   })

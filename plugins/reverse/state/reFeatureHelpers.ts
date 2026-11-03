@@ -279,7 +279,9 @@ export function nameBodies<B extends { id: number; name: string; surface?: boole
 
 export function nameFor(s: Pick<ReState, 'nextOfKind'>, kind: Feature['kind'] | 'coil'): { name: string; nextOfKind: Record<string, number> } {
   const n = (s.nextOfKind[kind] ?? 0) + 1
-  return { name: `${KIND_LABELS[kind]} ${n}`, nextOfKind: { ...s.nextOfKind, [kind]: n } }
+  // QUICKSURFACE names sketches as it does planes, "Sketch(1)"; other kinds
+  // keep their own until the reference is read for them.
+  return { name: kind === 'sketch' ? `${KIND_LABELS[kind]}(${n})` : `${KIND_LABELS[kind]} ${n}`, nextOfKind: { ...s.nextOfKind, [kind]: n } }
 }
 
 /** The feature list with the Draft a snapped face asked for put after the

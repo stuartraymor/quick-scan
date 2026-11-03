@@ -60,6 +60,9 @@ await page.screenshot({ path: shotPath('reverse-blank-planes.png') })
   check(sel?.kind === 'coordinatePlane' && sel.axis === at.axis, `a click on it selects it (${JSON.stringify(sel && { kind: sel.kind, axis: sel.axis })})`)
   check((await page.$('[data-test=chip-sketch-on]')) !== null, 'its chips offer a sketch on it')
   await page.screenshot({ path: shotPath('reverse-blank-plane-picked.png') })
+  // Tabs leave the modeless panel closed; reopen it as an operator would
+  // before using the selected plane's contextual controls.
+  if (await page.$('[data-test=show-tool-inspector]')) await click(page, '[data-test=show-tool-inspector]')
   await click(page, '[data-test=chip-hide-plane]')
   await sleep(200)
   check((await planesDrawn()).length === 2, 'Hide puts that plane away')

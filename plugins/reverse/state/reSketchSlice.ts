@@ -1236,7 +1236,7 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
     const feature: SketchFeature = {
       id,
       kind: 'sketch',
-      name: d.name.trim() || `Sketch ${nextOfKind.sketch}`,
+      name: d.name.trim() || `Sketch(${nextOfKind.sketch})`,
       plane: d.plane,
       frame: d.frame,
       sketch: cloneSketch(d.sketch),

@@ -114,7 +114,12 @@ export function fitBrushClosedShape(kind: BrushClosedShape, input: readonly Vec2
     for (const e of measured) { const d = nearestOnEntity(e, p).dist; if (d < distance) { nearest = e; distance = d } }
     if (nearest) assigned.get(nearest.id)!.push([p[0], p[1]])
   }
-  if (measured.some((e) => assigned.get(e.id)!.length < 2)) return 'Highlight the complete contour, including both ends and every side.'
+  // A rectangle brushed on three sides, as QUICKSURFACE takes it: the side
+  // left out closes the shape where the points end (the fit's extent holds
+  // it there). Every other shape, and a rectangle with two sides missing,
+  // needs every side.
+  const bare = measured.filter((e) => assigned.get(e.id)!.length < 2).length
+  if (bare > (kind === 'rectangle' ? 1 : 0)) return 'Highlight the complete contour, including both ends and every side.'
   for (const e of measured) if (e.kind !== 'point') { e.points = assigned.get(e.id)!; e.scatter = Math.max(0.001, tolerance / 3) }
   return { sketch, maxDeviation }
 }

@@ -1,3 +1,15 @@
+## 0.0.88 - 2026-11-03
+
+- New mesh imports start in the established Z-up isometric view instead of a principal-axis broadside view.
+- Extract primitives reveals constraints, tolerances and analysis only after fitting; clearing or completing the preview returns to the selection stage. Auto Constrain remains off, as observed in a fresh QUICKSURFACE 8.0.128 session.
+- Desktop verification waits for compositor paint after reload before capturing its screenshot. The failed 0.0.87 candidate is preserved.
+- Added a shared original 768-triangle test-block fixture and saved reference projects in the engineering workspace.
+
+## 0.0.86 - 2026-11-03
+
+- Completes the inherited sample-model workflow fixes: Align dialog defaults to Top (+Z), alignment corner hints, sketch brushing no longer triggers object box selection, three-sided rectangle fitting, select-then-fit with Instant Fit off, persistent disabled Extrude/Revolve entry points, and scan-derived starting extrusion depth.
+- Preserves the existing AI alignment command default and document schemas. Further reference differences remain documented in docs/MODEL_COMPARISON_2026-11-03.md in the engineering workspace.
+
 ## 0.0.85 - 2026-11-03
 
 A polish pass: the workflows used end to end against QUICKSURFACE 8.0.128, the rough edges found fixed.
