@@ -2,6 +2,7 @@
 // The Mesh Tools workspace, as the app finds it: see src/plugins/api.ts for
 // what each part of this is to the app.
 
+import { runMeshHotkey } from './app/meshHotkeys'
 import type { HintStep } from '../../src/core/hints'
 import { registerBusy, registerCommands, registerStateSection, type ScanRulerPlugin } from '../../src/plugins/api'
 import { pick, registerHistory } from '../../src/state/historyStore'
@@ -43,6 +44,12 @@ const plugin: ScanRulerPlugin = {
       if (m.confirming) {
         if (e.key === 'Escape') m.setConfirming(false)
         else if (e.key === 'Enter') confirmButton()?.click()
+        return true
+      }
+      // Additional tools' keys: Ctrl + M smooths, Ctrl + D defeatures the
+      // selected area.
+      if (runMeshHotkey(e, useMark.getState().count)) {
+        e.preventDefault()
         return true
       }
       // Delete marked's and Flip normals' marking, and a region marked to

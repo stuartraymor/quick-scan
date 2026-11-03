@@ -54,7 +54,9 @@ interface ShellState {
 export const useShell = create<ShellState>()((set) => ({
   workspace: 'elements',
   ribbonTab: 'main',
-  inspectorOpen: true,
+  // Closed at start, as QUICKSURFACE opens on an empty stage: a command
+  // opens it, and the reopen key brings the dashboard back.
+  inspectorOpen: false,
   appMenuOpen: false,
   extractOpen: false,
   selection: [],

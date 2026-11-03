@@ -1,3 +1,11 @@
+## 0.0.76 - 2026-11-03
+
+Checked against QUICKSURFACE 8.0.128 running on screen (Edit Scan dialog recorded live).
+
+- Edit Scan: Duplicate triangles row with Remove, as in QUICKSURFACE — triangles on the same three corners as another, either winding, counted and removed as one undo step (the sample scan has 6; removing them also halves its edges on 3+ triangles).
+- Edit Scan: QUICKSURFACE's Additional-tools keys — Ctrl + M smooths the selected area, Ctrl + D defeatures it (deletes the marked bump or dent and fills the hole it leaves).
+- Start: no tool panel over the start card, as QUICKSURFACE opens on an empty stage; a command opens it, and the panel's reopen key brings it back.
+
 ## 0.0.75 - 2026-11-03
 
 Checked against QUICKSURFACE 8.0.128 running on screen.

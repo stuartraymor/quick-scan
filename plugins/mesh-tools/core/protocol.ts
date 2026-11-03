@@ -36,6 +36,7 @@ export type PieceCount = Omit<PieceSurvey, 'islandMask' | 'islandCentres'>
  *  (core/hollow) or thickens an open one into a solid (core/offset). */
 export type ScanEditRequest =
   | { type: 'delete-marked'; vertices: Uint32Array }
+  | { type: 'remove-duplicates' }
   | { type: 'flip'; vertices?: Uint32Array }
   | { type: 'scale'; factors: Vec3; about: Vec3 }
   | { type: 'mirror'; origin: Vec3; normal: Vec3 }
@@ -125,6 +126,8 @@ export interface MeshFigures extends Closedness {
   triangles: number
   bounds: { min: Vec3; max: Vec3 }
   volume: number | null
+  /** Triangles with the same three corners as another (core/duplicates). */
+  duplicates: number
 }
 
 /** Each operation's request and its answer. */

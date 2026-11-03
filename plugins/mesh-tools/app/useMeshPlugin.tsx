@@ -6,6 +6,7 @@
 // the scan, Trim to scan's piece and break, and what it puts on the stage and
 // in the view bar — see src/plugins/api.ts.
 
+import { meshHotkeys } from './meshHotkeys'
 import { meshSceneOf } from '../viewer/meshScene'
 import { useEffect, useRef, useState } from 'react'
 import type { PluginHost, PluginRuntime } from '../../../src/plugins/api'
@@ -92,6 +93,12 @@ export function useMeshPlugin(host: PluginHost): PluginRuntime {
   )
   useEffect(() => installMeshToolsSession(tools), [tools])
   useEffect(() => tools.watch(), [tools])
+  useEffect(() => {
+    meshHotkeys.smooth = () => { useMeshTools.setState({ smoothScope: 'marked' }); void tools.smoothScan(undefined, { units: unitsRef.current }) }
+    meshHotkeys.defeature = () => void tools.defeatureMarked({ units: unitsRef.current })
+    meshHotkeys.removeDuplicates = () => void tools.removeDuplicates({ units: unitsRef.current })
+    return () => { meshHotkeys.smooth = null; meshHotkeys.defeature = null; meshHotkeys.removeDuplicates = null }
+  }, [tools])
   const { reduceField, reduceRgb, copyField, copyRgb } = tools
   const {
     runReduce, removeIslands, deleteMarked, flipScan, cutScan, fillScanHoles, smoothScan, offsetScan, shellScan, booleanScan, trimScan,
@@ -101,6 +108,8 @@ export function useMeshPlugin(host: PluginHost): PluginRuntime {
   // panel's runs are in them. A command's run leaves them out, and is in mm.
   const len = useLength()
   const units = len.units
+  const unitsRef = useRef(units)
+  unitsRef.current = units
   const signed = (v: number) => formatSigned(v, units)
 
   const onMesh = useShell((s) => s.workspace === 'mesh')

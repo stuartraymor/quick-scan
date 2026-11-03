@@ -412,6 +412,19 @@ export function createMeshToolsSession({
     )
   }
 
+  /** Remove the duplicate triangles — Edit Scan's Duplicate triangles row. */
+  const removeDuplicates = (run?: EditRun) =>
+    workerEdit(
+      'Mesh Tools: remove duplicate triangles',
+      'Removing duplicate triangles…',
+      () => ({ type: 'remove-duplicates' }),
+      (r) => {
+        const n = r.kind === 'delete' ? r.triangles : 0
+        return { edit: { kind: 'delete', triangles: n }, status: `Removed ${count(n)} duplicate triangle${n === 1 ? '' : 's'}. Ctrl+Z puts them back.` }
+      },
+      run,
+    )
+
   /** Turn the copy's triangles over — every one, or those of the surface
    *  marked on the part (or `region`, given) — so they face the other way.
    *  The marking goes with the mesh it was on, so the surface turned is in
@@ -529,6 +542,24 @@ export function createMeshToolsSession({
       },
       run,
     )
+  }
+
+  /** Defeature selected area (QUICKSURFACE's Ctrl + D): the marked surface
+   *  deleted and the hole it leaves filled, as one bump or dent taken out.
+   *  The hole is the one nearest the middle of what was marked. */
+  const defeatureMarked = async (run?: EditRun) => {
+    const v = marked()
+    if (v.length === 0) {
+      useStore.getState().setError('Mark the bump or dent to take out first — with the brush, a window or the Magic Wand.')
+      return null
+    }
+    const pos = sceneRef.current?.scanGeometry()?.getAttribute('position')
+    if (!pos) return null
+    const mid: Vec3 = [0, 0, 0]
+    for (const i of v) { mid[0] += pos.getX(i); mid[1] += pos.getY(i); mid[2] += pos.getZ(i) }
+    mid[0] /= v.length; mid[1] /= v.length; mid[2] /= v.length
+    if (!(await deleteMarked(v, run))) return null
+    return fillScanHoles(mid, run)
   }
 
   /** The region a tool works on alone: `region` when given — null for the
@@ -856,6 +887,8 @@ export function createMeshToolsSession({
     discardEditedCopy,
     removeIslands,
     deleteMarked,
+    defeatureMarked,
+    removeDuplicates,
     flipScan,
     scaleScan,
     mirrorScan,
