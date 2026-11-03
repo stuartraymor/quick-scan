@@ -64,6 +64,7 @@ import { ConnectorBar } from './ui/ConnectorBar'
 import { StatusStrip } from './ui/StatusStrip'
 import { ViewportMenu } from './ui/ViewportMenu'
 import { BoxSelect } from './ui/BoxSelect'
+import { ExtractHints } from './ui/ExtractHints'
 import { BusyOverlay } from './ui/BusyOverlay'
 import { ImprintModal } from './ui/Imprint'
 import { SettingsModal } from './ui/SettingsModal'
@@ -2188,6 +2189,7 @@ export default function App() {
         </div>
       </div>
       <BoxSelect scene={() => sceneRef.current} />
+      <ExtractHints />
       <ViewportMenu
         hasScan={Boolean(fileName)}
         onZoomFit={() => sceneRef.current?.fitToView()}

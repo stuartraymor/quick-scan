@@ -1,3 +1,11 @@
+## 0.0.74 - 2026-11-03
+
+Checked against QUICKSURFACE 8.0.128 running on screen.
+
+- Surfacing → Pipe: pick a path sketch and type a diameter; a circle square to the path's start is swept along it and opens in the Sweep editor with its live preview, then Create. Also in the Surfacing ▾ menu.
+- Extract primitives: QUICKSURFACE's three-line hint box in the bottom-right corner of the 3D view (paint to select, Alt to unselect, Ctrl + wheel for brush size and Magic Wand sensitivity).
+- Extract primitives: Ctrl + mouse wheel over the view now sizes the brush, or with the Magic Wand changes its sensitivity in 0.1° steps, instead of zooming.
+
 ## 0.0.73 - 2026-11-03
 
 Covers local builds 0.0.63 to 0.0.73, each checked against QUICKSURFACE 8.0.128 running on screen.

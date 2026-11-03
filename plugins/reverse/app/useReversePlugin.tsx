@@ -20,6 +20,7 @@ import { builtAlignment } from '../../../src/core/deviation/align'
 import { curvatureScale } from '../../../src/core/geometry/curvature'
 import type { Vec2 } from '../../../src/core/flat/types'
 import { MapLegend } from '../../../src/ui/MapLegend'
+import { PipeDialog, usePipeDialog } from '../ui/PipeDialog'
 import { Icon, type IconName } from '../../../src/ui/icons'
 import { anyChanged, PartChoice, PartKey, PartOption, type ViewSwitch } from '../../../src/ui/PartKey'
 import { KeyIcon } from '../ui/reIcons'
@@ -454,6 +455,7 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
   // The live map's reading and the curvature colouring, for their legends
   // beside the viewport.
   const mapReport = useReverse((s) => s.mapReport)
+  const pipeOpen = usePipeDialog((s) => s.open)
   const len = useLength()
   const curvature = useReverse((s) => (s.curvatureShown ? s.curvature : null))
   // A sketch takes the stage: the 2D sheet stands where the 3D viewport was.
@@ -809,6 +811,7 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
     ),
     overlay: (
       <>
+        {pipeOpen && <PipeDialog onClose={() => usePipeDialog.getState().setOpen(false)} />}
         {mapReport && (
           <MapLegend
             id="re-map"

@@ -235,7 +235,7 @@ export function DesktopRibbon({ onFit, onSection, onAlign, onFineAlign, onPointA
     {tool('Fine-align reference mesh …', 'compare', () => { go('deviation'); onFineAlign() }, needsScan || !hasReference, 'Requires a loaded scan and reference model; run the existing best fit')}
   </div></details>
   const surfacingMenu = <details className="ribbon-dropdown"><summary className="desktop-ribbon-tool" title="Surface creation and editing"><Icon name="loft" size={25}/><span>Surfacing ▾</span></summary><div className="ribbon-menu">
-    {cad('surface','Fit Surface','surface',true)}{cad('sheet','Extruded surface','sheet')}{cad('loft','Loft','loft')}{cad('sweep','Sweep','spline')}{cad('network','Patch network','surface',true)}{cad('thicken','Thicken surface','shell')}{cad('thread','Helix','spline')}
+    {cad('surface','Fit Surface','surface',true)}{cad('sheet','Extruded surface','sheet')}{cad('loft','Loft','loft')}{cad('sweep','Sweep','spline')}{cad('pipe','Pipe','elCylinder')}{cad('network','Patch network','surface',true)}{cad('thicken','Thicken surface','shell')}{cad('thread','Helix','spline')}
   </div></details>
   const patternMenu = <details className="ribbon-dropdown"><summary className="desktop-ribbon-tool" title="Patterns and mirror"><Icon name="pattern" size={25}/><span>Pattern ▾</span></summary><div className="ribbon-menu">{cad('pattern','Linear / circular pattern','pattern')}{cad('mirror','Mirror','mirror')}</div></details>
   const examplesMenu = <details className="ribbon-dropdown" data-test="examples-menu">
@@ -336,7 +336,7 @@ export function DesktopRibbon({ onFit, onSection, onAlign, onFineAlign, onPointA
   </>
   const surfacingTab = <>
     <Group label="Create">{cad('surface', 'Fit Surface', 'surface', true)}{cad('loft', 'Loft', 'loft')}
-      <div className="ribbon-text-stack">{soonText('Fill Surface', 'fillHoles')}{cadText('sweep', 'Sweep', 'spline')}{soonText('Pipe', 'elCylinder')}</div>
+      <div className="ribbon-text-stack">{soonText('Fill Surface', 'fillHoles')}{cadText('sweep', 'Sweep', 'spline')}{cadText('pipe', 'Pipe', 'elCylinder')}</div>
       <div className="ribbon-text-stack">{cadText('sheet', 'From 2D sketch', 'sheet')}</div>
       {cad('network', '3D Sketch', 'sketch', true)}
       <div className="ribbon-text-stack">{cadText('thread', 'Helix', 'rotateCw')}{soonText('Roll Sketch', 'revolve')}</div></Group>

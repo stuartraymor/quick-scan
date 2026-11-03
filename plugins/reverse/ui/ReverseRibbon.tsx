@@ -12,6 +12,7 @@ import { bodyMaker } from '../core/features'
 import { useNotes } from '../state/noteStore'
 import { usePrefs } from '../../../src/state/prefsStore'
 import { throughPart } from './PlaceSketch'
+import { usePipeDialog } from './PipeDialog'
 
 /** Shared workflow buttons still call plugin-owned verbs and prerequisites. */
 export function useReverseRibbonActions(onExport: () => void): NonNullable<PluginRuntime['ribbonActions']> {
@@ -138,6 +139,7 @@ export function useReverseRibbonActions(onExport: () => void): NonNullable<Plugi
     thread: action(() => state.startFeature('thread'), state.bodies.length > 0, 'Create or import a body first.'),
     loft: action(() => state.startFeature('loft'), sketches >= 2, 'Create at least two sketches first.'),
     sweep: action(() => state.startFeature('sweep'), sketches >= 2, 'Create at least two sketches first.'),
+    pipe: action(() => usePipeDialog.getState().setOpen(true), sketches > 0, 'Draw the path in a 2D sketch first.'),
     sheet: action(() => state.startFeature('sheet'), sketches > 0, 'Create a sketch first.'),
     thicken: action(() => state.startFeature('thicken'), state.bodies.some(b => b.surface), 'Create a surface body first.'),
     boolean: action(() => state.startFeature('boolean'), state.bodies.length >= 2, 'Create or import at least two bodies first.'),
