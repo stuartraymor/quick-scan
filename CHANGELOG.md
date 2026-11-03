@@ -1,3 +1,11 @@
+## 0.0.75 - 2026-11-03
+
+Checked against QUICKSURFACE 8.0.128 running on screen.
+
+- CAD → Scale body: the bodies scaled uniformly by a typed factor about their middle, as a Move body feature with a Scale field (the kernel keeps every face, so later features still find them). Move body's own box has the Scale field too.
+- Align by Coordinate System → Translate Pick…: click a point on the scan and X, Y, Z fill so that point lands on the origin after the alignment; the Translate row wraps in a narrow panel.
+- Start card: "Recent files:" under the tiles, as on QUICKSURFACE's welcome screen — the desktop app's recent documents, one click to open.
+
 ## 0.0.74 - 2026-11-03
 
 Checked against QUICKSURFACE 8.0.128 running on screen.

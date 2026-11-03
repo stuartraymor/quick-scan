@@ -26,7 +26,8 @@ interface FilesBridge {
   clear(): Promise<RecentDocument[]>
   onChanged(cb: () => void): () => void
 }
-const filesBridge = (): FilesBridge | undefined => (window as unknown as { quickScanFiles?: FilesBridge }).quickScanFiles
+export const OPEN_FILE_EVENT = 'quickscan:open-file'
+export const filesBridge = (): FilesBridge | undefined => (window as unknown as { quickScanFiles?: FilesBridge }).quickScanFiles
 
 /** "2 h ago", "yesterday", or the date — for the recent list. */
 export function ago(then: number, now = Date.now()): string {

@@ -9,7 +9,8 @@ import {
   manualRigid,
   type AxisDir,
 } from '../core/alignment'
-import type { Rigid } from '../core/deviation/rigid'
+import { rigidApply, type Rigid } from '../core/deviation/rigid'
+import { useShell } from '../state/shellStore'
 import type { RefRole } from '../core/elements/refs'
 import {
   alignCenterOf,
@@ -439,7 +440,7 @@ export function AlignmentSection({
             onFlip={() => {}}
             flipDisabled
           />
-          <div className="field" data-test="align-translate">
+          <div className="field" data-test="align-translate" style={{ flexWrap: "wrap", gap: 6 }}>
             <span>Translate</span>
             {(['X', 'Y', 'Z'] as const).map((axis, i) => (
               <label key={axis} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -454,6 +455,28 @@ export function AlignmentSection({
                 />
               </label>
             ))}
+            <button
+              data-test="align-translate-pick"
+              disabled={busy}
+              title="Click a point on the scan: X, Y and Z are filled so that point lands on the origin after the alignment"
+              onClick={() => {
+                useStore.getState().setStatus('Click the point on the scan that should go to the origin.')
+                const pick = (e: MouseEvent) => {
+                  if (!(e.target as HTMLElement | null)?.closest?.('.desktop-mid canvas')) return
+                  document.removeEventListener('click', pick, true)
+                  const p = useShell.getState().scanPointAt?.(e.clientX, e.clientY)
+                  if (!p) { useStore.getState().setStatus('No scan under that point — Pick… again and click on the part.'); return }
+                  e.stopPropagation()
+                  const at = new Float64Array(p)
+                  if (alignReady) rigidApply(alignReady.rigid, p[0], p[1], p[2], at)
+                  setShift([0, 1, 2].map((i) => String(Number(len.toDisplay(-at[i]).toFixed(4)))))
+                  useStore.getState().setStatus('Translate set: the picked point goes to the origin when you press Apply.')
+                }
+                document.addEventListener('click', pick, true)
+              }}
+            >
+              Pick …
+            </button>
           </div>
 
           {/* The pose itself is previewed on the part, against the coordinate

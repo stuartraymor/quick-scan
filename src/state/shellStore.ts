@@ -32,6 +32,9 @@ interface ShellState {
   /** What is selected in the Objects tree and by a box drawn on the stage:
    *  'scan', 'element:<id>', 'section:<id>'. */
   selection: string[]
+  /** The point on the scan under a client position, from the main viewport —
+   *  for a one-click pick in a dialog (Align's Translate Pick…). */
+  scanPointAt: ((x: number, y: number) => [number, number, number] | null) | null
   setSelection: (keys: string[]) => void
   /** Triangles of the scan hidden by Hide Selected / Isolate (a view state). */
   hiddenTriangles: number
@@ -55,6 +58,7 @@ export const useShell = create<ShellState>()((set) => ({
   appMenuOpen: false,
   extractOpen: false,
   selection: [],
+  scanPointAt: null,
   setSelection: (selection) => set({ selection }),
   prepareStep: null,
   setPrepareStep: (prepareStep) => set({ prepareStep }),

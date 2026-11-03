@@ -1973,6 +1973,7 @@ export default function App() {
             <Viewer
               onReady={(s) => {
                 sceneRef.current = s
+                useShell.setState({ scanPointAt: (x, y) => sceneRef.current?.scanHitAt(x, y)?.point ?? null })
                 attachSurfaceScene(() => sceneRef.current)
                 s.setNavScheme(schemeById(useStore.getState().navScheme))
                 s.setViewTheme(sceneTheme(useStore.getState().viewTheme, usePrefs.getState().dark))

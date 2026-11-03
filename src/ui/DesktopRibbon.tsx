@@ -355,7 +355,7 @@ export function DesktopRibbon({ onFit, onSection, onAlign, onFineAlign, onPointA
       <div className="ribbon-text-stack">{cadText('boolean', 'Combine', 'opJoin')}{cadText('boolean', 'Cut', 'opCut')}{cadText('boolean', 'Intersect', 'opIntersect')}</div>
       <div className="ribbon-text-stack">{cadText('shell', 'Shell', 'shell')}{cadText('draft', 'Draft', 'draft')}{cadText('deleteFace', 'Delete faces', 'deleteSurface')}</div>
       <div className="ribbon-text-stack">{cadText('moveBody', 'Move body', 'navigate')}{cadText('moveFace', 'Move face', 'moveFace')}{soonText('Separate bodies', 'islands')}</div>
-      <div className="ribbon-text-stack">{soonText('Scale body', 'dimLength')}{cadText('split', 'Split solid', 'split')}</div>
+      <div className="ribbon-text-stack">{cadText('scaleBody', 'Scale body', 'dimLength')}{cadText('split', 'Split solid', 'split')}</div>
     </Group>
     <Group label="Edges">{cad('fillet', 'Fillet / Chamfer', 'fillet')}</Group>
     <Group label="Patterns"><div className="ribbon-text-stack">{cadText('pattern', 'Circular pattern', 'rotateCcw')}{cadText('pattern', 'Linear pattern', 'pattern')}{cadText('mirror', 'Mirror', 'mirror')}</div></Group>

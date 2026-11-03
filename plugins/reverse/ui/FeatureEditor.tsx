@@ -964,8 +964,12 @@ export function FeatureEditor() {
           </label>
           <XyzField label="Move" kind="length" slot="translate" value={d.translate} testId="move-body-translate" hint="How far along the part's X, Y and Z, after the turn — the arrows on the part drag them" onCommit={(i, v) => axis('translate', i, v)} />
           <XyzField label="Turn" unit="°" kind="angle" slot="rotate" value={d.rotate} testId="move-body-rotate" hint="Degrees about X, then about Y, then about Z, each through the middle of the bodies as they were picked — the rings on the part drag them; each ring stands about the axis its angle turns about" onCommit={(i, v) => axis('rotate', i, v)} />
+          <label className="field" title="Scale body: the bodies made larger or smaller by this factor, the same in X, Y and Z, about the middle of the bodies as picked">
+            <span>Scale</span>
+            <input type="number" step="any" min="0" data-test="move-body-scale" value={d.scale ?? 1} onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v > 0) set({ scale: v }) }} />
+          </label>
           <div className="toolrow">
-            <button data-test="move-body-reset" disabled={d.translate.every((v) => v === 0) && d.rotate.every((v) => v === 0)} title="Put the bodies back where they stood: every distance and angle zero" onClick={() => set({ translate: [0, 0, 0], rotate: [0, 0, 0], exprs: undefined })}>
+            <button data-test="move-body-reset" disabled={d.translate.every((v) => v === 0) && d.rotate.every((v) => v === 0) && (d.scale ?? 1) === 1} title="Put the bodies back where they stood: every distance and angle zero, the scale 1" onClick={() => set({ translate: [0, 0, 0], rotate: [0, 0, 0], scale: undefined, exprs: undefined })}>
               Reset
             </button>
           </div>

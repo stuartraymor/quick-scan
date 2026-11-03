@@ -148,6 +148,7 @@ export function useReverseRibbonActions(onExport: () => void): NonNullable<Plugi
     shell: action(() => state.startFeature('shell'), state.bodies.length > 0, 'Create or import a body first.'),
     draft: action(() => state.startFeature('draft'), state.bodies.length > 0, 'Create or import a body first.'),
     moveBody: action(() => state.startFeature('moveBody', { bodies: state.bodies.filter((b) => b.visible).map((b) => b.id) }), state.bodies.length > 0, 'Create or import a body first.'),
+    scaleBody: action(() => { state.startFeature('moveBody', { bodies: state.bodies.filter((b) => b.visible).map((b) => b.id) }); useReverse.setState((s) => (s.featureDraft?.kind === 'moveBody' ? { featureDraft: { ...s.featureDraft, scale: 1 } } : {})); useStore.getState().setStatus('Scale body: type the factor in Scale — 2 doubles every size, 0.5 halves it — then Create.') }, state.bodies.length > 0, 'Create or import a body first.'),
     split: action(() => state.startFeature('split'), state.bodies.length > 0, 'Create or import a body first.'),
     offsetBody: action(() => state.startFeature('offsetBody'), state.bodies.length > 0, 'Create or import a body first.'),
     export: action(onExport, state.bodies.some((b) => b.visible && (b.closed || (b.surface && state.features.some((f) => f.kind === 'network' && f.id === bodyMaker(b.id))))), 'Create a closed solid or a patch network first.'),

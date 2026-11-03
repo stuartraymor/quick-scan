@@ -8,7 +8,9 @@
 // model is a card over the thing the user loaded it to look at, and anything the
 // workspace still needs after that has a row of its own in the panel to say so.
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useStore } from '../state/store'
+import { filesBridge, OPEN_FILE_EVENT, type RecentDocument } from './AppMenu'
 import { SCAN_ACCEPT } from '../core/formats'
 import { usePulse } from '../app/useHints'
 import { SAMPLE_DETAIL } from '../app/sampleScan'
@@ -131,6 +133,7 @@ export function StartPane({
           <small>No scan to hand? {SAMPLE_DETAIL}.</small>
         </div>
       )}
+      <RecentFiles />
       {skip && (
         <div className="startskip">
           <button className="ghost" data-test="start-skip" title={skip.title} onClick={skip.onClick}>
@@ -138,6 +141,38 @@ export function StartPane({
           </button>
         </div>
       )}
+    </div>
+  )
+}
+
+/** "Recent files:" under the start tiles, as QUICKSURFACE's welcome screen
+ *  lists them: the desktop app's recent documents, newest first, one click
+ *  to open. Nothing in the browser build, which keeps no such list. */
+function RecentFiles() {
+  const files = filesBridge()
+  const [recent, setRecent] = useState<RecentDocument[]>([])
+  useEffect(() => {
+    if (!files) return
+    const refresh = () => void files.recent().then(setRecent).catch(() => setRecent([]))
+    refresh()
+    return files.onChanged(refresh)
+  }, [files])
+  const shown = recent.filter((d) => d.exists).slice(0, 6)
+  if (!files || shown.length === 0) return null
+  return (
+    <div className="startrecent" data-test="start-recent" style={{ marginTop: 14, textAlign: 'left', minWidth: 320 }}>
+      <b style={{ display: 'block', marginBottom: 4 }}>Recent files:</b>
+      {shown.map((d) => (
+        <button
+          key={d.path}
+          className="ghost"
+          style={{ display: 'block', width: '100%', textAlign: 'left' }}
+          title={d.path}
+          onClick={() => void files.open(d.path).then(({ name, data }) => window.dispatchEvent(new CustomEvent(OPEN_FILE_EVENT, { detail: new File([new Uint8Array(data)], name) }))).catch((e) => useStore.getState().setError(e instanceof Error ? e.message : String(e)))}
+        >
+          {d.name} <small style={{ opacity: 0.6 }}>{d.folder}</small>
+        </button>
+      ))}
     </div>
   )
 }

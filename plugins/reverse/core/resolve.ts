@@ -353,8 +353,9 @@ export function resolveFeatures(
       continue
     }
     if (f.kind === 'moveBody') {
-      const numbers = [...f.pivot, ...f.translate, ...f.rotate]
+      const numbers = [...f.pivot, ...f.translate, ...f.rotate, f.scale ?? 1]
       if (f.bodies.length === 0) failed(f, 'No body is picked to move.')
+      else if (!((f.scale ?? 1) > 0)) failed(f, 'The scale has to be more than zero.')
       else if (!numbers.every(Number.isFinite)) failed(f, 'The move needs a number for every distance and angle.')
       else steps.push({ kind: 'moveBody', id: f.id, name: f.name, bodies: [...f.bodies], matrix: moveMatrix(f), copy: f.copy })
       continue

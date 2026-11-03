@@ -222,7 +222,7 @@ export const featureSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'featu
           draft = { kind: 'import', ...head, file: { ...f.file } }
           break
         case 'moveBody':
-          draft = { kind: 'moveBody', ...head, bodies: [...f.bodies], pivot: [...f.pivot], translate: [...f.translate], rotate: [...f.rotate], copy: f.copy }
+          draft = { kind: 'moveBody', ...head, bodies: [...f.bodies], pivot: [...f.pivot], translate: [...f.translate], rotate: [...f.rotate], ...(f.scale !== undefined ? { scale: f.scale } : {}), copy: f.copy }
           break
         case 'surface':
           draft = { kind: 'surface', ...head, region: f.region, floodDeg: DEFAULT_FLOOD_DEG, paint: false, fit: { ...f.fit, net: f.fit.net ? { ...f.fit.net } : null }, shape: f.shape ?? 'freeform', constrain: f.constrain ? { ...f.constrain } : { mode: 'auto' }, ...(f.regionBox ? { regionBox: f.regionBox } : {}), ...(f.regionStale ? { regionStale: f.regionStale } : {}) }

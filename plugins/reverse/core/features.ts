@@ -717,6 +717,8 @@ export interface MoveBodyFeature extends FeatureFlags {
   pivot: Vec3
   translate: Vec3
   rotate: Vec3
+  /** Scale body: uniform, about the pivot. Absent is 1. */
+  scale?: number
   /** The bodies stay where they are and copies of them are moved. */
   copy: boolean
   /** The expressions driving the numbers above, by the field as the box

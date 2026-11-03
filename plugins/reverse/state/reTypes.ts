@@ -444,7 +444,7 @@ export type FeatureDraft = { exprs?: ExprMap } & (
   /** Bodies moved and turned, or copies of them (MoveBodyFeature): clicks
    *  on the part pick the bodies, the pivot following them to their
    *  middle; the gizmo or the box's six numbers place them. */
-  | { kind: 'moveBody'; featureId?: number; name?: string; bodies: number[]; pivot: Vec3; translate: Vec3; rotate: Vec3; copy: boolean }
+  | { kind: 'moveBody'; featureId?: number; name?: string; bodies: number[]; pivot: Vec3; translate: Vec3; rotate: Vec3; scale?: number; copy: boolean }
   /** A surface fitted through a region of the scan: the region gathered
    *  by clicks that flood by normal angle, or with the marking tools while
    *  `paint` is on; the fit's parameters as the feature holds them. */

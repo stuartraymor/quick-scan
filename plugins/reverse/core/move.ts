@@ -25,6 +25,9 @@ export interface Placement {
   pivot: Vec3
   translate: Vec3
   rotate: Vec3
+  /** Scale body: a uniform scale about the pivot, applied before the turn.
+   *  Absent is 1 — a plain move. */
+  scale?: number
 }
 
 /** A rigid move as the kernel takes it: row-major 3 × 4, the turn in the
@@ -64,10 +67,11 @@ export function rotationOf(rotate: Vec3): number[] {
   return mul3(rotZ(rotate[2] * RAD), mul3(rotY(rotate[1] * RAD), rotX(rotate[0] * RAD)))
 }
 
-/** The whole move, the kernel's way round: p′ = R (p − pivot) + pivot +
+/** The whole move, the kernel's way round: p′ = s R (p − pivot) + pivot +
  *  translate. */
 export function moveMatrix(p: Placement): Affine {
-  const r = rotationOf(p.rotate)
+  const s = p.scale ?? 1
+  const r = rotationOf(p.rotate).map((v) => v * s)
   const turned = apply3(r, p.pivot)
   const t: Vec3 = [p.pivot[0] + p.translate[0] - turned[0], p.pivot[1] + p.translate[1] - turned[1], p.pivot[2] + p.translate[2] - turned[2]]
   return [r[0], r[1], r[2], t[0], r[3], r[4], r[5], t[1], r[6], r[7], r[8], t[2]]
@@ -89,8 +93,8 @@ export function moveDir(m: Affine, d: Vec3): Vec3 {
 }
 
 /** Whether a placement leaves everything where it was. */
-export function movesNothing(p: Pick<Placement, 'translate' | 'rotate'>): boolean {
-  return p.translate.every((v) => Math.abs(v) < 1e-9) && p.rotate.every((v) => Math.abs(v % 360) < 1e-9)
+export function movesNothing(p: Pick<Placement, 'translate' | 'rotate' | 'scale'>): boolean {
+  return Math.abs((p.scale ?? 1) - 1) < 1e-12 && p.translate.every((v) => Math.abs(v) < 1e-9) && p.rotate.every((v) => Math.abs(v % 360) < 1e-9)
 }
 
 /** The axes the three rings turn about, X's, Y's and Z's: Z the part's own,

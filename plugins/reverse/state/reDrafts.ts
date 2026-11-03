@@ -99,7 +99,7 @@ export function featureDraftReady(d: FeatureDraft): boolean {
     // A copy is made where it stands as well — a body to work on beside
     // the original — but a move that moves nothing is no move.
     case 'moveBody':
-      return d.bodies.length > 0 && [...d.pivot, ...d.translate, ...d.rotate].every(Number.isFinite) && (d.copy || !movesNothing(d))
+      return d.bodies.length > 0 && [...d.pivot, ...d.translate, ...d.rotate].every(Number.isFinite) && (d.scale ?? 1) > 0 && (d.copy || !movesNothing(d))
   }
 }
 
@@ -250,7 +250,7 @@ export function featureOfDraft(d: FeatureDraft, id: number, name: string): Featu
     case 'import':
       return { id, kind: 'import', name, file: { ...d.file! }, visible: true }
     case 'moveBody':
-      return { id, kind: 'moveBody', name, bodies: [...d.bodies], pivot: [...d.pivot], translate: [...d.translate], rotate: [...d.rotate], copy: d.copy, visible: true }
+      return { id, kind: 'moveBody', name, bodies: [...d.bodies], pivot: [...d.pivot], translate: [...d.translate], rotate: [...d.rotate], ...(d.scale !== undefined && d.scale !== 1 ? { scale: d.scale } : {}), copy: d.copy, visible: true }
   }
 }
 

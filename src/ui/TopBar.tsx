@@ -22,7 +22,7 @@ import { bundleFiles } from '../app/scanFiles'
 import { PROJECT_EXTENSION, projectStem } from '../core/project/manifest'
 import { isProjectFile } from '../app/useProject'
 import { APP_VERSION } from '../version'
-import { AppMenu } from './AppMenu'
+import { AppMenu, OPEN_FILE_EVENT } from './AppMenu'
 import type { MeshFormat } from '../core/exportMesh'
 import type { RecoveryStatus } from '../app/useRecovery'
 
@@ -207,6 +207,13 @@ export function TopBar({
   const barRef = useRef<HTMLElement>(null)
   useFit(barRef)
 
+  // A recent file opened from the start card comes through here, as the
+  // app menu's do.
+  useEffect(() => {
+    const open = (e: Event) => onLoadRef.current((e as CustomEvent<File>).detail, true)
+    window.addEventListener(OPEN_FILE_EVENT, open)
+    return () => window.removeEventListener(OPEN_FILE_EVENT, open)
+  }, [])
   const onLoad = (file: File | undefined, fromRecent = false) => {
     if (file) {
       // The desktop app keeps the list of recent documents; a file opened from
@@ -228,6 +235,8 @@ export function TopBar({
     // Allow re-picking the same file.
     for (const ref of [openRef, scanRef, cadRef]) if (ref.current) ref.current.value = ''
   }
+  const onLoadRef = useRef(onLoad)
+  onLoadRef.current = onLoad
 
   return (
     <>
