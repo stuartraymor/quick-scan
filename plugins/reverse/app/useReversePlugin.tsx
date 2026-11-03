@@ -5,6 +5,7 @@
 // on elements, on sketches and on bodies, the manipulators' drags, and what
 // the workspace puts on the stage — see src/plugins/api.ts.
 
+import { sectionLinePlane, useSectionLine } from '../state/sectionLineStore'
 import { reSceneOf } from '../viewer/reScene'
 import { useEffect, useRef } from 'react'
 import type { PluginHost, PluginRuntime } from '../../../src/plugins/api'
@@ -199,6 +200,24 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
     const store = useStore.getState()
     const re = useReverse.getState()
     if (!store.fileName || store.busy || !clientRef.current) return
+    // Create Sketch → Define interactive: two clicks give the section line.
+    const line = useSectionLine.getState()
+    if (line.active && re.sketchDraft?.placing) {
+      if (!line.first) {
+        line.setFirst(hit.point)
+        store.setStatus('Click to define the end of the section line.')
+        return
+      }
+      const plane = sectionLinePlane(line.first, hit.point, line.snap)
+      if (!plane) {
+        store.setStatus('The two points are one above the other — click the end of the section line somewhere else.')
+        return
+      }
+      line.cancel()
+      if (re.startSketchOn(plane)) useReverse.setState((s) => (s.sketchDraft ? { sketchDraft: { ...s.sketchDraft, placing: true } } : {}))
+      store.setStatus(line.snap ? 'Section line set, snapped to the nearest of X or Y. Create, or click Define interactive again.' : 'Section line set. Create, or click Define interactive again.')
+      return
+    }
     // A Fit Surface gathers its region by clicks: the face under the click,
     // flooded by normal angle, into the region — or out of it with Ctrl.
     if (re.featureDraft?.kind === 'surface') {

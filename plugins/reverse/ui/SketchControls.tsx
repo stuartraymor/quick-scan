@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useState } from 'react'
 import type { SketchChains } from '../app/useReverseWorkspace'
-import { addConstraint, cloneSketch, entityOf, type ConstraintKind } from '../core/sketch'
+import { addConstraint, cloneSketch, entityOf, nearestOnEntity, type ConstraintKind } from '../core/sketch'
 import { useReverse } from '../state/reStore'
 import { useRePrefs } from '../state/rePrefs'
 import { useSketchBrush } from '../state/sketchBrushStore'
@@ -10,10 +10,18 @@ import { useSketchProject } from '../state/sketchProjectStore'
 import { useSketchPresentation } from '../state/sketchPresentation'
 import { mirrorSketchSelection, duplicateSketchSelection, offsetSketchSelection, middleLineSketchSelection } from '../state/sketchExtraTools'
 import { SketchCommandIcon, type SketchCommandIconName } from './SketchCommandIcon'
+import { useLength } from '../../../src/app/useUnits'
+import { saveFile } from '../../../src/app/exports'
+import { sketchToIges } from '../core/igesExport'
+import { useSketchCurvature } from '../state/sketchCurvatureStore'
 
 export function SketchControls({chainsOf}:{chainsOf:()=>SketchChains|null}) {
  const d = useReverse(s=>s.sketchDraft), sliced=useReverse(s=>s.sketchSliced)
  const prefs=useRePrefs(), presentation=useSketchPresentation()
+ // Analysis: how far the scan's section points lie from the drawn sketch.
+ const [analysis,setAnalysis]=useState(false)
+ const len=useLength()
+ const comb=useSketchCurvature()
  const [edit,setEdit]=useState<'offset'|'duplicate'|null>(null), [distance,setDistance]=useState(1), [dx,setDx]=useState(10),[dy,setDy]=useState(10)
  if(!d)return null
  const re=useReverse.getState(), has=d.selection.length>0
@@ -79,14 +87,24 @@ export function SketchControls({chainsOf}:{chainsOf:()=>SketchChains|null}) {
    <div className="sketch-display-grid">
     <label><input data-test="sketch-show-control-points" type="checkbox" checked={prefs.sketchControlPoints} onChange={e=>prefs.setSketchControlPoints(e.target.checked)}/>Control Points</label>
     <label title="A 3D sketch manipulator is not implemented"><input type="checkbox" disabled/>Manipulator</label>
-    <label title="Curvature comb display is not implemented"><input type="checkbox" disabled/>Curvature</label><button disabled>Options …</button>
-    <label title="Sketch deviation analysis is not implemented"><input type="checkbox" disabled/>Analysis</label><button disabled>Options …</button>
+    <label title="A comb along each arc, circle and spline: tooth length is the curvature there"><input data-test="sketch-curvature" type="checkbox" checked={comb.on} onChange={e=>comb.setOn(e.target.checked)}/>Curvature</label><input data-test="sketch-curvature-scale" type="range" min={5} max={500} step={5} value={comb.scale} disabled={!comb.on} aria-label="Curvature comb scale" onChange={e=>comb.setScale(Number(e.target.value))}/>
+    <label title="How far the scan's section points lie from the sketch"><input data-test="sketch-analysis" type="checkbox" checked={analysis} onChange={e=>setAnalysis(e.target.checked)}/>Analysis</label><button disabled title="No analysis options yet">Options …</button>
     <label><input data-test="sketch-show-relations" type="checkbox" checked={prefs.sketchRelations} onChange={e=>prefs.setSketchRelations(e.target.checked)}/>Constraints</label>
     <label><input data-test="sketch-show-dimensions" type="checkbox" checked={prefs.sketchDimensions} onChange={e=>prefs.setSketchDimensions(e.target.checked)}/>Dimensions</label>
    </div>
   </fieldset>
+  {analysis&&(()=>{
+   const drawn=d.sketch.entities.filter(e=>!e.construction)
+   const pts=(chainsOf()?.chains??[]).flat()
+   if(!drawn.length||!pts.length)return <p className="hint" data-test="sketch-analysis-result">Analysis: draw on the section first.</p>
+   let worst=0,sum=0
+   for(const p of pts){let best=Infinity;for(const e of drawn){const q=nearestOnEntity(e,p).dist;if(q<best)best=q}if(best>worst)worst=best;sum+=best}
+   return <p className="hint" data-test="sketch-analysis-result">Analysis: scan section to sketch — max {len.fmt(worst,3)}, mean {len.fmt(sum/pts.length,3)} over {pts.length} points.</p>
+  })()}
   <button className="sketch-overdefined" data-test="sketch-overdefined" disabled={!d.report?.unmet.length} onClick={()=>{const id=d.report?.unmet[0]?.id;if(id!==undefined)re.selectConstraint(id)}}>Select overdefining constraints</button>
   <div className="sketch-section-label">Sketch Reference points</div>
   <div className="sketch-entry-row"><button data-test="sketch-reference-clear" disabled={!chainsOf()?.chains.length} onClick={()=>{const sketch=cloneSketch(d.sketch);sketch.referenceChains=[];re.setSketch(sketch)}}>Clear</button><button disabled title="Reference-point cleanup behavior is still being compared with QUICKSURFACE">Clean up reference points …</button></div>
+  <div className="sketch-section-label">Export in IGES</div>
+  <div className="sketch-entry-row"><button data-test="sketch-export-iges" disabled={!d.sketch.entities.some(e=>!e.construction&&e.kind!=='point')} title="Save the sketch's lines, arcs and circles as an IGES file, placed on the sketch plane" onClick={()=>{const name=(d.name||'sketch').replace(/[^\w.-]+/g,'_');saveFile(`${name}.igs`,new Blob([sketchToIges(d.sketch.entities,d.frame,name)],{type:'model/iges'}))}}>Export …</button><button disabled title="No IGES options yet">Options …</button></div>
  </div>
 }

@@ -18,7 +18,7 @@ export function SketchExtractPanel({ chainsOf }: { chainsOf: () => SketchChains 
       {supported('curve', 'Fit Curve')}<label htmlFor="sketch-fit-curve-points">Points</label><input id="sketch-fit-curve-points" type="number" min={4} max={64} value={s.curvePoints} disabled={s.primitive !== 'curve'} onChange={(e) => s.setCurvePoints(Number(e.target.value))} />
       <button type="button" data-test="sketch-fit-apply" disabled={!s.selected.length || !s.preview?.ok} onClick={() => s.apply()}>Apply</button>
     </div>
-    <label className="field"><span>Target tolerance</span><input type="number" data-test="sketch-fit-tolerance" min={0.0001} step={0.01} value={s.tolerance} onChange={(e) => s.setTolerance(Number(e.target.value))} /><span>mm</span></label>
+    <label className="field"><span>Target tolerance</span><input type="number" data-test="sketch-fit-tolerance" disabled={s.primitive !== 'curve'} title="Used by Fit Curve" min={0.0001} step={0.01} value={s.tolerance} onChange={(e) => s.setTolerance(Number(e.target.value))} /><span>mm</span></label>
     <hr />
     <label className="field" style={{ flexWrap: 'wrap' }}><span>Make line horizontal/vertical if less than</span><input aria-label="Horizontal/vertical threshold" type="number" min={0} max={45} step={0.1} value={s.axisDegrees} onChange={(e) => s.setAxisDegrees(Number(e.target.value))} /><span>degrees</span></label>
     <hr />

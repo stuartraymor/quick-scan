@@ -13,7 +13,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useMark, WAND_MAX_DEG, WAND_MIN_DEG, type MarkGesture } from '../state/markStore'
 import { useExtract } from '../state/extractStore'
-import { CONSTRAINTS, type ConstraintId } from '../core/elements/constrain'
+import { constraintOptions, type ConstraintId } from '../core/elements/constrain'
 import { useStore } from '../state/store'
 import { useShell } from '../state/shellStore'
 import type { ElementKind } from '../core/types'
@@ -92,6 +92,9 @@ export function ExtractPrimitives({ onType, preview, onCreate, onClearPreview, o
   const ex = useExtract()
   const len = useLength()
   const labels = useStore((s) => s.showLabels)
+  // Primitives already made, offered as constraints the way QUICKSURFACE lists them.
+  const elements = useStore((s) => s.elements)
+  const constraintRefs = elements.flatMap((e) => (e.fit ? [{ id: e.id, name: e.name, fit: e.fit }] : []))
   const hidden = useShell((s) => s.hiddenTriangles)
   // The quick tools float where the last wand click landed, while that pick is
   // the selection: only a successful surface pick places them.
@@ -223,7 +226,7 @@ export function ExtractPrimitives({ onType, preview, onCreate, onClearPreview, o
       <select className="qs-constraint" data-test="extract-constraint" aria-label="Constraint" value={ex.constraint} disabled={fitting}
         title="Hold the fitted primitive parallel or perpendicular to a coordinate plane: a plane by its normal, a cylinder or line by its axis"
         onChange={(e) => { ex.setConstraint(e.target.value as ConstraintId); if (preview) onType(preview.kind) }}>
-        {CONSTRAINTS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+        {constraintOptions(constraintRefs).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
       </select>
       {preview && !fitting && (preview.kind === 'cone' || preview.kind === 'sphere') && (ex.constraint !== 'none' || ex.autoConstrain) && <p className="qs-count" data-test="extract-constraint-note">A {preview.kind} has no direction to hold here.</p>}
       <label className="checkrow">

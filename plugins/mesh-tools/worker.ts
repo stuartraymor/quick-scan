@@ -178,6 +178,25 @@ const ops: { [K in keyof MeshToolsOps]: (payload: Payload<K>, ctx: WorkerContext
       for (let i = 0; i < vertexMap.length; i++) vertexMap[i] = i
       result = { positions, indices, vertexMap } as EditedMesh
       report = { kind: 'scale', factors: edit.factors }
+    } else if (edit.type === 'mirror') {
+      // Reflect in the plane through `origin` with unit `normal`, and turn the
+      // triangles over so they still face outward.
+      const [ox, oy, oz] = edit.origin
+      const l = Math.hypot(...edit.normal)
+      const [nx, ny, nz] = edit.normal.map((c) => c / l)
+      const positions = new Float32Array(g.positions.subarray(0, g.vertexCount * 3))
+      for (let i = 0; i < positions.length; i += 3) {
+        const d = 2 * ((positions[i] - ox) * nx + (positions[i + 1] - oy) * ny + (positions[i + 2] - oz) * nz)
+        positions[i] -= d * nx
+        positions[i + 1] -= d * ny
+        positions[i + 2] -= d * nz
+      }
+      const indices = new Uint32Array(g.indices)
+      for (let t = 0; t < indices.length; t += 3) { const b = indices[t + 1]; indices[t + 1] = indices[t + 2]; indices[t + 2] = b }
+      const vertexMap = new Int32Array(g.vertexCount)
+      for (let i = 0; i < vertexMap.length; i++) vertexMap[i] = i
+      result = { positions, indices, vertexMap } as EditedMesh
+      report = { kind: 'mirror' }
     } else if (edit.type === 'cut') {
       ctx.progress('Cutting the scan…')
       const cut = cutMesh(g.positions, g.indices, g.vertexCount, edit.origin, edit.normal, edit.cap)

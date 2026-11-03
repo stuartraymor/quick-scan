@@ -4,6 +4,7 @@
 // is offered only once the preview is current.
 
 import { useState } from 'react'
+import { useStore } from '../../../src/state/store'
 
 interface Props {
   /** The scan's extent now, mm (X, Y, Z), for the preview readout. */
@@ -16,6 +17,7 @@ export function ScaleDialog({ size, onApply, onClose }: Props) {
   const [mode, setMode] = useState<'value' | 'percent'>('percent')
   const [text, setText] = useState('100')
   const [previewed, setPreviewed] = useState<string | null>(null)
+  const wireframe = useStore((s) => s.wireframe)
   const raw = Number(text)
   const factor = mode === 'percent' ? raw / 100 : raw
   const valid = Number.isFinite(factor) && factor > 0
@@ -46,6 +48,7 @@ export function ScaleDialog({ size, onApply, onClose }: Props) {
         </label>
         <button type="button" disabled={!valid} onClick={preview} data-test="scale-preview">Preview</button>
         {previewed && <small data-test="scale-preview-text">{previewed}</small>}
+        <label><input type="checkbox" data-test="scale-wireframe" checked={wireframe} onChange={(e) => useStore.getState().setWireframe(e.target.checked)} /> Show mesh wireframe</label>
         {!valid && <small role="alert">Enter a scale greater than zero.</small>}
         <footer style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button type="button" onClick={onClose}>Cancel</button>

@@ -9,6 +9,10 @@
 // (reSession.ts), which the commands work through too; this hook draws them
 // and does the rest of the asynchronous work.
 
+import { SHADOW_SMOOTH_DEG, SHADOW_TOLERANCE } from '../../../src/core/section/shadow'
+import { SHADOW_PLAY } from '../../../src/state/sectionModel'
+import { useSectionLine } from '../state/sectionLineStore'
+import { edgesThroughSelection, longChains } from '../core/selectionCut'
 import { reSceneOf } from '../viewer/reScene'
 import { useZebra } from '../state/zebraStore'
 import { commandHost } from '../../../src/commands/host'
@@ -132,15 +136,30 @@ export function useReverseWorkspace({
     if (!p || p.kind !== 'section') return null
     return useStore.getState().sections.find((x) => x.id === p.id)?.cutKey ?? null
   })
+  const throughSelection = useSectionLine((s) => s.throughSelection)
+  const outline = useSectionLine((s) => s.outline)
+  const outlineMin = useSectionLine((s) => s.outlineMinPoints)
+  // The marked surface's vertices, as positions, for Through selection only.
+  // Nothing marked keeps the whole cut.
+  const selectedOnly = (edges: EdgeChains, frame: SectionFrame): EdgeChains => {
+    const scene = sceneRef.current
+    const marked = scene?.paintedVertices()
+    const pos = scene?.scanPositions()
+    if (!marked?.length || !pos) return edges
+    const at = new Float32Array(marked.length * 3)
+    for (let i = 0; i < marked.length; i++) { const j = marked[i] * 3; at[i * 3] = pos[j]; at[i * 3 + 1] = pos[j + 1]; at[i * 3 + 2] = pos[j + 2] }
+    return edgesThroughSelection(edges, frame, at)
+  }
   useEffect(() => {
     const draft = useReverse.getState().sketchDraft
     if (!draft) {
       chainsRef.current = null
       return
     }
-    const key = referenceChains !== undefined ? `${draftPlaneKey}|reference:${++referenceStamp.current}` : draftPlaneKey!
+    const key = (referenceChains !== undefined ? `${draftPlaneKey}|reference:${++referenceStamp.current}` : draftPlaneKey!) + (throughSelection ? '|selection' : '') + (outline ? `|outline:${outlineMin}` : '')
     if (chainsRef.current?.key === key) return
-    const land = (edges: EdgeChains) => {
+    const land = (all: EdgeChains) => {
+      const edges = throughSelection ? selectedOnly(all, draft.frame) : all
       const current = useReverse.getState().sketchDraft
       if (!current || current.sketch.referenceChains !== referenceChains || `${JSON.stringify(current.plane)}|${frameKey(current.frame)}|${current.level ?? 0}` !== draftPlaneKey) return
       chainsRef.current = { key, chains: chainsOfEdges(edges), edges }
@@ -174,11 +193,16 @@ export function useReverseWorkspace({
     const n = draft.frame.normal
     const off = level ?? (plane.kind === 'fitted' || plane.kind === 'bodyFace' ? -FACE_SLICE_INSET_MM : 0)
     const origin: Vec3 = [draft.frame.origin[0] + n[0] * off, draft.frame.origin[1] + n[1] * off, draft.frame.origin[2] + n[2] * off]
-    clientRef.current
-      ?.section(origin, n, EDGE_MIN_FEATURE_MM)
-      .then((cut) => {
+    // Outline Mesh: the part's shadow through the plane, its short pieces
+    // ("Ignore small segments of N points") left out.
+    const cutting = outline
+      ? clientRef.current?.shadow(draft.frame, SHADOW_TOLERANCE, SHADOW_PLAY, SHADOW_SMOOTH_DEG)
+      : clientRef.current?.section(origin, n, EDGE_MIN_FEATURE_MM)
+    cutting
+      ?.then((cut) => {
         if (stale) return
-        land(projectCut(cut, draft.frame))
+        const edges = projectCut(cut, draft.frame)
+        land(outline ? longChains(edges, outlineMin) : edges)
       })
       .catch(() => {
         if (!stale) useReverse.getState().setChains(0, 'failed')
@@ -186,7 +210,7 @@ export function useReverseWorkspace({
     return () => {
       stale = true
     }
-  }, [draftPlaneKey, sectionCutKey, referenceChains])
+  }, [draftPlaneKey, sectionCutKey, referenceChains, throughSelection, outline, outlineMin])
 
   // ---- a datum alignment carries the sketches with the part ------------------------
   const appliedAlignment = useStore((s) => s.appliedAlignment)

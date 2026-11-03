@@ -34,7 +34,7 @@ describe('the display units in the agent’s readout', () => {
   it('answers in millimetres while the screen shows inches', async () => {
     await run('element.fit', { kind: 'plane', at: { point: [0, 0, 20] } })
     await run('element.fit', { kind: 'plane', at: { point: [0, 0, -20] } })
-    await run('dimension.add', { refs: ['Plane 1', 'Plane 2'] })
+    await run('dimension.add', { refs: ['Plane(1)', 'Plane(2)'] })
     const inMm = await run<State>('session.state')
     usePrefs.getState().setUnits('in')
     const inIn = await run<State>('session.state')

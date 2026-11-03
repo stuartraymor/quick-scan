@@ -531,7 +531,7 @@ describe('session, report, files and history', () => {
     await run('scan.open', { bytes: BALLS, name: 'balls.stl', discard: true })
     await run('element.fit', { kind: 'sphere', at: { point: [-30, 0, 5] } })
     await run('element.fit', { kind: 'sphere', at: { point: [30, 0, 5] } })
-    await run('dimension.add', { refs: ['Sphere 1', 'Sphere 2'] })
+    await run('dimension.add', { refs: ['Sphere(1)', 'Sphere(2)'] })
     const s = await run<{
       app: { name: string; version: string; viewport: boolean }; workspace: string; busy: string | null
       scan: { fileName: string; bounds: { min: Vec3; max: Vec3 } }; elements: El[]; dimensions: { value: number }[]
@@ -569,7 +569,7 @@ describe('session, report, files and history', () => {
     await run('scan.open', { bytes: BALLS, name: 'balls.stl', discard: true })
     await run('element.fit', { kind: 'sphere', at: { point: [-30, 0, 5] } })
     await run('element.fit', { kind: 'sphere', at: { point: [30, 0, 5] } })
-    await run('dimension.add', { refs: ['Sphere 1', 'Sphere 2'], limit: { kind: 'band', nominal: 60, plus: 0.01, minus: 0.01 } })
+    await run('dimension.add', { refs: ['Sphere(1)', 'Sphere(2)'], limit: { kind: 'band', nominal: 60, plus: 0.01, minus: 0.01 } })
     const text = (await run<{ text: string }>('report.get', { format: 'text' })).text
     expect(text).toMatch(/^ScanRuler — balls\.stl\nMethod: Gaussian best-fit/)
     expect(text).toContain('Checked against limits: 1 — 1 pass, 0 fail')

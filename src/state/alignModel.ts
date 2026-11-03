@@ -33,6 +33,10 @@ export interface AlignDraft {
   /** What an automatic proposal read off the scan, in a sentence — there
    *  while the slots hold what it filled in, gone once one is filled by hand. */
   proposal?: string
+  /** QUICKSURFACE's "Don't move the coordinate system to the centre of the
+   *  primitive": with no zero point chosen, the part is only turned, about
+   *  the world origin, and not moved onto the features. */
+  keepOrigin?: boolean
 }
 
 /** A proposed alignment as the picks of the three slots — see
@@ -107,6 +111,7 @@ export function alignmentPreview(
       origin,
       centerOf,
     )
+    if (ad.keepOrigin && !origin) rigid.t.fill(0)
     return { preview: { rigid, ...describeRigid(rigid) }, error: null }
   } catch (e) {
     return {
@@ -163,7 +168,9 @@ export function alignmentReferences(elements: Element[]): Element[] {
 }
 
 export function alignmentSlotAccepts(slot: AlignSlot, element: Element): boolean {
-  return Boolean(element.fit) && (slot === 'origin' ? providesRole(element.kind,'point')
+  // The tertiary (zero point) takes any feature, as QUICKSURFACE lists them
+  // all: a point, or the centre of a plane, axis or other primitive.
+  return Boolean(element.fit) && (slot === 'origin' ? true
     : providesRole(element.kind,'plane') || providesRole(element.kind,'axis'))
 }
 

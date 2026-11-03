@@ -8,6 +8,7 @@
 // next. Stacked sections collect projected reference points into ONE sketch;
 // fitting remains an explicit later operation in the sketch editor.
 
+import { useSectionLine } from '../state/sectionLineStore'
 import { useEffect, useRef, useState } from 'react'
 import { useReverse } from '../state/reStore'
 import { planeOffset, planeTakesOffset, type PlaneRef } from '../core/features'
@@ -82,6 +83,7 @@ export function PlaceSketch({ chainsOf }: { chainsOf: () => { chains: Vec2[][] }
   const [ignoreScan, setIgnoreScan] = useState(false)
   const [extent, setExtent] = useState<StackExtent | undefined>()
   const [working, setWorking] = useState<string | null>(null)
+  const sectionLine = useSectionLine()
   const [referenceMessage, setReferenceMessage] = useState<string | null>(null)
   const run = useRef(0)
   const appliedStack = useRef<string | null>(null)
@@ -246,9 +248,9 @@ export function PlaceSketch({ chainsOf }: { chainsOf: () => { chains: Vec2[][] }
         </div>
       )}
       <p className="hint">Drag the yellow arrow to carry the plane through the part; the cut is outlined in yellow.</p>
-      <button className="block" data-test="place-define-interactive" disabled title={NOT_BUILT}>Define interactive</button>
-      <label className="checkrow" title={NOT_BUILT}>
-        <input type="checkbox" data-test="place-snap-xy" checked disabled readOnly />
+      <button className={sectionLine.active ? 'block on' : 'block'} aria-pressed={sectionLine.active} data-test="place-define-interactive" disabled={!!working || !useStore.getState().fileName} title="Click the start and the end of a section line on the part; the sketch plane stands upright through it" onClick={() => { if (sectionLine.active) { sectionLine.cancel(); useStore.getState().setStatus('') } else { sectionLine.start(); useStore.getState().setStatus('Click to define the start of the section line.') } }}>Define interactive</button>
+      <label className="checkrow" title="Define interactive holds the section line to whichever of X or Y it runs nearest">
+        <input type="checkbox" data-test="place-snap-xy" checked={sectionLine.snap} onChange={(e) => sectionLine.setSnap(e.target.checked)} />
         <span>Automatically snap to X or Y direction</span>
       </label>
       <hr className="re-place-rule" />
@@ -262,14 +264,14 @@ export function PlaceSketch({ chainsOf }: { chainsOf: () => { chains: Vec2[][] }
           }} />
           <span>Ignore scan data</span>
         </label>
-        <button data-test="place-flip" disabled title={NOT_BUILT}>Flip orientation</button>
+        <button data-test="place-flip" disabled={!!working} title="Turn the sketch plane to face the other way" onClick={() => { run.current++; setWorking(null); appliedStack.current = null; re.flipSketchOrientation() }}>Flip orientation</button>
       </div>
       <label className="checkrow" title={NOT_BUILT}>
         <input type="checkbox" data-test="place-on-slice" checked disabled readOnly />
         <span>Create sketch on slicing plane</span>
       </label>
-      <label className="checkrow" title={NOT_BUILT}>
-        <input type="checkbox" data-test="place-through-selection" checked={false} disabled readOnly />
+      <label className="checkrow" title="Cut only across the surface marked on the part; with nothing marked, the whole cut">
+        <input type="checkbox" data-test="place-through-selection" checked={sectionLine.throughSelection} onChange={(e) => sectionLine.setThroughSelection(e.target.checked)} />
         <span>Through selection only</span>
       </label>
       <label className="checkrow">
@@ -295,9 +297,15 @@ export function PlaceSketch({ chainsOf }: { chainsOf: () => { chains: Vec2[][] }
         <label className="field"><span>Upper extent</span><input type="number" step="any" aria-label="Upper stack extent" value={Number(len.toDisplay(extent.max).toFixed(4))} disabled={!!working} onChange={(e) => { appliedStack.current = null; setExtent({ ...extent, max: len.fromDisplay(Number(e.target.value)) }) }} /></label>
         <span>{len.word()}</span>
       </div>}
-      <label className="checkrow" title={NOT_BUILT}>
-        <input type="checkbox" data-test="place-outline-mode" checked={false} disabled readOnly />
-        <span>Outline Mode…</span>
+      <label className="checkrow" title="Sketch on the part's outline through the plane instead of the cut">
+        <input type="checkbox" data-test="place-outline-mode" checked={sectionLine.outline} onChange={(e) => sectionLine.setOutline(e.target.checked)} />
+        <span>Outline Mesh</span>
+      </label>
+      <label className="field">
+        <span>Ignore small segments of</span>
+        <input type="number" min={1} step={1} style={{ width: 56 }} data-test="place-outline-min" disabled={!sectionLine.outline} value={sectionLine.outlineMinPoints}
+          onChange={(e) => { const v = Math.round(Number(e.target.value)); if (Number.isFinite(v) && v >= 1) sectionLine.setOutlineMinPoints(v) }} />
+        <span>points</span>
       </label>
       <label className="checkrow" title="Hide the scan when the sketch editor opens; its reference points are kept."><input type="checkbox" data-test="place-hide-scan" checked={hideScan} onChange={(e) => setHideScan(e.target.checked)} /><span>Hide scan data when creating a sketch</span></label>
       {working && <p className="hint" data-test="place-working">{working}</p>}

@@ -3,7 +3,7 @@
 // perpendicular to a coordinate plane, Auto Constrain onto the primitives
 // already made, and Analysis' points beyond a tolerance.
 import { describe, expect, it } from 'vitest'
-import { autoConstrainFit, constrainFit, pointsBeyond, CONSTRAINTS } from '../src/core/elements/constrain'
+import { autoConstrainFit, constrainedDirection, constrainFit, constraintOptions, pointsBeyond, CONSTRAINTS } from '../src/core/elements/constrain'
 import type { CylinderFit, PlaneFit, SphereFit, Vec3 } from '../src/core/types'
 
 const base = { sigma: 0, usedPoints: 0, regionSize: 0 }
@@ -138,5 +138,22 @@ describe('pointsBeyond (Analysis)', () => {
     const out = pointsBeyond(planeFit([0, 0, 0], [0, 0, 1]), moved, idx, 0.1)
     expect(out.far).toEqual([0])
     expect(out.worst).toBeCloseTo(0.5, 6)
+  })
+})
+
+describe('constraints to primitives already made', () => {
+  const plane = (n: [number, number, number]) => ({ kind: 'plane', normal: n, center: [0, 0, 0], basisU: [1, 0, 0], basisV: [0, 1, 0], extentU: 1, extentV: 1, sigma: 0, formError: 0, residualMin: 0, residualMax: 0 }) as never
+  const tilted: [number, number, number] = [0, Math.SQRT1_2, Math.SQRT1_2]
+  const refs = [{ id: 7, name: 'Plane 1', fit: plane(tilted) }, { id: 8, name: 'Cylinder 1', fit: { kind: 'cylinder', axis: [1, 0, 0], center: [0, 0, 0], radius: 1, length: 1 } as never }]
+  it('lists each primitive as QUICKSURFACE does', () => {
+    const labels = constraintOptions(refs).map((o) => o.label)
+    expect(labels).toEqual(expect.arrayContaining(['Parallel to Plane 1', 'Perpendicular to Plane 1', 'Perpendicular to Cylinder 1']))
+    expect(labels).not.toContain('Parallel to Cylinder 1')
+  })
+  it('holds a plane parallel to a plane, and perpendicular to a cylinder axis', () => {
+    const d = constrainedDirection(plane([0, 0.6, 0.8]), 'parallel-el7', refs)!
+    expect(Math.abs(d[1] - tilted[1]) + Math.abs(d[2] - tilted[2])).toBeLessThan(1e-9)
+    const p = constrainedDirection(plane([0.9, 0.1, 0]), 'perpendicular-el8', refs)!
+    expect(Math.abs(p[0])).toBeCloseTo(1, 9)
   })
 })

@@ -462,6 +462,17 @@ export function createMeshToolsSession({
     )
   }
 
+  /** Mirror the scan in the plane through `origin` with `normal`; `plane`
+   *  names it for the list of edits. */
+  const mirrorScan = async (origin: [number, number, number], normal: [number, number, number], plane: string, run?: EditRun): Promise<EditLanded | null> =>
+    workerEdit(
+      'Mesh Tools: mirror the scan',
+      'Mirroring the scan…',
+      () => ({ type: 'mirror', origin, normal }),
+      () => ({ edit: { kind: 'mirror', plane }, status: `Mirrored the scan in ${plane}. Ctrl+Z puts it back.` }),
+      run,
+    )
+
   /** Cut the scan at the plane the panel shows. */
   const cutScan = async (run?: EditRun): Promise<EditLanded | null> => {
     const m = useMeshTools.getState()
@@ -847,6 +858,7 @@ export function createMeshToolsSession({
     deleteMarked,
     flipScan,
     scaleScan,
+    mirrorScan,
     cutScan,
     fillScanHoles,
     smoothScan,

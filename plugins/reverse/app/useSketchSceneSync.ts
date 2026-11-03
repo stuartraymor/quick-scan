@@ -25,6 +25,10 @@ import { arcThrough, chainArcStart, dragHandleAt, sketchHoverAt, splineClosesAt,
 import { sketchDragGuide } from '../state/reSketchSlice'
 import type { FlatScene, SketchDimensionItem } from '../../../src/viewer/FlatScene'
 import { SKETCH_DOT, SKETCH_LINE, sketchPalette } from '../viewer/sketchPalette'
+import { curvatureComb } from '../core/curvatureComb'
+import { entityPolyline } from '../core/sketch'
+import { useSketchCurvature } from '../state/sketchCurvatureStore'
+import { useSketchBrush } from '../state/sketchBrushStore'
 import { dimensionFieldText, dimensionText } from '../viewer/sketchDimText'
 import type { SketchChains } from './useReverseWorkspace'
 
@@ -566,6 +570,28 @@ export function useSketchSceneSync({
       const over = litDatums.has(t.plane)
       items.push({ fit, color: over ? palette.hover : on ? palette.selected : palette.datum, name: datumName(t.plane), value: '', label: true, width: over ? SKETCH_LINE.hover : on ? SKETCH_LINE.selected : SKETCH_LINE.datum })
     }
+    // Fit primitives: the shape fitted to the brushed points, drawn solid
+    // over them as it is found, before Apply — as QUICKSURFACE shows it.
+    const brush = useSketchBrush.getState()
+    if (brush.open && brush.preview?.ok) {
+      const shapes = brush.preview.shapeSketch ? brush.preview.shapeSketch.entities : [{ ...brush.preview.entity, id: -1 } as SketchEntity]
+      for (const e of shapes) {
+        const fit = entityFit(e)
+        if (fit) items.push({ fit, color: palette.selected, name: '', value: '', label: false, width: SKETCH_LINE.selected })
+      }
+    }
+    // Display → Curvature: a comb along each curved piece.
+    const comb = useSketchCurvature.getState()
+    if (comb.on) {
+      for (const e of sketch.entities) {
+        if (e.construction || (e.kind !== 'arc' && e.kind !== 'circle' && e.kind !== 'spline')) continue
+        const { teeth, envelope } = curvatureComb(entityPolyline(e, 64), comb.scale)
+        for (const [a, b] of [...teeth, ...envelope]) {
+          const fit = lineFit(a, b)
+          if (fit) items.push({ fit, color: palette.datum, name: '', value: '', label: false, width: SKETCH_LINE.datum })
+        }
+      }
+    }
     view.setFlatElements(items)
     // A dot on every end of a line or an arc: where one piece stops and the
     // next begins, which a run of fitted pieces in one colour does not say.
@@ -691,9 +717,13 @@ export function useSketchSceneSync({
   const showRelations = useRePrefs((s) => s.sketchRelations)
   const showDimensions = useRePrefs((s) => s.sketchDimensions)
   const showControlPoints = useRePrefs((s) => s.sketchControlPoints)
+  const combOn = useSketchCurvature((s) => s.on)
+  const brushPreview = useSketchBrush((s) => s.preview)
+  const brushOpen = useSketchBrush((s) => s.open)
+  const combScale = useSketchCurvature((s) => s.scale)
   const dark = usePrefs((s) => s.dark)
   const units = usePrefs((s) => s.units)
-  useEffect(pushSketch, [draft, showRelations, showDimensions, showControlPoints, dark, units])
+  useEffect(pushSketch, [draft, showRelations, showDimensions, showControlPoints, combOn, combScale, brushPreview, brushOpen, dark, units])
   useEffect(() => {
     scene()?.setEdgeColor(colors().slice, colors().sliceOpacity)
     // Runs on the listed dependencies only, not on everything it reads.

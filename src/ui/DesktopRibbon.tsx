@@ -274,7 +274,7 @@ export function DesktopRibbon({ onFit, onSection, onAlign, onFineAlign, onPointA
     {fileGroup}{scanGroup}
     <Group label="Primitives">{primitives}{construct}</Group>
     <Group label="Align">{alignMenu}</Group>
-    <Group label="Cross sections">{cad('sketch', '2D Sketch', 'sketch')}{tool('Multiple sections', 'section', () => { go('elements'); onSection() }, needsScan, 'Create planar cross sections; stacked sections are not yet implemented')}</Group>
+    <Group label="Cross sections">{cad('sketch', '2D Sketch', 'sketch')}{tool('Multiple sections', 'section', () => { go('elements'); onSection() }, needsScan, 'Create planar cross sections through the scan — for many at once, use Stacked sections in 2D Sketch')}</Group>
     <Group label="Surfacing">{cad('surface', 'Fit Surface', 'surface', true)}{surfacingMenu}</Group>
     <Group label="Freeform">{tool('New Freeform', 'surface', () => {}, true, 'Quad-based freeform surfacing is not implemented in Quick Scan yet')}{tool('Auto Freeform', 'scan', () => {}, true, 'Automatic freeform surfacing is not implemented in Quick Scan yet')}</Group>
     <Group label="Part Design"><div className="ribbon-text-stack">{cadText('extrude', 'Extrude', 'extrude')}{cadText('revolve', 'Revolve', 'revolve')}{cadText('moveFace', 'Move face', 'moveFace')}</div>{cad('trim', 'Trim', 'trim', true)}<div className="ribbon-text-stack">{cadText('boolean', 'Combine', 'opJoin')}{cadText('boolean', 'Cut', 'opCut')}{cadText('boolean', 'Intersect', 'opIntersect')}</div>{patternMenu}{cad('fillet', 'Fillet / Chamfer', 'fillet')}</Group>
@@ -348,7 +348,7 @@ export function DesktopRibbon({ onFit, onSection, onAlign, onFineAlign, onPointA
   // The CAD tab as QUICKSURFACE lays it out: Create is columns of small
   // labelled keys around a large Trim, and Patterns a stack.
   const cadTab = <>
-    <Group label="Cross sections">{cad('sketch', '2D Sketch', 'sketch')}{tool('Multiple sections', 'section', () => { go('elements'); onSection() }, needsScan, 'Create planar cross sections; stacked sections are not yet implemented')}</Group>
+    <Group label="Cross sections">{cad('sketch', '2D Sketch', 'sketch')}{tool('Multiple sections', 'section', () => { go('elements'); onSection() }, needsScan, 'Create planar cross sections through the scan — for many at once, use Stacked sections in 2D Sketch')}</Group>
     <Group label="Create">
       <div className="ribbon-text-stack">{cadText('extrude', 'Extrude', 'extrude')}{cadText('revolve', 'Revolve', 'revolve')}</div>
       {cad('trim', 'Trim', 'trim', true)}
@@ -397,10 +397,10 @@ export function DesktopRibbon({ onFit, onSection, onAlign, onFineAlign, onPointA
           {tool('Plane', 'elPlane', method('plane-coords') ?? (() => {}), needsScan, 'Type in a plane')}
           <div className="ribbon-text-stack">
             {smallText('Middle plane', 'elPlane', method('plane-midplane') ?? (() => {}), needsScan, 'A plane midway between two')}
-            {smallSoon('Plane along path', 'elPlane')}
-            {smallSoon('Plane through sketch line', 'elPlane')}
+            {cadText('planeAlongPath', 'Plane along path', 'elPlane')}
+            {cadText('planeThroughSketchLine', 'Plane through sketch line', 'elPlane')}
           </div>
-          <div className="ribbon-text-stack">{smallSoon('Plane from 2D sketch', 'elPlane')}</div>
+          <div className="ribbon-text-stack">{cadText('planeFromSketch', 'Plane from 2D sketch', 'elPlane')}</div>
           {tool('Cylinder', 'elCylinder', fitKind('cylinder'), needsScan, 'Opens the cylinder editor (fit to the scan)')}
           <div className="ribbon-text-stack">
             {smallText('Cone', 'elCone', fitKind('cone'), needsScan, 'Opens the cone editor (fit to the scan)')}

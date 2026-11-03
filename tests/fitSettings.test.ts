@@ -121,7 +121,7 @@ describe('the fit settings of an element', () => {
     const text = buildSummary('t.stl', store().elements, [])
     expect(text).toContain('Method: Gaussian best-fit\n')
     expect(text).not.toContain('Method: Gaussian best-fit,')
-    expect(text).toContain('Plane 1\n  point:')
+    expect(text).toContain('Plane(1)\n  point:')
     expect(text).toContain('used points: 100 of 120 (3 sigma cut-off)')
     expect(text).toContain('used points: 100 of 120 (all points)')
   })

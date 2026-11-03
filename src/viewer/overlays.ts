@@ -57,8 +57,8 @@ const GHOST_OPACITY = 0.95
  *  reads as the plane it defines rather than a sticker on the scan. These are
  *  for the eye only: the fit, its measurements and exports keep the real extent. */
 export const PRIMITIVE_SHADE = 1
-export const PRIMITIVE_OPACITY = 0.75
-export const PRIMITIVE_OPACITY_SELECTED = 0.9
+export const PRIMITIVE_OPACITY = 0.62
+export const PRIMITIVE_OPACITY_SELECTED = 0.78
 export const PLANE_OVERHANG = 1.6
 
 /** A colour deepened by `shade` (0 to 1): the palette colour as a primitive's body. */

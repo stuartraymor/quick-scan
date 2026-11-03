@@ -69,7 +69,7 @@ function rememberFitted(snapshot: Sketch, fitted: SketchDraft['fitted']): Sketch
 /** The angle a plane through an axis is turned to; 0 for any other. */
 const planeAngle = (p: PlaneRef): number => (p.kind === 'radial' ? p.angleDeg : 0)
 
-export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startSketchOn' | 'startSketch' | 'editSketch' | 'projectInto' | 'setSketch' | 'discardSketch' | 'setSketchTool' | 'armRelation' | 'setSketchName' | 'setSketchImage' | 'startImagePick' | 'scaleSketchImage' | 'setSketchOffset' | 'setSketchLevel' | 'setSketchAngle' | 'setSketchTolerance' | 'sketchClick' | 'sketchTangentArc' | 'finishSpline' | 'moveSplinePoint' | 'fitSplinesToSlice' | 'sketchBoxSelect' | 'sketchDragStart' | 'sketchDrag' | 'sketchDragEnd' | 'alignToSelected' | 'autoFit' | 'refitChains' | 'inferAllCorners' | 'closeAll' | 'joinSelected' | 'addRelation' | 'addDimension' | 'dimensionSelection' | 'setDimensionValue' | 'setDimensionForm' | 'finishDimension' | 'removeSelectedConstraint' | 'selectConstraint' | 'deleteSelected' | 'sharpenSelected' | 'filletSelected' | 'chamferSelected' | 'moveDimension' | 'toggleFixedSelected' | 'toggleConstructionSelected' | 'clearSelection' | 'openSketchPattern' | 'setSketchPattern' | 'applySketchPattern' | 'cancelSketchPattern' | 'putDownDimension' | 'undoSketch' | 'redoSketch' | 'solveNow' | 'commitSketch' | 'finishAndExtrude' | 'finishAndRevolve'> => ({
+export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startSketchOn' | 'startSketch' | 'editSketch' | 'projectInto' | 'setSketch' | 'discardSketch' | 'setSketchTool' | 'armRelation' | 'setSketchName' | 'setSketchImage' | 'startImagePick' | 'scaleSketchImage' | 'setSketchOffset' | 'flipSketchOrientation' | 'setSketchLevel' | 'setSketchAngle' | 'setSketchTolerance' | 'sketchClick' | 'sketchTangentArc' | 'finishSpline' | 'moveSplinePoint' | 'fitSplinesToSlice' | 'sketchBoxSelect' | 'sketchDragStart' | 'sketchDrag' | 'sketchDragEnd' | 'alignToSelected' | 'autoFit' | 'refitChains' | 'inferAllCorners' | 'closeAll' | 'joinSelected' | 'addRelation' | 'addDimension' | 'dimensionSelection' | 'setDimensionValue' | 'setDimensionForm' | 'finishDimension' | 'removeSelectedConstraint' | 'selectConstraint' | 'deleteSelected' | 'sharpenSelected' | 'filletSelected' | 'chamferSelected' | 'moveDimension' | 'toggleFixedSelected' | 'toggleConstructionSelected' | 'clearSelection' | 'openSketchPattern' | 'setSketchPattern' | 'applySketchPattern' | 'cancelSketchPattern' | 'putDownDimension' | 'undoSketch' | 'redoSketch' | 'solveNow' | 'commitSketch' | 'finishAndExtrude' | 'finishAndRevolve'> => ({
 
   startSketchOn: (plane) => {
     const store = useStore.getState()
@@ -714,6 +714,16 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
       // go: the drag's steps were solved briefly, and this is what puts the
       // piece exactly where the hand left it, the constraints holding.
       return { sketchDraft: settle({ ...d }, undefined, drag.pull) }
+    }),
+
+  flipSketchOrientation: () =>
+    set((s) => {
+      const d = s.sketchDraft
+      if (!d) return {}
+      // Normal and U both reversed: V = N × U is unchanged, so the frame stays
+      // right-handed and the sketch is seen from the other side.
+      const frame: SectionFrame = { ...d.frame, normal: scale(d.frame.normal, -1), basisU: scale(d.frame.basisU, -1) }
+      return { sketchDraft: settle({ ...d, frame }) }
     }),
 
   alignToSelected: () =>

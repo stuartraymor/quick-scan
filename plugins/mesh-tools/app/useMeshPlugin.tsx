@@ -309,7 +309,14 @@ export function useMeshPlugin(host: PluginHost): PluginRuntime {
     ),
     overlay: (
       <>
-        {mirrorOpen && <MirrorDialog onApply={(p) => void tools.scaleScan(MIRROR_FACTORS[p], [0, 0, 0])} onClose={() => setMirrorOpen(false)} />}
+        {mirrorOpen && (
+          <MirrorDialog
+            planes={useStore.getState().elements.flatMap((e) => (e.fit?.kind === 'plane' ? [{ id: e.id, name: e.name, center: e.fit.center as [number, number, number], normal: e.fit.normal as [number, number, number] }] : []))}
+            onApply={(p) => void tools.scaleScan(MIRROR_FACTORS[p], [0, 0, 0])}
+            onApplyPlane={(p) => void tools.mirrorScan(p.center, p.normal, p.name)}
+            onClose={() => setMirrorOpen(false)}
+          />
+        )}
         {scaleOpen && (() => {
           const g = sceneRef.current?.scanGeometry()
           if (g && !g.boundingBox) g.computeBoundingBox()

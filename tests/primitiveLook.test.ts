@@ -18,8 +18,8 @@ describe('primitive look', () => {
     expect(d.r / base.r).toBeCloseTo(PRIMITIVE_SHADE, 1)
     expect(d.g / base.g).toBeCloseTo(PRIMITIVE_SHADE, 1)
   })
-  it('is well above the old 0.5 wash, and denser still when selected', () => {
-    expect(PRIMITIVE_OPACITY).toBeGreaterThan(0.6)
+  it('is above the old 0.5 wash, and denser still when selected', () => {
+    expect(PRIMITIVE_OPACITY).toBeGreaterThan(0.55)
     expect(PRIMITIVE_OPACITY_SELECTED).toBeGreaterThan(PRIMITIVE_OPACITY)
   })
   it('draws a plane past its patch', () => {

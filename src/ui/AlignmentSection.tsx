@@ -63,6 +63,7 @@ function AlignSelect({
   onReferencePick,
   referencePicking,
   onFlip,
+  flipDisabled = false,
 }: {
   label: string
   roles: readonly RefRole[]
@@ -79,6 +80,8 @@ function AlignSelect({
   onReferencePick: () => void
   referencePicking: boolean
   onFlip?: () => void
+  /** Shown but unavailable — the tertiary feature, as QUICKSURFACE greys it for a point. */
+  flipDisabled?: boolean
 }) {
   const options = providersFor(roles, alignmentReferences(elements))
   const selectValue = picking
@@ -118,7 +121,7 @@ function AlignSelect({
         </option>
       </select>
       <button type="button" data-test={`${testId}-pick`} aria-pressed={referencePicking} onClick={onReferencePick}>{referencePicking ? 'Picking…' : 'Pick…'}</button>
-      {onFlip && <button type="button" data-test={`${testId}-flip`} disabled={value === null && picks < need} onClick={onFlip}>Flip</button>}
+      {onFlip && <button type="button" data-test={`${testId}-flip`} disabled={flipDisabled || (value === null && picks < need)} onClick={onFlip}>Flip</button>}
     </div>
   )
 }
@@ -383,7 +386,7 @@ export function AlignmentSection({
             referencePicking={alignDraft.referencePickSlot === 'primary'}
             onFlip={() => useStore.getState().flipAlignmentAxis('primary')}
           />
-          <div className="toolrow" role="group" aria-label="Primary feature becomes" data-test="align-primary-tiles">
+          {(alignDraft.primary !== null || alignDraft.primaryPicks.length >= ALIGN_PICK_COUNT.primary) && <div className="toolrow" role="group" aria-label="Primary feature becomes" data-test="align-primary-tiles">
             {PLANE_TILES.map((t) => (
               <button
                 key={t.label}
@@ -394,7 +397,15 @@ export function AlignmentSection({
                 {t.label}
               </button>
             ))}
-          </div>
+          </div>}
+          <label className="checkline" data-test="align-keep-origin">
+            <input
+              type="checkbox"
+              checked={Boolean(alignDraft.keepOrigin)}
+              onChange={(e) => useStore.setState((st) => (st.alignDraft ? { alignDraft: { ...st.alignDraft, keepOrigin: e.target.checked } } : {}))}
+            />{' '}
+            Don’t move the coordinate system to the centre of the primitive
+          </label>
           <StepHead text="Secondary feature" />
           <AlignSelect
             label="Direction"
@@ -414,7 +425,7 @@ export function AlignmentSection({
           <StepHead text="Tertiary feature" />
           <AlignSelect
             label="Zero point"
-            roles={['point']}
+            roles={['point', 'plane', 'axis']}
             value={alignDraft.origin}
             picks={alignDraft.originPicks.length}
             need={ALIGN_PICK_COUNT.origin}
@@ -425,6 +436,8 @@ export function AlignmentSection({
             onPick={() => beginAlignmentPick('origin')}
             onReferencePick={() => useStore.getState().beginAlignmentReferencePick('origin')}
             referencePicking={alignDraft.referencePickSlot === 'origin'}
+            onFlip={() => {}}
+            flipDisabled
           />
           <div className="field" data-test="align-translate">
             <span>Translate</span>

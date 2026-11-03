@@ -36,7 +36,7 @@ import { elementKindInfo } from './core/elements/kinds'
 import { creationMethod, takesSurface } from './core/elements/construct'
 import { extensionOf, fitWindow, isExtendable, sideValue } from './core/elements/extend'
 import { roleOf } from './core/elements/refs'
-import { autoConstrainFit, canConstrain, CONSTRAINTS, constrainFit, pointsBeyond } from './core/elements/constrain'
+import { autoConstrainFit, canConstrain, constrainFit, constraintLabel, pointsBeyond } from './core/elements/constrain'
 import { useExtract } from './state/extractStore'
 import { evaluateDimensions } from './core/dimensions'
 import { attachSurfaceScene, forgetSurface, surfaceSource } from './app/surfaces'
@@ -63,6 +63,7 @@ import { AgentDataWarning } from './ui/AgentDataWarning'
 import { ConnectorBar } from './ui/ConnectorBar'
 import { StatusStrip } from './ui/StatusStrip'
 import { ViewportMenu } from './ui/ViewportMenu'
+import { BoxSelect } from './ui/BoxSelect'
 import { BusyOverlay } from './ui/BusyOverlay'
 import { ImprintModal } from './ui/Imprint'
 import { SettingsModal } from './ui/SettingsModal'
@@ -1002,8 +1003,9 @@ export default function App() {
     let next = fit
     const notes: string[] = []
     if (ex.constraint !== 'none') {
-      const label = CONSTRAINTS.find((c) => c.id === ex.constraint)!.label.toLowerCase()
-      const held = constrainFit(next, pos, selection, ex.constraint)
+      const refs = useStore.getState().elements.filter((e) => e.fit).map((e) => ({ id: e.id, name: e.name, fit: e.fit as FitData }))
+      const label = constraintLabel(ex.constraint, refs).toLowerCase()
+      const held = constrainFit(next, pos, selection, ex.constraint, refs)
       if (held) { next = held; notes.push(label) }
       else notes.push(`could not be held ${label}`)
     }
@@ -2185,6 +2187,7 @@ export default function App() {
           )}
         </div>
       </div>
+      <BoxSelect scene={() => sceneRef.current} />
       <ViewportMenu
         hasScan={Boolean(fileName)}
         onZoomFit={() => sceneRef.current?.fitToView()}

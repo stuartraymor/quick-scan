@@ -29,6 +29,10 @@ interface ShellState {
   appMenuOpen: boolean
   /** The Extract primitives dialog (ui/ExtractPrimitives) is open. */
   extractOpen: boolean
+  /** What is selected in the Objects tree and by a box drawn on the stage:
+   *  'scan', 'element:<id>', 'section:<id>'. */
+  selection: string[]
+  setSelection: (keys: string[]) => void
   /** Triangles of the scan hidden by Hide Selected / Isolate (a view state). */
   hiddenTriangles: number
   setHiddenTriangles: (n: number) => void
@@ -50,6 +54,8 @@ export const useShell = create<ShellState>()((set) => ({
   inspectorOpen: true,
   appMenuOpen: false,
   extractOpen: false,
+  selection: [],
+  setSelection: (selection) => set({ selection }),
   prepareStep: null,
   setPrepareStep: (prepareStep) => set({ prepareStep }),
   hiddenTriangles: 0,

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // The CAD workspace exposes its own actions; the shell knows no plugin state.
+import { useShell } from '../../../src/state/shellStore'
 import { useZebra } from '../state/zebraStore'
 import type { ReactNode } from 'react'
 import { Icon, type IconName } from '../../../src/ui/icons'
@@ -31,6 +32,73 @@ export function useReverseRibbonActions(onExport: () => void): NonNullable<Plugi
     title: locked ? 'Finish the current operation first.' : !ready ? 'Open the CAD workspace to load the CAD kernel.' : !requirement ? reason : undefined,
   })
   return {
+    // Construct → Plane from 2D sketch: the Plane editor opened on the open
+    // sketch's plane, or else the last sketch's, to confirm as a typed plane.
+    planeFromSketch: {
+      run: () => {
+        const now = useReverse.getState()
+        const last = [...now.features].reverse().find((f) => f.kind === 'sketch' && 'frame' in f && f.frame) as { frame: { origin: number[]; normal: number[] } } | undefined
+        const frame = now.sketchDraft?.frame ?? last?.frame
+        if (!frame) { useStore.getState().setStatus('Make a 2D sketch first — its plane becomes the new plane.'); return }
+        useShell.getState().setWorkspace('elements')
+        const st = useStore.getState()
+        st.startDraft('plane')
+        st.setDraftMethod('plane-coords')
+        st.setDraftParams([...frame.normal, ...frame.origin], 'The plane of the sketch — check it, then confirm.')
+      },
+      disabled: !state.sketchDraft && !state.features.some((f) => f.kind === 'sketch'),
+      title: 'Plane from 2D sketch: a plane on the plane of a sketch',
+    },
+    // Construct → Plane through sketch line: the plane holding the one line
+    // selected in the open sketch, standing square to the sketch.
+    planeThroughSketchLine: {
+      run: () => {
+        const d = useReverse.getState().sketchDraft
+        const sel = d?.selection.length === 1 ? d.sketch.entities.find((e) => e.id === d.selection[0]) : undefined
+        if (!d || !sel || sel.kind !== 'line') { useStore.getState().setStatus('Select one line in an open 2D sketch first.'); return }
+        const { origin: o, basisU: u, basisV: v, normal: n } = d.frame
+        const at = (p: readonly number[]) => [0, 1, 2].map((i) => o[i] + u[i] * p[0] + v[i] * p[1])
+        const a = at(sel.a), b = at(sel.b)
+        const t = [b[0] - a[0], b[1] - a[1], b[2] - a[2]]
+        // Normal = line × sketch normal: square to both, so the plane holds the
+        // line and stands upright on the sketch.
+        const m = [t[1] * n[2] - t[2] * n[1], t[2] * n[0] - t[0] * n[2], t[0] * n[1] - t[1] * n[0]]
+        const l = Math.hypot(m[0], m[1], m[2])
+        if (!(l > 1e-9)) { useStore.getState().setStatus('The selected line has no length.'); return }
+        useShell.getState().setWorkspace('elements')
+        const st = useStore.getState()
+        st.startDraft('plane')
+        st.setDraftMethod('plane-coords')
+        st.setDraftParams([m[0] / l, m[1] / l, m[2] / l, ...a], 'The plane through the sketch line — check it, then confirm.')
+      },
+      disabled: !state.sketchDraft || state.sketchDraft.selection.length !== 1,
+      title: 'Plane through sketch line: select one line in the open sketch',
+    },
+    // Construct → Plane along path: a plane square to the one line or arc
+    // selected in the open sketch, at its start.
+    planeAlongPath: {
+      run: () => {
+        const d = useReverse.getState().sketchDraft
+        const sel = d?.selection.length === 1 ? d.sketch.entities.find((e) => e.id === d.selection[0]) : undefined
+        if (!d || !sel || (sel.kind !== 'line' && sel.kind !== 'arc')) { useStore.getState().setStatus('Select one line or arc in an open 2D sketch first.'); return }
+        // Where the path starts on the sheet, and which way it runs there.
+        const [p, t]: [[number, number], [number, number]] = sel.kind === 'line'
+          ? [sel.a, [sel.b[0] - sel.a[0], sel.b[1] - sel.a[1]]]
+          : [[sel.c[0] + sel.r * Math.cos(sel.start), sel.c[1] + sel.r * Math.sin(sel.start)], [-Math.sin(sel.start) * Math.sign(sel.sweep || 1), Math.cos(sel.start) * Math.sign(sel.sweep || 1)]]
+        const { origin: o, basisU: u, basisV: v } = d.frame
+        const at = [0, 1, 2].map((i) => o[i] + u[i] * p[0] + v[i] * p[1])
+        const dir = [0, 1, 2].map((i) => u[i] * t[0] + v[i] * t[1])
+        const l = Math.hypot(dir[0], dir[1], dir[2])
+        if (!(l > 1e-9)) { useStore.getState().setStatus('The selected piece has no length.'); return }
+        useShell.getState().setWorkspace('elements')
+        const st = useStore.getState()
+        st.startDraft('plane')
+        st.setDraftMethod('plane-coords')
+        st.setDraftParams([dir[0] / l, dir[1] / l, dir[2] / l, ...at], 'The plane square to the path at its start — check it, then confirm.')
+      },
+      disabled: !state.sketchDraft || state.sketchDraft.selection.length !== 1,
+      title: 'Plane along path: select one line or arc in the open sketch',
+    },
     rebuild: action(() => {
       useReverse.setState((s) => ({ buildVersion: s.buildVersion + 1 }))
       useStore.getState().setStatus('Rebuilding the whole history…')

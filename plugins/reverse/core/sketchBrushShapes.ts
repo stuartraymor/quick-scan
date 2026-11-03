@@ -80,7 +80,9 @@ export function fitBrushClosedShape(kind: BrushClosedShape, input: readonly Vec2
   }
   let maxDeviation = 0
   for (const p of points) maxDeviation = Math.max(maxDeviation, residual(kind, p, q) * size)
-  if (!Number.isFinite(maxDeviation) || maxDeviation > tolerance) return `The ${kind} misses the highlighted points by ${maxDeviation.toFixed(3)} mm; target tolerance is ${tolerance} mm.`
+  // The best rectangle, slot or hexagon, however far the points stray — the
+  // target tolerance is Fit Curve's only, as in QUICKSURFACE.
+  if (!Number.isFinite(maxDeviation)) return `The highlighted points do not define this ${kind}.`
   const center: Vec2 = [origin[0] + q[0] * size, origin[1] + q[1] * size], angle = q[2], c = Math.cos(angle), s = Math.sin(angle)
   const place = (x: number, y: number): Vec2 => [center[0] + size * (x * c - y * s), center[1] + size * (x * s + y * c)]
   const sketch = emptySketch()

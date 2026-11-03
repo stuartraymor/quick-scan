@@ -70,7 +70,11 @@ export function fitBrushPrimitive(kind: BrushPrimitive, selected: readonly Brush
     const candidate = { ...entity, id: 0 } as SketchEntity
     let maxDeviation = 0
     for (const p of points) maxDeviation = Math.max(maxDeviation, nearestOnEntity(candidate, p).dist)
-    if (!Number.isFinite(maxDeviation) || maxDeviation > options.tolerance) return { ok: false, error: `The ${kind} misses the highlighted points by ${maxDeviation.toFixed(3)} mm; target tolerance is ${options.tolerance} mm.` }
+    // As in QUICKSURFACE, the target tolerance governs Fit Curve only: a line,
+    // arc or circle is the best fit to the points, however far they stray —
+    // the panel says by how much.
+    if (!Number.isFinite(maxDeviation)) return { ok: false, error: `The highlighted points do not define this ${kind}.` }
+    if (kind === 'curve' && maxDeviation > options.tolerance) return { ok: false, error: `The curve misses the highlighted points by ${maxDeviation.toFixed(3)} mm; target tolerance is ${options.tolerance} mm.` }
     return { ok: true, entity, maxDeviation, ...(axis ? { axis } : {}) }
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : 'The highlighted points do not define this primitive.' }

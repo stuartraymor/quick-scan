@@ -37,18 +37,26 @@ describe('explicit alignment reference interaction',()=>{
   expect(m().alignDraft?.primary).toBe(2)
   expect(m().alignDraft?.secondary).toBe(3)
   m().beginAlignmentReferencePick('origin')
+  // QUICKSURFACE lists every feature for the tertiary: a plane gives its centre.
   m().selectAlignmentElement(1)
-  expect(m().alignDraft?.origin).toBeNull()
-  expect(m().alignDraft?.referencePickSlot).toBe('origin')
+  expect(m().alignDraft?.origin).toBe(1)
+  expect(m().alignDraft?.referencePickSlot).toBeNull()
+  m().beginAlignmentReferencePick('origin')
   m().selectAlignmentElement(-1020)
   expect(m().alignDraft?.origin).toBe(-1020)
   expect(m().alignDraft?.referencePickSlot).toBeNull()
  })
- it('uses cylinder axes for directional slots but not an invented point origin',()=>{
+ it('uses cylinder axes for directional slots, and its centre as a tertiary zero point',()=>{
   const cylinder:Element={...objects()[0],kind:'cylinder',fit:{kind:'cylinder',axis:[0,0,1],center:[4,5,6],radius:2,length:10,coverage:360,sigma:0,usedPoints:12,regionSize:12}}
   expect(alignmentSlotAccepts('primary',cylinder)).toBe(true)
   expect(alignmentSlotAccepts('secondary',cylinder)).toBe(true)
-  expect(alignmentSlotAccepts('origin',cylinder)).toBe(false)
+  expect(alignmentSlotAccepts('origin',cylinder)).toBe(true)
+ })
+ it('with Don’t move the coordinate system, only turns the part — no shift onto the feature',()=>{
+  m().setAlignmentRef('primary',1)
+  useStore.setState((st)=>({alignDraft:{...st.alignDraft!,keepOrigin:true}}))
+  const kept=alignmentPreview(m().alignDraft!,m().elements,100).preview!
+  expect(Array.from(kept.rigid.t)).toEqual([0,0,0])
  })
  it('preserves references while hiding geometry and keeps preview usable',()=>{
   m().setAlignmentRef('primary',1)

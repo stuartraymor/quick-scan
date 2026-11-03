@@ -2481,6 +2481,15 @@ export class SceneManager {
     return g
   }
 
+  /** Where a point of the scene lands on screen, in client pixels, or null
+   *  behind the camera — for a selection box drawn over the stage. */
+  screenPointOf(p: readonly [number, number, number]): { x: number; y: number } | null {
+    const v = new THREE.Vector3(p[0], p[1], p[2]).applyMatrix4(this.partGroup.matrixWorld).project(this.camera)
+    if (v.z < -1 || v.z > 1) return null
+    const r = this.container.getBoundingClientRect()
+    return { x: r.left + ((v.x + 1) / 2) * r.width, y: r.top + ((1 - v.y) / 2) * r.height }
+  }
+
   /** Edit / View → Background style. */
   setBackgroundStyle(style: 'linear' | 'studio'): void {
     this.viewport.setBackgroundStyle(style)

@@ -317,6 +317,8 @@ export interface ReState {
    *  another coordinate, a sketch off a face or a measured plane by an
    *  offset — the expression it was typed as kept, or let go with null. */
   setSketchOffset: (offset: number, expr?: string | null) => void
+  /** Create Sketch → Flip orientation: the sketch plane faces the other way. */
+  flipSketchOrientation: () => void
   /** Cut the slice chains at another level, mm along the normal off the
    *  sketch's plane (0 at the plane): the chains are those of that level,
    *  and none of them is fitted yet. */

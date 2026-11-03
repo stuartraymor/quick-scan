@@ -337,3 +337,31 @@ button.ribbon-text-key:disabled { opacity: .45; cursor: default; }
 /* Scan Data: small keys that keep their label, three to a column. */
 button.ribbon-text-key.with-icon { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .ribbon-text-grid { display: grid; grid-auto-flow: column; grid-template-rows: repeat(3, auto); column-gap: 10px; padding-top: 3px; align-items: start; justify-items: start; }
+
+/* QUICKSURFACE's title row (2026-11-03 live check): one thin row — the round
+   app button, then small Save, Save as, Undo, Redo, and the title in the
+   middle. New, Load and Settings stay in the app menu and the Settings tab;
+   the source link keeps its small icon at the end. Quick Scan's own colours. */
+.top { height: 30px; gap: 4px; padding: 0 6px; }
+.top .brandbtn { order: 0; }
+.top [data-test="save-project"] { order: 1; }
+.top [data-test="save-project-as"] { order: 2; }
+.top .undokeys { order: 3; }
+.top .brand { order: 4; margin-left: auto; }
+.top .brand span { display: none; }
+.top .brand b { font-weight: 500; font-size: 12px; }
+.top .projectname, .top .partchip { order: 5; margin-right: auto; }
+.top .grow { display: none; }
+.top .agentchip { order: 6; }
+.top .project-save-status { order: 7; }
+.top .iconbtn { order: 8; }
+.top [data-test="save-project"] .btxt,
+.top [data-test="save-project-as"] .btxt { display: none; }
+.top [data-test="save-project"], .top [data-test="save-project-as"] { padding: 3px 5px; }
+.top [data-test="new-project"], .top [data-test="load-project"], .top [data-test="open-settings"] { display: none; }
+
+/* QUICKSURFACE's ribbon tabs: plain text, no boxes; the open tab is the
+   ribbon's own panel colour joining it, the accent kept as a thin line. */
+.desktop-workspaces { height: 24px; padding: 0 6px; gap: 0; }
+.desktop-workspaces button { padding: 0 10px; font-size: 12px; border-radius: 0; border-bottom-width: 1px; }
+.desktop-workspaces button.on { font-weight: 500; color: var(--ink); }

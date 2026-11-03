@@ -48,19 +48,24 @@ describe('section-point brush geometry', () => {
     expect(fit.ok && fit.entity.kind === 'arc' && fit.entity.sweep).toBeCloseTo(Math.PI / 2, 7)
     expect(circle.ok && circle.maxDeviation).toBeLessThan(1e-7)
   })
-  it('rejects insufficient, coincident, collinear circle and out-of-tolerance data without mutating', () => {
+  it('rejects insufficient, coincident and collinear circle data without mutating', () => {
     const sketch = emptySketch()
     for (const [kind, points] of [
       ['line', [[0, 0], [0, 0]]],
       ['circle', [[0, 0], [1, 0], [2, 0]]],
       ['arc', [[0, 0], [1, 0]]],
-      ['line', [[0, 0], [5, 5], [10, 0]]],
     ] as const) {
       const fit = fitBrushPrimitive(kind, sample(points.map((p) => [p[0], p[1]])), options)
       expect(fit.ok).toBe(false)
       expect(sketchWithBrushFit(sketch, fit)).toBeNull()
     }
     expect(sketch.entities).toHaveLength(0)
+  })
+  it('fits a line to scattered points anyway, as QUICKSURFACE does, saying how far off it is', () => {
+    // The target tolerance is Fit Curve's only: a line is the best fit, shown.
+    const fit = fitBrushPrimitive('line', sample([[0, 0], [5, 5], [10, 0]]), options)
+    expect(fit.ok).toBe(true)
+    if (fit.ok) expect(fit.maxDeviation).toBeGreaterThan(options.tolerance)
   })
   it('keeps ordered single-contour curve data and refuses to bridge separate contours', () => {
     const points = Array.from({ length: 30 }, (_, i): Vec2 => [i / 3, 2 + i / 6])

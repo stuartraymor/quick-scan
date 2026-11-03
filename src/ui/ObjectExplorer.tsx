@@ -37,7 +37,11 @@ export function ObjectExplorer({ pluginObjects, pluginHistoryEntries = [], plugi
   const [historyMode, setHistoryMode] = useState<'history' | 'parents'>('history')
   const [collapsedParents, setCollapsedParents] = useState<ReadonlySet<string>>(new Set())
   const [renaming, setRenaming] = useState<{kind:'element'|'section';id:number;name:string}|null>(null)
-  const [selected, setSelected] = useState<string | null>(null)
+  // Shared with the box drawn on the stage: the first key is the one the
+  // row actions (delete, rename) work on.
+  const selection = useShell(s => s.selection)
+  const selected = selection[0] ?? null
+  const isSelected = (key: string) => selection.includes(key)
   const [menu, setMenu] = useState<{ kind: 'element' | 'section'; id: number; x: number; y: number } | null>(null)
   useDismiss(menu !== null, () => setMenu(null), { outside: '.explorer-core-menu' })
   const fileName = useStore(s => s.fileName)
@@ -56,8 +60,9 @@ export function ObjectExplorer({ pluginObjects, pluginHistoryEntries = [], plugi
   const archive = useDocumentOrder(s => s.coreArchive)
   const locked = busy || coreEditor || extracting || working || interactionBlocked
   const units = useUnits()
-  const pick = (key: string) => {
-    setSelected(key)
+  const pick = (key: string, add = false) => {
+    const now = useShell.getState().selection
+    useShell.getState().setSelection(add ? (now.includes(key) ? now.filter(k => k !== key) : [...now, key]) : [key])
     const state=useStore.getState()
     if (state.alignDraft && key.startsWith('element:')) state.selectAlignmentElement(Number(key.slice(8)))
   }
@@ -70,7 +75,7 @@ export function ObjectExplorer({ pluginObjects, pluginHistoryEntries = [], plugi
     const action=kind==='element'?onDeleteElement:onDeleteSection
     if(!action) return
     historyAction('Delete object',()=>action(id))
-    setMenu(null); setSelected(null)
+    setMenu(null); useShell.getState().setSelection([])
   }
   const editElement = (id: number) => {
     setMenu(null)
@@ -131,17 +136,17 @@ export function ObjectExplorer({ pluginObjects, pluginHistoryEntries = [], plugi
   const elementGroups = [ ['plane', 'Planes'], ['cylinder', 'Cylinders'], ['cone', 'Cones'], ['sphere', 'Spheres'], ['line', 'Lines'], ['point', 'Points'], ['circle', 'Circles'], ['torus', 'Tori'] ] as const
   const historyElements = archive?.elements ?? elements
   const historySections = archive?.sections ?? sections
-  const elementRow = (el: (typeof elements)[number], location: 'object' | 'history') => { const rolled = !elements.some(active => active.id === el.id); return <div key={el.id} data-test={`explorer-${location === 'history' ? 'history-' : ''}element-row-${el.id}`} className={`explorer-row${selected === `element:${el.id}` ? ' selected' : ''}${rolled ? ' is-rolled' : ''}`} onContextMenu={event => openMenu(event, 'element', el.id)}>
+  const elementRow = (el: (typeof elements)[number], location: 'object' | 'history') => { const rolled = !elements.some(active => active.id === el.id); return <div key={el.id} data-test={`explorer-${location === 'history' ? 'history-' : ''}element-row-${el.id}`} className={`explorer-row${isSelected(`element:${el.id}`) ? ' selected' : ''}${rolled ? ' is-rolled' : ''}`} onContextMenu={event => openMenu(event, 'element', el.id)}>
     <ExplorerCheckbox values={[!rolled && el.visible && coreMask]} label={`${el.name} visibility`} disabled={visibilityLocked || rolled} onSet={() => toggleVisible('element', el.id)} />
-    <button type="button" className="explorer-item" data-test={`explorer-${location === 'history' ? 'history-' : ''}element-${el.id}`} disabled={(locked && !aligning) || rollbackAt !== null} aria-pressed={selected === `element:${el.id}`} onClick={() => pick(`element:${el.id}`)} onDoubleClick={() => editElement(el.id)} title={rollbackAt !== null ? 'Restore End of Model before editing.' : `${el.kind} · Right-click for actions, double-click to edit`}><span className="explorer-color" style={{ background: el.color }} /><span>{el.name}</span></button>
+    <button type="button" className="explorer-item" data-test={`explorer-${location === 'history' ? 'history-' : ''}element-${el.id}`} disabled={(locked && !aligning) || rollbackAt !== null} aria-pressed={isSelected(`element:${el.id}`)} onClick={(ev) => pick(`element:${el.id}`, ev.ctrlKey || ev.metaKey)} onDoubleClick={() => editElement(el.id)} title={rollbackAt !== null ? 'Restore End of Model before editing.' : `${el.kind} · Right-click for actions, double-click to edit`}><span className="explorer-color" style={{ background: el.color }} /><span>{el.name}</span></button>
   </div> }
-  const sectionRow = (sec: (typeof sections)[number], location: 'object' | 'history') => { const rolled = !sections.some(active => active.id === sec.id); return <div key={sec.id} data-test={`explorer-${location === 'history' ? 'history-' : ''}section-row-${sec.id}`} className={`explorer-row${selected === `section:${sec.id}` ? ' selected' : ''}${rolled ? ' is-rolled' : ''}`} onContextMenu={event => openMenu(event, 'section', sec.id)}>
+  const sectionRow = (sec: (typeof sections)[number], location: 'object' | 'history') => { const rolled = !sections.some(active => active.id === sec.id); return <div key={sec.id} data-test={`explorer-${location === 'history' ? 'history-' : ''}section-row-${sec.id}`} className={`explorer-row${isSelected(`section:${sec.id}`) ? ' selected' : ''}${rolled ? ' is-rolled' : ''}`} onContextMenu={event => openMenu(event, 'section', sec.id)}>
     <ExplorerCheckbox values={[!rolled && sec.visible && coreMask]} label={`${sec.name} visibility`} disabled={visibilityLocked || rolled} onSet={() => toggleVisible('section', sec.id)} />
-    <button type="button" className="explorer-item" data-test={`explorer-${location === 'history' ? 'history-' : ''}section-${sec.id}`} disabled={(locked && !aligning) || rollbackAt !== null} aria-pressed={selected === `section:${sec.id}`} onClick={() => pick(`section:${sec.id}`)} onDoubleClick={() => editSection(sec.id)} title={rollbackAt !== null ? 'Restore End of Model before editing.' : 'Right-click for actions, double-click to edit section'}><TreeMark kind="plane" /><span>{sec.name}</span></button>
+    <button type="button" className="explorer-item" data-test={`explorer-${location === 'history' ? 'history-' : ''}section-${sec.id}`} disabled={(locked && !aligning) || rollbackAt !== null} aria-pressed={isSelected(`section:${sec.id}`)} onClick={(ev) => pick(`section:${sec.id}`, ev.ctrlKey || ev.metaKey)} onDoubleClick={() => editSection(sec.id)} title={rollbackAt !== null ? 'Restore End of Model before editing.' : 'Right-click for actions, double-click to edit section'}><TreeMark kind="plane" /><span>{sec.name}</span></button>
   </div> }
-  const scanRow = (location: 'object' | 'history') => <div className={`explorer-row${selected === 'scan' ? ' selected' : ''}`}>
+  const scanRow = (location: 'object' | 'history') => <div className={`explorer-row${isSelected('scan') ? ' selected' : ''}`}>
     <ExplorerCheckbox values={[scanShown]} label={`${fileName} visibility`} disabled={scanDisabled} onSet={setScanVisible} />
-    <button type="button" className="explorer-item" data-test={`explorer-${location}-scan`} aria-pressed={selected === 'scan'} onClick={() => pick('scan')} title={`${fileName} · ${triangles.toLocaleString()} triangles`}><TreeMark kind="mesh" /><span>{fileName?.replace(/\.[^.]+$/, '')}{location === 'object' && ` (T: ${triangles.toLocaleString()})`}</span></button>
+    <button type="button" className="explorer-item" data-test={`explorer-${location}-scan`} aria-pressed={isSelected('scan')} onClick={(ev) => pick('scan', ev.ctrlKey || ev.metaKey)} title={`${fileName} · ${triangles.toLocaleString()} triangles`}><TreeMark kind="mesh" /><span>{fileName?.replace(/\.[^.]+$/, '')}{location === 'object' && ` (T: ${triangles.toLocaleString()})`}</span></button>
   </div>
   const coreKey = (id: number) => historyElements.some(el => el.id === id) ? `core:element:${id}` : `core:section:${id}`
   const historyEntries: { key: string; node: ReactNode; label?: string; parents?: readonly string[] }[] = [

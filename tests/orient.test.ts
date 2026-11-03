@@ -320,7 +320,7 @@ describe('an aligned element in the store', () => {
     const ref = fitted(base)
     fitted(bore, ref)
     const text = buildSummary('t.stl', store().elements, [])
-    expect(text).toMatch(/aligned perpendicular to Plane 1, measured 0\.300° off/)
+    expect(text).toMatch(/aligned perpendicular to Plane\(1\), measured 0\.300° off/)
   })
 })
 

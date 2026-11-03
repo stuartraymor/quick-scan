@@ -45,7 +45,7 @@ describe('the kind in hand in the 3D Measure workspace', () => {
     expect(store().commitDraft()).toBeNull()
     pick([4, 5, 6])
     expect(store().commitDraft()).not.toBeNull()
-    expect(store().elements.map((e) => e.name)).toEqual(['Point 1', 'Point 2'])
+    expect(store().elements.map((e) => e.name)).toEqual(['Point(1)', 'Point(2)'])
     expect(store().draft?.kind).toBe('point')
   })
 

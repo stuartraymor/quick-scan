@@ -806,7 +806,7 @@ export const useStore = create<AppState>()((set, get) => ({
         {
           id,
           kind: 'point' as const,
-          name: `${elementKindInfo('point').label} ${ofKind}`,
+          name: `${elementKindInfo('point').label}(${ofKind})`,
           color: elementColor(num),
           source: { type: 'picked' } as ElementSource,
           status: 'done' as const,
@@ -1066,7 +1066,7 @@ export const useStore = create<AppState>()((set, get) => ({
           {
             id,
             kind: d.kind,
-            name: `${elementKindInfo(d.kind).label} ${ofKind}`,
+            name: `${elementKindInfo(d.kind).label}(${ofKind})`,
             color: elementColor(num),
             source,
             status: 'done' as const,

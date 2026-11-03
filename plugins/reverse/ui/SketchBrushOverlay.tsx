@@ -9,6 +9,9 @@ import { useSketchBrush } from '../state/sketchBrushStore'
 
 /** A plugin-owned canvas over the real sheet. Input is captured only for
  *  left-button paint; middle/right navigation still reaches FlatScene. */
+/** The tag beside the brush: the fit in hand. */
+const FIT_TAG: Record<string, string> = { line: 'Fit Line', arc: 'Fit Arc', circle: 'Fit Circle', rectangle: 'Rectangle', slot: 'Slot', hexagon: 'Hexagon', curve: 'Fit Curve' }
+
 export function SketchBrushOverlay({ scene, chainsOf }: { scene: FlatScene | null; chainsOf: () => SketchChains | null }) {
   const open = useSketchBrush((s) => s.open)
   const canvas = useRef<HTMLCanvasElement>(null)
@@ -117,6 +120,14 @@ export function SketchBrushOverlay({ scene, chainsOf }: { scene: FlatScene | nul
           ctx.beginPath(); ctx.arc(cursor.x - rect.left, cursor.y - rect.top, state.brushPx / 2, 0, Math.PI * 2)
           ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3; ctx.stroke()
           ctx.strokeStyle = '#262626'; ctx.lineWidth = 1; ctx.stroke()
+          // The fit in hand, named beside the brush as QUICKSURFACE tags it.
+          const tag = FIT_TAG[state.primitive] ?? 'Fit'
+          const tx = cursor.x - rect.left + state.brushPx / 2 + 6, ty = cursor.y - rect.top + state.brushPx / 2
+          ctx.font = '11px system-ui, sans-serif'
+          const w = ctx.measureText(tag).width + 8
+          ctx.fillStyle = '#ffffff'; ctx.fillRect(tx, ty - 13, w, 17)
+          ctx.strokeStyle = '#262626'; ctx.lineWidth = 1; ctx.strokeRect(tx + 0.5, ty - 12.5, w - 1, 16)
+          ctx.fillStyle = '#262626'; ctx.fillText(tag, tx + 4, ty)
         }
       }
       frame = requestAnimationFrame(render)

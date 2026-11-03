@@ -12,7 +12,31 @@ import type { CylinderFit, FitData, LineFit, PlaneFit, Vec3 } from '../types'
 import { add, dot, len, normalize, scale, sub } from '../vec'
 import { orthoBasis } from '../fit/linalg'
 
-export type ConstraintId = 'none' | 'parallel-oxy' | 'parallel-oyz' | 'parallel-oxz' | 'perpendicular-oxy' | 'perpendicular-oyz' | 'perpendicular-oxz'
+export type ConstraintId =
+  | 'none' | 'parallel-oxy' | 'parallel-oyz' | 'parallel-oxz' | 'perpendicular-oxy' | 'perpendicular-oyz' | 'perpendicular-oxz'
+  /** Held to a primitive already made, by its element id — as QUICKSURFACE
+   *  lists "Parallel to Plane(1)" and "Perpendicular to Cylinder(1)". */
+  | `${'parallel' | 'perpendicular'}-el${number}`
+
+/** A primitive already made that a new one may be held to. */
+export interface ConstraintRef { id: number; name: string; fit: FitData }
+
+/** Step 2's whole list: the coordinate planes, then each primitive already
+ *  made — a plane both ways, an axis (cylinder, cone, line) perpendicular. */
+export function constraintOptions(refs: readonly ConstraintRef[]): { id: ConstraintId; label: string }[] {
+  const out = [...CONSTRAINTS]
+  for (const r of refs) {
+    if (!directionOf(r.fit)) continue
+    out.push({ id: `perpendicular-el${r.id}`, label: `Perpendicular to ${r.name}` })
+    if (r.fit.kind === 'plane') out.push({ id: `parallel-el${r.id}`, label: `Parallel to ${r.name}` })
+  }
+  return out
+}
+
+/** The words for a constraint, for the status line. */
+export function constraintLabel(id: ConstraintId, refs: readonly ConstraintRef[]): string {
+  return constraintOptions(refs).find((c) => c.id === id)?.label ?? 'Not constrained'
+}
 
 export const CONSTRAINTS: { id: ConstraintId; label: string }[] = [
   { id: 'none', label: 'Not constrained' },
@@ -57,14 +81,21 @@ const offRightDeg = (a: Vec3, b: Vec3): number => (Math.asin(Math.min(1, Math.ab
 /** The direction the constraint asks for, nearest to `current`; null when
  *  `current` leaves it undetermined (a normal along the datum's own normal
  *  cannot be made perpendicular to it) or the fit has no direction. */
-export function constrainedDirection(fit: FitData, constraint: ConstraintId): Vec3 | null {
+export function constrainedDirection(fit: FitData, constraint: ConstraintId, refs: readonly ConstraintRef[] = []): Vec3 | null {
   const current = directionOf(fit)
   if (!current || !canConstrain(fit) || constraint === 'none') return null
-  const [mode, plane] = constraint.split('-') as ['parallel' | 'perpendicular', 'oxy' | 'oyz' | 'oxz']
-  const N = DATUM_NORMAL[plane]
-  // A plane parallel to a datum has its normal along the datum's; an axis
-  // parallel to it lies in it, so the roles swap.
-  const along = fit.kind === 'plane' ? mode === 'parallel' : mode === 'perpendicular'
+  const [mode, target] = constraint.split('-') as ['parallel' | 'perpendicular', string]
+  let N: Vec3 | null
+  let refIsPlane = true
+  if (target.startsWith('el')) {
+    const ref = refs.find((r) => r.id === Number(target.slice(2)))
+    N = ref ? directionOf(ref.fit) : null
+    refIsPlane = ref?.fit.kind === 'plane'
+  } else N = DATUM_NORMAL[target as 'oxy' | 'oyz' | 'oxz']
+  if (!N) return null
+  // Directions compared: a plane's normal, an axis. Plane to plane (or axis to
+  // axis), parallel means the same direction; plane to axis, perpendicular does.
+  const along = (fit.kind === 'plane') === refIsPlane ? mode === 'parallel' : mode === 'perpendicular'
   if (along) return alike(N, current)
   return unit(sub(current, scale(N, dot(current, N))))
 }
@@ -179,8 +210,8 @@ export function withDirection(fit: FitData, pos: Float32Array, idx: ArrayLike<nu
 /** Step 2's dropdown: the fit held parallel or perpendicular to a coordinate
  *  plane, or null when it cannot be (no direction, or it lies along the
  *  datum's normal and perpendicular is then undetermined). */
-export function constrainFit(fit: FitData, pos: Float32Array, idx: ArrayLike<number>, constraint: ConstraintId): FitData | null {
-  const dir = constrainedDirection(fit, constraint)
+export function constrainFit(fit: FitData, pos: Float32Array, idx: ArrayLike<number>, constraint: ConstraintId, refs: readonly ConstraintRef[] = []): FitData | null {
+  const dir = constrainedDirection(fit, constraint, refs)
   return dir ? withDirection(fit, pos, idx, dir) : null
 }
 

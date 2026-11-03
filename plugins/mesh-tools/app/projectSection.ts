@@ -68,6 +68,7 @@ export type ScanEditJson =
   | { kind: 'delete'; triangles: number }
   | { kind: 'flip'; triangles: number; region?: number }
   | { kind: 'scale'; factors: [number, number, number] }
+  | { kind: 'mirror'; plane: string }
   | { kind: 'cut'; plane: string; removed: number; capped: number; open: number }
   | { kind: 'fill'; maxSize: number; mode: 'curved' | 'flat'; holes: number; triangles: number }
   | { kind: 'smooth'; size: number; limit: number; maxMove: number; region?: number }
@@ -159,6 +160,7 @@ function validateMeshPart(raw: unknown): MeshPart {
       const edit = object(item, where)
       if (edit.kind === 'pieces') fields(edit, 'minSize pieces triangles', 'number', where)
       else if (edit.kind === 'delete') fields(edit, 'triangles', 'number', where)
+      else if (edit.kind === 'mirror') fields(edit, 'plane', 'string', where)
       else if (edit.kind === 'scale') {
         const f = edit.factors
         if (!Array.isArray(f) || f.length !== 3 || !f.every((v) => typeof v === 'number' && Number.isFinite(v) && v !== 0)) invalid(`${where}.factors`)
@@ -209,6 +211,8 @@ function scanEditOf(e: ScanEditJson): ScanEdit {
       return { kind: e.kind, minSize: e.minSize, pieces: e.pieces, triangles: e.triangles }
     case 'delete':
       return { kind: e.kind, triangles: e.triangles }
+    case 'mirror':
+      return { kind: e.kind, plane: e.plane }
     case 'scale':
       return { kind: e.kind, factors: [e.factors[0], e.factors[1], e.factors[2]] }
     case 'flip':
