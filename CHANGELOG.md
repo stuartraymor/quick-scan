@@ -1,3 +1,28 @@
+## 0.0.85 - 2026-11-03
+
+A polish pass: the workflows used end to end against QUICKSURFACE 8.0.128, the rough edges found fixed.
+
+- Extract primitives: Create closes the dialog and leaves the stage as it was, the status saying the element by its name ("Plane(1) created."); Create & Stay keeps the dialog for the next area. The Analysis row's label shows again (its checkbox had stretched over it).
+- The corner boxes — the on-screen help and the save warning — sit clear of the view bar instead of covering its keys.
+- Measure and Multiple sections dialogs move by their title bar, as QUICKSURFACE's do.
+
+## 0.0.84 - 2026-11-03
+
+Checked against QUICKSURFACE 8.0.128 running on screen (Software options recorded live).
+
+- Settings → Display → Create primitives transparent, as in QUICKSURFACE: on (the default) primitives are see-through over the scan, off they are drawn solid.
+- Settings → Other → Circular dimensioning: Diameter (default) or Radius — a circle in a 2D sketch is dimensioned by the one chosen; an arc keeps its radius.
+- Settings → Other → On Screen Help: the hints boxed in the view's corner, on or off.
+- Fixed: a key press not aimed at a page element could stop the ribbon's shortcuts working.
+
+## 0.0.83 - 2026-11-03
+
+Checked against QUICKSURFACE 8.0.128 running on screen (all four Software options pages recorded live).
+
+- Settings laid out as QUICKSURFACE's Software options: its pages down the left — Navigation, Display, Other, Workspace — and Quick Scan's AI connection and beta workspaces on a page of their own. Numeric settings read on one line (words, number, unit).
+- The save warning is QUICKSURFACE's: a box in the view's bottom-right corner, "The file has not been saved for N minutes. Consider saving the file.", from 5 minutes unsaved until the project is saved; Settings → Other → Show save warning if not saved for … minutes (was a status-line note every 10 minutes).
+- Settings → Navigation → Defaults puts the navigation settings back.
+
 ## 0.0.82 - 2026-11-03
 
 Checked against QUICKSURFACE 8.0.128 running on screen (Reduce Noise and Software options recorded live).

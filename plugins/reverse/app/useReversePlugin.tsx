@@ -5,6 +5,7 @@
 // on elements, on sketches and on bodies, the manipulators' drags, and what
 // the workspace puts on the stage — see src/plugins/api.ts.
 
+import { setCircularDimensioning } from '../core/draw'
 import { sectionLinePlane, useSectionLine } from '../state/sectionLineStore'
 import { reSceneOf } from '../viewer/reScene'
 import { useEffect, useRef } from 'react'
@@ -90,6 +91,9 @@ const SKETCH_PART_VIEWS: readonly { id: SketchPartView; icon: IconName; label: s
 ]
 
 export function useReversePlugin(host: PluginHost): PluginRuntime {
+  // Options → Other → Circular dimensioning reaches the sketch's dimensions.
+  const circular = usePrefs((s) => s.circularDimensioning)
+  useEffect(() => setCircularDimensioning(circular), [circular])
   const { sceneRef, clientRef } = host
 
   // The CAD kernel's worker, the feature build, the bodies on the part — and

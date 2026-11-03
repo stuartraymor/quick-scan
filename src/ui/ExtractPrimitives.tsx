@@ -74,7 +74,8 @@ export function ExtractPrimitives({ onType, preview, onCreate, onClearPreview, o
   onType: (kind: ElementKind) => void
   /** The fit on show, not created yet: QUICKSURFACE previews, then Create. */
   preview: { kind: ElementKind; sigma: number | null } | null
-  onCreate: () => boolean
+  /** Create the previewed primitive; `stay` keeps the dialog for the next. */
+  onCreate: (stay?: boolean) => boolean
   onClearPreview: () => void
   onClose: () => void
   onClear: () => void
@@ -273,9 +274,9 @@ export function ExtractPrimitives({ onType, preview, onCreate, onClearPreview, o
       <footer>
         <button className="qs-help" title="Select an area with the tools in step 1 — the Magic Wand takes a well-defined face in one click — then click the primitive type in step 2 to preview the fit, and Create to keep it. Select the next area for the next one.">?</button>
         <div className="qs-command-actions">
-          {preview && !fitting && <button data-test="extract-create-stay" onClick={onCreate}>Create &amp; Stay</button>}
+          {preview && !fitting && <button data-test="extract-create-stay" onClick={() => onCreate(true)}>Create &amp; Stay</button>}
           <div className="qs-command-end">
-            {preview && !fitting && <button data-test="extract-create" onClick={() => { if (onCreate()) onClose() }}>Create</button>}
+            {preview && !fitting && <button data-test="extract-create" onClick={() => { if (onCreate(false)) onClose() }}>Create</button>}
             <button data-test="extract-close" data-command-close disabled={fitting} onClick={requestClose}>Close</button>
           </div>
         </div>
@@ -288,7 +289,7 @@ export function ExtractPrimitives({ onType, preview, onCreate, onClearPreview, o
           <h2 id="extract-close-title">Extract primitive</h2>
           <p id="extract-close-description">Add the previewed primitive to the scene before exiting?</p>
           <div className="toolrow">
-            <button autoFocus data-test="extract-close-yes" onClick={() => { if (onCreate()) { setConfirmClose(false); onClose() } }}>Yes</button>
+            <button autoFocus data-test="extract-close-yes" onClick={() => { if (onCreate(false)) { setConfirmClose(false); onClose() } }}>Yes</button>
             <button data-test="extract-close-no" onClick={() => { setConfirmClose(false); onClose() }}>No</button>
             <button data-test="extract-close-cancel" onClick={() => setConfirmClose(false)}>Cancel</button>
           </div>

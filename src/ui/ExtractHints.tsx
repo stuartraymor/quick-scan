@@ -9,6 +9,8 @@ import { createPortal } from 'react-dom'
 import { useStore } from '../state/store'
 import { useShell } from '../state/shellStore'
 import { brushRange, useMark } from '../state/markStore'
+import { usePrefs } from '../state/prefsStore'
+import { cornerBoxPlace } from './cornerBox'
 
 export const EXTRACT_HINT_LINES = [
   'Paint with the mouse to select triangles. Use Control plus mouse wheel to change brush size',
@@ -36,6 +38,7 @@ export function ctrlWheelStep(deltaY: number): void {
 export function ExtractHints() {
   const open = useShell((s) => s.extractOpen)
   const gesture = useMark((s) => s.gesture)
+  const help = usePrefs((s) => s.onScreenHelp)
   const [rect, setRect] = useState<DOMRect | null>(null)
 
   useEffect(() => {
@@ -57,14 +60,13 @@ export function ExtractHints() {
     }
   }, [open])
 
-  if (!open || !rect) return null
+  if (!open || !rect || !help) return null
   return createPortal(
     <div
       data-test="extract-hints"
       style={{
         position: 'fixed',
-        right: window.innerWidth - rect.right + 12,
-        bottom: window.innerHeight - rect.bottom + 12,
+        ...cornerBoxPlace(rect),
         maxWidth: Math.max(rect.width - 24, 200),
         padding: '4px 8px',
         background: 'color-mix(in srgb, var(--panel, #1e2126) 88%, transparent)',

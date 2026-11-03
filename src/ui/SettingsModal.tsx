@@ -86,7 +86,18 @@ function BetaWorkspaces() {
   )
 }
 
+const SETTINGS_PAGES = [
+  { id: 'navigation', label: 'Navigation' },
+  { id: 'display', label: 'Display' },
+  { id: 'other', label: 'Other' },
+  { id: 'workspace', label: 'Workspace' },
+  { id: 'agents', label: 'AI & beta' },
+] as const
+type SettingsPage = (typeof SETTINGS_PAGES)[number]['id']
+
 export function SettingsModal() {
+  // The page shown; Navigation first, as QUICKSURFACE opens its options.
+  const [page, setPage] = useState<SettingsPage>('navigation')
   const open = usePrefs((s) => s.settingsOpen)
   const close = usePrefs((s) => s.openSettings)
   const uiTheme = usePrefs((s) => s.uiTheme)
@@ -95,6 +106,11 @@ export function SettingsModal() {
   const setColormap = usePrefs((s) => s.setColormap)
   const sectionLines = usePrefs((s) => s.sectionLines)
   const reverseZoom = usePrefs((s) => s.reverseZoom)
+  const saveWarn = usePrefs((s) => s.saveWarn)
+  const primitivesTransparent = usePrefs((s) => s.primitivesTransparent)
+  const onScreenHelp = usePrefs((s) => s.onScreenHelp)
+  const circular = usePrefs((s) => s.circularDimensioning)
+  const saveWarnMinutes = usePrefs((s) => s.saveWarnMinutes)
   const arrowRotate = usePrefs((s) => s.arrowRotateDeg)
   const arrowRoll = usePrefs((s) => s.arrowRollDeg)
   const setSectionLines = usePrefs((s) => s.setSectionLines)
@@ -163,11 +179,20 @@ export function SettingsModal() {
             ×
           </button>
         </div>
+        {/* QUICKSURFACE's Software options: its pages listed down the side —
+            Navigation, Display, Other, Workspace — with Quick Scan's AI
+            connection and beta workspaces on a page of their own. */}
+        <div className="settings-pages" role="tablist" aria-label="Settings pages">
+          {SETTINGS_PAGES.map((p) => (
+            <button key={p.id} role="tab" data-test={`settings-page-${p.id}`} aria-selected={page === p.id} className={page === p.id ? 'on' : undefined} onClick={() => setPage(p.id)}>{p.label}</button>
+          ))}
+        </div>
         <p className="dim">
           How the instrument looks and behaves. Remembered in this browser — nothing here is a
           property of the part, and none of it is saved with a project.
         </p>
 
+        <div className="settings-page" data-page="workspace" hidden={page !== 'workspace'}>
         <h3>Units</h3>
         <div className="setting">
           <span id="units-label">Lengths in</span>
@@ -190,6 +215,13 @@ export function SettingsModal() {
           </small>
         </div>
 
+        </div>
+        <div className="settings-page" data-page="display" hidden={page !== 'display'}>
+        <h3>Primitives</h3>
+        <label className="checkrow settings-check">
+          <input type="checkbox" data-test="primitives-transparent" checked={primitivesTransparent} onChange={(e) => usePrefs.getState().setPrimitivesTransparent(e.target.checked)} />
+          <span>Create primitives transparent</span>
+        </label>
         <h3>Appearance</h3>
         <div className="setting">
           <span id="uitheme-label">Interface</span>
@@ -299,6 +331,8 @@ export function SettingsModal() {
           </small>
         </div>
 
+        </div>
+        <div className="settings-page" data-page="navigation" hidden={page !== 'navigation'}>
         <h3>Navigation</h3>
         <div className="setting">
           <label htmlFor="navscheme">Mouse controls</label>
@@ -320,20 +354,17 @@ export function SettingsModal() {
           <input type="checkbox" data-test="reverse-zoom" checked={reverseZoom} onChange={(e) => usePrefs.getState().setReverseZoom(e.target.checked)} />
           <span>Reverse zoom direction on mouse wheel</span>
         </label>
-        <div className="setting">
+        <div className="settings-line">
           <label htmlFor="arrowrotate">When pressing CTRL + arrow key rotate by</label>
-          <div className="range">
-            <input id="arrowrotate" data-test="arrow-rotate" type="number" min={1} max={180} step={1} value={arrowRotate} style={{ width: 70 }} onChange={(e) => usePrefs.getState().setArrowRotateDeg(Number(e.target.value))} />
-            <span>degrees</span>
-          </div>
+          <input id="arrowrotate" data-test="arrow-rotate" type="number" min={1} max={180} step={1} value={arrowRotate} onChange={(e) => usePrefs.getState().setArrowRotateDeg(Number(e.target.value))} />
+          <span>degrees</span>
         </div>
-        <div className="setting">
+        <div className="settings-line">
           <label htmlFor="arrowroll">When pressing ALT + arrow key rotate around view direction by</label>
-          <div className="range">
-            <input id="arrowroll" data-test="arrow-roll" type="number" min={1} max={180} step={1} value={arrowRoll} style={{ width: 70 }} onChange={(e) => usePrefs.getState().setArrowRollDeg(Number(e.target.value))} />
-            <span>degrees</span>
-          </div>
+          <input id="arrowroll" data-test="arrow-roll" type="number" min={1} max={180} step={1} value={arrowRoll} onChange={(e) => usePrefs.getState().setArrowRollDeg(Number(e.target.value))} />
+          <span>degrees</span>
         </div>
+        <button type="button" data-test="navigation-defaults" onClick={() => usePrefs.getState().navigationDefaults()}>Defaults</button>
         {(puck !== null || puckSeen) && (
           <>
             <div className="setting" data-test="spacemouse-settings">
@@ -389,6 +420,34 @@ export function SettingsModal() {
           </>
         )}
 
+        </div>
+        <div className="settings-page" data-page="other" hidden={page !== 'other'}>
+        <h3>Help and dimensions</h3>
+        <label className="checkrow settings-check">
+          <input type="checkbox" data-test="on-screen-help" checked={onScreenHelp} onChange={(e) => usePrefs.getState().setOnScreenHelp(e.target.checked)} />
+          <span>On Screen Help</span>
+        </label>
+        <div className="settings-line">
+          <label htmlFor="circulardim">Circular dimensioning</label>
+          <select id="circulardim" data-test="circular-dimensioning" value={circular} onChange={(e) => usePrefs.getState().setCircularDimensioning(e.target.value === 'radius' ? 'radius' : 'diameter')}>
+            <option value="diameter">Diameter</option>
+            <option value="radius">Radius</option>
+          </select>
+          <span />
+        </div>
+        <h3>Saving</h3>
+        <div className="setting">
+          <label className="checkrow settings-check">
+            <input type="checkbox" data-test="save-warn" checked={saveWarn} onChange={(e) => usePrefs.getState().setSaveWarn(e.target.checked)} />
+            <span>Show save warning if not saved for</span>
+          </label>
+          <div className="settings-line">
+            <span />
+            <input type="number" min={1} max={240} step={1} data-test="save-warn-minutes" value={saveWarnMinutes} disabled={!saveWarn} onChange={(e) => usePrefs.getState().setSaveWarnMinutes(Number(e.target.value))} />
+            <span>minutes</span>
+          </div>
+          <small>A local checkpoint of the work is kept every few seconds as well, offered back after a crash.</small>
+        </div>
         <h3>Files</h3>
         <label className="checkrow settings-check">
           <input
@@ -424,6 +483,8 @@ export function SettingsModal() {
           </small>
         </div>
 
+        </div>
+        <div className="settings-page" data-page="display" hidden={page !== 'display'}>
         <h3>Lines</h3>
         <div className="setting">
           <label htmlFor="sectionlines">Section cuts</label>
@@ -485,6 +546,8 @@ export function SettingsModal() {
           </small>
         </div>
 
+        </div>
+        <div className="settings-page" data-page="other" hidden={page !== 'other'}>
         <h3>Guidance</h3>
         <label className="checkrow settings-check">
           <input
@@ -499,6 +562,8 @@ export function SettingsModal() {
           </span>
         </label>
 
+        </div>
+        <div className="settings-page" data-page="agents" hidden={page !== 'agents'}>
         <h3>Agents</h3>
         <label className="checkrow settings-check">
           <input
@@ -554,7 +619,10 @@ export function SettingsModal() {
           </small>
         </div>
 
-        <BetaWorkspaces />
+        </div>
+        <div className="settings-page" data-page="agents" hidden={page !== 'agents'}>
+          <BetaWorkspaces />
+        </div>
       </div>
     </div>
   )

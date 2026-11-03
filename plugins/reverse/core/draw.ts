@@ -171,6 +171,13 @@ const PARALLEL_DEG = 2
  * to it to a coordinate plane the distance to the plane. Null when nothing
  * applies — a point alone, a plane alone.
  */
+/** Options → Other → Circular dimensioning, as QUICKSURFACE has it: a full
+ *  circle given by its diameter (the default) or by its radius. */
+let circularForm: 'diameter' | 'radius' = 'diameter'
+export function setCircularDimensioning(form: 'diameter' | 'radius'): void {
+  circularForm = form
+}
+
 export function dimensionFor(sketch: Sketch, first: DimPick, second: DimPick | null, datums: readonly DatumTrace[] = []): ConstraintInput | null {
   const piece = (p: DimPick) => (p.kind === 'piece' ? (entityOf(sketch, p.id) ?? null) : null)
   if (first.kind === 'datum' || second?.kind === 'datum') {
@@ -208,7 +215,7 @@ export function dimensionFor(sketch: Sketch, first: DimPick, second: DimPick | n
     }
     // A full circle is a hole or a boss, given by its diameter as a drawing
     // gives it; an arc — a round corner, a slot's end — by its radius.
-    if (a?.kind === 'circle') return { kind: 'diameter', entity: a.id, value: 2 * a.r }
+    if (a?.kind === 'circle') return circularForm === 'radius' ? { kind: 'radius', entity: a.id, value: a.r } : { kind: 'diameter', entity: a.id, value: 2 * a.r }
     if (a?.kind === 'arc') return { kind: 'radius', entity: a.id, value: a.r }
     return null
   }

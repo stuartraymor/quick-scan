@@ -58,6 +58,13 @@ const AGENT_TOKEN_KEY = 'scanruler.agenttoken'
 const SPACE_MOUSE_SPEED_KEY = 'scanruler.spacemouse.speed'
 const SPACE_MOUSE_REVERSE_KEY = 'scanruler.spacemouse.reverse'
 const REVERSE_ZOOM_KEY = 'scanruler.nav.reverseZoom'
+const SAVE_WARN_KEY = 'scanruler.saveWarn'
+const CIRCULAR_DIM_KEY = 'scanruler.circularDimensioning'
+const ON_SCREEN_HELP_KEY = 'scanruler.onScreenHelp'
+const PRIMITIVES_TRANSPARENT_KEY = 'scanruler.primitivesTransparent'
+const SAVE_WARN_MINUTES_KEY = 'scanruler.saveWarnMinutes'
+/** QUICKSURFACE warns after 5 minutes unsaved. */
+export const SAVE_WARN_DEFAULT_MIN = 5
 const ARROW_ROTATE_KEY = 'scanruler.nav.arrowRotate'
 const ARROW_ROLL_KEY = 'scanruler.nav.arrowRoll'
 /** QUICKSURFACE's Ctrl / Alt + arrow steps open on 10°. */
@@ -118,6 +125,22 @@ interface PrefsState {
   colormap: ColormapId
   /** Section cuts on the part in 3D, in pixels. */
   sectionLines: number
+  /** Other → Circular dimensioning: a circle's dimension by its diameter or its radius. */
+  circularDimensioning: 'diameter' | 'radius'
+  setCircularDimensioning: (form: 'diameter' | 'radius') => void
+  /** Other → On Screen Help: the hints boxed in the view's corner. */
+  onScreenHelp: boolean
+  setOnScreenHelp: (on: boolean) => void
+  /** Display → Create primitives transparent. */
+  primitivesTransparent: boolean
+  setPrimitivesTransparent: (on: boolean) => void
+  /** Other: the corner box saying the project has not been saved for a while. */
+  saveWarn: boolean
+  saveWarnMinutes: number
+  setSaveWarn: (on: boolean) => void
+  setSaveWarnMinutes: (min: number) => void
+  /** Navigation's Defaults: every navigation setting back to where it starts. */
+  navigationDefaults: () => void
   /** Navigation: the wheel zooms the other way. */
   reverseZoom: boolean
   /** Navigation: degrees Ctrl + arrow turns the view, and Alt + arrow rolls it about the view direction. */
@@ -213,6 +236,20 @@ export const usePrefs = create<PrefsState>()((set) => {
     colormap: colormapById(read(COLORMAP_KEY)).id,
     sectionLines: clampLineWidth(read(SECTION_LINES_KEY), SECTION_LINE_DEFAULT),
     reverseZoom: read(REVERSE_ZOOM_KEY) === '1',
+    saveWarn: read(SAVE_WARN_KEY) !== '0',
+    circularDimensioning: read(CIRCULAR_DIM_KEY) === 'radius' ? 'radius' : 'diameter',
+    setCircularDimensioning: (form) => { write(CIRCULAR_DIM_KEY, form); set({ circularDimensioning: form }) },
+    onScreenHelp: read(ON_SCREEN_HELP_KEY) !== '0',
+    setOnScreenHelp: (on) => { write(ON_SCREEN_HELP_KEY, on ? '1' : '0'); set({ onScreenHelp: on }) },
+    primitivesTransparent: read(PRIMITIVES_TRANSPARENT_KEY) !== '0',
+    setPrimitivesTransparent: (on) => { write(PRIMITIVES_TRANSPARENT_KEY, on ? '1' : '0'); set({ primitivesTransparent: on }) },
+    saveWarnMinutes: (() => { const n = Number(read(SAVE_WARN_MINUTES_KEY)); return Number.isInteger(n) && n >= 1 && n <= 240 ? n : SAVE_WARN_DEFAULT_MIN })(),
+    setSaveWarn: (on) => { write(SAVE_WARN_KEY, on ? '1' : '0'); set({ saveWarn: on }) },
+    setSaveWarnMinutes: (min) => { const v = Math.min(240, Math.max(1, Math.round(min) || SAVE_WARN_DEFAULT_MIN)); write(SAVE_WARN_MINUTES_KEY, String(v)); set({ saveWarnMinutes: v }) },
+    navigationDefaults: () => {
+      write(REVERSE_ZOOM_KEY, '0'); write(ARROW_ROTATE_KEY, String(ARROW_STEP_DEFAULT)); write(ARROW_ROLL_KEY, String(ARROW_STEP_DEFAULT))
+      set({ reverseZoom: false, arrowRotateDeg: ARROW_STEP_DEFAULT, arrowRollDeg: ARROW_STEP_DEFAULT })
+    },
     arrowRotateDeg: stepOf(read(ARROW_ROTATE_KEY)),
     arrowRollDeg: stepOf(read(ARROW_ROLL_KEY)),
     setReverseZoom: (on) => { write(REVERSE_ZOOM_KEY, on ? '1' : '0'); set({ reverseZoom: on }) },

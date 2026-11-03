@@ -2547,6 +2547,12 @@ export class SceneManager {
     return { min: [b.min.x, b.min.y, b.min.z], max: [b.max.x, b.max.y, b.max.z] }
   }
 
+  /** Settings → Display → Create primitives transparent. */
+  setPrimitivesTransparent(on: boolean): void {
+    this.overlays.setPrimitivesTransparent(on)
+    this.invalidate()
+  }
+
   /** Reverse zoom direction on the mouse wheel (Settings → Navigation). */
   setReverseZoom(on: boolean): void {
     this.viewport.nav.reverseWheel = on

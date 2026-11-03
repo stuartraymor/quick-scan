@@ -2680,7 +2680,8 @@ button.x:disabled {
 /* ---------------- settings ---------------- */
 
 .modal.settings {
-  width: 540px;
+  width: 720px;
+  max-width: calc(100vw - 32px);
   gap: 6px;
 }
 
@@ -4174,3 +4175,17 @@ button.x:disabled {
   background: var(--accent);
   color: #fff;
 }
+
+/* Settings as QUICKSURFACE lays out its Software options: the pages listed
+   down the left, the page chosen beside it. */
+.modal.settings { display: grid; grid-template-columns: 150px minmax(0, 1fr); column-gap: 16px; align-content: start; }
+.modal.settings > .modalhead, .modal.settings > p.dim { grid-column: 1 / -1; }
+.modal.settings > .settings-pages { grid-column: 1; grid-row: 3 / span 20; display: flex; flex-direction: column; gap: 2px; align-self: start; border: 1px solid var(--line); padding: 4px; }
+.modal.settings > .settings-pages button { text-align: left; background: transparent; border: 0; padding: 4px 8px; }
+.modal.settings > .settings-pages button.on { background: var(--accent); color: #fff; }
+.modal.settings > .settings-page { grid-column: 2; }
+.modal.settings > .settings-page[hidden] { display: none; }
+/* A setting read as one line, QUICKSURFACE's way: words, a number, its unit. */
+.modal.settings .settings-line { display: grid; grid-template-columns: minmax(0, 1fr) 70px auto; align-items: center; gap: 8px; margin: 4px 0; }
+.modal.settings .settings-line input, .modal.settings .settings-line select { width: 100%; min-width: 70px; }
+.modal.settings .settings-line:has(select) { grid-template-columns: minmax(0, 1fr) 140px 0; }

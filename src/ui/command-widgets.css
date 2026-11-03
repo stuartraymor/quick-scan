@@ -73,6 +73,7 @@
 .tool-inspector .qs-dialog .qs-constraint { width: 100%; min-height: 22px; font-size: 11px; }
 .tool-inspector .qs-dialog .qs-tol { display: grid; grid-template-columns: 1fr 56px 44px; align-items: center; gap: 5px; font-size: 11px; }
 .tool-inspector .qs-dialog .qs-tol input { width: 100%; min-width: 0; }
+.tool-inspector .qs-dialog .qs-tol input[type=checkbox] { width: auto; }
 .tool-inspector .qs-dialog .qs-tol > span:first-child { white-space: nowrap; }
 .tool-inspector .qs-dialog .qs-tol:has(> input[disabled]) > span { opacity: .55; }
 .tool-inspector .qs-dialog .qs-tol.qs-analysis { grid-template-columns: auto 52px auto 1fr; }

@@ -23,6 +23,7 @@ import { PROJECT_EXTENSION, projectStem } from '../core/project/manifest'
 import { isProjectFile } from '../app/useProject'
 import { APP_VERSION } from '../version'
 import { AppMenu, OPEN_FILE_EVENT } from './AppMenu'
+import { SaveWarning } from './SaveWarning'
 import type { MeshFormat } from '../core/exportMesh'
 import type { RecoveryStatus } from '../app/useRecovery'
 
@@ -174,20 +175,6 @@ export function TopBar({
   savable: boolean
   recovery: RecoveryStatus
 }) {
-  // Save reminder: after ten minutes of unsaved work, and every ten minutes
-  // after that, the status line suggests saving the project.
-  const dirtySince = useRef<number | null>(null)
-  useEffect(() => {
-    if (!recovery.dirty) { dirtySince.current = null; return }
-    dirtySince.current ??= Date.now()
-    const id = setInterval(() => {
-      const since = dirtySince.current
-      if (since === null) return
-      const minutes = Math.floor((Date.now() - since) / 60000)
-      if (minutes >= 10 && minutes % 10 === 0) useStore.getState().setStatus(`Unsaved for ${minutes} minutes — consider saving the project (Ctrl+S).`)
-    }, 60000)
-    return () => clearInterval(id)
-  }, [recovery.dirty])
   const fileName = useStore((s) => s.fileName)
   const triangleCount = useStore((s) => s.triangleCount)
   const vertexCount = useStore((s) => s.vertexCount)
@@ -240,6 +227,7 @@ export function TopBar({
 
   return (
     <>
+    <SaveWarning dirty={recovery.dirty} />
     <header className="top" ref={barRef}>
       <button className={appMenuOpen ? 'brandbtn on' : 'brandbtn'} data-test="app-menu-button" data-app-menu-button aria-haspopup="dialog" aria-expanded={appMenuOpen} title="Quick Scan menu — new, open, import, save, export and recent documents" onClick={() => setAppMenuOpen(!appMenuOpen)}>
         <img className="brandmark" src="/quick-scan-mark.svg" alt="" />

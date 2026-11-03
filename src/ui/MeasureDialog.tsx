@@ -6,6 +6,7 @@
 // lines. Point: the clicked point's X, Y and Z. Every figure to four
 // decimals. Delete All, Delete Last; closing takes the measurements away.
 
+import { useDialogDrag } from './useDialogDrag'
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useShell } from '../state/shellStore'
@@ -25,6 +26,7 @@ const AXIS = ['#d8282d', '#2fa33c', '#1f4fd0']
 export function MeasureDialog() {
   const t = useMeasureTool()
   const wireframe = useStore((s) => s.wireframe)
+  const drag = useDialogDrag({ left: 270, top: 230 })
   // Clicks on the view become picks while the dialog is open.
   useEffect(() => {
     if (!t.open) return
@@ -49,8 +51,8 @@ export function MeasureDialog() {
       <MeasureLayer />
       {createPortal(
         <section className="qs-dialog measure-dialog" data-test="measure-dialog" aria-label="Measure"
-          style={{ position: 'fixed', left: 270, top: 230, width: 290, zIndex: 60 }}>
-          <header><b>Measure</b><button className="qs-x" title="Close" onClick={() => t.setOpen(false)}>×</button></header>
+          style={{ position: 'fixed', left: drag.position.left, top: drag.position.top, width: 290, zIndex: 60 }}>
+          <header {...drag.handle}><b>Measure</b><button className="qs-x" title="Close" onClick={() => t.setOpen(false)}>×</button></header>
           <p className="qs-step">Distances</p>
           <div className="measure-modes" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4 }}>
             {MODES.map((m) => (

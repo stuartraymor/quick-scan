@@ -6,6 +6,7 @@
 // Create takes the previewed ones away. Each is an ordinary section of the
 // part, cut by the same worker as one made on its own.
 
+import { useDialogDrag } from './useDialogDrag'
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useStore } from '../state/store'
@@ -66,6 +67,7 @@ export function MultipleSections({ onClose }: { onClose: () => void }) {
   const [direction, setDirection] = useState<Direction>('both')
   const [made, setMade] = useState<number[]>([])
   const [working, setWorking] = useState<string | null>(null)
+  const drag = useDialogDrag({ left: 270, top: 230 })
 
   const span = (): [number, number] => {
     const s = useStore.getState()
@@ -108,8 +110,8 @@ export function MultipleSections({ onClose }: { onClose: () => void }) {
 
   return createPortal(
     <section className="qs-dialog multiple-sections" data-test="multiple-sections" aria-label="Multiple sections"
-      style={{ position: 'fixed', left: 270, top: 230, width: 300, zIndex: 60 }}>
-      <header><b>Multiple sections</b><button className="qs-x" title="Close" disabled={working !== null} onClick={close}>×</button></header>
+      style={{ position: 'fixed', left: drag.position.left, top: drag.position.top, width: 300, zIndex: 60 }}>
+      <header {...drag.handle}><b>Multiple sections</b><button className="qs-x" title="Close" disabled={working !== null} onClick={close}>×</button></header>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4 }}>
         {AXES.map((a) => (
           <button key={a.id} data-test={`sections-${a.label}`} className={ref === a.id ? 'on' : undefined} aria-pressed={ref === a.id} disabled={working !== null}

@@ -968,6 +968,12 @@ export function useSceneSync({
     sceneRef.current?.setSectionLineWidth(sectionLines)
   }, [sectionLines])
 
+  // Settings → Display → Create primitives transparent.
+  const primitivesTransparent = usePrefs((s) => s.primitivesTransparent)
+  useEffect(() => {
+    sceneRef.current?.setPrimitivesTransparent(primitivesTransparent)
+  }, [primitivesTransparent])
+
   // Settings → Navigation → Reverse zoom direction.
   const reverseZoom = usePrefs((s) => s.reverseZoom)
   useEffect(() => {

@@ -324,7 +324,7 @@ export class Overlays {
         const shell = new THREE.MeshStandardMaterial({
           color: deepen(el.color),
           transparent: true,
-          opacity: el.muted ? 0.3 : PRIMITIVE_OPACITY,
+          opacity: el.muted ? 0.3 : this.restOpacity(),
           depthWrite: false,
           polygonOffset: true,
           polygonOffsetFactor: -1,
@@ -484,9 +484,21 @@ export class Overlays {
     this.ctx.invalidate()
   }
 
+  /** Options → Display → Create primitives transparent: off, a primitive
+   *  is drawn solid. */
+  private transparent = true
+  private restOpacity(): number {
+    return this.transparent ? PRIMITIVE_OPACITY : 1
+  }
+  setPrimitivesTransparent(on: boolean): void {
+    if (this.transparent === on) return
+    this.transparent = on
+    for (const [id, entry] of this.shellMaterials) this.applyHighlight(id, entry)
+  }
+
   private applyHighlight(id: number, entry: { material: THREE.MeshStandardMaterial; color: string }): void {
     const on = this.highlightIds.has(id)
-    entry.material.opacity = on ? PRIMITIVE_OPACITY_SELECTED : PRIMITIVE_OPACITY
+    entry.material.opacity = on ? Math.max(PRIMITIVE_OPACITY_SELECTED, this.restOpacity()) : this.restOpacity()
     entry.material.emissive.set(on ? entry.color : 0x000000)
     entry.material.emissiveIntensity = 0.45
   }

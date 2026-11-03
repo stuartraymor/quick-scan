@@ -75,7 +75,9 @@ export const useShell = create<ShellState>()((set) => ({
   setPrepareStep: (prepareStep) => set({ prepareStep }),
   hiddenTriangles: 0,
   setHiddenTriangles: (hiddenTriangles) => set({ hiddenTriangles }),
-  setExtractOpen: (extractOpen) => set({ extractOpen, ...(extractOpen ? { inspectorOpen: true } : {}) }),
+  // The dialog brings the panel; closing it takes the panel away again, as
+  // QUICKSURFACE's dialog goes — the stage is left as it was.
+  setExtractOpen: (extractOpen) => set((s) => ({ extractOpen, ...(extractOpen ? { inspectorOpen: true } : s.extractOpen ? { inspectorOpen: false } : {}) })),
   setAppMenuOpen: (appMenuOpen) => set({ appMenuOpen }),
   inspectorMode: 'floating',
   setInspectorOpen: (inspectorOpen) => set({ inspectorOpen }),

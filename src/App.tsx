@@ -974,16 +974,18 @@ export default function App() {
   const [extractFitting, setExtractFitting] = useState(false)
   /** The primitive fitted in Extract primitives and shown, not yet created. */
   const [extractPreview, setExtractPreview] = useState<{ kind: ElementKind; sigma: number | null; selection: Uint32Array } | null>(null)
-  const createExtracted = () => {
-    if (!extractPreview || handleConfirmDraft() === null) return false
+  const createExtracted = (stay = true) => {
+    const made = extractPreview ? handleConfirmDraft() : null
+    if (!extractPreview || made === null) return false
     // Ordinary primitive editing keeps the same type armed after a commit.
     // Extraction owns the next type choice; a fresh hidden draft blocks it.
     if (useStore.getState().draft) useStore.getState().cancelDraft()
-    const name = extractPreview.kind[0].toUpperCase() + extractPreview.kind.slice(1)
+    // Named as the Objects tree names it — Plane(1).
+    const name = useStore.getState().elements.find((e) => e.id === made)?.name ?? extractPreview.kind[0].toUpperCase() + extractPreview.kind.slice(1)
     setExtractPreview(null)
     useExtract.getState().setAnalysed(null)
     clearPaint()
-    useStore.getState().setStatus(`${name} created — select the next area, or Close.`)
+    useStore.getState().setStatus(stay ? `${name} created — select the next area, or Close.` : `${name} created.`)
     return true
   }
   /** Clear the fit, keeping the marked area available for the next type. */

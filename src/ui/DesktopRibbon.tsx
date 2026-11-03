@@ -89,7 +89,7 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
     const keydown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.repeat || event.altKey) return
       const target = event.target as HTMLElement | null
-      const editingText = Boolean(target?.closest('input,textarea,select,[contenteditable="true"]'))
+      const editingText = target instanceof Element && Boolean(target.closest('input,textarea,select,[contenteditable="true"]'))
       const key = event.key.toLowerCase()
       if ((event.ctrlKey || event.metaKey) && !event.shiftKey) {
         if (key === 's') { event.preventDefault(); if (!busy && savable) onSave() }
