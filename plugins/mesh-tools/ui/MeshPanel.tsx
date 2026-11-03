@@ -37,6 +37,8 @@ import { HolesTool } from './tools/HolesTool'
 import { SmoothTool } from './tools/SmoothTool'
 import { OffsetTool } from './tools/OffsetTool'
 import { MeshHealth } from './MeshHealth'
+import { EditScanExtras } from './EditScanExtras'
+import { EditScanSelection } from './EditScanSelection'
 import { ShellTool } from './tools/ShellTool'
 import type { MeshFormat } from '../../../src/core/exportMesh'
 
@@ -197,6 +199,8 @@ export function MeshPanel({
       </div>
 
       {scanName && <MeshHealth busy={busy} />}
+      {scanName && <EditScanSelection busy={busy} />}
+      {scanName && <EditScanExtras busy={busy} />}
 
       <div className="group">
         <div className="sec-head">

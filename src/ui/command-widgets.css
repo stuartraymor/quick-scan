@@ -161,8 +161,8 @@
 :root[data-theme='dark'] :is(.tool-inspector,.qs-quick,.modalback > .modal,.ribbon-menu) :focus-visible { outline: 2px solid #79c5ff; outline-offset: 1px; }
 
 /* Original extraction glyphs: pale primitive faces and blue selection tools. */
-.extract-dialog, .qs-quick { --extract-blue: #2388c9; --extract-pale: #e7f3fc; --extract-edge: #2a4354; --extract-well: #183347; --extract-muted: #86929c; }
-:root[data-theme='dark'] :is(.extract-dialog,.qs-quick) { --extract-blue: #58b7f5; --extract-pale: #fff; --extract-edge: #daeaff; --extract-well: #183347; --extract-muted: #969fa9; }
+.extract-dialog, .qs-quick, .edit-scan-selection { --extract-blue: #2388c9; --extract-pale: #e7f3fc; --extract-edge: #2a4354; --extract-well: #183347; --extract-muted: #86929c; }
+:root[data-theme='dark'] :is(.extract-dialog,.qs-quick,.edit-scan-selection) { --extract-blue: #58b7f5; --extract-pale: #fff; --extract-edge: #daeaff; --extract-well: #183347; --extract-muted: #969fa9; }
 .extract-icon { display: block; flex-shrink: 0; }
 /* Extraction controls have fixed cells: glyphs cannot squeeze or touch. */
 .tool-inspector .qs-dialog .qs-iconrow { display: grid; grid-template-columns: repeat(8, 26px); gap: 1px; }
@@ -200,3 +200,9 @@
 .interactive-align fieldset .field select { height: 20px; min-height: 20px; }
 .interactive-align footer { min-height: 22px; }
 .interactive-align footer > span { display: grid; place-items: center; flex: 0 0 19px; width: 19px; height: 19px; border: 1px solid var(--line-strong); border-radius: 50%; margin-right: auto; }
+/* Edit Scan's selection block: the same compact icon rows as Extract primitives. */
+.edit-scan-selection .qs-iconrow { display: flex; flex-wrap: wrap; gap: 1px; }
+.edit-scan-selection .qs-iconrow button { width: 26px; min-width: 0; height: 26px; min-height: 26px; padding: 0; background: transparent; border-color: transparent; }
+.edit-scan-selection .qs-iconrow button.on { border-color: var(--accent); }
+.edit-scan-selection .qs-degrees { display: flex; align-items: center; gap: 6px; }
+.edit-scan-selection .qs-degrees input[type=number] { width: 56px; }

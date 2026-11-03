@@ -299,6 +299,8 @@ export class SceneManager {
    *  cut, null while nothing is. */
   private clipPlane = new THREE.Plane()
   private clipList: THREE.Plane[] = [this.clipPlane]
+  private clipBoxPlanes: THREE.Plane[] | null = null
+  private clipBoxHelper: THREE.Box3Helper | null = null
   private slicePlanes: THREE.Plane[] | null = null
   /** Whether what cuts is the section view, which cuts everything. */
   private sectioned = false
@@ -1622,7 +1624,7 @@ export class SceneManager {
       material.clippingPlanes = by
       material.needsUpdate = true
     }
-    dress(this.mesh, planes)
+    dress(this.mesh, this.clipBoxPlanes ? [...(planes ?? []), ...this.clipBoxPlanes] : planes)
     dress(this.nominalMesh, sectioned ? planes : null)
     for (const layer of this.layers) layer.clippingChanged?.(planes, sectioned)
     this.updateCaps()
@@ -2488,6 +2490,61 @@ export class SceneManager {
     if (v.z < -1 || v.z > 1) return null
     const r = this.container.getBoundingClientRect()
     return { x: r.left + ((v.x + 1) / 2) * r.width, y: r.top + ((1 - v.y) / 2) * r.height }
+  }
+
+  /** Edit Scan → Clipping Box: the scan drawn only inside the box, given in
+   *  the part's own coordinates, its outline shown — or, with null, the box
+   *  taken away. Picks pass through what it clips. */
+  setClipBox(box: { min: [number, number, number]; max: [number, number, number] } | null): void {
+    if (this.clipBoxHelper) {
+      this.partGroup.remove(this.clipBoxHelper)
+      this.clipBoxHelper.geometry.dispose()
+      this.clipBoxHelper = null
+    }
+    if (!box) {
+      this.clipBoxPlanes = null
+    } else {
+      this.partGroup.updateMatrixWorld(true)
+      const m = this.partGroup.matrixWorld
+      const planeAt = (n: [number, number, number], p: [number, number, number]) => {
+        const nw = new THREE.Vector3(...n).transformDirection(m)
+        const pw = new THREE.Vector3(...p).applyMatrix4(m)
+        return new THREE.Plane().setFromNormalAndCoplanarPoint(nw, pw)
+      }
+      const [a, b] = [box.min, box.max]
+      // Each plane keeps what lies on its normal's side: the inside.
+      this.clipBoxPlanes = [
+        planeAt([1, 0, 0], a), planeAt([-1, 0, 0], b),
+        planeAt([0, 1, 0], a), planeAt([0, -1, 0], b),
+        planeAt([0, 0, 1], a), planeAt([0, 0, -1], b),
+      ]
+      this.clipBoxHelper = new THREE.Box3Helper(new THREE.Box3(new THREE.Vector3(...a), new THREE.Vector3(...b)), 0x202020)
+      this.partGroup.add(this.clipBoxHelper)
+    }
+    this.applySlice()
+  }
+
+  /** The scan's own vertices outside a box in the part's coordinates — what
+   *  a Clipping Box leaves out of view. */
+  verticesOutside(box: { min: [number, number, number]; max: [number, number, number] }): Uint32Array {
+    const pos = (this.mesh?.geometry as THREE.BufferGeometry | undefined)?.getAttribute('position')
+    if (!pos) return new Uint32Array(0)
+    const n = Math.min(this.scanVertexCount(), pos.count)
+    const out: number[] = []
+    for (let v = 0; v < n; v++) {
+      const x = pos.getX(v), y = pos.getY(v), z = pos.getZ(v)
+      if (x < box.min[0] || x > box.max[0] || y < box.min[1] || y > box.max[1] || z < box.min[2] || z > box.max[2]) out.push(v)
+    }
+    return Uint32Array.from(out)
+  }
+
+  /** The scan's bounds in the part's own coordinates, or null with no scan. */
+  scanBounds(): { min: [number, number, number]; max: [number, number, number] } | null {
+    const g = this.mesh?.geometry as THREE.BufferGeometry | undefined
+    if (!g) return null
+    if (!g.boundingBox) g.computeBoundingBox()
+    const b = g.boundingBox!
+    return { min: [b.min.x, b.min.y, b.min.z], max: [b.max.x, b.max.y, b.max.z] }
   }
 
   /** Edit / View → Background style. */

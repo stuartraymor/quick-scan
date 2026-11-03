@@ -59,6 +59,8 @@ export type ScanEdit =
     }
   | { kind: 'delete'; triangles: number }
   | { kind: 'scale'; factors: [number, number, number] }
+  | { kind: 'skirt'; edges: number }
+  | { kind: 'reduce'; triangles: number }
   | { kind: 'mirror'; plane: string }
   | {
       kind: 'flip'
@@ -227,6 +229,14 @@ interface MeshState {
   /** The tool in hand — null with every tool put away (Escape, or a
    *  boolean done), the panel showing the keys alone. */
   tool: MeshTool | null
+  /** Edit Scan's Save selection status…: named markings of the scan, by
+   *  its vertices, newest last. They belong to the scan they were marked
+   *  on and go with it. */
+  selectionStatuses: { name: string; vertices: Uint32Array }[]
+  /** Save under `name`, or — the name taken — Update to current. */
+  putSelectionStatus: (name: string, vertices: Uint32Array) => void
+  renameSelectionStatus: (from: string, to: string) => void
+  deleteSelectionStatus: (name: string) => void
 
   // ---- Reduce mesh --------------------------------------------------------
   status: MeshStatus
@@ -241,6 +251,10 @@ interface MeshState {
   toleranceAuto: boolean
   maxTriangles: number
   view: MeshView
+  /** The deviation map's ± range when Polygon Reduction's Deviation of
+   *  original mesh sets one; else the reduction's tolerance. */
+  mapRange: number | null
+  setMapRange: (mm: number | null) => void
 
   // ---- Remove islands -------------------------------------------------------
   /** Pieces smaller than this across are islands, mm. */
@@ -482,6 +496,12 @@ const CLEARED = {
 export const useMeshTools = create<MeshState>()((set) => ({
   ...CLEARED,
   tool: 'reduce',
+  selectionStatuses: [],
+  putSelectionStatus: (name, vertices) =>
+    set((s) => ({ selectionStatuses: s.selectionStatuses.some((x) => x.name === name) ? s.selectionStatuses.map((x) => (x.name === name ? { name, vertices } : x)) : [...s.selectionStatuses, { name, vertices }] })),
+  renameSelectionStatus: (from, to) =>
+    set((s) => (to.trim() === '' || s.selectionStatuses.some((x) => x.name === to) ? {} : { selectionStatuses: s.selectionStatuses.map((x) => (x.name === from ? { ...x, name: to.trim() } : x)) })),
+  deleteSelectionStatus: (name) => set((s) => ({ selectionStatuses: s.selectionStatuses.filter((x) => x.name !== name) })),
   resultVersion: 0,
   surveyVersion: 0,
   holeSurveyVersion: 0,
@@ -493,6 +513,8 @@ export const useMeshTools = create<MeshState>()((set) => ({
   toleranceAuto: true,
   maxTriangles: DEFAULT_TRIANGLE_LIMIT,
   view: 'reduced',
+  mapRange: null,
+  setMapRange: (mapRange) => set({ mapRange: mapRange !== null && mapRange > 0 ? mapRange : null }),
 
   pieceSize: 2,
   pieceSizeAuto: true,
@@ -679,6 +701,7 @@ export const useMeshTools = create<MeshState>()((set) => ({
   clear: () =>
     set((s) => ({
       ...CLEARED,
+      selectionStatuses: [],
       trimView: 'break' as TrimView,
       trimVersion: s.trimVersion + 1,
       surveyVersion: s.surveyVersion + 1,
@@ -735,6 +758,10 @@ export function scanEditText(e: ScanEdit, units: DisplayUnits = 'mm'): string {
       return 'Deleted marked surface'
     case 'mirror':
       return `Mirrored in ${e.plane}`
+    case 'skirt':
+      return 'Projected the boundaries on OXY'
+    case 'reduce':
+      return 'Replaced by the reduced mesh'
     case 'scale':
       if (e.factors.every((f) => Math.abs(f) === 1)) return `Mirrored in ${e.factors[2] < 0 ? 'OXY' : e.factors[0] < 0 ? 'OYZ' : 'OXZ'}`
       return e.factors[0] === e.factors[1] && e.factors[1] === e.factors[2] ? `Scaled by ${e.factors[0]}` : `Scaled by ${e.factors.join(' × ')}`
@@ -766,6 +793,10 @@ export function scanEditFigure(e: ScanEdit, units: DisplayUnits = 'mm'): string 
       return `−${count(e.triangles)} △`
     case 'mirror':
       return '⇋'
+    case 'skirt':
+      return `${count(e.edges)} edges`
+    case 'reduce':
+      return `${count(e.triangles)} △`
     case 'scale':
       return `× ${e.factors[0]}`
     case 'flip':

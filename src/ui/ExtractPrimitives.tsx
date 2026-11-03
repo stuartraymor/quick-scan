@@ -21,9 +21,9 @@ import { ExtractIcon as Icon, type ExtractIconName as IconName } from './Extract
 import { extractQuickPlacement } from './extractQuickPlacement'
 import { useLength } from '../app/useUnits'
 
-type Tool = { id: MarkGesture | null | 'through'; icon: IconName; title: string }
+export type Tool = { id: MarkGesture | null | 'through'; icon: IconName; title: string }
 /** Keep partial decimals editable; valid angles still regrow the wand live. */
-function WandDegreesField() {
+export function WandDegreesField() {
   const degrees = useMark(s => s.wandDegrees), disabled = useMark(s => s.wandConnected)
   const [text, setText] = useState(String(Number(degrees.toFixed(2))))
   const [focused, setFocused] = useState(false)
@@ -40,7 +40,7 @@ function WandDegreesField() {
     onChange={e => { const value = e.target.value; setText(value); const n = Number(value); if (value !== '' && Number.isFinite(n) && n >= WAND_MIN_DEG && n <= WAND_MAX_DEG) useMark.getState().setWandDegrees(n) }}
     onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); e.currentTarget.blur() } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); canceled.current = true; e.currentTarget.blur() } }} />
 }
-const TOOLS: Tool[] = [
+export const SELECTION_TOOLS: Tool[] = [
   { id: null, icon: 'navigate', title: 'Navigate — no selection tool; the mouse turns the view' },
   { id: 'wand', icon: 'wand', title: 'Magic Wand — click a well-defined area; it spreads over neighbouring triangles within the degrees below' },
   { id: 'brush', icon: 'brush', title: 'Free hand (filled) — brush; Alt-drag or right-drag removes' },
@@ -185,7 +185,7 @@ export function ExtractPrimitives({ onType, preview, onCreate, onClearPreview, o
       </header>
       <p className="qs-step">1. Select the area that you want to fit a primitive</p>
       <div className="qs-iconrow" role="toolbar" aria-label="Selection tools">
-        {TOOLS.map((t) => (
+        {SELECTION_TOOLS.map((t) => (
           <button key={String(t.id)} className={toolOn(t) ? 'on' : undefined} aria-pressed={toolOn(t)}
             data-test={`extract-tool-${t.id ?? 'navigate'}`} title={t.title} onClick={() => pick(t)}>
             <Icon name={t.icon} size={20} />

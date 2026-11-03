@@ -89,7 +89,9 @@ export const useMark = create<MarkState>((set) => ({
   diameter: 2,
   count: 0,
   inverts: 0,
-  wandDegrees: 3.04,
+  // QUICKSURFACE 8.0.128 opens both Extract primitives and Edit Scan on 1°
+  // (recorded live, 2026-11-03).
+  wandDegrees: 1,
   wandConnected: false,
   quickTools: true,
   resizes: { n: 0, direction: 1 },
@@ -101,7 +103,7 @@ export const useMark = create<MarkState>((set) => ({
   setCount: (count) => set({ count }),
   setWandConnected: (wandConnected) => set({ wandConnected }),
   setQuickTools: (quickTools) => set({ quickTools }),
-  setWandDegrees: (d) => set({ wandDegrees: Number.isFinite(d) ? Math.min(Math.max(d, WAND_MIN_DEG), WAND_MAX_DEG) : 3.04 }),
+  setWandDegrees: (d) => set({ wandDegrees: Number.isFinite(d) ? Math.min(Math.max(d, WAND_MIN_DEG), WAND_MAX_DEG) : 1 }),
   resize: (direction) => set((s) => ({ resizes: { n: s.resizes.n + 1, direction } })),
   invert: () => set((s) => ({ inverts: s.inverts + 1 })),
   reset: () => set({ gesture: null, erase: false, count: 0 }),

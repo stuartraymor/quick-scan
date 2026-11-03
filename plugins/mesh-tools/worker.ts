@@ -5,6 +5,7 @@
 // the scan's frame: moved with it by every alignment, and gone with it when
 // another scan takes its place.
 
+import { skirtToOxy } from './core/skirt'
 import { duplicateTriangles } from './core/duplicates'
 import type { MeshGraph } from '../../src/core/types'
 import type { WorkerContext, WorkerPlugin, WorkerReply } from '../../src/core/workerPluginApi'
@@ -152,6 +153,11 @@ const ops: { [K in keyof MeshToolsOps]: (payload: Payload<K>, ctx: WorkerContext
       if (count === g.triangleCount) throw new Error('The whole scan is marked — nothing would be left.')
       result = withoutTriangles(g.positions, g.indices, g.vertexCount, mask)
       report = { kind: 'delete', triangles: count }
+    } else if (edit.type === 'skirt-oxy') {
+      const made = skirtToOxy(g.positions, g.indices, g.vertexCount)
+      if (made.edges === 0) throw new Error('The mesh has no open boundary to project — it is closed, or its rims already lie on Z = 0.')
+      result = made
+      report = { kind: 'skirt', edges: made.edges }
     } else if (edit.type === 'remove-duplicates') {
       const { mask, count } = duplicateTriangles(g.positions, g.indices, g.vertexCount)
       if (count === 0) throw new Error('There are no duplicate triangles to remove.')

@@ -23,6 +23,7 @@ import { DELETE_MARK_COLOR, FLIP_MARK_COLOR, OFFSET_MARK_COLOR, SMOOTH_MARK_COLO
 import { reductionScale } from '../core/reduce'
 import { MeshPanel } from '../ui/MeshPanel'
 import { ScaleDialog } from '../ui/ScaleDialog'
+import { PolygonReductionDialog } from '../ui/PolygonReductionDialog'
 import { MirrorDialog, MIRROR_FACTORS } from '../ui/MirrorDialog'
 import { exportReducedMesh } from './exportReduced'
 import { exportTrimmedMesh } from './exportTrimmed'
@@ -79,6 +80,7 @@ export function useMeshPlugin(host: PluginHost): PluginRuntime {
   // reduced mesh strays from each scan vertex, and how far the edited copy
   // is from the scan in use at each of the copy's vertices.
   const [scaleOpen, setScaleOpen] = useState(false)
+  const [reductionOpen, setReductionOpen] = useState(false)
   const [mirrorOpen, setMirrorOpen] = useState(false)
   const [tools] = useState(() =>
     createMeshToolsSession({
@@ -97,8 +99,40 @@ export function useMeshPlugin(host: PluginHost): PluginRuntime {
     meshHotkeys.smooth = () => { useMeshTools.setState({ smoothScope: 'marked' }); void tools.smoothScan(undefined, { units: unitsRef.current }) }
     meshHotkeys.defeature = () => void tools.defeatureMarked({ units: unitsRef.current })
     meshHotkeys.removeDuplicates = () => void tools.removeDuplicates({ units: unitsRef.current })
-    return () => { meshHotkeys.smooth = null; meshHotkeys.defeature = null; meshHotkeys.removeDuplicates = null }
-  }, [tools])
+    meshHotkeys.projectBoundaries = () => void tools.projectBoundaries({ units: unitsRef.current })
+    meshHotkeys.saveSelection = (name) => tools.saveSelection(name)
+    meshHotkeys.applySelection = (name) => void tools.applySelection(name)
+    meshHotkeys.hide = (which) => {
+      const n = sceneRef.current?.hideTriangles(which) ?? 0
+      if (n === 0) return
+      sceneRef.current?.clearPaint()
+      useShell.getState().setHiddenTriangles(n)
+      useStore.getState().setStatus(`${n.toLocaleString('en-US')} triangles hidden — Show all hidden brings them back.`)
+    }
+    meshHotkeys.showAll = () => { sceneRef.current?.showHiddenTriangles(); useShell.getState().setHiddenTriangles(0) }
+    meshHotkeys.swapHidden = () => { const n = sceneRef.current?.invertHiddenTriangles() ?? 0; if (n > 0) useShell.getState().setHiddenTriangles(n) }
+    meshHotkeys.deselect = () => sceneRef.current?.clearPaint()
+    meshHotkeys.clip = {
+      set: (box) => sceneRef.current?.setClipBox(box),
+      bounds: () => sceneRef.current?.scanBounds() ?? null,
+      screen: (p) => sceneRef.current?.screenPointOf(p) ?? null,
+      deleteOutside: (box) => {
+        const out = sceneRef.current?.verticesOutside(box)
+        if (out && out.length > 0) void tools.deleteMarked(out, { units: unitsRef.current })
+      },
+      hideOutside: (box) => {
+        const scene = sceneRef.current
+        const out = scene?.verticesOutside(box)
+        if (!scene || !out || out.length === 0) return
+        scene.setPaintedVertices(out, DELETE_MARK_COLOR)
+        const n = scene.hideTriangles('selected')
+        scene.clearPaint()
+        if (n > 0) useShell.getState().setHiddenTriangles(n)
+        useStore.getState().setStatus(`${n.toLocaleString('en-US')} triangles outside the box hidden — Show all hidden brings them back.`)
+      },
+    }
+    return () => { Object.keys(meshHotkeys).forEach((k) => { (meshHotkeys as Record<string, unknown>)[k] = null }) }
+  }, [tools, sceneRef])
   const { reduceField, reduceRgb, copyField, copyRgb } = tools
   const {
     runReduce, removeIslands, deleteMarked, flipScan, cutScan, fillScanHoles, smoothScan, offsetScan, shellScan, booleanScan, trimScan,
@@ -111,6 +145,7 @@ export function useMeshPlugin(host: PluginHost): PluginRuntime {
   const unitsRef = useRef(units)
   unitsRef.current = units
   const signed = (v: number) => formatSigned(v, units)
+  const mapRange = useMeshTools((s) => s.mapRange)
 
   const onMesh = useShell((s) => s.workspace === 'mesh')
   const fileName = useStore((s) => s.fileName)
@@ -165,7 +200,10 @@ export function useMeshPlugin(host: PluginHost): PluginRuntime {
           ? 'offset'
           : s.tool === 'trim'
             ? 'trim'
-            : null,
+            // QUICKSURFACE's Edit Scan selects with any tool in hand, or
+            // none: a plain selection, for Hide, Isolate, Smooth selected,
+            // Defeature and the rest.
+            : 'select',
   )
   // Trim to scan's piece and how it is looked at: over it, the break stays
   // marked on the ghosted scan, the marking tools stood down.
@@ -181,7 +219,9 @@ export function useMeshPlugin(host: PluginHost): PluginRuntime {
     if (lastSession.current === session) return
     const was = lastSession.current
     lastSession.current = session
-    if (was !== null && session !== null) {
+    // A plain selection carries into a tool and back, as QUICKSURFACE's does;
+    // one tool's marking is not another's.
+    if (was !== null && session !== null && was !== 'select' && session !== 'select') {
       sceneRef.current?.clearPaint()
       useMark.getState().setCount(0)
     }
@@ -221,7 +261,7 @@ export function useMeshPlugin(host: PluginHost): PluginRuntime {
 
   return {
     ribbonActions: {
-      meshReduce: meshKey('reduce', 'Reduce polygons: make a lighter mesh held within a tolerance of the scan'),
+      meshReduce: { ...meshKey('reduce', 'Reduce polygons: reduce the mesh to a number of triangles'), run: () => { useMeshTools.getState().setTool('reduce'); useShell.getState().setWorkspace('mesh'); setReductionOpen(true) } },
       meshSmooth: meshKey('smooth', 'Reduce noise: smooth the scatter on the scan'),
       meshFlip: meshKey('flip', 'Flip normals: turn a surface that faces the wrong way'),
       meshMirror: {
@@ -276,7 +316,7 @@ export function useMeshPlugin(host: PluginHost): PluginRuntime {
     // so.
     get field() {
       if (reduceMapShown && reduceField.current && report) {
-        return { values: reduceField.current, rgb: reduceRgb, scale: reductionScale(report.settings.tolerance) }
+        return { values: reduceField.current, rgb: reduceRgb, scale: reductionScale(useMeshTools.getState().mapRange ?? report.settings.tolerance) }
       }
       // Grey where an edit made surface the scan never had.
       if (copyMapShown && copyStats && copyField.current) {
@@ -284,7 +324,7 @@ export function useMeshPlugin(host: PluginHost): PluginRuntime {
       }
       return null
     },
-    fieldVersion: `${view}:${resultVersion}:${copyMapShown}:${copyMapVersion}`,
+    fieldVersion: `${view}:${resultVersion}:${copyMapShown}:${copyMapVersion}:${mapRange}`,
     startPane: {
       title: 'Cleaning up and reducing a scan',
       blurb:
@@ -326,6 +366,7 @@ export function useMeshPlugin(host: PluginHost): PluginRuntime {
             onClose={() => setMirrorOpen(false)}
           />
         )}
+        {reductionOpen && <PolygonReductionDialog onPreview={() => runReduce(units)} onReplace={() => tools.replaceWithReduced({ units })} onClose={() => setReductionOpen(false)} />}
         {scaleOpen && (() => {
           const g = sceneRef.current?.scanGeometry()
           if (g && !g.boundingBox) g.computeBoundingBox()

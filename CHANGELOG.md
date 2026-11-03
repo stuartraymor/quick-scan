@@ -1,3 +1,28 @@
+## 0.0.79 - 2026-11-03
+
+Checked against QUICKSURFACE 8.0.128 running on screen (Polygon Reduction dialog recorded live).
+
+- Scan Data → Reduce polygons opens QUICKSURFACE's Polygon Reduction dialog: Active Mesh, Current and New Number of Triangles, Reduce down to as triangles (with 75/50/25/10 % presets) or a percentage, Preview, Deviation of original mesh with its ± range and Apply, Show mesh wireframe, Keep original mesh, Cancel and OK (offered once previewed). The reduction is held to the count asked for (sample: 288,582 → 144,290 at 50 %).
+- With Keep original mesh off (QUICKSURFACE's default) OK replaces the mesh by the reduced one, one undo step; on, the reduced mesh stays beside the scan as before.
+- Known differences kept for later: Re-polygonize (QUICKSURFACE makes a new mesh at a point resolution), Unroll, Cut & Create / Copy & Create and Create new object (need several meshes per project), saved selection statuses listed in History.
+
+## 0.0.78 - 2026-11-03
+
+Checked against QUICKSURFACE 8.0.128 running on screen.
+
+- Edit Scan → Clipping Box…: a box round the scan with a handle on each face (red X, green Y, blue Z) dragged to size it, the scan drawn only inside; Reset, Delete non-visible (one undo step), Accept (hides what lies outside — Show all hidden brings it back) and Cancel, as QUICKSURFACE's. Create new object is shown greyed: it needs more than one mesh per project.
+- Magic Wand opens on 1°, as QUICKSURFACE 8.0.128 does in both Extract primitives and Edit Scan (was 3.04°).
+- Edit Scan: Show quick tools dialog checkbox above Show mesh wireframe, as in QUICKSURFACE.
+
+## 0.0.77 - 2026-11-03
+
+Checked against QUICKSURFACE 8.0.128 running on screen (each Edit Scan tool run live first).
+
+- Edit Scan → Project the mesh boundaries on OXY plane: as QUICKSURFACE does it, a wall from every open edge of the mesh straight down (or up) to Z = 0, wound with the surface. One undo step in Quick Scan (QUICKSURFACE's cannot be undone).
+- Edit Scan → Save selection status…: asks for a name (<<name>>) and keeps the selection under it, with Apply, Update to current, Rename… (F2) and Delete…, as QUICKSURFACE's History entry offers. Saved selections follow their points through later edits. (QUICKSURFACE lists them in History under the mesh; Quick Scan lists them in Edit Scan.)
+- Edit Scan: Additional tools row (Smooth selected — Ctrl + M, Project boundaries, Defeature — Ctrl + D) and Show mesh wireframe.
+- Edit Scan: QUICKSURFACE's selection block — the eight selection tools, degrees slider, Select all connected triangles, and its nine small tools in order (Enlarge, Shrink, Isolate, Hide selected, Show all hidden, Make hidden visible and the visible hidden, Invert selection, Deselect all — Ctrl + Q, Select all). Edit Scan now selects with any tool in hand, and a selection carries into a tool and back.
+
 ## 0.0.76 - 2026-11-03
 
 Checked against QUICKSURFACE 8.0.128 running on screen (Edit Scan dialog recorded live).

@@ -20,6 +20,8 @@
 // useMeshPlugin makes one session and draws from it; under a test it stands
 // without a viewport — every scene call in it is optional.
 
+import { remapVertices } from '../core/remapVertices'
+import { DELETE_MARK_COLOR } from '../state/meshStore'
 import type { RefObject } from 'react'
 import { meshSceneOf } from '../viewer/meshScene'
 import type { MeshWorkerClient } from '../../../src/core/workerClient'
@@ -152,6 +154,7 @@ export function createMeshToolsSession({
       const result = await client.reduce(reduceSettingsOf(m))
       if (scanVersion !== client.scanVersion || editedVersion !== client.editedVersion) return null
       meshSceneOf(sceneRef.current)?.setReducedMesh(result)
+      lastReduced = result
       reduceField.current = result.deviation
       reduceRgb.current = null
       useMeshTools.getState().resolve(result.report)
@@ -170,6 +173,32 @@ export function createMeshToolsSession({
       useStore.getState().setStatus('')
       return null
     }
+  }
+
+  /** Polygon Reduction's OK with Keep original mesh off, as QUICKSURFACE
+   *  does it: the mesh replaced by the reduced one — an edit of the copy,
+   *  one undo step. The reduced mesh shares no vertex with the scan. */
+  let lastReduced: { positions: Float32Array; indices: Uint32Array } | null = null
+  const replaceWithReduced = (run?: EditRun) => {
+    const r = lastReduced
+    if (!r) {
+      useStore.getState().setError('Preview the reduction first.')
+      return Promise.resolve(null)
+    }
+    const triangles = r.indices.length / 3
+    return editCopy(
+      'Mesh Tools: replace by the reduced mesh',
+      'Replacing the mesh by the reduced one…',
+      async () => ({
+        positions: new Float32Array(r.positions),
+        indices: new Uint32Array(r.indices),
+        vertexMap: new Int32Array(sceneRef.current?.scanVertexCount() ?? 0).fill(-1),
+        edit: { kind: 'reduce', triangles },
+        status: `Mesh replaced by the reduced one — ${count(triangles)} triangles. Ctrl+Z puts the original back.`,
+        report: { kind: 'reduce', triangles },
+      }),
+      run,
+    )
   }
 
   /** Reduce the scan as the panel says. True when a result landed. */
@@ -384,6 +413,8 @@ export function createMeshToolsSession({
       busyText,
       async () => {
         const { positions, indices, vertexMap, report } = await tools().editScan(request())
+        // Saved selection statuses follow their points to their new numbers.
+        useMeshTools.setState((s) => ({ selectionStatuses: s.selectionStatuses.map((x) => ({ ...x, vertices: remapVertices(x.vertices, vertexMap) })) }))
         return { positions, indices, vertexMap, report, ...describe(report) }
       },
       run,
@@ -411,6 +442,42 @@ export function createMeshToolsSession({
       run,
     )
   }
+
+  /** Save selection status…, as QUICKSURFACE keeps them: named markings of
+   *  the scan, each to Apply (put back on the part), Update to current
+   *  (take the marking as it is now) or Delete. */
+  const saveSelection = (name: string): boolean => {
+    const v = marked()
+    if (v.length === 0) {
+      useStore.getState().setError('Nothing is selected to save — mark the surface first.')
+      return false
+    }
+    useMeshTools.getState().putSelectionStatus(name, v.slice())
+    useStore.getState().setStatus(`Selection status ${name} saved — ${count(v.length)} points.`)
+    return true
+  }
+  const applySelection = (name: string): boolean => {
+    const v = useMeshTools.getState().selectionStatuses.find((x) => x.name === name)?.vertices
+    if (!v || !sceneRef.current) return false
+    sceneRef.current.setPaintedVertices(v, DELETE_MARK_COLOR)
+    useStore.getState().setStatus(`Selection status ${name} applied — ${count(v.length)} points.`)
+    return true
+  }
+
+  /** Project the mesh boundaries on OXY plane (Edit Scan's Additional
+   *  tools): a wall from every open edge straight down to Z = 0, as
+   *  QUICKSURFACE does it (core/skirt). One undo step. */
+  const projectBoundaries = (run?: EditRun) =>
+    workerEdit(
+      'Mesh Tools: project the boundaries on OXY',
+      'Projecting the boundaries on the OXY plane…',
+      () => ({ type: 'skirt-oxy' }),
+      (r) => {
+        const n = r.kind === 'skirt' ? r.edges : 0
+        return { edit: { kind: 'skirt', edges: n }, status: `Projected ${count(n)} boundary edges down to the OXY plane. Ctrl+Z takes the wall off.` }
+      },
+      run,
+    )
 
   /** Remove the duplicate triangles — Edit Scan's Duplicate triangles row. */
   const removeDuplicates = (run?: EditRun) =>
@@ -888,7 +955,11 @@ export function createMeshToolsSession({
     removeIslands,
     deleteMarked,
     defeatureMarked,
+    replaceWithReduced,
     removeDuplicates,
+    projectBoundaries,
+    saveSelection,
+    applySelection,
     flipScan,
     scaleScan,
     mirrorScan,

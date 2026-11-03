@@ -31,8 +31,8 @@ const tests = (html: string) => [...html.matchAll(/data-test="(extract-[a-z-]+)"
 describe('Extract primitives — QUICKSURFACE parity', () => {
   useShell.setState({ extractOpen: true })
 
-  it('defaults the Magic Wand to 3.04 degrees', () => {
-    expect(useMark.getState().wandDegrees).toBe(3.04)
+  it('defaults the Magic Wand to 1 degree, as QUICKSURFACE 8.0.128 opens (live, 2026-11-03)', () => {
+    expect(useMark.getState().wandDegrees).toBe(1)
   })
 
   it('has the selection options in QUICKSURFACE’s order, ending with Select all', () => {
