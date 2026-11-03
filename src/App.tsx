@@ -62,6 +62,7 @@ import { RecoveryBar } from './ui/RecoveryBar'
 import { AgentDataWarning } from './ui/AgentDataWarning'
 import { ConnectorBar } from './ui/ConnectorBar'
 import { StatusStrip } from './ui/StatusStrip'
+import { ViewportMenu } from './ui/ViewportMenu'
 import { BusyOverlay } from './ui/BusyOverlay'
 import { ImprintModal } from './ui/Imprint'
 import { SettingsModal } from './ui/SettingsModal'
@@ -83,7 +84,9 @@ import { SplitPicker } from './ui/SplitPicker'
 import { MARK_COLOR, useDeviation } from './state/deviationStore'
 import { usePrefs } from './state/prefsStore'
 import { boundLength, useLength } from './app/useUnits'
+import { tetraVolume6, triangleAreaSum } from './core/geometry/centroid'
 import { lengthInputText, unitWord, type DisplayUnits } from './core/units'
+import { useNavigationView } from './state/navigationViewStore'
 import { useShell } from './state/shellStore'
 import { EXTRACT_MARK_COLOR, useMark } from './state/markStore'
 import {useInteractiveAlign} from './state/interactiveAlignStore'
@@ -1090,11 +1093,40 @@ export default function App() {
     useShell.getState().setHiddenTriangles(n)
     useStore.getState().setStatus(`${n.toLocaleString('en-US')} triangles hidden — Show Hidden brings them back.`)
   }
+  const handleInvertHidden = () => {
+    const n = sceneRef.current?.invertHiddenTriangles() ?? 0
+    if (n === 0) { useStore.getState().setStatus('Nothing is hidden — Hide Selected or Isolate first.'); return }
+    useShell.getState().setHiddenTriangles(n)
+    useStore.getState().setStatus(`Hidden and shown swapped — ${n.toLocaleString('en-US')} triangles hidden.`)
+  }
+  // Scan Data → Colors. One scan per project here, so Auto colorize gives it
+  // the first colour of the series; Set Default Color takes it off.
+  const [scanTinted, setScanTinted] = useState(false)
+  const handleAutoColorize = () => { sceneRef.current?.setScanTint([92, 200, 98]); setScanTinted(true) }
+  const handleDefaultColor = () => { sceneRef.current?.setScanTint(null); setScanTinted(false) }
   const handleShowHidden = () => {
     sceneRef.current?.showHiddenTriangles()
     useShell.getState().setHiddenTriangles(0)
   }
   /** Snapshot to clipboard: the view as a PNG, saved as a file where the clipboard refuses it. */
+  // Analysis → Surface Area / Volume: one readout of the whole scan, in the
+  // display units, on the status line.
+  const handleMeshReadout = (what: 'area' | 'volume') => {
+    const g = sceneRef.current?.scanGeometry()
+    const pos = g?.getAttribute('position')
+    if (!g || !pos) return
+    const positions = pos.array as Float32Array
+    const indices = g.index ? Uint32Array.from(g.index.array) : Uint32Array.from({ length: pos.count }, (_, i) => i)
+    const len = boundLength(usePrefs.getState().units)
+    if (what === 'area') {
+      useStore.getState().setStatus(`Surface area of the scan: ${len.area(triangleAreaSum(positions, indices))}.`)
+      return
+    }
+    let v6 = 0
+    for (let t = 0; t + 2 < indices.length; t += 3) v6 += tetraVolume6(positions, indices[t] * 3, indices[t + 1] * 3, indices[t + 2] * 3)
+    useStore.getState().setStatus(`Volume of the scan: ${len.vol(Math.abs(v6) / 6)} — exact only for a closed (watertight) mesh.`)
+  }
+
   const handleSnapshot = async () => {
     const scene = sceneRef.current
     if (!scene) return
@@ -1644,6 +1676,10 @@ export default function App() {
   // The instruction of the moment rides above the model (app/stageHints);
   // everything else the tool has to say goes to the status strip.
   const fileName = useStore((s) => s.fileName)
+  // QUICKSURFACE-style empty stage: floor grid and world axes until a scan is in.
+  useEffect(() => { sceneRef.current?.setEmptyFloor(!fileName) }, [fileName])
+  const backgroundStyle = useNavigationView((s) => s.background)
+  useEffect(() => { sceneRef.current?.setBackgroundStyle(backgroundStyle) }, [backgroundStyle])
   const vertexCountLoaded = useStore((s) => s.vertexCount > 0)
   const draftMode = draft ? creationMethod(draft.kind, draft.method).mode : null
   const openSlotHint = openSlotHintOf({ draft, draftMode, sectionDraft, alignDraft, dimDraft, elements, sections: storeSections })
@@ -1822,9 +1858,14 @@ export default function App() {
         savable={(fileName !== null && vertexCountLoaded) || flatImageName !== null || runtimes.some((r) => r.canSave)}
         onDeselect={clearPaint}
         onSnapshot={() => void handleSnapshot()}
+        onSurfaceArea={() => handleMeshReadout('area')}
+        onVolume={() => handleMeshReadout('volume')}
         onHideSelected={() => handleHideTriangles('selected')}
         onIsolate={() => handleHideTriangles('unselected')}
         onShowHidden={handleShowHidden}
+        onInvertHidden={handleInvertHidden}
+        onAutoColorize={handleAutoColorize}
+        onDefaultColor={scanTinted ? handleDefaultColor : undefined}
       />
       <RecoveryBar recovery={recovery} />
       <ConnectorBar />
@@ -2144,6 +2185,16 @@ export default function App() {
           )}
         </div>
       </div>
+      <ViewportMenu
+        hasScan={Boolean(fileName)}
+        onZoomFit={() => sceneRef.current?.fitToView()}
+        onHideSelected={() => handleHideTriangles('selected')}
+        onIsolate={() => handleHideTriangles('unselected')}
+        onShowHidden={handleShowHidden}
+        onToggleScans={active?.scanKey?.shown && !active.scanKey.shown.disabled ? () => active.scanKey!.shown!.set(!active.scanKey!.shown!.on) : undefined}
+        onExtract={() => { useShell.getState().setWorkspace('elements'); useShell.getState().setExtractOpen(true) }}
+        onSketch={ribbonActions.sketch && !ribbonActions.sketch.disabled ? () => { useShell.getState().setWorkspace('reverse'); ribbonActions.sketch!.run() } : undefined}
+      />
       <StatusStrip />
       <SettingsModal />
       <UnitsModal />

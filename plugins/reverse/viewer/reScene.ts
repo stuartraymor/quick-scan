@@ -48,6 +48,7 @@ export class ReScene {
   /** The mesh each body's block was made from — see setBodies. */
   private bodySources = new WeakMap<THREE.Mesh, object>()
   private bodiesSolid = false
+  private zebra: 'zebra' | 'draft' | 'envmap' | null = null
   private bodiesFaint = false
   /** The ghost of a feature being set up — see setBodyPreview. */
   bodyPreview: THREE.Mesh | null = null
@@ -858,7 +859,67 @@ export class ReScene {
       material.opacity = 0.55
       material.depthWrite = false
     }
+    // Zebra stripes: bands of the view reflected off the surface, so a jump
+    // in curvature shows as a kink in the bands.
+    if (this.zebra === 'zebra') {
+      material.onBeforeCompile = (shader) => {
+        shader.fragmentShader = shader.fragmentShader.replace(
+          '#include <dithering_fragment>',
+          `{
+            vec3 r = reflect(normalize(vViewPosition), normalize(normal));
+            float band = step(0.5, fract(r.y * 6.0));
+            gl_FragColor.rgb = mix(vec3(0.08), vec3(0.95), band);
+          }
+          #include <dithering_fragment>`,
+        )
+      }
+      material.customProgramCacheKey = () => 'zebra'
+    } else if (this.zebra === 'envmap') {
+      // Environment Map: the body as polished metal under a sky and a floor,
+      // so waviness shows as a wobble in the horizon line.
+      material.onBeforeCompile = (shader) => {
+        shader.fragmentShader = shader.fragmentShader.replace(
+          '#include <dithering_fragment>',
+          `{
+            vec3 r = reflect(normalize(vViewPosition), normalize(normal));
+            float h = r.y;
+            vec3 sky = mix(vec3(0.75, 0.82, 0.9), vec3(0.3, 0.45, 0.7), clamp(h, 0.0, 1.0));
+            vec3 ground = mix(vec3(0.35, 0.3, 0.25), vec3(0.1, 0.09, 0.08), clamp(-h, 0.0, 1.0));
+            gl_FragColor.rgb = h > 0.0 ? sky : ground;
+          }
+          #include <dithering_fragment>`,
+        )
+      }
+      material.customProgramCacheKey = () => 'envmap'
+    } else if (this.zebra === 'draft') {
+      // Draft: green where a face opens towards +Z by more than 1°, red
+      // where it undercuts, yellow within 1° of vertical.
+      material.onBeforeCompile = (shader) => {
+        shader.fragmentShader = shader.fragmentShader.replace(
+          '#include <dithering_fragment>',
+          `{
+            vec3 nw = normalize((vec4(normal, 0.0) * viewMatrix).xyz);
+            float s = nw.z;
+            float lim = 0.01745;
+            gl_FragColor.rgb = s > lim ? vec3(0.2, 0.75, 0.3) : s < -lim ? vec3(0.85, 0.25, 0.2) : vec3(0.95, 0.85, 0.2);
+          }
+          #include <dithering_fragment>`,
+        )
+      }
+      material.customProgramCacheKey = () => 'draft'
+    } else {
+      material.onBeforeCompile = () => {}
+      material.customProgramCacheKey = () => 'plain'
+    }
     material.needsUpdate = true
+  }
+
+  /** Draw the bodies with zebra stripes, draft colours, or plain. */
+  setZebra(on: 'zebra' | 'draft' | 'envmap' | null): void {
+    if (this.zebra === on) return
+    this.zebra = on
+    for (const [id, mesh] of this.bodyMeshes) this.dressBody(mesh.material as THREE.MeshStandardMaterial, id)
+    this.host.invalidate()
   }
 
   /** Close the solid bodies — and a feature's solid preview standing in for

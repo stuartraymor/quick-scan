@@ -10,33 +10,38 @@
 // decimals asks in millimetres; in inches it gets one more, and never fewer
 // than three, so 0.001 mm reads 0.0001 in and 0.1 mm reads 0.004 in.
 
-export type DisplayUnits = 'mm' | 'in'
+export type DisplayUnits = 'mm' | 'in' | 'm'
 
 export const DISPLAY_UNITS: { id: DisplayUnits; label: string }[] = [
   { id: 'mm', label: 'Millimetres' },
   { id: 'in', label: 'Inches' },
+  { id: 'm', label: 'Metres' },
 ]
 
 export const MM_PER_INCH = 25.4
+export const MM_PER_METRE = 1000
+
+/** Millimetres in one of `units`. */
+const mmPer = (units: DisplayUnits): number => (units === 'in' ? MM_PER_INCH : units === 'm' ? MM_PER_METRE : 1)
 
 /** A stored or received value as display units, or null when it is not one. */
 export function displayUnitsOf(value: unknown): DisplayUnits | null {
-  return value === 'mm' || value === 'in' ? value : null
+  return value === 'mm' || value === 'in' || value === 'm' ? value : null
 }
 
 /** A length held in millimetres, in the units shown. */
 export function toDisplay(mm: number, units: DisplayUnits): number {
-  return units === 'in' ? mm / MM_PER_INCH : mm
+  return mm / mmPer(units)
 }
 
 /** A length typed in the units shown, in millimetres to hold. */
 export function fromDisplay(v: number, units: DisplayUnits): number {
-  return units === 'in' ? v * MM_PER_INCH : v
+  return v * mmPer(units)
 }
 
 /** The decimals a site asked for in millimetres, as shown in `units`. */
 export function lengthDecimals(mmDecimals: number, units: DisplayUnits): number {
-  return units === 'in' ? Math.max(3, mmDecimals + 1) : mmDecimals
+  return units === 'in' ? Math.max(3, mmDecimals + 1) : units === 'm' ? mmDecimals + 3 : mmDecimals
 }
 
 /** The unit's own word, to a power for areas and volumes. */
@@ -59,7 +64,7 @@ function fixed(v: number, decimals: number, signed: boolean): string {
 }
 
 function fmt(value: number, units: DisplayUnits, mmDecimals: number, power: 1 | 2 | 3, opts?: FmtOptions): string {
-  const text = fixed(value / (units === 'in' ? MM_PER_INCH ** power : 1), lengthDecimals(mmDecimals, units), opts?.signed ?? false)
+  const text = fixed(value / mmPer(units) ** power, lengthDecimals(mmDecimals, units), opts?.signed ?? false)
   return opts?.bare ? text : `${text} ${unitWord(units, power)}`
 }
 
@@ -98,6 +103,7 @@ const INCH_STEPS: [mm: number, inch: number][] = [
 export function lengthStep(mmStep: number, units: DisplayUnits): number {
   if (units === 'mm' || !(mmStep > 0) || !Number.isFinite(mmStep)) return mmStep
   const known = INCH_STEPS.find(([mm]) => mm === mmStep)
+  if (units === 'm') return mmStep / MM_PER_METRE
   if (known) return known[1]
   return Number((mmStep / MM_PER_INCH).toPrecision(1))
 }

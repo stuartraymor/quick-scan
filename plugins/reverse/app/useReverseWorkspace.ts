@@ -10,6 +10,7 @@
 // and does the rest of the asynchronous work.
 
 import { reSceneOf } from '../viewer/reScene'
+import { useZebra } from '../state/zebraStore'
 import { commandHost } from '../../../src/commands/host'
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { EDGE_MIN_FEATURE_MM, type EdgeChains } from '../../../src/core/flat/edges'
@@ -464,6 +465,8 @@ export function useReverseWorkspace({
   // right on it: for that while the bodies are a tint and their edges,
   // and the scan is solid under them.
   const snapping = featureDraft?.kind === 'moveFace' && featureDraft.snap && featureDraft.faces.length === 1
+  const zebra = useZebra((s) => s.mode)
+  useEffect(() => { reScene()?.setZebra(zebra) }, [zebra, bodies])
   useEffect(() => {
     if (!onReverse) return
     sceneRef.current?.setScanVisible(!scanHidden)

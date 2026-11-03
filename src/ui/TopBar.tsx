@@ -174,6 +174,20 @@ export function TopBar({
   savable: boolean
   recovery: RecoveryStatus
 }) {
+  // Save reminder: after ten minutes of unsaved work, and every ten minutes
+  // after that, the status line suggests saving the project.
+  const dirtySince = useRef<number | null>(null)
+  useEffect(() => {
+    if (!recovery.dirty) { dirtySince.current = null; return }
+    dirtySince.current ??= Date.now()
+    const id = setInterval(() => {
+      const since = dirtySince.current
+      if (since === null) return
+      const minutes = Math.floor((Date.now() - since) / 60000)
+      if (minutes >= 10 && minutes % 10 === 0) useStore.getState().setStatus(`Unsaved for ${minutes} minutes — consider saving the project (Ctrl+S).`)
+    }, 60000)
+    return () => clearInterval(id)
+  }, [recovery.dirty])
   const fileName = useStore((s) => s.fileName)
   const triangleCount = useStore((s) => s.triangleCount)
   const vertexCount = useStore((s) => s.vertexCount)
@@ -298,6 +312,16 @@ export function TopBar({
       >
         <Icon name="save" size={16} />
         <span className="btxt">Save<span className="ptxt"> Project</span></span>
+      </button>
+      <button
+        className="ghost withicon"
+        data-test="save-project-as"
+        onClick={onSaveProject}
+        disabled={busy || !savable}
+        title="Save as — save the project under a new name (the desktop app asks where)"
+      >
+        <Icon name="save" size={16} />
+        <span className="btxt">Save as</span>
       </button>
       <button
         className="ghost withicon"

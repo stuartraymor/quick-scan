@@ -5,6 +5,7 @@
 // of the stage, and what is set once and left is in Settings; a strip that
 // held both was a row of small print nobody could find anything in.
 
+import { useEffect, useState } from 'react'
 import { useStore } from '../state/store'
 import { useCommandActivity } from '../commands/activity'
 import { useAgentLink } from '../commands/agentLink'
@@ -28,6 +29,17 @@ export function StatusStrip() {
   const done = elements.filter((e) => e.fit)
   const dimensions = useStore((s) => s.dimensions)
   const navHint = schemeById(useStore((s) => s.navScheme)).hint
+  // QUICKSURFACE-style command help: while the pointer is over a ribbon or
+  // menu command, the status line reads that command's description.
+  const [commandHelp, setCommandHelp] = useState<string | null>(null)
+  useEffect(() => {
+    const over = (e: MouseEvent) => {
+      const el = (e.target as Element | null)?.closest?.('.desktop-ribbon [title], .ribbon-menu [title], .appmenu [title]')
+      setCommandHelp(el?.getAttribute('title') || null)
+    }
+    document.addEventListener('mouseover', over)
+    return () => document.removeEventListener('mouseover', over)
+  }, [])
 
   return (
     <footer className="strip">
@@ -49,6 +61,8 @@ export function StatusStrip() {
             <b>{agent.title}</b> <code>{agent.name}</code>
             {statusText ? ` — ${statusText}` : ''}
           </span>
+        ) : commandHelp ? (
+          <span data-test="command-help">{commandHelp}</span>
         ) : (
           statusText
         )}

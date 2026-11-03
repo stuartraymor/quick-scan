@@ -21,6 +21,8 @@ import type { PickHit } from '../../../src/viewer/SceneManager'
 import { DELETE_MARK_COLOR, FLIP_MARK_COLOR, OFFSET_MARK_COLOR, SMOOTH_MARK_COLOR, TRIM_MARK_COLOR, useMeshTools, type MeshView, type TrimView } from '../state/meshStore'
 import { reductionScale } from '../core/reduce'
 import { MeshPanel } from '../ui/MeshPanel'
+import { ScaleDialog } from '../ui/ScaleDialog'
+import { MirrorDialog, MIRROR_FACTORS } from '../ui/MirrorDialog'
 import { exportReducedMesh } from './exportReduced'
 import { exportTrimmedMesh } from './exportTrimmed'
 import { exportEditedMesh } from './exportEdited'
@@ -75,6 +77,8 @@ export function useMeshPlugin(host: PluginHost): PluginRuntime {
   // meshToolsSession. The maps it shows are the session's: how far the
   // reduced mesh strays from each scan vertex, and how far the edited copy
   // is from the scan in use at each of the copy's vertices.
+  const [scaleOpen, setScaleOpen] = useState(false)
+  const [mirrorOpen, setMirrorOpen] = useState(false)
   const [tools] = useState(() =>
     createMeshToolsSession({
       clientRef: host.clientRef,
@@ -211,6 +215,16 @@ export function useMeshPlugin(host: PluginHost): PluginRuntime {
       meshReduce: meshKey('reduce', 'Reduce polygons: make a lighter mesh held within a tolerance of the scan'),
       meshSmooth: meshKey('smooth', 'Reduce noise: smooth the scatter on the scan'),
       meshFlip: meshKey('flip', 'Flip normals: turn a surface that faces the wrong way'),
+      meshMirror: {
+        run: () => { useShell.getState().setWorkspace('mesh'); setMirrorOpen(true) },
+        disabled: !fileName,
+        title: fileName ? 'Mirror: reflect the scan in the OXY, OYZ or OXZ plane' : 'Load a scan first',
+      },
+      meshScale: {
+        run: () => { useShell.getState().setWorkspace('mesh'); setScaleOpen(true) },
+        disabled: !fileName,
+        title: fileName ? 'Scale Mesh: make the scan bigger or smaller, as a value or a percentage' : 'Load a scan first',
+      },
     },
     readingAt,
     toolContext: { title: tool ? `Edit scan · ${tool}` : 'Edit scan', key: tool ?? '', active: tool !== null },
@@ -295,6 +309,14 @@ export function useMeshPlugin(host: PluginHost): PluginRuntime {
     ),
     overlay: (
       <>
+        {mirrorOpen && <MirrorDialog onApply={(p) => void tools.scaleScan(MIRROR_FACTORS[p], [0, 0, 0])} onClose={() => setMirrorOpen(false)} />}
+        {scaleOpen && (() => {
+          const g = sceneRef.current?.scanGeometry()
+          if (g && !g.boundingBox) g.computeBoundingBox()
+          const b = g?.boundingBox
+          const size: [number, number, number] | null = b ? [b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z] : null
+          return <ScaleDialog size={size} onApply={(f) => void tools.scaleScan([f, f, f])} onClose={() => setScaleOpen(false)} />
+        })()}
         {reduceMapShown && report && (
           <MapLegend
             id="reduce"

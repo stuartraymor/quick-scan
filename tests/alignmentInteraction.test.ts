@@ -26,7 +26,7 @@ describe('explicit alignment reference interaction',()=>{
   const refs=alignmentReferences(m().elements)
   expect(refs).toHaveLength(11)
   expect(new Set(refs.map(e=>e.id)).size).toBe(11)
-  expect(refs.filter(e=>e.id<0).map(e=>e.name)).toEqual(['Right (YZ)','X axis','Front (XZ)','Y axis','Top (XY)','Z axis','Origin'])
+  expect(refs.filter(e=>e.id<0).map(e=>e.name)).toEqual(['Top','Right','Front','X Axis','Y Axis','Z Axis','Origin'])
   expect(m().elements).toHaveLength(4)
  })
  it('replaces exactly the active slot and rejects invalid geometry without losing inputs',()=>{

@@ -58,6 +58,7 @@ export type ScanEdit =
       triangles: number
     }
   | { kind: 'delete'; triangles: number }
+  | { kind: 'scale'; factors: [number, number, number] }
   | {
       kind: 'flip'
       /** The triangles turned over. */
@@ -731,6 +732,9 @@ export function scanEditText(e: ScanEdit, units: DisplayUnits = 'mm'): string {
       return `Removed ${count(e.pieces)} island${e.pieces === 1 ? '' : 's'} under ${len(e.minSize)}`
     case 'delete':
       return 'Deleted marked surface'
+    case 'scale':
+      if (e.factors.every((f) => Math.abs(f) === 1)) return `Mirrored in ${e.factors[2] < 0 ? 'OXY' : e.factors[0] < 0 ? 'OYZ' : 'OXZ'}`
+      return e.factors[0] === e.factors[1] && e.factors[1] === e.factors[2] ? `Scaled by ${e.factors[0]}` : `Scaled by ${e.factors.join(' × ')}`
     case 'flip':
       return e.region ? 'Flipped the normals of a marked region' : 'Flipped the normals'
     case 'cut':
@@ -757,6 +761,8 @@ export function scanEditFigure(e: ScanEdit, units: DisplayUnits = 'mm'): string 
     case 'pieces':
     case 'delete':
       return `−${count(e.triangles)} △`
+    case 'scale':
+      return `× ${e.factors[0]}`
     case 'flip':
       return `⇅ ${count(e.triangles)} △`
     case 'cut':

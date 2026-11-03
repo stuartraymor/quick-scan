@@ -19,6 +19,14 @@ else {
     const root = path.join(__dirname, 'dist');
     protocol.handle('scanruler', request => {
       const url = new URL(request.url);
+      // Help > Examples: the reference example meshes are third-party files
+      // and are not shipped. They are read from a local folder on this PC.
+      if (url.host === 'app' && url.pathname.startsWith('/reference-examples/')) {
+        const name = path.basename(decodeURIComponent(url.pathname));
+        const dirs = [process.env.QS_EXAMPLES_DIR, path.join(app.getPath('appData'), 'QuickScan', 'reference-examples'), root + path.sep + 'reference-examples'].filter(Boolean);
+        const found = dirs.map(d => path.join(d, name)).find(f => fs.existsSync(f));
+        return found ? net.fetch(pathToFileURL(found).href) : new Response('Not found', { status: 404 });
+      }
       const file = path.resolve(root, '.' + decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname));
       if (url.host !== 'app' || !file.startsWith(root + path.sep)) return new Response('Forbidden', { status: 403 });
       return net.fetch(pathToFileURL(file).href);

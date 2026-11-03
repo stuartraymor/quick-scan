@@ -1,3 +1,16 @@
+## 0.0.62 - 2026-11-02
+
+Covers local builds 0.0.45 to 0.0.62, each checked against QUICKSURFACE 8.0.128 running on screen.
+
+- Align by Coordinate System laid out as QUICKSURFACE: Reset; Primary / Secondary / Tertiary feature with Pick and Flip; Top / Right / Front tiles; Translate X / Y / Z; Apply / Close. World references listed as Top, Right, Front, X Axis, Y Axis, Z Axis, Origin. Use symmetry kept.
+- Primitive previews are solid while you build them; created primitives are a lighter, clearly visible translucent shade.
+- Scan Data: Scale Mesh (value or percentage, Preview), Mirror (OXY / OYZ / OXZ), Invert Hidden, Auto colorize, Set Default Color.
+- Analysis: Surface Area, Volume, Zebra Stripes, Environment Map, Draft.
+- Edit / View: Linear and Studio backgrounds (in the dark theme), Coordinate System, Rebuild.
+- Ribbon: CAD, Surfacing, Freeform and Main Part Design rearranged to QUICKSURFACE's columns of labelled keys; larger icons; status line shows the hovered command's help; Save as in the top bar.
+- Right-click menu on the 3D view; floor grid and axes on an empty stage; Metres display unit; unsaved-work reminder every 10 minutes.
+- Help > Examples reads the reference example meshes from a local folder (%APPDATA%\QuickScaneference-examples); they are not shipped.
+
 ## 0.0.44 - 2026-11-02
 
 - Correct Corner Trim, visible sketch projection and single-cloud stacked sections; add multicolor Compare icon.

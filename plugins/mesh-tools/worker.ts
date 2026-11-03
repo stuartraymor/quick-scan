@@ -161,6 +161,23 @@ const ops: { [K in keyof MeshToolsOps]: (payload: Payload<K>, ctx: WorkerContext
       const flipped = flipTriangles(g.positions, g.indices, g.vertexCount, mask)
       result = flipped
       report = { kind: 'flip', triangles: flipped.flipped }
+    } else if (edit.type === 'scale') {
+      const [sx, sy, sz] = edit.factors
+      const [ox, oy, oz] = edit.about
+      const positions = new Float32Array(g.positions.subarray(0, g.vertexCount * 3))
+      for (let i = 0; i < positions.length; i += 3) {
+        positions[i] = ox + (positions[i] - ox) * sx
+        positions[i + 1] = oy + (positions[i + 1] - oy) * sy
+        positions[i + 2] = oz + (positions[i + 2] - oz) * sz
+      }
+      // A negative product of factors mirrors the mesh: turn the triangles
+      // over so they still face outward.
+      const indices = new Uint32Array(g.indices)
+      if (sx * sy * sz < 0) for (let t = 0; t < indices.length; t += 3) { const b = indices[t + 1]; indices[t + 1] = indices[t + 2]; indices[t + 2] = b }
+      const vertexMap = new Int32Array(g.vertexCount)
+      for (let i = 0; i < vertexMap.length; i++) vertexMap[i] = i
+      result = { positions, indices, vertexMap } as EditedMesh
+      report = { kind: 'scale', factors: edit.factors }
     } else if (edit.type === 'cut') {
       ctx.progress('Cutting the scan…')
       const cut = cutMesh(g.positions, g.indices, g.vertexCount, edit.origin, edit.normal, edit.cap)

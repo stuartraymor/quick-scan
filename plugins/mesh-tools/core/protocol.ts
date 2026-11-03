@@ -37,6 +37,7 @@ export type PieceCount = Omit<PieceSurvey, 'islandMask' | 'islandCentres'>
 export type ScanEditRequest =
   | { type: 'delete-marked'; vertices: Uint32Array }
   | { type: 'flip'; vertices?: Uint32Array }
+  | { type: 'scale'; factors: Vec3; about: Vec3 }
   | { type: 'cut'; origin: Vec3; normal: Vec3; cap: boolean }
   | { type: 'fill-holes'; maxSize: number; mode: FillMode; at?: Vec3 }
   | { type: 'smooth'; settings: SmoothSettings }
@@ -49,6 +50,7 @@ export type ScanEditRequest =
 export type MeshEditReport =
   | { kind: 'delete'; triangles: number }
   | { kind: 'flip'; triangles: number }
+  | { kind: 'scale'; factors: Vec3 }
   | { kind: 'cut'; report: CutReport }
   | { kind: 'fill'; report: FillReport }
   | { kind: 'smooth'; report: SmoothReport }

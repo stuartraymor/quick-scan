@@ -2,6 +2,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useStore } from '../state/store'
 import { useDocumentOrder } from '../state/documentOrderStore'
+import { useNavigationView } from '../state/navigationViewStore'
 import { useShell } from '../state/shellStore'
 import { usePrefs } from '../state/prefsStore'
 import { useDeviation } from '../state/deviationStore'
@@ -36,6 +37,11 @@ type Props = {
   onSave: () => void
   onDeselect: () => void
   onSnapshot: () => void
+  onSurfaceArea: () => void
+  onInvertHidden?: () => void
+  onAutoColorize?: () => void
+  onDefaultColor?: () => void
+  onVolume: () => void
   onHideSelected: () => void
   onIsolate: () => void
   onShowHidden: () => void
@@ -50,7 +56,7 @@ function Group({ label, children }: { label: string; children: ReactNode }) {
 }
 
 /** Familiar command positions, backed by the existing session and plugin verbs. */
-export function DesktopRibbon({ onFit, onSection, onAlign, onFineAlign, onPointAlign, onExport, onOpen, onExample, exampleBusy = false, onSave, onDeselect, onSnapshot, onHideSelected, onIsolate, onShowHidden, onView, onFitView, savable, cadActions }: Props) {
+export function DesktopRibbon({ onFit, onSection, onAlign, onFineAlign, onPointAlign, onExport, onOpen, onExample, exampleBusy = false, onSave, onDeselect, onSnapshot, onSurfaceArea, onVolume, onHideSelected, onIsolate, onShowHidden, onInvertHidden, onAutoColorize, onDefaultColor, onView, onFitView, savable, cadActions }: Props) {
   const file = useStore(s => s.fileName)
   const busy = useStore(s => s.busy)
   const interactive = useInteractiveAlign(s => s.open)
@@ -100,7 +106,7 @@ export function DesktopRibbon({ onFit, onSection, onAlign, onFineAlign, onPointA
   const tool = (label: string, icon: IconName, action: () => void, disabled = false, hint = label, small = false) => (
     <button className={small ? 'desktop-ribbon-tool ribbon-stack-tool' : 'desktop-ribbon-tool'} key={label} disabled={disabled} aria-label={small ? label : undefined} onClick={event => { event.currentTarget.closest('details')?.removeAttribute('open'); useShell.getState().setInspectorOpen(true); useStore.getState().setStatus(''); action() }}
       title={hint} data-test={`ribbon-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}>
-      <Icon name={icon} size={small ? 18 : 25} /><span>{label}</span>
+      <Icon name={icon} size={small ? 18 : 30} /><span>{label}</span>
     </button>
   )
   // QUICKSURFACE's text-only keys (Help tab, System and About groups).
@@ -244,18 +250,6 @@ export function DesktopRibbon({ onFit, onSection, onAlign, onFineAlign, onPointA
   const analysis = <Group label="Analysis">{tool('Compare', 'compare', () => go('deviation'), locked, 'Compare scan data with CAD or fitted geometry')}</Group>
   const exportGroup = <Group label="Export Model">{cadActions ? cad('export', 'Export', 'exportStep') : tool('Export', 'exportStep', onExport, needsScan)}</Group>
   const scanGroup = <Group label="Scan Data">{tool('Prepare Scan', 'reduceMesh', () => { useShell.getState().setPrepareStep(0); if (mesh) go(mesh.id) }, needsScan, 'Prepare Scan: a four-step guide — mesh quality, symmetry, alignment primitives, alignment')}{tool('Edit Scan', 'wsMesh', () => mesh && go(mesh.id), needsScan || !mesh, 'Open mesh selection, repair and editing')}{tool('Deselect All', 'select', onDeselect, needsScan || marked === 0, 'Clear the painted scan selection')}</Group>
-  const main = <>
-    {fileGroup}{scanGroup}
-    <Group label="Primitives">{primitives}{construct}</Group>
-    <Group label="Align">{alignMenu}</Group>
-    <Group label="Cross sections">{cad('sketch', '2D Sketch', 'sketch')}{tool('Multiple sections', 'section', () => { go('elements'); onSection() }, needsScan, 'Create planar cross sections; stacked sections are not yet implemented')}</Group>
-    <Group label="Surfacing">{cad('surface', 'Fit Surface', 'surface', true)}{surfacingMenu}</Group>
-    <Group label="Freeform">{tool('New Freeform', 'surface', () => {}, true, 'Quad-based freeform surfacing is not implemented in Quick Scan yet')}{tool('Auto Freeform', 'scan', () => {}, true, 'Automatic freeform surfacing is not implemented in Quick Scan yet')}</Group>
-    <Group label="Part Design"><div className="ribbon-stack">{cad('extrude', 'Extrude', 'extrude', false, true)}{cad('revolve', 'Revolve', 'revolve', false, true)}{cad('moveFace', 'Move face', 'moveFace', false, true)}</div>{cad('trim', 'Trim', 'trim', true)}{patternMenu}{cad('fillet', 'Fillet / Chamfer', 'fillet')}</Group>
-    {analysis}{exportGroup}
-  </>
-  // A command QUICKSURFACE has in this place that Quick Scan has not built yet:
-  // shown greyed in its position so the layout matches.
   // QUICKSURFACE's small key with a visible label: a 16 px icon and the name,
   // three to a column (Scan Data's Tools, Align and Colors groups).
   const smallText = (label: string, icon: IconName, action: () => void, disabled = false, hint = label) => (
@@ -263,6 +257,31 @@ export function DesktopRibbon({ onFit, onSection, onAlign, onFineAlign, onPointA
       <Icon name={icon} size={16} /><span>{label}</span>
     </button>
   )
+  // A CAD-plugin action as a small labelled key, as QUICKSURFACE draws most of
+  // its CAD commands; the same first-use kernel loading as cad().
+  const cadText = (id: string, label: string, icon: IconName, scanRequired = false) => {
+    const action = cadActions?.[id]
+    const loading = action?.title?.includes('CAD kernel')
+    const disabled = locked || !!pending || !action || (scanRequired && !file) || (!!action.disabled && !loading)
+    return smallText(label, icon, () => {
+      go('reverse')
+      if (loading) { setPending(id); useStore.getState().setStatus(`Preparing CAD tools for ${label}…`) }
+      else action?.run()
+    }, disabled, action?.title || `${label} — open its contextual editor`)
+  }
+  const soonText = (label: string, icon: IconName) => smallText(label, icon, () => {}, true, `${label} is not built in Quick Scan yet`)
+  const main = <>
+    {fileGroup}{scanGroup}
+    <Group label="Primitives">{primitives}{construct}</Group>
+    <Group label="Align">{alignMenu}</Group>
+    <Group label="Cross sections">{cad('sketch', '2D Sketch', 'sketch')}{tool('Multiple sections', 'section', () => { go('elements'); onSection() }, needsScan, 'Create planar cross sections; stacked sections are not yet implemented')}</Group>
+    <Group label="Surfacing">{cad('surface', 'Fit Surface', 'surface', true)}{surfacingMenu}</Group>
+    <Group label="Freeform">{tool('New Freeform', 'surface', () => {}, true, 'Quad-based freeform surfacing is not implemented in Quick Scan yet')}{tool('Auto Freeform', 'scan', () => {}, true, 'Automatic freeform surfacing is not implemented in Quick Scan yet')}</Group>
+    <Group label="Part Design"><div className="ribbon-text-stack">{cadText('extrude', 'Extrude', 'extrude')}{cadText('revolve', 'Revolve', 'revolve')}{cadText('moveFace', 'Move face', 'moveFace')}</div>{cad('trim', 'Trim', 'trim', true)}<div className="ribbon-text-stack">{cadText('boolean', 'Combine', 'opJoin')}{cadText('boolean', 'Cut', 'opCut')}{cadText('boolean', 'Intersect', 'opIntersect')}</div>{patternMenu}{cad('fillet', 'Fillet / Chamfer', 'fillet')}</Group>
+    {analysis}{exportGroup}
+  </>
+  // A command QUICKSURFACE has in this place that Quick Scan has not built yet:
+  // shown greyed in its position so the layout matches.
   const smallSoon = (label: string, icon: IconName) => smallText(label, icon, () => {}, true, `${label} is not built in Quick Scan yet`)
   const meshAction = (id: string) => cadActions?.[id]
   const meshTool = (id: string, label: string, icon: IconName, hint: string, small = false) => {
@@ -271,7 +290,6 @@ export function DesktopRibbon({ onFit, onSection, onAlign, onFineAlign, onPointA
     const off = needsScan || !a || a.disabled
     return small ? smallText(label, icon, run, off, a?.title ?? hint) : tool(label, icon, run, off, a?.title ?? hint)
   }
-  const soon = (label: string, icon: IconName) => tool(label, icon, () => {}, true, `${label} is not built in Quick Scan yet`)
   // The Scan Data tab as QUICKSURFACE lays it out: Edit Scan data, Tools, Align,
   // Colors, Export Visible. Hide Selected and Isolate are Quick Scan's own extra
   // keys and keep a group of their own at the end.
@@ -281,18 +299,18 @@ export function DesktopRibbon({ onFit, onSection, onAlign, onFineAlign, onPointA
       <div className="ribbon-text-stack">
         {smallText('Deselect All', 'select', onDeselect, needsScan || marked === 0, 'Clear the painted scan selection')}
         {smallText('Show Hidden', 'eye', onShowHidden, hiddenTriangles === 0, 'Show all hidden triangles')}
-        {smallSoon('Invert Hidden', 'markInvert')}
+        {smallText('Invert Hidden', 'markInvert', () => onInvertHidden?.(), !onInvertHidden || hiddenTriangles === 0, 'Swap hidden and shown triangles')}
       </div>
     </Group>
     <Group label="Tools">
       {meshTool('meshReduce', 'Reduce polygons', 'reduceMesh', 'Make a lighter mesh within a tolerance of the scan')}
       {meshTool('meshSmooth', 'Reduce noise', 'smoothMesh', 'Smooth the scatter on the scan')}
       <div className="ribbon-text-grid">
-        {smallSoon('Scale', 'dimLength')}
+        {meshTool('meshScale', 'Scale', 'dimLength', 'Make the scan bigger or smaller, as a value or a percentage', true)}
         {meshTool('meshFlip', 'Flip Normals', 'flip', 'Turn a surface that faces the wrong way', true)}
         {smallSoon('Re-polygonize', 'mesh')}
         {smallSoon('Average Mesh', 'mesh')}
-        {smallSoon('Mirror', 'mirror')}
+        {meshTool('meshMirror', 'Mirror', 'mirror', 'Reflect the scan in the OXY, OYZ or OXZ plane', true)}
         {smallSoon('Unroll', 'sheet')}
       </div>
     </Group>
@@ -305,39 +323,58 @@ export function DesktopRibbon({ onFit, onSection, onAlign, onFineAlign, onPointA
         {smallSoon('Global Fine Align', 'compare')}
       </div>
     </Group>
-    <Group label="Colors"><div className="ribbon-text-stack">{smallSoon('Auto colorize', 'scanColours')}{smallSoon('Set Default Color', 'colourPlot')}</div></Group>
+    <Group label="Colors"><div className="ribbon-text-stack">{smallText('Auto colorize', 'scanColours', () => onAutoColorize?.(), needsScan || !onAutoColorize, 'Give each mesh a colour of its own')}{smallText('Set Default Color', 'colourPlot', () => onDefaultColor?.(), needsScan || !onDefaultColor, 'Put the default scan colour back')}</div></Group>
     <Group label="Export Visible">{tool('Export', 'exportStep', onExport, needsScan, 'Export the visible scan data')}</Group>
     <Group label="Visibility">{tool('Hide Selected', 'eyeOff', onHideSelected, needsScan || marked === 0, 'Hide the selected triangles')}{tool('Isolate', 'model', onIsolate, needsScan || marked === 0, 'Leave the selected triangles and hide the rest')}</Group>
   </>
-  const freeformTab = <>{fileGroup}
-    <Group label="Create New Freeform">{tool('New Freeform', 'surface', () => {}, true, 'Quad-based freeform surfacing is not implemented in Quick Scan yet')}{tool('Auto Freeform', 'scan', () => {}, true, 'Automatic freeform surfacing is not implemented in Quick Scan yet')}{soon('Wrap Surface', 'elCylinder')}{soon('From 3D Sketch', 'sketch')}{soon('From quad OBJ', 'load')}</Group>
-    <Group label="Tools">{cad('thicken', 'Thicken', 'shell')}{cad('offsetBody', 'Offset', 'sheet')}{soon('Convert to CAD body', 'exportStep')}</Group>
-    {exportGroup}</>
-  const surfacingTab = <>{fileGroup}
-    <Group label="Create">{cad('surface', 'Fit Surface', 'surface', true)}{cad('loft', 'Loft', 'loft')}{soon('Fill Surface', 'fillHoles')}{cad('sheet', 'From 2D sketch', 'sheet')}{cad('sweep', 'Sweep', 'spline')}{soon('Pipe', 'elCylinder')}{cad('network', '3D Sketch', 'sketch', true)}{cad('thread', 'Helix', 'rotateCw')}{soon('Roll Sketch', 'revolve')}</Group>
-    <Group label="Tools">{soon('Duplicate Face', 'deleteSurface')}{cad('offsetBody', 'Offset', 'sheet')}{cad('thicken', 'Thicken', 'shell')}{soon('Extend Surface', 'extrude')}{soon('Sew surfaces', 'opJoin')}{soon('Flatten', 'sheet')}{soon('Project sketch', 'project')}</Group>
-    {exportGroup}</>
-  const cadTab = <>{fileGroup}
+  // Freeform and Surfacing as seen live in QUICKSURFACE 8.0.128 (2026-11-02):
+  // large keys first, then columns of small labelled keys; no File or Export.
+  const freeformTab = <>
+    <Group label="Create New Freeform">{tool('New Freeform', 'surface', () => {}, true, 'Quad-based freeform surfacing is not implemented in Quick Scan yet')}{tool('Auto Freeform', 'scan', () => {}, true, 'Automatic freeform surfacing is not implemented in Quick Scan yet')}
+      <div className="ribbon-text-stack">{soonText('Wrap Surface', 'elCylinder')}{soonText('From 3D Sketch', 'sketch')}{soonText('From quad OBJ', 'load')}</div></Group>
+    <Group label="Tools"><div className="ribbon-text-stack">{cadText('thicken', 'Thicken', 'shell')}{cadText('offsetBody', 'Offset', 'sheet')}{soonText('Convert to CAD body', 'exportStep')}</div></Group>
+  </>
+  const surfacingTab = <>
+    <Group label="Create">{cad('surface', 'Fit Surface', 'surface', true)}{cad('loft', 'Loft', 'loft')}
+      <div className="ribbon-text-stack">{soonText('Fill Surface', 'fillHoles')}{cadText('sweep', 'Sweep', 'spline')}{soonText('Pipe', 'elCylinder')}</div>
+      <div className="ribbon-text-stack">{cadText('sheet', 'From 2D sketch', 'sheet')}</div>
+      {cad('network', '3D Sketch', 'sketch', true)}
+      <div className="ribbon-text-stack">{cadText('thread', 'Helix', 'rotateCw')}{soonText('Roll Sketch', 'revolve')}</div></Group>
+    <Group label="Tools">
+      <div className="ribbon-text-stack">{soonText('Duplicate Face', 'deleteSurface')}{cadText('offsetBody', 'Offset', 'sheet')}{cadText('thicken', 'Thicken', 'shell')}</div>
+      <div className="ribbon-text-stack">{soonText('Extend Surface', 'extrude')}{soonText('Sew surfaces', 'opJoin')}{soonText('Project sketch', 'project')}</div>
+      <div className="ribbon-text-stack">{soonText('Flatten', 'sheet')}</div></Group>
+  </>
+  // The CAD tab as QUICKSURFACE lays it out: Create is columns of small
+  // labelled keys around a large Trim, and Patterns a stack.
+  const cadTab = <>
     <Group label="Cross sections">{cad('sketch', '2D Sketch', 'sketch')}{tool('Multiple sections', 'section', () => { go('elements'); onSection() }, needsScan, 'Create planar cross sections; stacked sections are not yet implemented')}</Group>
-    <Group label="Create">{cad('extrude', 'Extrude', 'extrude')}{cad('revolve', 'Revolve', 'revolve')}{cad('trim', 'Trim', 'trim', true)}{cad('boolean', 'Combine', 'opJoin')}{cad('boolean', 'Cut', 'opCut')}{cad('boolean', 'Intersect', 'opIntersect')}{cad('shell', 'Shell', 'shell')}{cad('draft', 'Draft', 'draft')}{cad('deleteFace', 'Delete faces', 'deleteSurface')}{cad('moveBody', 'Move body', 'navigate')}{cad('moveFace', 'Move face', 'moveFace')}{soon('Scale body', 'dimLength')}{cad('split', 'Split solid', 'split')}{soon('Separate bodies', 'islands')}</Group>
+    <Group label="Create">
+      <div className="ribbon-text-stack">{cadText('extrude', 'Extrude', 'extrude')}{cadText('revolve', 'Revolve', 'revolve')}</div>
+      {cad('trim', 'Trim', 'trim', true)}
+      <div className="ribbon-text-stack">{cadText('boolean', 'Combine', 'opJoin')}{cadText('boolean', 'Cut', 'opCut')}{cadText('boolean', 'Intersect', 'opIntersect')}</div>
+      <div className="ribbon-text-stack">{cadText('shell', 'Shell', 'shell')}{cadText('draft', 'Draft', 'draft')}{cadText('deleteFace', 'Delete faces', 'deleteSurface')}</div>
+      <div className="ribbon-text-stack">{cadText('moveBody', 'Move body', 'navigate')}{cadText('moveFace', 'Move face', 'moveFace')}{soonText('Separate bodies', 'islands')}</div>
+      <div className="ribbon-text-stack">{soonText('Scale body', 'dimLength')}{cadText('split', 'Split solid', 'split')}</div>
+    </Group>
     <Group label="Edges">{cad('fillet', 'Fillet / Chamfer', 'fillet')}</Group>
-    <Group label="Patterns">{cad('pattern', 'Circular pattern', 'rotateCcw')}{cad('pattern', 'Linear pattern', 'pattern')}{cad('mirror', 'Mirror', 'mirror')}</Group>
+    <Group label="Patterns"><div className="ribbon-text-stack">{cadText('pattern', 'Circular pattern', 'rotateCcw')}{cadText('pattern', 'Linear pattern', 'pattern')}{cadText('mirror', 'Mirror', 'mirror')}</div></Group>
     {exportGroup}</>
-  const settingsTab = <>{fileGroup}
-    <Group label="Display Units">{tool('Millimetres', 'dimLength', () => usePrefs.getState().setUnits('mm'), units === 'mm', 'Show and type lengths in millimetres')}{tool('Inches', 'dimLength', () => usePrefs.getState().setUnits('in'), units === 'in', 'Show and type lengths in inches')}</Group>
+  const settingsTab = <>
+    <Group label="Display Units">{tool('Millimetres', 'dimLength', () => usePrefs.getState().setUnits('mm'), units === 'mm', 'Show and type lengths in millimetres')}{tool('Inches', 'dimLength', () => usePrefs.getState().setUnits('in'), units === 'in', 'Show and type lengths in inches')}{tool('Metres', 'dimLength', () => usePrefs.getState().setUnits('m'), units === 'm', 'Show and type lengths in metres')}</Group>
     <Group label="Software Options">{tool('Options', 'settings', () => usePrefs.getState().openSettings(true), false, 'Navigation, display, files and agent options')}{tool('Mouse controls', 'navigate', () => usePrefs.getState().openSettings(true), false, 'Navigation scheme and display options')}</Group></>
   const analysisTab = <>
     <Group label="Tools">
       {tool('Measure', 'wsMeasure', () => go('elements'), locked, 'Measure distances between fitted elements in 3D Measure')}
-      <div className="ribbon-text-stack">{smallSoon('Surface Area', 'surface')}{smallSoon('Volume', 'model')}</div>
-      <div className="ribbon-text-stack">{smallSoon('Zebra Stripes', 'curvature')}{smallSoon('Environment Map', 'scanColours')}{smallSoon('Draft', 'draft')}</div>
+      <div className="ribbon-text-stack">{smallText('Surface Area', 'surface', onSurfaceArea, !file, 'Surface area of the scan mesh')}{smallText('Volume', 'model', onVolume, !file, 'Volume enclosed by the scan mesh')}</div>
+      <div className="ribbon-text-stack">{cadText('zebra', 'Zebra Stripes', 'curvature')}{cadText('envMap', 'Environment Map', 'scanColours')}{cadText('draftAnalysis', 'Draft', 'draft')}</div>
       {tool('Snapshot', 'splitView', onSnapshot, !file, 'Snapshot to clipboard — copy the view as a picture')}
     </Group>
     <Group label="Control">{tool('Compare', 'compare', () => go('deviation'), locked, 'Compare scan data with CAD or fitted geometry')}{tool('Compare to other meshes', 'compare', () => go('deviation'), locked, 'Compare the scan with a second mesh in Surface Deviation')}</Group>
     <Group label="Inspection">{tool('Wall thickness', 'wsThickness', () => go('thickness'), locked, 'Map the wall thickness of the part itself — no reference needed')}{tool('2D Measure', 'wsFlat', () => go('flat'), locked, 'Measure a flatbed scan the way a measuring microscope would')}</Group></>
   return <div className="desktop-ribbon" aria-label="Workspace tools" inert={rolledTools || undefined} aria-disabled={rolledTools || undefined} title={rolledTools ? 'Restore End of Model in History before creating or editing geometry.' : undefined} style={rolledTools ? { opacity: .55 } : undefined}>
     {tab === 'main' ? main : tab === 'view' ? <>
-      <Group label="Edit"><div className="ribbon-text-stack"><UndoRedo ribbon text />{smallSoon('Rebuild', 'rotateCw')}</div></Group>
+      <Group label="Edit"><div className="ribbon-text-stack"><UndoRedo ribbon text />{cadText('rebuild', 'Rebuild', 'rotateCw')}</div></Group>
       <Group label="View">
         {tool('Zoom To Fit', 'fitAll', () => onFitView?.(), !onFitView)}
         {tool('Isometric', 'model', () => onView?.('iso'), !onView)}
@@ -349,9 +386,9 @@ export function DesktopRibbon({ onFit, onSection, onAlign, onFineAlign, onPointA
             <button key={view} className="ribbon-text-key" data-test={`ribbon-${label.toLowerCase()}`} disabled={!onView} title={`${label} view`} onClick={() => onView?.(view)}>{label}</button>
           ))}
         </div>
-        {soon('Coordinate System', 'elPoint')}
+        {tool('Coordinate System', 'elPoint', () => useNavigationView.getState().setCoordinates(!useNavigationView.getState().coordinates), false, 'Show or hide the world coordinate system')}
       </Group>
-      <Group label="Background style"><div className="ribbon-text-stack">{smallSoon('Linear', 'mesh')}{smallSoon('Studio', 'mesh')}</div></Group>
+      <Group label="Background style"><div className="ribbon-text-stack">{smallText('Linear', 'mesh', () => useNavigationView.getState().setBackground('linear'), false, 'Background: a gradient from top to bottom')}{smallText('Studio', 'mesh', () => useNavigationView.getState().setBackground('studio'), false, 'Background: a studio vignette, lighter in the middle')}</div></Group>
       <Group label="Display">{tool(wireframe ? 'Solid view' : 'Wireframe', 'mesh', () => useStore.getState().setWireframe(!wireframe), !file)}{tool(translucent ? 'Opaque' : 'Transparent', 'transparent', () => useStore.getState().setTranslucent(!translucent), !file)}{tool('Show scan', 'eye', () => useStore.getState().setScanHidden(false), !file)}{tool('Hide scan', 'eyeOff', () => useStore.getState().setScanHidden(true), !file)}</Group>
     </> : tab === 'scan' ? scanDataTab
       : tab === 'construct' ? <>

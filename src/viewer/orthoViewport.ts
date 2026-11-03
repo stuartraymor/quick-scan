@@ -379,8 +379,45 @@ export class OrthoViewport {
 
   /** Swap the colour scheme: the stage behind the parts and the lights on them.
    *  What the parts are made of is their owner's — see applyFinish. */
+  private backgroundStyle: 'linear' | 'studio' = 'linear'
+  private stageColor = 0x000000
+
+  /** Edit / View → Background style. */
+  setBackgroundStyle(style: 'linear' | 'studio'): void {
+    this.backgroundStyle = style
+    this.paintBackground()
+    this.invalidate()
+  }
+
+  /** The stage behind the parts: the theme's colour, lighter at the top
+   *  (Linear) or in the middle (Studio). */
+  private paintBackground(): void {
+    if (this.opts.transparent || typeof document === 'undefined') {
+      this.scene.background = this.opts.transparent ? null : new THREE.Color(this.stageColor)
+      return
+    }
+    const base = new THREE.Color(this.stageColor)
+    const light = base.clone().lerp(new THREE.Color(0xffffff), 0.22).getStyle()
+    const dark = base.clone().lerp(new THREE.Color(0x000000), 0.2).getStyle()
+    const c = document.createElement('canvas')
+    c.width = c.height = 256
+    const g = c.getContext('2d')
+    if (!g) { this.scene.background = base; return }
+    const fill = this.backgroundStyle === 'studio' ? g.createRadialGradient(128, 128, 10, 128, 128, 180) : g.createLinearGradient(0, 0, 0, 256)
+    fill.addColorStop(0, light)
+    fill.addColorStop(1, dark)
+    g.fillStyle = fill
+    g.fillRect(0, 0, 256, 256)
+    const tex = new THREE.CanvasTexture(c)
+    tex.colorSpace = THREE.SRGBColorSpace
+    const old = this.scene.background
+    if (old instanceof THREE.Texture) old.dispose()
+    this.scene.background = tex
+  }
+
   setTheme(theme: ViewTheme): void {
-    this.scene.background = this.opts.transparent ? null : new THREE.Color(theme.stage)
+    this.stageColor = theme.stage
+    this.paintBackground()
     const { sky, ground, hemisphere, ambient, key } = theme.lights
     this.hemiLight.color.setHex(sky)
     this.hemiLight.groundColor.setHex(ground)

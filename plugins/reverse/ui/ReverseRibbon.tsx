@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // The CAD workspace exposes its own actions; the shell knows no plugin state.
+import { useZebra } from '../state/zebraStore'
 import type { ReactNode } from 'react'
 import { Icon, type IconName } from '../../../src/ui/icons'
 import { useStore } from '../../../src/state/store'
@@ -30,6 +31,25 @@ export function useReverseRibbonActions(onExport: () => void): NonNullable<Plugi
     title: locked ? 'Finish the current operation first.' : !ready ? 'Open the CAD workspace to load the CAD kernel.' : !requirement ? reason : undefined,
   })
   return {
+    rebuild: action(() => {
+      useReverse.setState((s) => ({ buildVersion: s.buildVersion + 1 }))
+      useStore.getState().setStatus('Rebuilding the whole history…')
+    }, state.features.length > 0, 'Nothing to rebuild yet — add a feature first.'),
+    envMap: {
+      run: () => { useZebra.getState().toggle('envmap'); useStore.getState().setStatus(useZebra.getState().mode === 'envmap' ? 'Environment Map on — a wobble in the reflected horizon shows waviness.' : 'Environment Map off.') },
+      disabled: state.bodies.length === 0,
+      title: state.bodies.length === 0 ? 'Build a CAD body first — Environment Map shows its surface quality.' : 'Environment Map: the CAD bodies as polished metal',
+    },
+    draftAnalysis: {
+      run: () => { useZebra.getState().toggle('draft'); useStore.getState().setStatus(useZebra.getState().mode === 'draft' ? 'Draft: green opens to +Z, red undercuts, yellow is within 1° of vertical.' : 'Draft analysis off.') },
+      disabled: state.bodies.length === 0,
+      title: state.bodies.length === 0 ? 'Build a CAD body first — Draft colours its faces by angle to Z.' : 'Draft: colour the CAD faces by their angle to the Z pull direction',
+    },
+    zebra: {
+      run: () => { useZebra.getState().toggle('zebra'); useStore.getState().setStatus(useZebra.getState().mode === 'zebra' ? 'Zebra Stripes on — kinks in the bands show curvature jumps between faces.' : 'Zebra Stripes off.') },
+      disabled: state.bodies.length === 0,
+      title: state.bodies.length === 0 ? 'Build a CAD body first — Zebra Stripes shows its surface quality.' : 'Zebra Stripes: reflection bands on the CAD bodies',
+    },
     sketch: action(() => {
       if (state.startSketchOn(throughPart('z'))) {
         useReverse.setState((s) => (s.sketchDraft ? { sketchDraft: { ...s.sketchDraft, placing: true } } : {}))

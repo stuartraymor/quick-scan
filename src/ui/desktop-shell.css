@@ -102,7 +102,7 @@ button.desktop-ribbon-tool {
   width: auto;
   min-width: 52px;
   max-width: 64px;
-  min-height: 70px;
+  min-height: 74px;
   padding: 7px 3px 5px;
   border: 1px solid transparent;
   border-radius: 4px;
@@ -115,7 +115,7 @@ button.desktop-ribbon-tool {
 button.desktop-ribbon-tool:hover:not(:disabled) { border-color: #abc9e8; background: var(--accent-soft); }
 button.desktop-ribbon-tool:active:not(:disabled) { background: #cbdff4; }
 button.desktop-ribbon-tool:disabled { opacity: .4; cursor: default; }
-.desktop-ribbon-tool .icon { flex: none; width: 27px; height: 27px; color: var(--accent); }
+.desktop-ribbon-tool .icon { flex: none; width: 30px; height: 30px; color: var(--accent); }
 /* Every label keeps two lines' room and wraps within them: tools stay one
    height and the group names one line, as in QUICKSURFACE's ribbon. */
 button.desktop-ribbon-tool > span, .ribbon-dropdown > summary > span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; min-height: 2.5em; line-height: 1.25; overflow-wrap: anywhere; hyphens: auto; }

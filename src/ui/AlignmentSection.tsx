@@ -2,7 +2,7 @@
 // The alignment group: the 3-2-1 datum editor, the manual move / rotate box,
 // and the buttons that open them.
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   ALIGN_PICK_COUNT,
   axisIndex,
@@ -23,40 +23,18 @@ import { InfoDot } from './InfoDot'
 import { providersFor } from './RefSelect'
 import { useLength } from '../app/useUnits'
 
-/** What the levelled direction becomes, said the way a person holds a part:
- *  which side of it the picked face is. The face's outward direction maps onto
- *  the signed axis — a bottom face faces down, so it lands on the floor plane.
- *  Ordered by how often each is what the user means. */
-const FACE_CHOICES: { axis: AxisDir; label: string }[] = [
-  { axis: 'z-', label: 'Bottom — points down (−Z)' },
-  { axis: 'z+', label: 'Top — points up (+Z)' },
-  { axis: 'y-', label: 'Front — points at you (−Y)' },
-  { axis: 'y+', label: 'Back — points away (+Y)' },
-  { axis: 'x+', label: 'Right — points right (+X)' },
-  { axis: 'x-', label: 'Left — points left (−X)' },
-]
-
-/** Which way the step-2 edge runs, in the same on-screen words. The stage's
- *  origin arrows show the same directions in the viewport. */
-const EDGE_CHOICES: { axis: AxisDir; label: string }[] = [
-  { axis: 'x+', label: '+X — to the right' },
-  { axis: 'x-', label: '−X — to the left' },
-  { axis: 'y+', label: '+Y — away from you' },
-  { axis: 'y-', label: '−Y — toward you' },
-  { axis: 'z+', label: '+Z — up' },
-  { axis: 'z-', label: '−Z — down' },
-]
-
-/** Numbered heading of one alignment step. */
-function StepHead({ n, text, optional }: { n: number; text: string; optional?: boolean }) {
-  return (
-    <div className="stephead">
-      <span className="stepno">{n}</span>
-      {text}
-      {optional && <span className="step-opt">optional</span>}
-    </div>
-  )
+/** Heading of one alignment step, worded as QUICKSURFACE's dialog. */
+function StepHead({ text }: { text: string }) {
+  return <div className="stephead">{text}</div>
 }
+
+/** QUICKSURFACE's three tiles for what the primary feature becomes. Flip
+ *  turns the chosen one to the opposite side. */
+const PLANE_TILES: { label: string; axis: AxisDir }[] = [
+  { label: 'Top', axis: 'z+' },
+  { label: 'Right', axis: 'x+' },
+  { label: 'Front', axis: 'y-' },
+]
 
 /** The six inputs of the manual move / rotate box, in the order the values
  *  are stored. A move is a length, typed in the units shown. */
@@ -181,6 +159,14 @@ export function AlignmentSection({
   // Held as typed — the moves in the units shown — and turned into
   // millimetres when applied.
   const [manual, setManual] = useState<number[] | null>(null)
+  // Translate X / Y / Z, typed in the units shown, added after the alignment.
+  const [shift, setShift] = useState(['0', '0', '0'])
+  const draftOpen = alignDraft !== null
+  useEffect(() => {
+    if (!draftOpen) return
+    setShift(['0', '0', '0'])
+    useStore.getState().setStatus('Choose the primary, secondary and tertiary features that define the coordinate system, then press Apply.')
+  }, [draftOpen])
   const len = useLength()
   const manualNums = manual?.map((v) => (Number.isFinite(v) ? v : 0)) ?? null
   const manualIdentity = manualNums === null || manualNums.every((v) => v === 0)
@@ -369,7 +355,19 @@ export function AlignmentSection({
               {alignDraft.proposal}
             </p>
           )}
-          <StepHead n={1} text="Primary feature · orientation" />
+          <div className="toolrow" style={{ justifyContent: 'flex-end' }}>
+            <button
+              data-test="align-reset"
+              onClick={() => {
+                const st = useStore.getState()
+                for (const slot of ['primary', 'secondary', 'origin'] as const) st.setAlignmentRef(slot, null)
+                setShift(['0', '0', '0'])
+              }}
+            >
+              Reset
+            </button>
+          </div>
+          <StepHead text="Primary feature" />
           <AlignSelect
             label="Face"
             roles={['plane', 'axis']}
@@ -385,21 +383,19 @@ export function AlignmentSection({
             referencePicking={alignDraft.referencePickSlot === 'primary'}
             onFlip={() => useStore.getState().flipAlignmentAxis('primary')}
           />
-          <label className="field">
-            <span>It is the part’s</span>
-            <select
-              data-test="align-primary-axis"
-              value={alignDraft.primaryAxis}
-              onChange={(e) => setAlignmentAxis('primary', e.target.value as AxisDir)}
-            >
-              {FACE_CHOICES.map((c) => (
-                <option key={c.axis} value={c.axis}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <StepHead n={2} text="Secondary feature · direction" optional />
+          <div className="toolrow" role="group" aria-label="Primary feature becomes" data-test="align-primary-tiles">
+            {PLANE_TILES.map((t) => (
+              <button
+                key={t.label}
+                data-test={`align-tile-${t.label.toLowerCase()}`}
+                aria-pressed={axisIndex(alignDraft.primaryAxis) === axisIndex(t.axis)}
+                onClick={() => setAlignmentAxis('primary', t.axis)}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <StepHead text="Secondary feature" />
           <AlignSelect
             label="Direction"
             roles={['plane', 'axis']}
@@ -415,25 +411,7 @@ export function AlignmentSection({
             referencePicking={alignDraft.referencePickSlot === 'secondary'}
             onFlip={() => useStore.getState().flipAlignmentAxis('secondary')}
           />
-          {(alignDraft.secondary !== null || alignDraft.secondaryPicks.length > 0) && (
-            <label className="field">
-              <span>It runs</span>
-              <select
-                data-test="align-secondary-axis"
-                value={alignDraft.secondaryAxis}
-                onChange={(e) => setAlignmentAxis('secondary', e.target.value as AxisDir)}
-              >
-                {EDGE_CHOICES.filter(
-                  (c) => axisIndex(c.axis) !== axisIndex(alignDraft.primaryAxis),
-                ).map((c) => (
-                  <option key={c.axis} value={c.axis}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-          <StepHead n={3} text="Tertiary feature · origin" optional />
+          <StepHead text="Tertiary feature" />
           <AlignSelect
             label="Zero point"
             roles={['point']}
@@ -448,6 +426,22 @@ export function AlignmentSection({
             onReferencePick={() => useStore.getState().beginAlignmentReferencePick('origin')}
             referencePicking={alignDraft.referencePickSlot === 'origin'}
           />
+          <div className="field" data-test="align-translate">
+            <span>Translate</span>
+            {(['X', 'Y', 'Z'] as const).map((axis, i) => (
+              <label key={axis} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                {axis}
+                <input
+                  type="number"
+                  step="any"
+                  style={{ width: 56 }}
+                  data-test={`align-translate-${axis.toLowerCase()}`}
+                  value={shift[i]}
+                  onChange={(e) => setShift(shift.map((v, j) => (j === i ? e.target.value : v)))}
+                />
+              </label>
+            ))}
+          </div>
 
           {/* The pose itself is previewed on the part, against the coordinate
               planes — the panel only has to speak up when the chosen datums
@@ -472,9 +466,14 @@ export function AlignmentSection({
             data-test="apply-alignment"
             data-confirm={1}
             disabled={!alignReady || busy}
-            onClick={() => alignReady && onApplyAlignment(alignReady.rigid)}
+            onClick={() => {
+              if (!alignReady) return
+              const m = { r: alignReady.rigid.r.slice(), t: alignReady.rigid.t.slice() }
+              shift.forEach((v, i) => { const n = Number(v); if (Number.isFinite(n)) m.t[i] += len.fromDisplay(n) })
+              onApplyAlignment(m)
+            }}
           >
-            Apply alignment
+            Apply
           </button>
           <div className="toolrow">
             {alignDraft.pickSlot !== null && (
@@ -487,7 +486,7 @@ export function AlignmentSection({
               </button>
             )}
             <button data-test="cancel-alignment" onClick={cancelAlignment}>
-              Cancel
+              Close
             </button>
           </div>
         </div>

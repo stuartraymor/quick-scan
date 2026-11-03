@@ -146,13 +146,16 @@ const stats = { sigma: 0, usedPoints: 0, regionSize: 0 }
 export function alignmentReferences(elements: Element[]): Element[] {
   const datums: Element[] = []
   const directions: Vec3[] = [[1,0,0],[0,1,0],[0,0,1]]
-  for (let i=0;i<3;i++) {
+  const common={color:'#888888', status:'done' as const, visible:true, source:{type:'picked' as const}}
+  // QUICKSURFACE's list: Top, Right, Front, then X, Y and Z Axis, then Origin.
+  for (const i of [2,0,1]) {
     const normal=directions[i], [basisU,basisV]=orthoBasis(normal)
-    const common={color:'#888888', status:'done' as const, visible:true, source:{type:'picked' as const}}
-    datums.push({...common,id:-1001-i,kind:'plane',name:['Right (YZ)','Front (XZ)','Top (XY)'][i],
+    datums.push({...common,id:-1001-i,kind:'plane',name:['Right','Front','Top'][i],
       fit:{...stats,kind:'plane',center:[0,0,0],normal,basisU,basisV,extentU:100,extentV:100}})
-    datums.push({...common,id:-1011-i,kind:'line',name:['X axis','Y axis','Z axis'][i],
-      fit:{...stats,kind:'line',center:[0,0,0],dir:normal,length:200}})
+  }
+  for (let i=0;i<3;i++) {
+    datums.push({...common,id:-1011-i,kind:'line',name:['X Axis','Y Axis','Z Axis'][i],
+      fit:{...stats,kind:'line',center:[0,0,0],dir:directions[i],length:200}})
   }
   datums.push({id:-1020,kind:'point',name:'Origin',color:'#888888',status:'done',visible:true,
     source:{type:'picked'},fit:{...stats,kind:'point',center:[0,0,0]}})

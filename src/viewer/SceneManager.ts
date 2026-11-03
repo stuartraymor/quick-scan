@@ -221,6 +221,9 @@ export class SceneManager {
    *  in the viewport because a scan or a reference loaded later has to be
    *  dressed in whatever scheme is current. */
   private theme: ViewTheme = DEFAULT_THEME
+  /** Scan Data → Auto colorize: a colour the scan wears instead of the
+   *  theme's bare surface, until Set Default Color. */
+  private scanTint: readonly [number, number, number] | null = null
   /** Who owns each vertex's colour, and every tint layered over it. */
   private regions = new RegionColors(DEFAULT_THEME.surface)
   private marking: SurfaceMarking
@@ -239,6 +242,9 @@ export class SceneManager {
    * a group is what keeps a fitted sphere on the ball it was fitted to.
    */
   private partGroup = new THREE.Group()
+  /** The floor grid and world axes shown on an empty stage, before a scan
+   *  is loaded. */
+  private emptyFloor = SceneManager.buildEmptyFloor()
   /** The two things that can move the scan's group: the best fit onto a
    *  reference, and the live preview of a datum alignment still being set up.
    *  Held apart so either can be lifted without disturbing the other. */
@@ -516,6 +522,7 @@ export class SceneManager {
     this.partGroup.matrixAutoUpdate = false
     this.scene.add(this.partGroup)
     this.scene.add(this.volumeLayer.group)
+    this.scene.add(this.emptyFloor)
 
     this.marking = new SurfaceMarking({
       container,
@@ -633,8 +640,9 @@ export class SceneManager {
     this.overlays.setTheme(theme)
     this.backface.uBackfaceColor.value.setHex(theme.backface)
     this.referenceBackface.uBackfaceColor.value.setHex(theme.backface)
-    setSurfaceColor(this.uSurfaceColor.value, theme)
-    if (this.regions.setBaseColor(theme.surface)) this.surfaceRepainted()
+    const surfaced = this.scanTint ? { ...theme, surface: this.scanTint } : theme
+    setSurfaceColor(this.uSurfaceColor.value, surfaced)
+    if (this.regions.setBaseColor(surfaced.surface)) this.surfaceRepainted()
     // The layout waiting out of sight is flagged when it comes back.
     this.other?.regions.setBaseColor(theme.surface)
     if (this.mesh) applyFinish(this.mesh.material as THREE.MeshStandardMaterial, theme)
@@ -2000,6 +2008,26 @@ export class SceneManager {
     return (this.fullIndex.count - kept.length) / 3
   }
 
+  /** Swap what is hidden for what is shown. Returns how many triangles are
+   *  now hidden; 0 when nothing was hidden. */
+  invertHiddenTriangles(): number {
+    const geometry = this.mesh?.geometry as THREE.BufferGeometry | undefined
+    const index = geometry?.getIndex()
+    if (!geometry || !index || !this.fullIndex) return 0
+    const shown = new Set<string>()
+    const cur = index.array as ArrayLike<number>
+    for (let t = 0; t + 2 < cur.length; t += 3) shown.add(`${cur[t]},${cur[t + 1]},${cur[t + 2]}`)
+    const all = this.fullIndex.array as ArrayLike<number>
+    const kept: number[] = []
+    for (let t = 0; t + 2 < all.length; t += 3) if (!shown.has(`${all[t]},${all[t + 1]},${all[t + 2]}`)) kept.push(all[t], all[t + 1], all[t + 2])
+    if (kept.length === 0) return 0
+    geometry.setIndex(new THREE.BufferAttribute(Uint32Array.from(kept), 1))
+    geometry.disposeBoundsTree?.()
+    geometry.computeBoundsTree()
+    this.invalidate()
+    return (this.fullIndex.count - kept.length) / 3
+  }
+
   /** Bring every hidden triangle back. */
   showHiddenTriangles(): void {
     const geometry = this.mesh?.geometry as THREE.BufferGeometry | undefined
@@ -2436,6 +2464,45 @@ export class SceneManager {
       this.applySlice()
       this.invalidate()
     })
+  }
+
+  private static buildEmptyFloor(): THREE.Group {
+    const g = new THREE.Group()
+    const grid = new THREE.GridHelper(100, 10, 0x8a8f96, 0xa9aeb5)
+    grid.rotation.x = Math.PI / 2
+    g.add(grid)
+    const axis = (to: [number, number, number], color: number) => {
+      const geo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(...to)])
+      g.add(new THREE.Line(geo, new THREE.LineBasicMaterial({ color })))
+    }
+    axis([400, 0, 0], 0xc0392b)
+    axis([0, 400, 0], 0x27ae60)
+    axis([0, 0, 200], 0x2e4cc8)
+    return g
+  }
+
+  /** Edit / View → Background style. */
+  setBackgroundStyle(style: 'linear' | 'studio'): void {
+    this.viewport.setBackgroundStyle(style)
+  }
+
+  /** Show the empty-stage floor and axes (no scan loaded) or hide them. */
+  setEmptyFloor(on: boolean): void {
+    if (this.emptyFloor.visible === on) return
+    this.emptyFloor.visible = on
+    this.invalidate()
+  }
+
+  /** Colour the bare scan `rgb` (0-255), or back to the theme's with null. */
+  setScanTint(rgb: readonly [number, number, number] | null): void {
+    this.scanTint = rgb
+    this.setViewTheme(this.theme)
+    this.invalidate()
+  }
+
+  /** Whether the scan wears an Auto colorize colour. */
+  scanTinted(): boolean {
+    return this.scanTint !== null
   }
 
   clearScan(): void {

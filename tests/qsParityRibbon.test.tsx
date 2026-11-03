@@ -20,12 +20,15 @@ const { DesktopRibbon } = await import('../src/ui/DesktopRibbon')
 const noop = () => {}
 const props = {
   onFit: noop, onSection: noop, onAlign: noop, onAutoAlign: noop, onFineAlign: noop, onPointAlign: noop,
-  onExport: noop, onOpen: noop, onSave: noop, onDeselect: noop, onSnapshot: noop, onHideSelected: noop,
+  onExport: noop, onOpen: noop, onSave: noop, onDeselect: noop, onSnapshot: noop, onSurfaceArea: noop, onVolume: noop, onHideSelected: noop,
   onIsolate: noop, onShowHidden: noop, savable: false,
 }
 const render = (tab: string) => { useShell.setState({ ribbonTab: tab }); return renderToStaticMarkup(<DesktopRibbon {...props} />) }
 const groups = (html: string) => [...html.matchAll(/class="desktop-ribbon-label">([^<]*)</g)].map((m) => m[1])
 const tools = (html: string) => [...html.matchAll(/<button class="desktop-ribbon-tool"[^>]*>(?:<[^>]+>)*?<span>([^<]*)<\/span>/g)].map((m) => m[1].replace(/&amp;/g, '&'))
+
+// Every labelled command, large keys and small labelled keys, in document order.
+const labels = (html: string) => [...html.matchAll(/<button class="(?:desktop-ribbon-tool|ribbon-text-key with-icon)"[^>]*>(?:<[^>]+>)*?<span>([^<]*)<\/span>/g)].map((m) => m[1].replace(/&amp;/g, '&'))
 
 describe('QUICKSURFACE ribbon parity', () => {
   beforeEach(() => useShell.setState({ ribbonTab: 'main', workspace: 'elements' }))
@@ -36,16 +39,18 @@ describe('QUICKSURFACE ribbon parity', () => {
 
   it('Freeform, Surfacing and CAD are three different tabs', () => {
     const freeform = render('freeform'), surfacing = render('surfacing'), cad = render('cad')
-    expect(groups(freeform)).toEqual(['File', 'Create New Freeform', 'Tools', 'Export Model', 'Assistant'])
-    expect(groups(surfacing)).toEqual(['File', 'Create', 'Tools', 'Export Model', 'Assistant'])
-    expect(groups(cad)).toEqual(['File', 'Cross sections', 'Create', 'Edges', 'Patterns', 'Export Model', 'Assistant'])
-    expect(tools(freeform)).toEqual(expect.arrayContaining(['New Freeform', 'Auto Freeform', 'Wrap Surface', 'From 3D Sketch', 'From quad OBJ', 'Thicken', 'Offset', 'Convert to CAD body']))
-    expect(tools(surfacing)).toEqual(expect.arrayContaining(['Fit Surface', 'Loft', 'Fill Surface', 'From 2D sketch', 'Sweep', 'Pipe', '3D Sketch', 'Helix', 'Roll Sketch', 'Duplicate Face', 'Extend Surface', 'Sew surfaces', 'Flatten', 'Project sketch']))
+    expect(groups(freeform)).toEqual(['Create New Freeform', 'Tools', 'Assistant'])
+    expect(groups(surfacing)).toEqual(['Create', 'Tools', 'Assistant'])
+    // Checked live against QUICKSURFACE 8.0.128 on 2026-11-02: no File group on CAD.
+    expect(groups(cad)).toEqual(['Cross sections', 'Create', 'Edges', 'Patterns', 'Export Model', 'Assistant'])
+    expect(labels(freeform)).toEqual(expect.arrayContaining(['New Freeform', 'Auto Freeform', 'Wrap Surface', 'From 3D Sketch', 'From quad OBJ', 'Thicken', 'Offset', 'Convert to CAD body']))
+    expect(labels(surfacing)).toEqual(expect.arrayContaining(['Fit Surface', 'Loft', 'Fill Surface', 'From 2D sketch', 'Sweep', 'Pipe', '3D Sketch', 'Helix', 'Roll Sketch', 'Duplicate Face', 'Extend Surface', 'Sew surfaces', 'Flatten', 'Project sketch']))
   })
 
   it('CAD lists QUICKSURFACE’s Create commands in its order', () => {
-    const t = tools(render('cad'))
-    const order = ['2D Sketch', 'Multiple sections', 'Extrude', 'Revolve', 'Trim', 'Combine', 'Cut', 'Intersect', 'Shell', 'Draft', 'Delete faces', 'Move body', 'Move face', 'Scale body', 'Split solid', 'Separate bodies', 'Fillet / Chamfer', 'Circular pattern', 'Linear pattern', 'Mirror']
+    const t = labels(render('cad'))
+    // Column order as seen live in QUICKSURFACE 8.0.128 (2026-11-02).
+    const order = ['2D Sketch', 'Multiple sections', 'Extrude', 'Revolve', 'Trim', 'Combine', 'Cut', 'Intersect', 'Shell', 'Draft', 'Delete faces', 'Move body', 'Move face', 'Separate bodies', 'Scale body', 'Split solid', 'Fillet / Chamfer', 'Circular pattern', 'Linear pattern', 'Mirror']
     expect(t.filter((x) => order.includes(x))).toEqual(order)
   })
 
@@ -63,7 +68,7 @@ describe('QUICKSURFACE ribbon parity', () => {
 
   it('Settings is a ribbon tab with Display Units and Software Options', () => {
     const html = render('settings')
-    expect(groups(html)).toEqual(['File', 'Display Units', 'Software Options', 'Assistant'])
+    expect(groups(html)).toEqual(['Display Units', 'Software Options', 'Assistant'])
     expect(tools(html)).toEqual(expect.arrayContaining(['Millimetres', 'Inches', 'Options']))
   })
 

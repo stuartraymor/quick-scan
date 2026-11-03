@@ -439,6 +439,29 @@ export function createMeshToolsSession({
     )
   }
 
+  /** Scale the scan by `factors` (X, Y, Z) about `about` — the part's centre
+   *  unless given. Equal factors scale uniformly; a negative one mirrors. */
+  const scaleScan = async (factors: [number, number, number], about?: [number, number, number], run?: EditRun): Promise<EditLanded | null> => {
+    if (!factors.every((f) => Number.isFinite(f) && f !== 0)) {
+      useStore.getState().setError('Enter scale factors that are numbers other than zero.')
+      return null
+    }
+    const centre = about ?? (useStore.getState().modelCenter as [number, number, number] | null) ?? [0, 0, 0]
+    const uniform = factors[0] === factors[1] && factors[1] === factors[2]
+    return workerEdit(
+      'Mesh Tools: scale the scan',
+      'Scaling the scan…',
+      () => ({ type: 'scale', factors, about: centre }),
+      () => ({
+        edit: { kind: 'scale', factors },
+        status: factors.every((f) => Math.abs(f) === 1)
+          ? 'Mirrored the scan. Ctrl+Z puts it back.'
+          : `Scaled the scan by ${uniform ? factors[0] : factors.join(' × ')}. Ctrl+Z puts it back.`,
+      }),
+      run,
+    )
+  }
+
   /** Cut the scan at the plane the panel shows. */
   const cutScan = async (run?: EditRun): Promise<EditLanded | null> => {
     const m = useMeshTools.getState()
@@ -823,6 +846,7 @@ export function createMeshToolsSession({
     removeIslands,
     deleteMarked,
     flipScan,
+    scaleScan,
     cutScan,
     fillScanHoles,
     smoothScan,

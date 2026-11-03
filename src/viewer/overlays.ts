@@ -48,22 +48,24 @@ const RIM_TUBE_PX = 1.5
 /** How solid the ghost of a pending fit is, and how solid while the brush is in
  *  hand: the fit of a first stroke can be far larger than what is being brushed,
  *  and it keeps its true size, so it is what must stand back. */
-const GHOST_OPACITY = 0.55
+// As in QUICKSURFACE: the primitive being built is solid; once created it
+// turns a lighter, translucent shade that still reads clearly.
+const GHOST_OPACITY = 0.95
 /** A created primitive is drawn in a deeper shade of its palette colour and more
  *  solid than a see-through wash, so it stands out from the scan under it at a
  *  glance — and a plane runs past the patch it was fitted to, so a flat face
  *  reads as the plane it defines rather than a sticker on the scan. These are
  *  for the eye only: the fit, its measurements and exports keep the real extent. */
-export const PRIMITIVE_SHADE = 0.68
-export const PRIMITIVE_OPACITY = 0.5
-export const PRIMITIVE_OPACITY_SELECTED = 0.72
+export const PRIMITIVE_SHADE = 1
+export const PRIMITIVE_OPACITY = 0.75
+export const PRIMITIVE_OPACITY_SELECTED = 0.9
 export const PLANE_OVERHANG = 1.6
 
 /** A colour deepened by `shade` (0 to 1): the palette colour as a primitive's body. */
 export function deepen(color: string | number, shade = PRIMITIVE_SHADE): number {
   return new THREE.Color(color).multiplyScalar(shade).getHex()
 }
-const GHOST_BRUSHING_OPACITY = 0.1
+const GHOST_BRUSHING_OPACITY = 0.95
 
 export interface OverlayElement {
   id: number
