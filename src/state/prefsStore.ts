@@ -57,6 +57,12 @@ const AGENT_PORT_KEY = 'scanruler.agentport'
 const AGENT_TOKEN_KEY = 'scanruler.agenttoken'
 const SPACE_MOUSE_SPEED_KEY = 'scanruler.spacemouse.speed'
 const SPACE_MOUSE_REVERSE_KEY = 'scanruler.spacemouse.reverse'
+const REVERSE_ZOOM_KEY = 'scanruler.nav.reverseZoom'
+const ARROW_ROTATE_KEY = 'scanruler.nav.arrowRotate'
+const ARROW_ROLL_KEY = 'scanruler.nav.arrowRoll'
+/** QUICKSURFACE's Ctrl / Alt + arrow steps open on 10°. */
+export const ARROW_STEP_DEFAULT = 10
+const stepOf = (v: string | null) => { const n = Number(v); return v !== null && Number.isFinite(n) && n > 0 && n <= 180 ? n : ARROW_STEP_DEFAULT }
 const SPACE_MOUSE_SEEN_KEY = 'scanruler.spacemouse.seen'
 
 /** The port the agent's local server listens on unless told otherwise — the
@@ -112,6 +118,14 @@ interface PrefsState {
   colormap: ColormapId
   /** Section cuts on the part in 3D, in pixels. */
   sectionLines: number
+  /** Navigation: the wheel zooms the other way. */
+  reverseZoom: boolean
+  /** Navigation: degrees Ctrl + arrow turns the view, and Alt + arrow rolls it about the view direction. */
+  arrowRotateDeg: number
+  arrowRollDeg: number
+  setReverseZoom: (on: boolean) => void
+  setArrowRotateDeg: (deg: number) => void
+  setArrowRollDeg: (deg: number) => void
   /** Fitted curves over a flatbed scan in 2D Measure, in pixels. */
   sheetLines: number
   /** The edge chains the curves are fitted to — found in the scan, or cut by
@@ -198,6 +212,12 @@ export const usePrefs = create<PrefsState>()((set) => {
     dark: resolveDark(uiTheme),
     colormap: colormapById(read(COLORMAP_KEY)).id,
     sectionLines: clampLineWidth(read(SECTION_LINES_KEY), SECTION_LINE_DEFAULT),
+    reverseZoom: read(REVERSE_ZOOM_KEY) === '1',
+    arrowRotateDeg: stepOf(read(ARROW_ROTATE_KEY)),
+    arrowRollDeg: stepOf(read(ARROW_ROLL_KEY)),
+    setReverseZoom: (on) => { write(REVERSE_ZOOM_KEY, on ? '1' : '0'); set({ reverseZoom: on }) },
+    setArrowRotateDeg: (deg) => { const v = stepOf(String(deg)); write(ARROW_ROTATE_KEY, String(v)); set({ arrowRotateDeg: v }) },
+    setArrowRollDeg: (deg) => { const v = stepOf(String(deg)); write(ARROW_ROLL_KEY, String(v)); set({ arrowRollDeg: v }) },
     sheetLines: clampLineWidth(read(SHEET_LINES_KEY), SHEET_LINE_DEFAULT),
     edgeLines: clampLineWidth(read(EDGE_LINES_KEY), EDGE_LINE_DEFAULT),
     hidePinsBehind: read(PINS_BEHIND_KEY) !== '0',

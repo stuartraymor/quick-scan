@@ -968,6 +968,12 @@ export function useSceneSync({
     sceneRef.current?.setSectionLineWidth(sectionLines)
   }, [sectionLines])
 
+  // Settings → Navigation → Reverse zoom direction.
+  const reverseZoom = usePrefs((s) => s.reverseZoom)
+  useEffect(() => {
+    sceneRef.current?.setReverseZoom(reverseZoom)
+  }, [reverseZoom])
+
   // Pins belong to the map they were taken off, and only that map: a thickness
   // in millimetres and a deviation in millimetres look identical on the part,
   // so showing both at once would be a way to misread one of them. Each pin

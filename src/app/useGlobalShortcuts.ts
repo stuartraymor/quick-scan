@@ -22,6 +22,7 @@ import { useDeviation } from '../state/deviationStore'
 import { useMark } from '../state/markStore'
 import { useFlat } from '../state/flatStore'
 import { useShell } from '../state/shellStore'
+import { usePrefs } from '../state/prefsStore'
 import { plugins } from '../plugins/registry'
 import { undo, redo } from '../state/historyStore'
 import { useDocumentOrder } from '../state/documentOrderStore'
@@ -74,6 +75,7 @@ export function useGlobalShortcuts({
   fitView,
   deselectAll,
   cycleUnderCursor,
+  viewTurn,
 }: {
   /** Close the deviation workspace's local fine fit marking session. */
   stopMarking: () => void
@@ -97,6 +99,8 @@ export function useGlobalShortcuts({
   /** Step through what lies under the cursor in the 3D viewport — see
    *  SceneManager.cycleUnderCursor. True when something was stepped to. */
   cycleUnderCursor: (step: 1 | -1) => boolean
+  /** Ctrl / Alt + arrow: turn the 3D view by a step — see SceneManager.rotateView. */
+  viewTurn?: (kind: 'up' | 'down' | 'left' | 'right' | 'rollLeft' | 'rollRight', deg: number) => void
 }) {
   useEffect(() => {
     // Mirrors the "Add dimension" button: every slot filled and the preview
@@ -170,6 +174,17 @@ export function useGlobalShortcuts({
       // body behind another — for the click to take. Only over something
       // that has more than one thing there; a list or a picker that took
       // the key for itself keeps it.
+      // QUICKSURFACE's view keys: Ctrl + arrow turns the view by the step in
+      // Settings, Alt + left / right rolls it about the view direction.
+      if (ARROW_STEPS[e.key] && (e.ctrlKey || e.altKey) && !(e.ctrlKey && e.altKey) && !e.metaKey && !e.shiftKey && !e.defaultPrevented && useShell.getState().workspace !== 'flat') {
+        const p = usePrefs.getState()
+        const k = e.key
+        if (e.ctrlKey) viewTurn?.(k === 'ArrowUp' ? 'up' : k === 'ArrowDown' ? 'down' : k === 'ArrowLeft' ? 'left' : 'right', p.arrowRotateDeg)
+        else if (k === 'ArrowLeft' || k === 'ArrowRight') viewTurn?.(k === 'ArrowLeft' ? 'rollLeft' : 'rollRight', p.arrowRollDeg)
+        else return
+        e.preventDefault()
+        return
+      }
       if (ARROW_STEPS[e.key] && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey && !e.defaultPrevented) {
         if (cycleUnderCursor(ARROW_STEPS[e.key])) {
           e.preventDefault()

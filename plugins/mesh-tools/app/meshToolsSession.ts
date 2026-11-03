@@ -175,6 +175,27 @@ export function createMeshToolsSession({
     }
   }
 
+  /** Reduce noise, as QUICKSURFACE's dialog sets it: `iterations` Taubin
+   *  steps, the open boundary smoothed too or held, the selection alone or
+   *  the whole mesh. One undo step. */
+  const reduceNoise = (iterations: number, boundary: boolean, selectionOnly: boolean, run?: EditRun) => {
+    const v = selectionOnly ? marked() : null
+    if (selectionOnly && (!v || v.length === 0)) {
+      useStore.getState().setError('Select the area to smooth first, or untick Apply on selection only.')
+      return Promise.resolve(null)
+    }
+    return workerEdit(
+      'Mesh Tools: reduce noise',
+      'Reducing noise…',
+      () => ({ type: 'noise', iterations, boundary, ...(v ? { vertices: v } : {}) }),
+      () => ({
+        edit: { kind: 'noise', iterations, ...(v ? { region: v.length } : {}) },
+        status: `Noise reduced — ${iterations} iteration${iterations === 1 ? '' : 's'}${v ? ' on the selection' : ''}. Ctrl+Z undoes it.`,
+      }),
+      run,
+    )
+  }
+
   /** Polygon Reduction's OK with Keep original mesh off, as QUICKSURFACE
    *  does it: the mesh replaced by the reduced one — an edit of the copy,
    *  one undo step. The reduced mesh shares no vertex with the scan. */
@@ -956,6 +977,7 @@ export function createMeshToolsSession({
     deleteMarked,
     defeatureMarked,
     replaceWithReduced,
+    reduceNoise,
     removeDuplicates,
     projectBoundaries,
     saveSelection,

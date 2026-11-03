@@ -5,6 +5,7 @@
 // the scan's frame: moved with it by every alignment, and gone with it when
 // another scan takes its place.
 
+import { taubinSmooth } from './core/taubin'
 import { skirtToOxy } from './core/skirt'
 import { duplicateTriangles } from './core/duplicates'
 import type { MeshGraph } from '../../src/core/types'
@@ -153,6 +154,12 @@ const ops: { [K in keyof MeshToolsOps]: (payload: Payload<K>, ctx: WorkerContext
       if (count === g.triangleCount) throw new Error('The whole scan is marked — nothing would be left.')
       result = withoutTriangles(g.positions, g.indices, g.vertexCount, mask)
       report = { kind: 'delete', triangles: count }
+    } else if (edit.type === 'noise') {
+      const positions = taubinSmooth(g.positions, g.indices, g.vertexCount, edit.iterations, edit.boundary, edit.vertices)
+      const vertexMap = new Int32Array(g.vertexCount)
+      for (let v = 0; v < g.vertexCount; v++) vertexMap[v] = v
+      result = { positions, indices: new Uint32Array(g.indices), vertexMap }
+      report = { kind: 'noise', iterations: edit.iterations, region: edit.vertices ? edit.vertices.length : null }
     } else if (edit.type === 'skirt-oxy') {
       const made = skirtToOxy(g.positions, g.indices, g.vertexCount)
       if (made.edges === 0) throw new Error('The mesh has no open boundary to project — it is closed, or its rims already lie on Z = 0.')

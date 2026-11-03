@@ -1,3 +1,27 @@
+## 0.0.82 - 2026-11-03
+
+Checked against QUICKSURFACE 8.0.128 running on screen (Reduce Noise and Software options recorded live).
+
+- Scan Data → Reduce noise opens QUICKSURFACE's Reduce Noise dialog: Iterations, Apply on selection only, Apply on boundary edges, Preview, Deviation of original mesh with its range and Apply, Show mesh wireframe, Cancel and OK. Each iteration is a Taubin step, so the scatter goes without the part shrinking; Preview is one undo step that Cancel takes back, OK keeps it (or smooths first). Keep original mesh is greyed: it needs several meshes per project.
+- Navigation: Ctrl + arrow turns the view by a step about the screen's axes, Alt + left / right rolls it about the view direction — both 10° to start, set in Settings → Navigation, as in QUICKSURFACE's Software options.
+- Settings → Navigation: Reverse zoom direction on mouse wheel.
+
+## 0.0.81 - 2026-11-03
+
+Checked against QUICKSURFACE 8.0.128 running on screen (Multiple sections and the Main Surfacing menu recorded live).
+
+- Main / CAD → Multiple sections: QUICKSURFACE's dialog — OXY, OYZ, OXZ tiles and Parallel to (or a plane of the part), Offset, Spacing, Direction (Both, Positive, Negative); Preview cuts the stack to look at, Create keeps it, Close without Create takes the previewed sections away. The stack lands on the part wherever the offset starts (sample: 7 sections 5 mm apart). Curve guided, Cloud Capture, Through selection only, Close section curves and the reconstructed Freeform curves are shown greyed for now. A single section is still made with the stage's Section key.
+- Main → Surfacing ▾ in QUICKSURFACE's order and names: 3D Sketch…, Helix…, Loft…, Sweep…, Pipe…, Fill Surface…, Extend Surface…, Flatten… (the last three greyed until built).
+- Multiple sections opens its dialog alone, without the tool panel.
+
+## 0.0.80 - 2026-11-03
+
+Checked against QUICKSURFACE 8.0.128 running on screen (Analysis → Measure recorded live).
+
+- Analysis → Measure: QUICKSURFACE's Measure dialog on the mesh — 3D Distance (two clicks, a line and its length boxed at the middle), Extended Distance (the same with its X, Y and Z parts in red, green and blue boxes along dotted legs), Point (X, Y, Z), every figure to four decimals; Delete All, Delete Last, Show mesh wireframe, Close. The measurements go when the dialog closes; the way chosen is kept. (Curve length is shown greyed for now.)
+- Measure: hold Ctrl to pick vertices from the mesh, as QUICKSURFACE says — a Ctrl-click snaps to the nearest corner of the triangle clicked.
+- Ribbon tabs show their commands and nothing else, as QUICKSURFACE's do: choosing a tab no longer opens the tool panel (a command still does).
+
 ## 0.0.79 - 2026-11-03
 
 Checked against QUICKSURFACE 8.0.128 running on screen (Polygon Reduction dialog recorded live).

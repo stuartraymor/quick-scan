@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { useMeasureTool } from '../state/measureToolStore'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useStore } from '../state/store'
 import { useDocumentOrder } from '../state/documentOrderStore'
@@ -25,7 +26,8 @@ import type { StandardView } from '../viewer/orthoViewport'
 
 type Props = {
   onFit: (kind: ElementKind) => void
-  onSection: () => void
+  /** A single cross section — the stage's Section key opens it now; Multiple sections has its own dialog. */
+  onSection?: () => void
   onAlign: () => void
   onAutoAlign: () => void
   onFineAlign: () => void
@@ -56,7 +58,7 @@ function Group({ label, children }: { label: string; children: ReactNode }) {
 }
 
 /** Familiar command positions, backed by the existing session and plugin verbs. */
-export function DesktopRibbon({ onFit, onSection, onAlign, onFineAlign, onPointAlign, onExport, onOpen, onExample, exampleBusy = false, onSave, onDeselect, onSnapshot, onSurfaceArea, onVolume, onHideSelected, onIsolate, onShowHidden, onInvertHidden, onAutoColorize, onDefaultColor, onView, onFitView, savable, cadActions }: Props) {
+export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExport, onOpen, onExample, exampleBusy = false, onSave, onDeselect, onSnapshot, onSurfaceArea, onVolume, onHideSelected, onIsolate, onShowHidden, onInvertHidden, onAutoColorize, onDefaultColor, onView, onFitView, savable, cadActions }: Props) {
   const file = useStore(s => s.fileName)
   const busy = useStore(s => s.busy)
   const interactive = useInteractiveAlign(s => s.open)
@@ -235,7 +237,7 @@ export function DesktopRibbon({ onFit, onSection, onAlign, onFineAlign, onPointA
     {tool('Fine-align reference mesh …', 'compare', () => { go('deviation'); onFineAlign() }, needsScan || !hasReference, 'Requires a loaded scan and reference model; run the existing best fit')}
   </div></details>
   const surfacingMenu = <details className="ribbon-dropdown"><summary className="desktop-ribbon-tool" title="Surface creation and editing"><Icon name="loft" size={25}/><span>Surfacing ▾</span></summary><div className="ribbon-menu">
-    {cad('surface','Fit Surface','surface',true)}{cad('sheet','Extruded surface','sheet')}{cad('loft','Loft','loft')}{cad('sweep','Sweep','spline')}{cad('pipe','Pipe','elCylinder')}{cad('network','Patch network','surface',true)}{cad('thicken','Thicken surface','shell')}{cad('thread','Helix','spline')}
+    {/* QUICKSURFACE 8.0.128's Main → Surfacing ▾, in its order (recorded live, 2026-11-03); Fit Surface, From 2D sketch and Thicken are on the Surfacing tab. */}{cad('network','3D Sketch …','sketch',true)}{cad('thread','Helix …','rotateCw')}{cad('loft','Loft …','loft')}{cad('sweep','Sweep …','spline')}{cad('pipe','Pipe …','elCylinder')}{tool('Fill Surface …', 'fillHoles', () => {}, true, 'Fill Surface is not built in Quick Scan yet')}{tool('Extend Surface …', 'extrude', () => {}, true, 'Extend Surface is not built in Quick Scan yet')}{tool('Flatten …', 'sheet', () => {}, true, 'Flatten is not built in Quick Scan yet')}
   </div></details>
   const patternMenu = <details className="ribbon-dropdown"><summary className="desktop-ribbon-tool" title="Patterns and mirror"><Icon name="pattern" size={25}/><span>Pattern ▾</span></summary><div className="ribbon-menu">{cad('pattern','Linear / circular pattern','pattern')}{cad('mirror','Mirror','mirror')}</div></details>
   const examplesMenu = <details className="ribbon-dropdown" data-test="examples-menu">
@@ -274,7 +276,7 @@ export function DesktopRibbon({ onFit, onSection, onAlign, onFineAlign, onPointA
     {fileGroup}{scanGroup}
     <Group label="Primitives">{primitives}{construct}</Group>
     <Group label="Align">{alignMenu}</Group>
-    <Group label="Cross sections">{cad('sketch', '2D Sketch', 'sketch')}{tool('Multiple sections', 'section', () => { go('elements'); onSection() }, needsScan, 'Create planar cross sections through the scan — for many at once, use Stacked sections in 2D Sketch')}</Group>
+    <Group label="Cross sections">{cad('sketch', '2D Sketch', 'sketch')}{tool('Multiple sections', 'section', () => { useShell.setState({ workspace: 'elements' }); useShell.getState().setMultipleSectionsOpen(true) }, needsScan, 'Multiple sections: parallel cross sections through the scan at a spacing')}</Group>
     <Group label="Surfacing">{cad('surface', 'Fit Surface', 'surface', true)}{surfacingMenu}</Group>
     <Group label="Freeform">{tool('New Freeform', 'surface', () => {}, true, 'Quad-based freeform surfacing is not implemented in Quick Scan yet')}{tool('Auto Freeform', 'scan', () => {}, true, 'Automatic freeform surfacing is not implemented in Quick Scan yet')}</Group>
     <Group label="Part Design"><div className="ribbon-text-stack">{cadText('extrude', 'Extrude', 'extrude')}{cadText('revolve', 'Revolve', 'revolve')}{cadText('moveFace', 'Move face', 'moveFace')}</div>{cad('trim', 'Trim', 'trim', true)}<div className="ribbon-text-stack">{cadText('boolean', 'Combine', 'opJoin')}{cadText('boolean', 'Cut', 'opCut')}{cadText('boolean', 'Intersect', 'opIntersect')}</div>{patternMenu}{cad('fillet', 'Fillet / Chamfer', 'fillet')}</Group>
@@ -348,7 +350,7 @@ export function DesktopRibbon({ onFit, onSection, onAlign, onFineAlign, onPointA
   // The CAD tab as QUICKSURFACE lays it out: Create is columns of small
   // labelled keys around a large Trim, and Patterns a stack.
   const cadTab = <>
-    <Group label="Cross sections">{cad('sketch', '2D Sketch', 'sketch')}{tool('Multiple sections', 'section', () => { go('elements'); onSection() }, needsScan, 'Create planar cross sections through the scan — for many at once, use Stacked sections in 2D Sketch')}</Group>
+    <Group label="Cross sections">{cad('sketch', '2D Sketch', 'sketch')}{tool('Multiple sections', 'section', () => { useShell.setState({ workspace: 'elements' }); useShell.getState().setMultipleSectionsOpen(true) }, needsScan, 'Multiple sections: parallel cross sections through the scan at a spacing')}</Group>
     <Group label="Create">
       <div className="ribbon-text-stack">{cadText('extrude', 'Extrude', 'extrude')}{cadText('revolve', 'Revolve', 'revolve')}</div>
       {cad('trim', 'Trim', 'trim', true)}
@@ -365,7 +367,7 @@ export function DesktopRibbon({ onFit, onSection, onAlign, onFineAlign, onPointA
     <Group label="Software Options">{tool('Options', 'settings', () => usePrefs.getState().openSettings(true), false, 'Navigation, display, files and agent options')}{tool('Mouse controls', 'navigate', () => usePrefs.getState().openSettings(true), false, 'Navigation scheme and display options')}</Group></>
   const analysisTab = <>
     <Group label="Tools">
-      {tool('Measure', 'wsMeasure', () => go('elements'), locked, 'Measure distances between fitted elements in 3D Measure')}
+      {tool('Measure', 'wsMeasure', () => useMeasureTool.getState().setOpen(true), locked || !file, 'Measure on the mesh: 3D Distance, Extended Distance and Point')}
       <div className="ribbon-text-stack">{smallText('Surface Area', 'surface', onSurfaceArea, !file, 'Surface area of the scan mesh')}{smallText('Volume', 'model', onVolume, !file, 'Volume enclosed by the scan mesh')}</div>
       <div className="ribbon-text-stack">{cadText('zebra', 'Zebra Stripes', 'curvature')}{cadText('envMap', 'Environment Map', 'scanColours')}{cadText('draftAnalysis', 'Draft', 'draft')}</div>
       {tool('Snapshot', 'splitView', onSnapshot, !file, 'Snapshot to clipboard — copy the view as a picture')}

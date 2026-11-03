@@ -61,6 +61,7 @@ export type ScanEdit =
   | { kind: 'scale'; factors: [number, number, number] }
   | { kind: 'skirt'; edges: number }
   | { kind: 'reduce'; triangles: number }
+  | { kind: 'noise'; iterations: number; region?: number }
   | { kind: 'mirror'; plane: string }
   | {
       kind: 'flip'
@@ -762,6 +763,8 @@ export function scanEditText(e: ScanEdit, units: DisplayUnits = 'mm'): string {
       return 'Projected the boundaries on OXY'
     case 'reduce':
       return 'Replaced by the reduced mesh'
+    case 'noise':
+      return `Reduced noise, ${e.iterations} iteration${e.iterations === 1 ? '' : 's'}${e.region ? ' on a selection' : ''}`
     case 'scale':
       if (e.factors.every((f) => Math.abs(f) === 1)) return `Mirrored in ${e.factors[2] < 0 ? 'OXY' : e.factors[0] < 0 ? 'OYZ' : 'OXZ'}`
       return e.factors[0] === e.factors[1] && e.factors[1] === e.factors[2] ? `Scaled by ${e.factors[0]}` : `Scaled by ${e.factors.join(' × ')}`
@@ -797,6 +800,8 @@ export function scanEditFigure(e: ScanEdit, units: DisplayUnits = 'mm'): string 
       return `${count(e.edges)} edges`
     case 'reduce':
       return `${count(e.triangles)} △`
+    case 'noise':
+      return `× ${e.iterations}`
     case 'scale':
       return `× ${e.factors[0]}`
     case 'flip':

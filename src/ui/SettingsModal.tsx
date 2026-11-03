@@ -94,6 +94,9 @@ export function SettingsModal() {
   const colormap = usePrefs((s) => s.colormap)
   const setColormap = usePrefs((s) => s.setColormap)
   const sectionLines = usePrefs((s) => s.sectionLines)
+  const reverseZoom = usePrefs((s) => s.reverseZoom)
+  const arrowRotate = usePrefs((s) => s.arrowRotateDeg)
+  const arrowRoll = usePrefs((s) => s.arrowRollDeg)
   const setSectionLines = usePrefs((s) => s.setSectionLines)
   const sheetLines = usePrefs((s) => s.sheetLines)
   const setSheetLines = usePrefs((s) => s.setSheetLines)
@@ -312,6 +315,24 @@ export function SettingsModal() {
             pull the puck to zoom, slide it to pan, tilt, twist and roll it to turn the part. It connects
             the first time you touch it, and drives the view the mouse was last over.
           </small>
+        </div>
+        <label className="checkrow settings-check">
+          <input type="checkbox" data-test="reverse-zoom" checked={reverseZoom} onChange={(e) => usePrefs.getState().setReverseZoom(e.target.checked)} />
+          <span>Reverse zoom direction on mouse wheel</span>
+        </label>
+        <div className="setting">
+          <label htmlFor="arrowrotate">When pressing CTRL + arrow key rotate by</label>
+          <div className="range">
+            <input id="arrowrotate" data-test="arrow-rotate" type="number" min={1} max={180} step={1} value={arrowRotate} style={{ width: 70 }} onChange={(e) => usePrefs.getState().setArrowRotateDeg(Number(e.target.value))} />
+            <span>degrees</span>
+          </div>
+        </div>
+        <div className="setting">
+          <label htmlFor="arrowroll">When pressing ALT + arrow key rotate around view direction by</label>
+          <div className="range">
+            <input id="arrowroll" data-test="arrow-roll" type="number" min={1} max={180} step={1} value={arrowRoll} style={{ width: 70 }} onChange={(e) => usePrefs.getState().setArrowRollDeg(Number(e.target.value))} />
+            <span>degrees</span>
+          </div>
         </div>
         {(puck !== null || puckSeen) && (
           <>

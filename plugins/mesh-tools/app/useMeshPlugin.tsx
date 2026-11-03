@@ -24,6 +24,7 @@ import { reductionScale } from '../core/reduce'
 import { MeshPanel } from '../ui/MeshPanel'
 import { ScaleDialog } from '../ui/ScaleDialog'
 import { PolygonReductionDialog } from '../ui/PolygonReductionDialog'
+import { ReduceNoiseDialog } from '../ui/ReduceNoiseDialog'
 import { MirrorDialog, MIRROR_FACTORS } from '../ui/MirrorDialog'
 import { exportReducedMesh } from './exportReduced'
 import { exportTrimmedMesh } from './exportTrimmed'
@@ -81,6 +82,7 @@ export function useMeshPlugin(host: PluginHost): PluginRuntime {
   // is from the scan in use at each of the copy's vertices.
   const [scaleOpen, setScaleOpen] = useState(false)
   const [reductionOpen, setReductionOpen] = useState(false)
+  const [noiseOpen, setNoiseOpen] = useState(false)
   const [mirrorOpen, setMirrorOpen] = useState(false)
   const [tools] = useState(() =>
     createMeshToolsSession({
@@ -262,7 +264,7 @@ export function useMeshPlugin(host: PluginHost): PluginRuntime {
   return {
     ribbonActions: {
       meshReduce: { ...meshKey('reduce', 'Reduce polygons: reduce the mesh to a number of triangles'), run: () => { useMeshTools.getState().setTool('reduce'); useShell.getState().setWorkspace('mesh'); setReductionOpen(true) } },
-      meshSmooth: meshKey('smooth', 'Reduce noise: smooth the scatter on the scan'),
+      meshSmooth: { ...meshKey('smooth', 'Reduce noise: smooth the scatter on the scan by a number of iterations'), run: () => { useShell.getState().setWorkspace('mesh'); setNoiseOpen(true) } },
       meshFlip: meshKey('flip', 'Flip normals: turn a surface that faces the wrong way'),
       meshMirror: {
         run: () => { useShell.getState().setWorkspace('mesh'); setMirrorOpen(true) },
@@ -320,7 +322,7 @@ export function useMeshPlugin(host: PluginHost): PluginRuntime {
       }
       // Grey where an edit made surface the scan never had.
       if (copyMapShown && copyStats && copyField.current) {
-        return { values: copyField.current, rgb: copyRgb, scale: reductionScale(copyStats.range) }
+        return { values: copyField.current, rgb: copyRgb, scale: reductionScale(useMeshTools.getState().mapRange ?? copyStats.range) }
       }
       return null
     },
@@ -366,6 +368,7 @@ export function useMeshPlugin(host: PluginHost): PluginRuntime {
             onClose={() => setMirrorOpen(false)}
           />
         )}
+        {noiseOpen && <ReduceNoiseDialog onRun={(n, b, sel) => tools.reduceNoise(n, b, sel, { units })} onClose={() => setNoiseOpen(false)} />}
         {reductionOpen && <PolygonReductionDialog onPreview={() => runReduce(units)} onReplace={() => tools.replaceWithReduced({ units })} onClose={() => setReductionOpen(false)} />}
         {scaleOpen && (() => {
           const g = sceneRef.current?.scanGeometry()

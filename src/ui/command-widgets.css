@@ -206,3 +206,6 @@
 .edit-scan-selection .qs-iconrow button.on { border-color: var(--accent); }
 .edit-scan-selection .qs-degrees { display: flex; align-items: center; gap: 6px; }
 .edit-scan-selection .qs-degrees input[type=number] { width: 56px; }
+/* Analysis → Measure: the way chosen stands pressed, as in QUICKSURFACE. */
+.measure-dialog .measure-modes button { min-height: 38px; }
+.measure-dialog .measure-modes button.on { background: color-mix(in srgb, var(--accent) 35%, transparent); border-color: var(--accent); }

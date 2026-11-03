@@ -65,6 +65,8 @@ import { StatusStrip } from './ui/StatusStrip'
 import { ViewportMenu } from './ui/ViewportMenu'
 import { BoxSelect } from './ui/BoxSelect'
 import { ExtractHints } from './ui/ExtractHints'
+import { MeasureDialog } from './ui/MeasureDialog'
+import { MultipleSections } from './ui/MultipleSections'
 import { BusyOverlay } from './ui/BusyOverlay'
 import { ImprintModal } from './ui/Imprint'
 import { SettingsModal } from './ui/SettingsModal'
@@ -135,6 +137,7 @@ export default function App() {
   const clientRef = useRef<MeshWorkerClient | null>(null)
   if (!clientRef.current) clientRef.current = new MeshWorkerClient()
   const sceneRef = useRef<SceneManager | null>(null)
+  const multipleSectionsOpen = useShell((s) => s.multipleSectionsOpen)
   // The worker, the viewport, the models' files, the maps and the
   // workspaces' verbs, wired once — see app/session. The commands an agent
   // runs are handed the same session, so they run the panel's code.
@@ -1558,6 +1561,7 @@ export default function App() {
     fitView: () => sceneRef.current?.fitToView(),
     deselectAll: clearPaint,
     cycleUnderCursor: (step) => sceneRef.current?.cycleUnderCursor(step) ?? false,
+    viewTurn: (kind, deg) => sceneRef.current?.rotateView(kind, deg),
   })
 
   // Drag & drop anywhere.
@@ -1973,11 +1977,22 @@ export default function App() {
             <Viewer
               onReady={(s) => {
                 sceneRef.current = s
-                useShell.setState({ scanPointAt: (x, y) => sceneRef.current?.scanHitAt(x, y)?.point ?? null })
+                useShell.setState({ scanPointAt: (x, y, vertex) => {
+                  const hit = sceneRef.current?.scanHitAt(x, y)
+                  if (!hit) return null
+                  if (!vertex) return hit.point
+                  // Ctrl: the corner of the triangle nearest the hit — QUICKSURFACE's
+                  // "Hold Ctrl to pick vertices from the meshes".
+                  const k = hit.weights.indexOf(Math.max(...hit.weights))
+                  const pos = sceneRef.current?.scanGeometry()?.getAttribute('position')
+                  const v = hit.vertices[k]
+                  return pos ? [pos.getX(v), pos.getY(v), pos.getZ(v)] : hit.point
+                }, screenPointOf: (p) => sceneRef.current?.screenPointOf(p) ?? null })
                 attachSurfaceScene(() => sceneRef.current)
                 s.setNavScheme(schemeById(useStore.getState().navScheme))
                 s.setViewTheme(sceneTheme(useStore.getState().viewTheme, usePrefs.getState().dark))
                 s.setSectionLineWidth(usePrefs.getState().sectionLines)
+                s.setReverseZoom(usePrefs.getState().reverseZoom)
               }}
               onPick={handlePick}
               onHover={handleHover}
@@ -2191,6 +2206,8 @@ export default function App() {
       </div>
       <BoxSelect scene={() => sceneRef.current} />
       <ExtractHints />
+      <MeasureDialog />
+      {multipleSectionsOpen && <MultipleSections onClose={() => useShell.getState().setMultipleSectionsOpen(false)} />}
       <ViewportMenu
         hasScan={Boolean(fileName)}
         onZoomFit={() => sceneRef.current?.fitToView()}

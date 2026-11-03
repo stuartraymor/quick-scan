@@ -71,6 +71,8 @@ export class OrthoNavigator {
   private last: { x: number; y: number } | null = null
   /** Drag-zoom keeps zooming toward where the gesture started. */
   private zoomAnchor: { x: number; y: number } | null = null
+  /** Reverse zoom direction on the mouse wheel. */
+  reverseWheel = false
   /** CATIA tick-zoom: when the second button of the chord went down. */
   private chordDown: { t: number; x: number; y: number } | null = null
   private catiaZoomLatch = false
@@ -669,7 +671,8 @@ export class OrthoNavigator {
     // spaceMouseBusy.
     if (spaceMouseBusy()) return
     // SolidWorks/Autodesk/NX muscle memory: their schemes zoom OUT on scroll up.
-    const zoomIn = this.scheme.wheelZoomsOut ? e.deltaY > 0 : e.deltaY < 0
+    // Settings → Navigation → Reverse zoom direction turns it round again.
+    const zoomIn = (this.scheme.wheelZoomsOut !== this.reverseWheel) ? e.deltaY > 0 : e.deltaY < 0
     this.zoomAt(zoomIn ? 1.1 : 1 / 1.1, e.clientX, e.clientY)
   }
 

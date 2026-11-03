@@ -38,6 +38,7 @@ export type ScanEditRequest =
   | { type: 'delete-marked'; vertices: Uint32Array }
   | { type: 'remove-duplicates' }
   | { type: 'skirt-oxy' }
+  | { type: 'noise'; iterations: number; boundary: boolean; vertices?: Uint32Array }
   | { type: 'flip'; vertices?: Uint32Array }
   | { type: 'scale'; factors: Vec3; about: Vec3 }
   | { type: 'mirror'; origin: Vec3; normal: Vec3 }
@@ -57,6 +58,7 @@ export type MeshEditReport =
   | { kind: 'mirror' }
   | { kind: 'skirt'; edges: number }
   | { kind: 'reduce'; triangles: number }
+  | { kind: 'noise'; iterations: number; region: number | null }
   | { kind: 'cut'; report: CutReport }
   | { kind: 'fill'; report: FillReport }
   | { kind: 'smooth'; report: SmoothReport }

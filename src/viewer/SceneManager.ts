@@ -2547,6 +2547,32 @@ export class SceneManager {
     return { min: [b.min.x, b.min.y, b.min.z], max: [b.max.x, b.max.y, b.max.z] }
   }
 
+  /** Reverse zoom direction on the mouse wheel (Settings → Navigation). */
+  setReverseZoom(on: boolean): void {
+    this.viewport.nav.reverseWheel = on
+  }
+
+  /** Turn the view by `deg` about the target: 'up' / 'down' about the
+   *  screen's horizontal, 'left' / 'right' about its vertical, 'roll' about
+   *  the view direction — QUICKSURFACE's Ctrl / Alt + arrow keys. */
+  rotateView(kind: 'up' | 'down' | 'left' | 'right' | 'rollLeft' | 'rollRight', deg: number): void {
+    const target = this.controls.target
+    const view = new THREE.Vector3().subVectors(target, this.camera.position).normalize()
+    const up = this.camera.up.clone().normalize()
+    const right = new THREE.Vector3().crossVectors(view, up).normalize()
+    const a = THREE.MathUtils.degToRad(deg)
+    const q = new THREE.Quaternion()
+    if (kind === 'up' || kind === 'down') q.setFromAxisAngle(right, kind === 'up' ? a : -a)
+    else if (kind === 'left' || kind === 'right') q.setFromAxisAngle(up, kind === 'left' ? -a : a)
+    else q.setFromAxisAngle(view, kind === 'rollLeft' ? -a : a)
+    const offset = new THREE.Vector3().subVectors(this.camera.position, target).applyQuaternion(q)
+    this.camera.position.copy(target).add(offset)
+    this.camera.up.applyQuaternion(q)
+    this.camera.lookAt(target)
+    this.controls.update()
+    this.invalidate()
+  }
+
   /** Edit / View → Background style. */
   setBackgroundStyle(style: 'linear' | 'studio'): void {
     this.viewport.setBackgroundStyle(style)
