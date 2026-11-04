@@ -1,3 +1,7 @@
+## 0.0.106 - 2026-11-04
+
+Help > Examples now includes three offline practice models in the installer and only offers additional reference examples found locally. Includes the 0.0.105 sketch panel spacing fixes.
+
 ## 0.0.104 - 2026-11-04
 
 - 2D Sketch → Fit Line weighs each section point by the length of section it stands for, as QUICKSURFACE 8.0.128 does: on an edge sectioned unevenly the line now lies within 0.13 µm of QUICKSURFACE's (was 5 µm), and a line snapped horizontal or vertical runs through the points' weighted centre. Fit Circle and Fit Arc are unchanged: they count points, as QUICKSURFACE does to within a few µm.

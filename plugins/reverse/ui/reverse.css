@@ -4,6 +4,8 @@
 .tool-inspector .sketch-editor-parity { display: flex; flex-direction: column; gap: 5px; }
 .sketch-controls { display: flex; flex-direction: column; gap: 0; }
 .sketch-entry-row { display: grid; grid-template-columns: 42% 1fr; gap: 6px; }
+.sketch-entry-row:has([data-test='sketch-reference-clear']) { grid-template-columns: minmax(0, 1fr) minmax(0, 2.25fr); }
+.sketch-entry-row:has([data-test='sketch-export-iges']) { grid-template-columns: minmax(0, 3fr) minmax(0, 1fr); }
 .tool-inspector .sketch-entry-row button { min-height: 29px; }
 .sketch-section-label { margin: 6px 0 5px; font-size: 11px; }
 .sketch-command-row { display: grid; grid-auto-flow: column; grid-auto-columns: 21px; gap: 5px; justify-content: start; }

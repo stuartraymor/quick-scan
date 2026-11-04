@@ -3,3 +3,4 @@
 *.ico binary
 *.3mf binary
 *.wasm binary
+public/samples/*.stl binary

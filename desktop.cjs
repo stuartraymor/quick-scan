@@ -17,14 +17,22 @@ else {
   app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
   app.whenReady().then(async () => {
     const root = path.join(__dirname, 'dist');
+    const exampleDirs = [process.env.QS_EXAMPLES_DIR, path.join(app.getPath('appData'), 'QuickScan', 'reference-examples'), path.join(root, 'reference-examples')].filter(Boolean);
+    ipcMain.handle('files:examples', event => {
+      if (!event.senderFrame?.url?.startsWith('scanruler://app/')) return [];
+      return exampleDirs.flatMap(dir => {
+        try { return fs.readdirSync(dir, {withFileTypes: true}).filter(entry => entry.isFile() && /\.stl$/i.test(entry.name)).map(entry => entry.name); }
+        catch { return []; }
+      });
+    });
     protocol.handle('scanruler', request => {
       const url = new URL(request.url);
       // Help > Examples: the reference example meshes are third-party files
       // and are not shipped. They are read from a local folder on this PC.
       if (url.host === 'app' && url.pathname.startsWith('/reference-examples/')) {
         const name = path.basename(decodeURIComponent(url.pathname));
-        const dirs = [process.env.QS_EXAMPLES_DIR, path.join(app.getPath('appData'), 'QuickScan', 'reference-examples'), root + path.sep + 'reference-examples'].filter(Boolean);
-        const found = dirs.map(d => path.join(d, name)).find(f => fs.existsSync(f));
+        if (!/^[a-z0-9_]+\.stl$/i.test(name)) return new Response('Not found', {status: 404});
+        const found = exampleDirs.map(d => path.join(d, name)).find(f => fs.existsSync(f));
         return found ? net.fetch(pathToFileURL(found).href) : new Response('Not found', { status: 404 });
       }
       const file = path.resolve(root, '.' + decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname));

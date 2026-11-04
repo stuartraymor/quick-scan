@@ -1,0 +1,5 @@
+[
+  {"id":"datum-block","label":"Datum block","file":"datum-block.stl","triangles":768,"bytes":87317,"sha256":"891d982d70c43489c7a8ca8bbb6498f0b726807b54e7edb060a9828e1fa9b487"},
+  {"id":"sketch-profiles","label":"Sketch profiles","file":"sketch-profiles.stl","triangles":4130,"bytes":206584,"sha256":"2530bd621debed57e39ff922322c22388dcc1985d099c9c5c51a70ede69200e0"},
+  {"id":"fridge-bracket","label":"Fridge bracket","file":"fridgeBracket_01-reduced.3mf","triangles":288582,"bytes":4229531,"sha256":"da3ae20854108edf01656234dd6bcf7015f8bc80968a0db60e8e08ab338e4d62"}
+]

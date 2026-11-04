@@ -17,7 +17,7 @@ import { Icon, type IconName } from './icons'
 import { AiWizard } from './AiWizard'
 import { useAgentConnectionHint } from '../commands/agentSetup'
 import { useUpdater } from './UpdateButton'
-import { REFERENCE_EXAMPLES } from '../app/referenceExamples'
+import { BUNDLED_EXAMPLES, installedExamples } from '../app/referenceExamples'
 import { APP_VERSION } from '../version'
 import { AGENT_STATUS, useAgentLink } from '../commands/agentLink'
 import { UndoRedo } from './UndoRedo'
@@ -240,12 +240,22 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
     {/* QUICKSURFACE 8.0.128's Main → Surfacing ▾, in its order (recorded live, 2026-11-03); Fit Surface, From 2D sketch and Thicken are on the Surfacing tab. */}{cad('network','3D Sketch …','sketch',true)}{cad('thread','Helix …','rotateCw')}{cad('loft','Loft …','loft')}{cad('sweep','Sweep …','spline')}{cad('pipe','Pipe …','elCylinder')}{tool('Fill Surface …', 'fillHoles', () => {}, true, 'Fill Surface is not built in Quick Scan yet')}{tool('Extend Surface …', 'extrude', () => {}, true, 'Extend Surface is not built in Quick Scan yet')}{tool('Flatten …', 'sheet', () => {}, true, 'Flatten is not built in Quick Scan yet')}
   </div></details>
   const patternMenu = <details className="ribbon-dropdown"><summary className="desktop-ribbon-tool" title="Patterns and mirror"><Icon name="pattern" size={25}/><span>Pattern ▾</span></summary><div className="ribbon-menu">{cad('pattern','Linear / circular pattern','pattern')}{cad('mirror','Mirror','mirror')}</div></details>
+  const [localExamples, setLocalExamples] = useState<typeof BUNDLED_EXAMPLES>([])
+  useEffect(() => {
+    if (tab !== 'help') return
+    let active = true
+    void installedExamples().then(items => { if (active) setLocalExamples(items) }).catch(() => { if (active) setLocalExamples([]) })
+    return () => { active = false }
+  }, [tab])
   const examplesMenu = <details className="ribbon-dropdown" data-test="examples-menu">
     <summary className="desktop-ribbon-tool" title="Open an example model" aria-label="Examples" aria-disabled={busy || picking || exampleBusy}
       onClick={e => { if (busy || picking || exampleBusy) e.preventDefault() }}><Icon name="load" size={25}/><span>Examples ▾</span></summary>
     <div className="ribbon-menu" role="menu" aria-label="Examples">
-      {REFERENCE_EXAMPLES.map(item => <button key={item.id} role="menuitem" data-test={`example-${item.id}`} disabled={!onExample || busy || picking || exampleBusy}
+      {[BUNDLED_EXAMPLES, localExamples].map((items, index) => items.length > 0 && <div role="group" aria-label={index ? 'Local reference examples' : 'Included with Quick Scan'} key={index}>
+      <div className="example-group-label">{index ? 'Local reference examples' : 'Included with Quick Scan'}</div>
+      {items.map(item => <button key={item.id} role="menuitem" data-test={`example-${item.id}`} disabled={!onExample || busy || picking || exampleBusy}
         onClick={event => { event.currentTarget.closest('details')?.removeAttribute('open'); onExample?.(item.id) }}>{item.label}</button>)}
+      </div>)}
     </div>
   </details>
   const fileGroup = <Group label="File">{tool('Open', 'load', onOpen, busy || picking, 'Open a scan or project')}{tool('Save', 'save', onSave, busy || !savable, 'Save the entire Quick Scan project')}</Group>
