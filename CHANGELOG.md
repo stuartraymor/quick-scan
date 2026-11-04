@@ -1,3 +1,7 @@
+## 0.0.112 - 2026-11-04
+
+Keep a measured sketch line solid black above a coincident profile edge after Apply. Includes the explicit datum and invalid-hold fixes from 0.0.111.
+
 ## 0.0.111 - 2026-11-04
 
 Explicit extraction constraints take precedence over automatic snapping. An unavailable hold keeps the selection and lets you change the constraint without committing the wrong primitive. Sketch Fit Line draws a solid black line when the brush is released and after Apply.

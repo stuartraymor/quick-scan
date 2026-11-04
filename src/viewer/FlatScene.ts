@@ -1186,6 +1186,7 @@ export class FlatScene {
     opacity: number,
     z: number,
     width = SHEET_LINE_DEFAULT,
+    drawOrder = 4,
   ): void {
     const mat = new LineMaterial({
       color: new THREE.Color(color).getHex(),
@@ -1206,7 +1207,7 @@ export class FlatScene {
       geo.setPositions(pts.flatMap((p) => [p[0], p[1], z]))
       const line = new Line2(geo, mat)
       line.computeLineDistances()
-      line.renderOrder = 4
+      line.renderOrder = drawOrder
       group.add(line)
       cleanup.push(() => geo.dispose())
     }
@@ -1231,7 +1232,7 @@ export class FlatScene {
   /** The measured elements, rebuilt wholesale when anything about them
    *  changes — same policy as the 3D overlays. */
   setFlatElements(
-    items: readonly { fit: FlatFit; color: string; name: string; value: string; label?: boolean; width?: number }[],
+    items: readonly { fit: FlatFit; color: string; name: string; value: string; label?: boolean; width?: number; drawOrder?: number; opacity?: number }[],
   ): void {
     for (const dispose of this.elementCleanup) dispose()
     this.elementCleanup = []
@@ -1239,7 +1240,7 @@ export class FlatScene {
     for (const item of items) {
       // A sketch's pieces carry no readings: they are drawn without a tag,
       // and without a centre mark.
-      this.addPolylines(this.elementGroup, this.elementCleanup, this.fitPolyline(item.fit, item.label !== false), item.color, 0.95, 0.15, item.width)
+      this.addPolylines(this.elementGroup, this.elementCleanup, this.fitPolyline(item.fit, item.label !== false), item.color, item.opacity ?? 0.95, 0.15, item.width, item.drawOrder)
       if (item.label === false) continue
       this.addLabel(
         this.elementGroup,

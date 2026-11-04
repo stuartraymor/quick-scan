@@ -548,7 +548,11 @@ export function useSketchSceneSync({
               : loose.has(e.id)
                 ? palette.free
                 : palette.constrained
-    const items: { fit: FlatFit; color: string; name: string; value: string; label: boolean; width?: number }[] = sketch.entities.map((e) => ({
+    const items: { fit: FlatFit; color: string; name: string; value: string; label: boolean; width?: number; drawOrder?: number; opacity?: number }[] = sketch.entities.map((e) => ({
+      // Coplanar transparent strokes otherwise sort by distance to their
+      // midpoints. A longer profile can hide the fitted segment on the same edge.
+      drawOrder: lit.has(e.id) || selected.has(e.id) ? 4.5 : e.kind === 'line' && e.points?.length && !e.construction && !e.projected ? 4.25 : 4,
+      opacity: e.kind === 'line' && e.points?.length ? 1 : undefined,
       fit: entityFit(e),
       color: lit.has(e.id) ? palette.hover : colorOf(e),
       name: '',
