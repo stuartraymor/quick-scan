@@ -976,9 +976,9 @@ export default function App() {
    *  selected in step 1 and previewed until Create or Create & Stay. */
   const [extractFitting, setExtractFitting] = useState(false)
   /** The primitive fitted in Extract primitives and shown, not yet created. */
-  const [extractPreview, setExtractPreview] = useState<{ kind: ElementKind; sigma: number | null; selection: Uint32Array } | null>(null)
+  const [extractPreview, setExtractPreview] = useState<{ kind: ElementKind; sigma: number | null; selection: Uint32Array; problem?: string } | null>(null)
   const createExtracted = (stay = true) => {
-    const made = extractPreview ? handleConfirmDraft() : null
+    const made = extractPreview && !extractPreview.problem ? handleConfirmDraft() : null
     if (!extractPreview || made === null) return false
     // Ordinary primitive editing keeps the same type armed after a commit.
     // Extraction owns the next type choice; a fresh hidden draft blocks it.
@@ -1005,10 +1005,11 @@ export default function App() {
   /** The fit held to the constraint chosen in step 2 and, with Auto Constrain on,
    *  snapped to the primitives already made — measured again on the same marked
    *  points. Null when nothing applies. */
-  const constrainedPreview = (fit: FitData, selection: Uint32Array): { fit: FitData; notes: string[] } | null => {
+  const constrainedPreview = (fit: FitData, selection: Uint32Array): { fit: FitData; notes: string[]; problem?: string } | null => {
     const ex = useExtract.getState()
     const pos = sceneRef.current?.scanPositions()
-    if (!pos || !canConstrain(fit) || (ex.constraint === 'none' && !ex.autoConstrain)) return null
+    if (ex.constraint === 'none' && !ex.autoConstrain) return null
+    if (!pos || !canConstrain(fit)) return ex.constraint === 'none' ? null : { fit, notes: [], problem: 'This primitive cannot use the selected direction.' }
     let next = fit
     const notes: string[] = []
     if (ex.constraint !== 'none') {
@@ -1016,9 +1017,8 @@ export default function App() {
       const label = constraintLabel(ex.constraint, refs).toLowerCase()
       const held = constrainFit(next, pos, selection, ex.constraint, refs)
       if (held) { next = held; notes.push(label) }
-      else notes.push(`could not be held ${label}`)
-    }
-    if (ex.autoConstrain) {
+      else return { fit, notes, problem: `Cannot fit the selection ${label}.` }
+    } else if (ex.autoConstrain) {
       const others = useStore.getState().elements.filter((e) => e.fit).map((e) => ({ name: e.name, fit: e.fit as FitData }))
       const auto = autoConstrainFit(next, pos, selection, others, { tiltDeg: ex.tiltDeg, coincidenceMm: ex.coincidenceMm })
       next = auto.fit
@@ -1061,7 +1061,7 @@ export default function App() {
     const store = useStore.getState()
     if (extractFitting) return
     // Another type while one is previewed: drop that preview and fit this one.
-    if (store.draft && extractPreview) { store.cancelDraft(); setExtractPreview(null) }
+    if (extractPreview) { if (store.draft) store.cancelDraft(); setExtractPreview(null) }
     if (selection.length === 0 || useStore.getState().draft) return
     setExtractFitting(true)
     try {
@@ -1071,6 +1071,14 @@ export default function App() {
       await runDraftPaintFit(kind, selection)
       let d = useStore.getState().draft
       const held = d && d.status !== 'failed' && d.fit ? constrainedPreview(d.fit, selection) : null
+      if (held?.problem) {
+        store.cancelDraft()
+        setExtractPreview({ kind, sigma: null, selection, problem: held.problem })
+        sceneRef.current?.setPaintedVertices(selection, EXTRACT_MARK_COLOR)
+        useMark.getState().setCount(selection.length)
+        store.setStatus(held.problem + ' Change the constraint or mark a different area.')
+        return
+      }
       if (held) {
         useStore.setState((s) => (s.draft ? { draft: { ...s.draft, fit: held.fit } } : {}))
         d = useStore.getState().draft

@@ -1,3 +1,7 @@
+## 0.0.111 - 2026-11-04
+
+Explicit extraction constraints take precedence over automatic snapping. An unavailable hold keeps the selection and lets you change the constraint without committing the wrong primitive. Sketch Fit Line draws a solid black line when the brush is released and after Apply.
+
 ## 0.0.110 - 2026-11-04
 
 Top-left application menu > Settings maps a local example folder. Help > Examples matches reference names and lists personal models from its subfolders. The three included examples remain available offline.

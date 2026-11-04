@@ -544,7 +544,7 @@ export function useSketchSceneSync({
           : e.projected
             ? palette.projected
             : 'points' in e && e.points
-              ? palette.fitted
+              ? (e.kind === 'line' ? '#000000' : palette.fitted)
               : loose.has(e.id)
                 ? palette.free
                 : palette.constrained

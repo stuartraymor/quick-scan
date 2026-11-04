@@ -73,7 +73,7 @@ function NumberField({ value, onValid, min, label, test, disabled }: { value: nu
 export function ExtractPrimitives({ onType, preview, onCreate, onClearPreview, onClose, onClear, fitting, onHide, onIsolate, onShowAll, onAnalyse, onAnalysisOff }: {
   onType: (kind: ElementKind) => void
   /** The fit on show, not created yet: QUICKSURFACE previews, then Create. */
-  preview: { kind: ElementKind; sigma: number | null } | null
+  preview: { kind: ElementKind; sigma: number | null; problem?: string } | null
   /** Create the previewed primitive; `stay` keeps the dialog for the next. */
   onCreate: (stay?: boolean) => boolean
   onClearPreview: () => void
@@ -154,7 +154,7 @@ export function ExtractPrimitives({ onType, preview, onCreate, onClearPreview, o
   const none = m.count === 0
   const requestClose = () => {
     if (fitting) return
-    if (preview) setConfirmClose(true)
+    if (preview && !preview.problem) setConfirmClose(true)
     else onClose()
   }
   // QuickScan uses its existing inspector slot; the reference dialog floats.
@@ -249,7 +249,7 @@ export function ExtractPrimitives({ onType, preview, onCreate, onClearPreview, o
       {fitting && <p className="qs-count">Fitting…</p>}
       {preview && !fitting && (
         <div className="qs-preview" data-test="extract-preview">
-          <p className="qs-count">{preview.kind[0].toUpperCase() + preview.kind.slice(1)} preview{preview.sigma != null ? ` · σ ${len.fmt(preview.sigma, 4)}` : ''}</p>
+          <p className="qs-count">{preview.problem || <>{preview.kind[0].toUpperCase() + preview.kind.slice(1)} preview{preview.sigma != null ? ` · σ ${len.fmt(preview.sigma, 4)}` : ''}</>}</p>
         </div>
       )}
       <div className="qs-spacer" />
@@ -262,7 +262,7 @@ export function ExtractPrimitives({ onType, preview, onCreate, onClearPreview, o
         </label>
         <NumberField value={len.toDisplay(ex.analysisMm)} min={0} label="Analysis tolerance" test="extract-analysis-tolerance" disabled={!ex.analysis} onValid={(v) => { onAnalysisOff(); ex.setAnalysisMm(len.fromDisplay(v)) }} />
         <span>{len.word()}</span>
-        <button data-test="extract-analysis-apply" disabled={!ex.analysis || !preview || fitting} title="Show the marked points that lie further than this from the previewed primitive" onClick={onAnalyse}>Apply</button>
+        <button data-test="extract-analysis-apply" disabled={!ex.analysis || !preview || !!preview.problem || fitting} title="Show the marked points that lie further than this from the previewed primitive" onClick={onAnalyse}>Apply</button>
       </div>
       {ex.analysis && ex.analysed && <p className="qs-count" data-test="extract-analysis-result">{ex.analysed.far === 0 ? `All ${ex.analysed.total.toLocaleString('en-US')} points are within the tolerance.` : `${ex.analysed.far.toLocaleString('en-US')} of ${ex.analysed.total.toLocaleString('en-US')} points beyond it, the worst ${len.fmt(ex.analysed.worst, 3)}.`}</p>}
       </>}
@@ -278,9 +278,9 @@ export function ExtractPrimitives({ onType, preview, onCreate, onClearPreview, o
       <footer>
         <button className="qs-help" title="Select an area with the tools in step 1 — the Magic Wand takes a well-defined face in one click — then click the primitive type in step 2 to preview the fit, and Create to keep it. Select the next area for the next one.">?</button>
         <div className="qs-command-actions">
-          {preview && !fitting && <button data-test="extract-create-stay" onClick={() => onCreate(true)}>Create &amp; Stay</button>}
+          {preview && !preview.problem && !fitting && <button data-test="extract-create-stay" onClick={() => onCreate(true)}>Create &amp; Stay</button>}
           <div className="qs-command-end">
-            {preview && !fitting && <button data-test="extract-create" onClick={() => { if (onCreate(false)) onClose() }}>Create</button>}
+            {preview && !preview.problem && !fitting && <button data-test="extract-create" onClick={() => { if (onCreate(false)) onClose() }}>Create</button>}
             <button data-test="extract-close" data-command-close disabled={fitting} onClick={requestClose}>Close</button>
           </div>
         </div>

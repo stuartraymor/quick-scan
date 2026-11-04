@@ -106,11 +106,11 @@ export function SketchBrushOverlay({ scene, chainsOf }: { scene: FlatScene | nul
     const up = (e: PointerEvent) => {
       if (!painting || e.button !== 0) return
       e.preventDefault(); e.stopImmediatePropagation(); paint(e)
-      painting = false; last = null
+      painting = false; lastDrawn = null; last = null
       if (host.hasPointerCapture(e.pointerId)) host.releasePointerCapture(e.pointerId)
       if (useSketchBrush.getState().instant && !e.shiftKey && !e.altKey) useSketchBrush.getState().apply()
     }
-    const cancel = () => { painting = false; last = null; cursor = null; follow(); host.style.cursor = previousCursor }
+    const cancel = () => { painting = false; lastDrawn = null; last = null; cursor = null; follow(); host.style.cursor = previousCursor }
     const leave = () => { if (!painting) { cursor = null; follow(); host.style.cursor = previousCursor } }
     const wheel = (e: WheelEvent) => {
       if (!e.ctrlKey) return
@@ -154,7 +154,7 @@ export function SketchBrushOverlay({ scene, chainsOf }: { scene: FlatScene | nul
             const polyline = entityPolyline(entity, 192)
             ctx.beginPath()
             polyline.forEach((p, i) => { const at = scene.sheetScreenPoint(p); if (at) { if (i === 0) ctx.moveTo(at.x - rect.left, at.y - rect.top); else ctx.lineTo(at.x - rect.left, at.y - rect.top) } })
-            ctx.strokeStyle = '#009c42'; ctx.lineWidth = 2.5; ctx.stroke()
+            ctx.strokeStyle = state.primitive === 'line' && !painting ? '#000000' : '#009c42'; ctx.lineWidth = 2.5; ctx.stroke()
           }
         }
       }

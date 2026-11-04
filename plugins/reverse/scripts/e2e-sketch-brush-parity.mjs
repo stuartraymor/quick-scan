@@ -48,9 +48,9 @@ try {
   const entities = () => re(() => window.__re.store.getState().sketchDraft.sketch.entities.length)
   const colors = () => re(() => {
     const canvas = document.querySelector('[data-test=sketch-fit-brush-overlay]'), pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data
-    let orange = 0, green = 0
-    for (let i = 0; i < pixels.length; i += 4) { if (pixels[i] > 220 && pixels[i + 1] > 100 && pixels[i + 1] < 190 && pixels[i + 2] < 30 && pixels[i + 3] > 100) orange++; if (pixels[i] < 30 && pixels[i + 1] > 110 && pixels[i + 2] > 25 && pixels[i + 2] < 100 && pixels[i + 3] > 100) green++ }
-    return { orange, green }
+    let orange = 0, black = 0, green = 0
+    for (let i = 0; i < pixels.length; i += 4) { if (pixels[i] === 0 && pixels[i+1] === 0 && pixels[i+2] === 0 && pixels[i+3] > 200) black++; if (pixels[i] > 220 && pixels[i + 1] > 100 && pixels[i + 1] < 190 && pixels[i + 2] < 30 && pixels[i + 3] > 100) orange++; if (pixels[i] < 30 && pixels[i + 1] > 110 && pixels[i + 2] > 25 && pixels[i + 2] < 100 && pixels[i + 3] > 100) green++ }
+    return { orange, green, black }
   })
   async function stroke(points, { alt = false, shift = false, beforeUp } = {}) {
     if (alt) await page.keyboard.down('Alt')
@@ -98,7 +98,7 @@ try {
   await stroke(line(-8))
   const selected = await count(), paint = await colors()
   check(selected > 20, `left brush selects actual section points (${selected})`)
-  check(paint.orange > 30 && paint.green > 30, `orange highlights and green fitted line are drawn on canvas (${JSON.stringify(paint)})`)
+  check(paint.orange > 30 && paint.black > 30 && paint.green === 0, `orange highlights and solid black fitted line are drawn on canvas (${JSON.stringify(paint)})`)
   check(await entities() === 0, 'noninstant painting previews geometry without committing')
   await page.screenshot({ path: shotPath('brush-highlight-line-1500.png') })
   const beforeSize = await re(() => window.__brush.getState().brushPx)
