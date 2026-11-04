@@ -17,7 +17,7 @@ import { Icon, type IconName } from './icons'
 import { AiWizard } from './AiWizard'
 import { useAgentConnectionHint } from '../commands/agentSetup'
 import { useUpdater } from './UpdateButton'
-import { BUNDLED_EXAMPLES, installedExamples } from '../app/referenceExamples'
+import { BUNDLED_EXAMPLES, REFERENCE_CATALOG, installedExamples, localFolderPicker } from '../app/referenceExamples'
 import { APP_VERSION } from '../version'
 import { AGENT_STATUS, useAgentLink } from '../commands/agentLink'
 import { UndoRedo } from './UndoRedo'
@@ -251,11 +251,28 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
     <summary className="desktop-ribbon-tool" title="Open an example model" aria-label="Examples" aria-disabled={busy || picking || exampleBusy}
       onClick={e => { if (busy || picking || exampleBusy) e.preventDefault() }}><Icon name="load" size={25}/><span>Examples ▾</span></summary>
     <div className="ribbon-menu" role="menu" aria-label="Examples">
-      {[BUNDLED_EXAMPLES, localExamples].map((items, index) => items.length > 0 && <div role="group" aria-label={index ? 'Local reference examples' : 'Included with Quick Scan'} key={index}>
-      <div className="example-group-label">{index ? 'Local reference examples' : 'Included with Quick Scan'}</div>
-      {items.map(item => <button key={item.id} role="menuitem" data-test={`example-${item.id}`} disabled={!onExample || busy || picking || exampleBusy}
-        onClick={event => { event.currentTarget.closest('details')?.removeAttribute('open'); onExample?.(item.id) }}>{item.label}</button>)}
+      {[localFolderPicker() ? REFERENCE_CATALOG : localExamples, BUNDLED_EXAMPLES].map((items, index) => items.length > 0 && <div role="group" aria-label={index ? 'Included with Quick Scan' : 'Local reference examples'} key={index}>
+      <div className="example-group-label">{index ? 'Included with Quick Scan' : 'Local reference examples'}</div>
+      {items.map(item => {
+        const missing = index === 0 && !localExamples.some(i => i.id === item.id)
+        return <button key={item.id} role="menuitem" title={missing ? 'Choose the local folder containing ' + item.file : item.file} data-test={`example-${item.id}`} disabled={!onExample || busy || picking || exampleBusy}
+          onClick={async event => {
+            event.currentTarget.closest('details')?.removeAttribute('open')
+            if (missing) {
+              try {
+                if (!await localFolderPicker()?.()) return
+                const found = await installedExamples(); setLocalExamples(found)
+                if (!found.some(i => i.id === item.id)) { useStore.setState({errorText:item.file+' is missing from the selected folder.'}); return }
+              } catch { useStore.setState({errorText:'Choose a folder containing the original example STL files.'}); return }
+            }
+            onExample?.(item.id)
+          }}>{item.label}{missing && <span aria-hidden="true" style={{float:'right', color:'var(--dim)'}}>�</span>}</button>
+      })}
       </div>)}
+      {localFolderPicker() && <button type="button" data-test="example-library-folder" onClick={async () => {
+        try { if (await localFolderPicker()?.()) setLocalExamples(await installedExamples()) }
+        catch { useStore.setState({errorText:'Could not use that folder. Choose a folder containing the original example STL files.'}) }
+      }}>Choose local example folder…</button>}
     </div>
   </details>
   const fileGroup = <Group label="File">{tool('Open', 'load', onOpen, busy || picking, 'Open a scan or project')}{tool('Save', 'save', onSave, busy || !savable, 'Save the entire Quick Scan project')}</Group>

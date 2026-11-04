@@ -9,7 +9,7 @@ try{
  await page.click('[data-test=ribbon-tab-help]')
  await page.click('[data-test=examples-menu] summary')
  const visible=await page.$$eval('[data-test=examples-menu] [role=menuitem]',els=>els.map(e=>e.textContent))
- const catalog=[...bundled,...local.filter(i=>visible.includes(i.label))]
+ const catalog=[...local.filter(i=>visible.includes(i.label)),...bundled]
  check(JSON.stringify(await page.$$eval('[data-test=examples-menu] [role=menuitem]',els=>els.map(e=>e.textContent)))===JSON.stringify(catalog.map(i=>i.label)),'Help > Examples lists bundled and available local parts in order')
  await page.screenshot({path:shotPath('help-examples-menu.png')})
  const layout=await page.$eval('[data-test=examples-menu] .ribbon-menu',menu=>{const r=menu.getBoundingClientRect(),items=[...menu.querySelectorAll('button')].map(e=>e.getBoundingClientRect());return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight&&items.every((b,i)=>!i||b.top>=items[i-1].bottom)})

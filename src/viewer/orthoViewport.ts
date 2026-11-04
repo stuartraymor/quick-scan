@@ -350,7 +350,9 @@ export class OrthoViewport {
     this.renderer.render(this.scene, this.camera)
     this.opts.onAfterRender?.(w, h)
     this.labelRenderer.render(this.scene, this.camera)
-    spreadLabels(this.labelRenderer.domElement)
+    const stage = this.container.closest<HTMLElement>('.stage')
+    if (stage?.querySelector('.viewslot.sketch')) spreadLabels(stage, 2, true)
+    else spreadLabels(this.labelRenderer.domElement)
   }
 
   /** One frame of the SpaceMouse. A viewport that is paused or hidden — the 3D

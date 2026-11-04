@@ -34,29 +34,35 @@
 .sketch-extract-panel hr { border: 0; border-top: 1px solid #888; width: 100%; margin: 3px 0; }
 .sketch-extract-panel label { font-size: 11px; }
 .sketch-extract-panel .checkrow { display: flex; align-items: center; }
-/* The reference sketch dialogs use a light face independently of viewport theme. */
-:root[data-theme] .tool-inspector.tool-inspector:has(.sketch-editor-parity), :root[data-theme] .tool-inspector.tool-inspector:has(.sketch-extract-panel) {
+/* The reference sketch dialogs use a light face in the light theme. */
+:root[data-theme='light'] .tool-inspector.tool-inspector:has(.sketch-editor-parity), :root[data-theme='light'] .tool-inspector.tool-inspector:has(.sketch-extract-panel) {
  --chassis:#f0f0f0; --panel:#f0f0f0; --well:#fff; --well-deep:#e5e5e5;
  --ink:#171717; --dim:#666; --faint:#929292; --line:#ccc; --line-strong:#a6a6a6;
  --accent:#1679bd; --accent-d:#12649c; --accent-soft:#cce8ff;
  color-scheme:light; color:#171717; background:#f0f0f0; width:330px; min-width:330px;
 }
-:root[data-theme] .tool-inspector.tool-inspector:has(.sketch-extract-panel) { width:280px; min-width:280px; }
-:root[data-theme] .tool-inspector.tool-inspector:has(.sketch-editor-parity) .inspector-titlebar,
-:root[data-theme] .tool-inspector.tool-inspector:has(.sketch-extract-panel) .inspector-titlebar { background:#f0f0f0; color:#777; }
-:root[data-theme] .tool-inspector.tool-inspector:has(.sketch-editor-parity) button:not(.on):not(:disabled),
-:root[data-theme] .tool-inspector.tool-inspector:has(.sketch-extract-panel) button:not(.on):not(:disabled) { color:#171717 !important; background:linear-gradient(#fff,#fafafa) !important; }
-:root[data-theme] .tool-inspector.tool-inspector:has(.sketch-editor-parity) button.on,
-:root[data-theme] .tool-inspector.tool-inspector:has(.sketch-extract-panel) button.on { color:#171717 !important; background:#b9ddfb !important; border-color:#333; }
-:root[data-theme] .tool-inspector.tool-inspector:has(.sketch-editor-parity) button:disabled,
-:root[data-theme] .tool-inspector.tool-inspector:has(.sketch-extract-panel) button:disabled { color:#999 !important; background:#f8f8f8 !important; border-color:#ddd; }
-:root[data-theme] .tool-inspector.tool-inspector:has(.sketch-editor-parity) .sketch-command-row.create button:not(:disabled),
-:root[data-theme] .tool-inspector.tool-inspector:has(.sketch-editor-parity) .sketch-command-row.modify button:not(:disabled) { background:#b9ddfb !important; color:#3e4c53 !important; }
-:root[data-theme] .tool-inspector.tool-inspector:has(.sketch-editor-parity) .sketch-command-row.constraints button { color:#555 !important; background:#fff !important; border-color:transparent; }
-:root[data-theme] .tool-inspector.tool-inspector:has(.sketch-editor-parity) :is(input:not([type='checkbox']):not([type='range']),select),
-:root[data-theme] .tool-inspector.tool-inspector:has(.sketch-extract-panel) :is(input:not([type='checkbox']):not([type='range']),select) { background:#fff; color:#171717; border-color:#b4b4b4; }
-:root[data-theme] .tool-inspector.tool-inspector:has(.sketch-editor-parity) .inspector-body > .inspector-model-controls > .panel,
-:root[data-theme] .tool-inspector.tool-inspector:has(.sketch-extract-panel) .inspector-body > .inspector-model-controls > .panel { padding:8px 10px 10px; }
+:root[data-theme='light'] .tool-inspector.tool-inspector:has(.sketch-extract-panel) { width:280px; min-width:280px; }
+:root[data-theme='light'] .tool-inspector.tool-inspector:has(.sketch-editor-parity) .inspector-titlebar,
+:root[data-theme='light'] .tool-inspector.tool-inspector:has(.sketch-extract-panel) .inspector-titlebar { background:#f0f0f0; color:#777; }
+:root[data-theme='light'] .tool-inspector.tool-inspector:has(.sketch-editor-parity) button:not(.on):not(:disabled),
+:root[data-theme='light'] .tool-inspector.tool-inspector:has(.sketch-extract-panel) button:not(.on):not(:disabled) { color:#171717 !important; background:linear-gradient(#fff,#fafafa) !important; }
+:root[data-theme='light'] .tool-inspector.tool-inspector:has(.sketch-editor-parity) button.on,
+:root[data-theme='light'] .tool-inspector.tool-inspector:has(.sketch-extract-panel) button.on { color:#171717 !important; background:#b9ddfb !important; border-color:#333; }
+:root[data-theme='light'] .tool-inspector.tool-inspector:has(.sketch-editor-parity) button:disabled,
+:root[data-theme='light'] .tool-inspector.tool-inspector:has(.sketch-extract-panel) button:disabled { color:#999 !important; background:#f8f8f8 !important; border-color:#ddd; }
+:root[data-theme='light'] .tool-inspector.tool-inspector:has(.sketch-editor-parity) .sketch-command-row.create button:not(:disabled),
+:root[data-theme='light'] .tool-inspector.tool-inspector:has(.sketch-editor-parity) .sketch-command-row.modify button:not(:disabled) { background:#b9ddfb !important; color:#3e4c53 !important; }
+:root[data-theme='light'] .tool-inspector.tool-inspector:has(.sketch-editor-parity) .sketch-command-row.constraints button { color:#555 !important; background:#fff !important; border-color:transparent; }
+:root[data-theme='light'] .tool-inspector.tool-inspector:has(.sketch-editor-parity) :is(input:not([type='checkbox']):not([type='range']),select),
+:root[data-theme='light'] .tool-inspector.tool-inspector:has(.sketch-extract-panel) :is(input:not([type='checkbox']):not([type='range']),select) { background:#fff; color:#171717; border-color:#b4b4b4; }
+:root[data-theme='light'] .tool-inspector.tool-inspector:has(.sketch-editor-parity) .inspector-body > .inspector-model-controls > .panel,
+:root[data-theme='light'] .tool-inspector.tool-inspector:has(.sketch-extract-panel) .inspector-body > .inspector-model-controls > .panel { padding:8px 10px 10px; }
+
+.tool-inspector:has(.sketch-editor-parity) { width:330px; min-width:330px; }
+.tool-inspector:has(.sketch-extract-panel) { width:280px; min-width:280px; }
+:root[data-theme='dark'] .tool-inspector :is(.sketch-advanced > summary,.sketch-selection-count) { color:var(--dim); }
+:root[data-theme='dark'] .tool-inspector :is(.sketch-display,.sketch-advanced[open]) { border-color:var(--line); }
+:root[data-theme='dark'] .tool-inspector .sketch-command-row button.on { background:var(--accent-soft); color:var(--ink); border-color:var(--accent); }
 .sketch-controls .sketch-display-grid input[type='checkbox'], .sketch-controls .sketch-lock input[type='checkbox'] { accent-color:#0078d7; }
 /* The Reverse engineer workspace's own rules, on top of the app's stylesheet
    (src/styles.css), whose tokens and base rules they use. */
@@ -1460,3 +1466,6 @@
 .re-place .field > input[type='number'] { min-width: 0; flex: 1 1 40px; width: auto !important; }
 .re-place .re-place-parallel { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 .re-place .re-place-parallel button { flex: 0 0 45%; }
+
+.sketch-fit-cursor { position:absolute; top:0; left:0; z-index:6; pointer-events:none; box-sizing:border-box; border-radius:50%; border:1px solid white; box-shadow:0 0 0 1px #223e58,inset 0 0 0 1px #223e58; }
+.sketch-fit-cursor::after { content:attr(data-fit); position:absolute; left:100%; top:100%; margin-left:4px; padding:1px 4px; white-space:nowrap; font:11px system-ui; color:var(--ink); background:var(--panel); border:1px solid var(--accent); }

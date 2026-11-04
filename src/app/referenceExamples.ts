@@ -2,6 +2,10 @@
 import catalog from './referenceExamples.json'
 import bundled from './bundledExamples.json'
 
+export function localFolderPicker() {
+  return (window as unknown as { quickScanFiles?: {chooseExamples?: () => Promise<boolean>} }).quickScanFiles?.chooseExamples
+}
+export const REFERENCE_CATALOG = catalog
 export const BUNDLED_EXAMPLES = bundled
 export async function installedExamples(base = import.meta.env.BASE_URL) {
   const files = (window as unknown as {quickScanFiles?: {examples?: () => Promise<string[]>}}).quickScanFiles

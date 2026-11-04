@@ -1,3 +1,7 @@
+## 0.0.107 - 2026-11-04
+
+Fit Primitives follows the cursor and tests the visible brush in screen pixels. Sketch tools follow the app theme, and sketch and model labels are spaced together. Help lists the ten original reference names and remembers a local library alongside the three bundled examples.
+
 ## 0.0.106 - 2026-11-04
 
 Help > Examples now includes three offline practice models in the installer and only offers additional reference examples found locally. Includes the 0.0.105 sketch panel spacing fixes.

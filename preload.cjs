@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('quickScanUpdater', {
   onProgress: cb => { const h = (_e, p) => cb(p); ipcRenderer.on('updater:progress', h); return () => ipcRenderer.removeListener('updater:progress', h); },
 });
 contextBridge.exposeInMainWorld('quickScanFiles', {
+  chooseExamples: () => ipcRenderer.invoke('files:chooseExamples'),
   examples: () => ipcRenderer.invoke('files:examples'),
   recent: () => ipcRenderer.invoke('files:recent'),
   remember: file => { try { const p = webUtils.getPathForFile(file); return p ? ipcRenderer.invoke('files:remember', p) : Promise.resolve([]); } catch { return Promise.resolve([]); } },

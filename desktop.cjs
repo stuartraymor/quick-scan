@@ -17,10 +17,24 @@ else {
   app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
   app.whenReady().then(async () => {
     const root = path.join(__dirname, 'dist');
-    const exampleDirs = [process.env.QS_EXAMPLES_DIR, path.join(app.getPath('appData'), 'QuickScan', 'reference-examples'), path.join(root, 'reference-examples')].filter(Boolean);
+    const libraryFile = path.join(app.getPath('appData'), 'QuickScan-shared', 'example-library.json');
+    let library = '';
+    try { const p = JSON.parse(fs.readFileSync(libraryFile, 'utf8')); if (typeof p === 'string' && path.isAbsolute(p)) library = p; } catch { /* first launch */ }
+    ipcMain.handle('files:chooseExamples', async event => {
+      if (!event.senderFrame?.url?.startsWith('scanruler://app/')) return false;
+      const pick = await dialog.showOpenDialog(win, { title: 'Choose local example folder', properties: ['openDirectory'] });
+      if (pick.canceled || !pick.filePaths[0]) return false;
+      const dir = pick.filePaths[0];
+      const names = await fs.promises.readdir(dir);
+      if (!names.some(n => ['lego','basic_part','aerosol_knob','bearinghousing','machine_part','tool','steel','impeller','yholder','qsm'].includes(path.parse(n).name) && path.extname(n)==='.stl'))
+        throw Error('No recognized example STL files in this folder.');
+      await fs.promises.mkdir(path.dirname(libraryFile), {recursive:true});
+      await fs.promises.writeFile(libraryFile, JSON.stringify(dir)); library = dir; return true;
+    });
+    const exampleDirs = () => [library, process.env.QS_EXAMPLES_DIR, path.join(app.getPath('appData'), 'QuickScan', 'reference-examples'), path.join(root, 'reference-examples')].filter(Boolean);
     ipcMain.handle('files:examples', event => {
       if (!event.senderFrame?.url?.startsWith('scanruler://app/')) return [];
-      return exampleDirs.flatMap(dir => {
+      return exampleDirs().flatMap(dir => {
         try { return fs.readdirSync(dir, {withFileTypes: true}).filter(entry => entry.isFile() && /\.stl$/i.test(entry.name)).map(entry => entry.name); }
         catch { return []; }
       });
@@ -31,8 +45,8 @@ else {
       // and are not shipped. They are read from a local folder on this PC.
       if (url.host === 'app' && url.pathname.startsWith('/reference-examples/')) {
         const name = path.basename(decodeURIComponent(url.pathname));
-        if (!/^[a-z0-9_]+\.stl$/i.test(name)) return new Response('Not found', {status: 404});
-        const found = exampleDirs.map(d => path.join(d, name)).find(f => fs.existsSync(f));
+        if (!/^(?:lego|basic_part|aerosol_knob|bearinghousing|machine_part|tool|steel|impeller|yholder|qsm)\.stl$/.test(name)) return new Response('Not found', {status: 404});
+        const found = exampleDirs().map(d => path.join(d, name)).find(f => fs.existsSync(f));
         return found ? net.fetch(pathToFileURL(found).href) : new Response('Not found', { status: 404 });
       }
       const file = path.resolve(root, '.' + decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname));

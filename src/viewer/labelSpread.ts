@@ -13,15 +13,21 @@
 /** Sub-pixel distances two labels may still be apart and count as clear. */
 const SLACK = 1e-6
 
-export function spreadLabels(labelDom: HTMLElement, gap = 2): void {
+export function spreadLabels(labelDom: HTMLElement, gap = 2, sharedScreen = false): void {
   const els = Array.from(labelDom.querySelectorAll<HTMLElement>('.viewport-label')).filter(
-    (el) => el.style.display !== 'none',
+    (el) => el.style.display !== 'none' && (!sharedScreen || el.offsetWidth > 0),
   )
   if (els.length < 2) {
     for (const el of els) el.style.top = ''
     return
   }
   const boxes = els.map((el) => {
+    if (sharedScreen) {
+      // The sketch and part are separate renderers with different CSS anchors.
+      // Remove our previous displacement to recover the projected bounds.
+      const r = el.getBoundingClientRect(), dy = parseFloat(el.style.top) || 0
+      return {el, x0:r.left, x1:r.right, y0:r.top-dy, y1:r.bottom-dy, dy:0}
+    }
     const m = /translate\((-?[\d.]+)px,\s*(-?[\d.]+)px\)\s*$/.exec(el.style.transform)
     const cx = m ? parseFloat(m[1]) : 0
     const cy = m ? parseFloat(m[2]) : 0
@@ -52,6 +58,7 @@ export function spreadLabels(labelDom: HTMLElement, gap = 2): void {
       b.dy = lift
     }
     placed.push(b)
-    b.el.style.top = b.dy ? `${b.dy}px` : ''
+    const top = b.dy ? `${b.dy}px` : ''
+    if (b.el.style.top !== top) b.el.style.top = top
   }
 }

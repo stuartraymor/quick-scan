@@ -38,11 +38,10 @@ try {
     const panel = document.querySelector('[data-test=sketch-extract-panel]'), inspector = panel.closest('.tool-inspector'), style = getComputedStyle(inspector)
     return { theme: document.documentElement.dataset.theme, className: inspector.className, background: style.backgroundColor, panel: style.getPropertyValue('--panel'), hasSupport: CSS.supports('selector(:has(*))'), matchesLight: inspector.matches(':root[data-theme] .tool-inspector:has(.sketch-extract-panel)'), rules: [...document.styleSheets].flatMap((ss) => [...ss.cssRules]).filter((r) => r.selectorText && r.style?.getPropertyValue('--panel') && inspector.matches(r.selectorText)).map((r) => ({ selector: r.selectorText, panel: r.style.getPropertyValue('--panel') })), ancestors: [panel.parentElement.className, panel.parentElement.parentElement.className], styles: [...document.querySelectorAll('style[data-vite-dev-id]')].map((s) => s.dataset.viteDevId).filter((s) => /command-widgets|tool-inspector|reverse\.css/.test(s)) }
   }))
-  check(await re(() => getComputedStyle(document.querySelector('[data-test=sketch-extract-panel]').closest('.tool-inspector')).backgroundColor === 'rgb(240, 240, 240)'), 'sketch fitting uses the observed light dialog face while preserving the global theme')
   check(await re(() => {
-    const style = getComputedStyle(document.querySelector('[data-test=sketch-fit-arc]')), color = (style.backgroundImage + ' ' + style.backgroundColor).match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/)
-    return color && color.slice(1).every((channel) => Number(channel) > 220)
-  }), 'inactive fitting buttons have a light background with readable dark text')
+    const panel = document.querySelector('[data-test=sketch-extract-panel]').closest('.tool-inspector')
+    return getComputedStyle(panel).colorScheme === document.documentElement.dataset.theme
+  }), 'fitting inspector follows the application theme')
   check(await re(() => window.__re.store.getState().chainCount >= 2), 'real imported mesh produces rectangular and circular section chains')
   const toClient = (p) => re((p) => window.__re.sheet().sheetScreenPoint(p), p)
   const count = () => re(() => window.__brush.getState().selected.length)
@@ -69,6 +68,33 @@ try {
   }
   const line = (y) => Array.from({ length: 25 }, (_, i) => [-7 + 14 * i / 24, y])
   await click(page, '[data-test=sketch-fit-instant]')
+  // Put the centre just inside one radius of a straight edge. Enumerate
+  // ground truth in client pixels independently of the brush's grid.
+  const near = await toClient([0,-8])
+  const target = {x:Math.round(near.x), y:Math.round(near.y)+24}
+  await page.mouse.click(target.x,target.y)
+  const rim = await re(({x,y}) => {
+    const sheet=window.__re.sheet(), state=window.__brush.getState(), expected=[]
+    window.__re.chains().chains.forEach((chain,c)=>chain.forEach((p,i)=>{
+      const at=sheet.sheetScreenPoint(p)
+      if (Math.hypot(at.x-x,at.y-y)<=state.brushPx/2) expected.push(c+':'+i)
+    }))
+    return {want:expected.sort(),got:state.selected.map(p=>p.key).sort()}
+  },target)
+  check(rim.want.length>0 && JSON.stringify(rim.got)===JSON.stringify(rim.want), 'circle rim: every visible point inside is selected, none outside ('+rim.want.length+' points)')
+  await click(page,'[data-test=sketch-fit-clear]')
+  // A high-rate device can submit two sides of a corner in one move. The
+  // straight chord misses the intervening corner even though the brush saw it.
+  const way = await Promise.all([[4,-8],[10,-8],[10,-2]].map(toClient))
+  await page.mouse.move(way[0].x,way[0].y); await page.mouse.down()
+  await re(([start,corner,end])=>{
+    const host=document.querySelector('[data-test=sketch-viewport]')
+    const ev=new PointerEvent('pointermove',{bubbles:true,buttons:1,clientX:end.x,clientY:end.y})
+    Object.defineProperty(ev,'getCoalescedEvents',{value:()=>[new PointerEvent('pointermove',{clientX:corner.x,clientY:corner.y})]})
+    host.dispatchEvent(ev)
+  },way)
+  check(await re(()=>window.__brush.getState().selected.some(q=>Math.hypot(q.p[0]-10,q.p[1]+8)<0.01)), 'fast bent stroke includes points at the intermediate corner')
+  await page.mouse.up(); await click(page,'[data-test=sketch-fit-clear]')
   await stroke(line(-8))
   const selected = await count(), paint = await colors()
   check(selected > 20, `left brush selects actual section points (${selected})`)
