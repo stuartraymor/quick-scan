@@ -187,6 +187,38 @@ function wireUpdater() {
 const recentFile = () => path.join(app.getPath('appData'), 'QuickScan-shared', 'recent-documents.json');
 function wireFiles() {
   const ours = event => event.senderFrame?.url?.startsWith('scanruler://app/');
+  const targets = new Map();
+  const targetToken = file => {
+    for (const [token, existing] of targets) if (existing === file) return token;
+    const token = require('node:crypto').randomUUID();
+    if (targets.size >= 32) targets.delete(targets.keys().next().value);
+    targets.set(token, file);
+    return token;
+  };
+  let saving = false;
+  ipcMain.handle('files:saveProject', async (event, { name, bytes, saveAs, token, openedPath }) => {
+    if (!ours(event) || saving) throw Error('Project save unavailable.');
+    saving = true;
+    try {
+      // openedPath comes only from Electron's OS-backed File bridge. Synthetic
+      // browser Files have no path. Recent files carry a main-issued token.
+      let file = targets.get(token);
+      if (!file && openedPath && path.isAbsolute(openedPath) && path.extname(openedPath).toLowerCase() === '.scanruler') file = openedPath;
+      if (smoke) file = path.join(app.getPath('userData'), 'desktop-smoke.scanruler');
+      else if (saveAs || !file) {
+        const selected = await dialog.showSaveDialog(win, {
+          title: 'Save Quick Scan project', defaultPath: file || path.join(app.getPath('documents'), path.basename(name)),
+          filters: [{ name: 'Quick Scan project', extensions: ['scanruler'] }],
+        });
+        if (selected.canceled || !selected.filePath) return { canceled: true };
+        file = path.extname(selected.filePath) ? selected.filePath : `${selected.filePath}.scanruler`;
+      }
+      await recents.writeProject(file, bytes);
+      recents.remember(recentFile(), file);
+      win.webContents.send('files:changed');
+      return { canceled: false, name: path.basename(file), token: targetToken(file) };
+    } finally { saving = false; }
+  });
   ipcMain.handle('files:recent', event => (ours(event) ? recents.describe(recentFile()) : []));
   ipcMain.handle('files:remember', (event, p) => { if (ours(event)) recents.remember(recentFile(), p); return recents.describe(recentFile()); });
   ipcMain.handle('files:clear', event => { if (ours(event)) recents.clear(recentFile()); return []; });
@@ -194,7 +226,7 @@ function wireFiles() {
     if (!ours(event)) throw new Error('Refused.');
     const { name, data } = recents.read(recentFile(), p);
     recents.remember(recentFile(), p);
-    return { name, data: new Uint8Array(data) };
+    return { name, data: new Uint8Array(data), token: path.extname(p).toLowerCase() === '.scanruler' ? targetToken(p) : undefined };
   });
 }
 

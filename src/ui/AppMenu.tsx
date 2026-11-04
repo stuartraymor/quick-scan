@@ -3,6 +3,7 @@
 // way the File menu of the reference opens. Commands on the left, recent
 // documents on the right. Recent documents exist in the desktop app only —
 // a browser cannot reopen a file by its path.
+import { recentProjectTargets } from '../app/projectWriter'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ExampleLibrarySettings } from './ExampleLibrarySettings'
 import { useDismiss } from './useDismiss'
@@ -23,7 +24,7 @@ export interface RecentDocument {
 }
 interface FilesBridge {
   recent(): Promise<RecentDocument[]>
-  open(path: string): Promise<{ name: string; data: Uint8Array }>
+  open(path: string): Promise<{ name: string; data: Uint8Array; token?: string }>
   clear(): Promise<RecentDocument[]>
   onChanged(cb: () => void): () => void
 }
@@ -44,6 +45,7 @@ export function ago(then: number, now = Date.now()): string {
 export function AppMenu({
   onNew,
   onSave,
+  onSaveAs,
   onOpen,
   onImportScan,
   onImportCad,
@@ -54,6 +56,7 @@ export function AppMenu({
 }: {
   onNew: () => void
   onSave: () => void
+  onSaveAs: () => void
   onOpen: () => void
   onImportScan: () => void
   onImportCad: () => void
@@ -110,9 +113,11 @@ export function AppMenu({
   const openRecent = async (doc: RecentDocument) => {
     if (!files) return
     try {
-      const { name, data } = await files.open(doc.path)
+      const { name, data, token } = await files.open(doc.path)
       close()
-      onOpenFile(new File([new Uint8Array(data)], name))
+      const file = new File([new Uint8Array(data)], name)
+      if (token) recentProjectTargets.set(file, token)
+      onOpenFile(file)
     } catch (e) {
       setProblem(e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']*': (Error: )?/, '') : String(e))
       refresh()
@@ -127,7 +132,7 @@ export function AppMenu({
         {item('Import CAD…', 'exportStep', onImportCad, { test: 'menu-import-cad', disabled: busy, title: 'Import a STEP model' })}
         <hr />
         {item('Save', 'save', onSave, { test: 'menu-save', disabled: busy || !savable, hint: 'Ctrl+S' })}
-        {item('Save as…', 'save', onSave, { test: 'menu-save-as', disabled: busy || !savable, title: 'Save the project under a new name — the desktop app asks where on every save' })}
+        {item('Save as…', 'saveAs', onSaveAs, { test: 'menu-save-as', disabled: busy || !savable, hint: 'Ctrl+Shift+S', title: 'Choose a name and location for a copy of the project' })}
         <hr />
         {item('Export model', 'exportStep', onExportModel, { test: 'menu-export-model', disabled: busy, title: 'Export the CAD model and fitted geometry as STEP' })}
         <div className="appmenu-export" role="none">

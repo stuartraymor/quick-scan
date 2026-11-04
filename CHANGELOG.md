@@ -1,3 +1,7 @@
+## 0.0.114
+
+Desktop Save writes the opened project. Save As chooses a new target. Cancel preserves unsaved work. Save As has a pencil icon, and coordinate alignment and scan preparation have shared original graphics. 3D Sketch and New Freeform now have distinct ribbon icons.
+
 ## 0.0.113 - 2026-11-04
 
 Collinear picks constrain the complete lines, including picks near their ends. Sketch Duplicate and Offset use the selected display units. Fitted splines render continuously in yellow while retaining their spline and measured-point data.

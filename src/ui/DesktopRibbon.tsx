@@ -37,6 +37,7 @@ type Props = {
   exampleBusy?: boolean
   onOpen: () => void
   onSave: () => void
+  onSaveAs: () => void
   onDeselect: () => void
   onSnapshot: () => void
   onSurfaceArea: () => void
@@ -58,7 +59,7 @@ function Group({ label, children }: { label: string; children: ReactNode }) {
 }
 
 /** Familiar command positions, backed by the existing session and plugin verbs. */
-export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExport, onOpen, onExample, exampleBusy = false, onSave, onDeselect, onSnapshot, onSurfaceArea, onVolume, onHideSelected, onIsolate, onShowHidden, onInvertHidden, onAutoColorize, onDefaultColor, onView, onFitView, savable, cadActions }: Props) {
+export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExport, onOpen, onExample, exampleBusy = false, onSave, onSaveAs, onDeselect, onSnapshot, onSurfaceArea, onVolume, onHideSelected, onIsolate, onShowHidden, onInvertHidden, onAutoColorize, onDefaultColor, onView, onFitView, savable, cadActions }: Props) {
   const file = useStore(s => s.fileName)
   const busy = useStore(s => s.busy)
   const interactive = useInteractiveAlign(s => s.open)
@@ -91,8 +92,12 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
       const target = event.target as HTMLElement | null
       const editingText = target instanceof Element && Boolean(target.closest('input,textarea,select,[contenteditable="true"]'))
       const key = event.key.toLowerCase()
+      if ((event.ctrlKey || event.metaKey) && key === 's') {
+        event.preventDefault()
+        if (!busy && savable) (event.shiftKey ? onSaveAs : onSave)()
+        return
+      }
       if ((event.ctrlKey || event.metaKey) && !event.shiftKey) {
-        if (key === 's') { event.preventDefault(); if (!busy && savable) onSave() }
         if (key === 'o') { event.preventDefault(); if (!busy && !picking) onOpen() }
         return
       }
@@ -102,7 +107,7 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
     }
     window.addEventListener('keydown', keydown)
     return () => window.removeEventListener('keydown', keydown)
-  }, [busy, picking, savable, needsScan, onFit, onSave, onOpen])
+  }, [busy, picking, savable, needsScan, onFit, onSave, onSaveAs, onOpen])
   // `small` is QUICKSURFACE's compact key: just the icon, three to a column. The
   // label stays in the DOM for assistive technology and for the title tooltip.
   const tool = (label: string, icon: IconName, action: () => void, disabled = false, hint = label, small = false) => (
@@ -230,14 +235,16 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
     <hr />
     {moreMethods.map((m) => constructItem(m.label, method(m.id), m.hint))}
   </div></details>
-  const alignMenu = <details className="ribbon-dropdown" data-test="align-menu"><summary className="desktop-ribbon-tool" title="Choose an alignment method"><Icon name="alignSheet" size={25}/><span>Align ▾</span></summary><div className="ribbon-menu">
-    {tool('Align by Coordinate System …', 'alignSheet', () => { go('elements'); onAlign() }, needsScan, 'Pick primary, secondary and tertiary features, preview, then Apply')}
+  const editScan = () => { if (mesh) go(mesh.id) }
+  const alignCoordinates = () => { go('elements'); onAlign() }
+  const alignMenu = <details className="ribbon-dropdown" data-test="align-menu"><summary className="desktop-ribbon-tool" title="Choose an alignment method"><Icon name="coordinateSystem" size={25}/><span>Align ▾</span></summary><div className="ribbon-menu">
+    {tool('Align by Coordinate System …', 'coordinateSystem', alignCoordinates, needsScan, 'Pick primary, secondary and tertiary features, preview, then Apply')}
     {tool('Align Interactive…', 'navigate', () => { go('elements'); useShell.getState().setExtractOpen(false); useMark.getState().setGesture(null); useInteractiveAlign.getState().start(useStore.getState().modelCenter) }, needsScan, 'Drag a colored axis arrow or rotation arc to position the scan; OK applies and Cancel restores the original pose')}
     {tool('By N points …', 'pickPoints', () => { go('deviation'); onPointAlign() }, needsScan || !hasReference, 'Requires a loaded scan and reference model; pick corresponding points')}
     {tool('Fine-align reference mesh …', 'compare', () => { go('deviation'); onFineAlign() }, needsScan || !hasReference, 'Requires a loaded scan and reference model; run the existing best fit')}
   </div></details>
   const surfacingMenu = <details className="ribbon-dropdown"><summary className="desktop-ribbon-tool" title="Surface creation and editing"><Icon name="loft" size={25}/><span>Surfacing ▾</span></summary><div className="ribbon-menu">
-    {/* QUICKSURFACE 8.0.128's Main → Surfacing ▾, in its order (recorded live, 2026-11-03); Fit Surface, From 2D sketch and Thicken are on the Surfacing tab. */}{cad('network','3D Sketch …','sketch',true)}{cad('thread','Helix …','rotateCw')}{cad('loft','Loft …','loft')}{cad('sweep','Sweep …','spline')}{cad('pipe','Pipe …','elCylinder')}{tool('Fill Surface …', 'fillHoles', () => {}, true, 'Fill Surface is not built in Quick Scan yet')}{tool('Extend Surface …', 'extrude', () => {}, true, 'Extend Surface is not built in Quick Scan yet')}{tool('Flatten …', 'sheet', () => {}, true, 'Flatten is not built in Quick Scan yet')}
+    {/* QUICKSURFACE 8.0.128's Main → Surfacing ▾, in its order (recorded live, 2026-11-03); Fit Surface, From 2D sketch and Thicken are on the Surfacing tab. */}{cad('network','3D Sketch …','sketch3',true)}{cad('thread','Helix …','rotateCw')}{cad('loft','Loft …','loft')}{cad('sweep','Sweep …','spline')}{cad('pipe','Pipe …','elCylinder')}{tool('Fill Surface …', 'fillHoles', () => {}, true, 'Fill Surface is not built in Quick Scan yet')}{tool('Extend Surface …', 'extrude', () => {}, true, 'Extend Surface is not built in Quick Scan yet')}{tool('Flatten …', 'sheet', () => {}, true, 'Flatten is not built in Quick Scan yet')}
   </div></details>
   const patternMenu = <details className="ribbon-dropdown"><summary className="desktop-ribbon-tool" title="Patterns and mirror"><Icon name="pattern" size={25}/><span>Pattern ▾</span></summary><div className="ribbon-menu">{cad('pattern','Linear / circular pattern','pattern')}{cad('mirror','Mirror','mirror')}</div></details>
   const [localExamples, setLocalExamples] = useState<typeof BUNDLED_EXAMPLES>([])
@@ -284,7 +291,7 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
   const fileGroup = <Group label="File">{tool('Open', 'load', onOpen, busy || picking, 'Open a scan or project')}{tool('Save', 'save', onSave, busy || !savable, 'Save the entire Quick Scan project')}</Group>
   const analysis = <Group label="Analysis">{tool('Compare', 'compare', () => go('deviation'), locked, 'Compare scan data with CAD or fitted geometry')}</Group>
   const exportGroup = <Group label="Export Model">{cadActions ? cad('export', 'Export', 'exportStep') : tool('Export', 'exportStep', onExport, needsScan)}</Group>
-  const scanGroup = <Group label="Scan Data">{tool('Prepare Scan', 'reduceMesh', () => { useShell.getState().setPrepareStep(0); if (mesh) go(mesh.id) }, needsScan, 'Prepare Scan: a four-step guide — mesh quality, symmetry, alignment primitives, alignment')}{tool('Edit Scan', 'wsMesh', () => mesh && go(mesh.id), needsScan || !mesh, 'Open mesh selection, repair and editing')}{tool('Deselect All', 'select', onDeselect, needsScan || marked === 0, 'Clear the painted scan selection')}</Group>
+  const scanGroup = <Group label="Scan Data">{tool('Prepare Scan', 'prepareScan', () => { useShell.getState().setPrepareStep(0); if (mesh) go(mesh.id) }, needsScan, 'Prepare Scan: a four-step guide — mesh quality, symmetry, alignment primitives, alignment')}{tool('Edit Scan', 'wsMesh', editScan, needsScan || !mesh, 'Open mesh selection, repair and editing')}{tool('Deselect All', 'select', onDeselect, needsScan || marked === 0, 'Clear the painted scan selection')}</Group>
   // QUICKSURFACE's small key with a visible label: a 16 px icon and the name,
   // three to a column (Scan Data's Tools, Align and Colors groups).
   const smallText = (label: string, icon: IconName, action: () => void, disabled = false, hint = label) => (
@@ -311,7 +318,7 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
     <Group label="Align">{alignMenu}</Group>
     <Group label="Cross sections">{cad('sketch', '2D Sketch', 'sketch')}{tool('Multiple sections', 'section', () => { useShell.setState({ workspace: 'elements' }); useShell.getState().setMultipleSectionsOpen(true) }, needsScan, 'Multiple sections: parallel cross sections through the scan at a spacing')}</Group>
     <Group label="Surfacing">{cad('surface', 'Fit Surface', 'surface', true)}{surfacingMenu}</Group>
-    <Group label="Freeform">{tool('New Freeform', 'surface', () => {}, true, 'Quad-based freeform surfacing is not implemented in Quick Scan yet')}{tool('Auto Freeform', 'scan', () => {}, true, 'Automatic freeform surfacing is not implemented in Quick Scan yet')}</Group>
+    <Group label="Freeform">{tool('New Freeform', 'freeform', () => {}, true, 'Quad-based freeform surfacing is not implemented in Quick Scan yet')}{tool('Auto Freeform', 'scan', () => {}, true, 'Automatic freeform surfacing is not implemented in Quick Scan yet')}</Group>
     <Group label="Part Design"><div className="ribbon-text-stack">{cadText('extrude', 'Extrude', 'extrude')}{cadText('revolve', 'Revolve', 'revolve')}{cadText('moveFace', 'Move face', 'moveFace')}</div>{cad('trim', 'Trim', 'trim', true)}<div className="ribbon-text-stack">{cadText('boolean', 'Combine', 'opJoin')}{cadText('boolean', 'Cut', 'opCut')}{cadText('boolean', 'Intersect', 'opIntersect')}</div>{patternMenu}{cad('fillet', 'Fillet / Chamfer', 'fillet')}</Group>
     {analysis}{exportGroup}
   </>
@@ -330,7 +337,7 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
   // keys and keep a group of their own at the end.
   const scanDataTab = <>
     <Group label="Edit Scan data">
-      {tool('Edit', 'wsMesh', () => mesh && go(mesh.id), needsScan || !mesh, 'Open mesh selection, repair and editing')}
+      {tool('Edit', 'wsMesh', editScan, needsScan || !mesh, 'Open mesh selection, repair and editing')}
       <div className="ribbon-text-stack">
         {smallText('Deselect All', 'select', onDeselect, needsScan || marked === 0, 'Clear the painted scan selection')}
         {smallText('Show Hidden', 'eye', onShowHidden, hiddenTriangles === 0, 'Show all hidden triangles')}
@@ -350,7 +357,7 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
       </div>
     </Group>
     <Group label="Align">
-      {tool('Align by Coordinate System', 'alignSheet', () => { go('elements'); onAlign() }, needsScan, 'Pick primary, secondary and tertiary features, preview, then Apply')}
+      {tool('Align by Coordinate System', 'coordinateSystem', alignCoordinates, needsScan, 'Pick primary, secondary and tertiary features, preview, then Apply')}
       {tool('Align Interactive', 'navigate', () => { go('elements'); useShell.getState().setExtractOpen(false); useMark.getState().setGesture(null); useInteractiveAlign.getState().start(useStore.getState().modelCenter) }, needsScan, 'Drag a colored axis arrow or rotation arc to position the scan; OK applies and Cancel restores the original pose')}
       <div className="ribbon-text-stack">
         {smallText('By N points', 'pickPoints', () => { go('deviation'); onPointAlign() }, needsScan || !hasReference, 'Requires a loaded scan and reference model; pick corresponding points')}
@@ -365,15 +372,15 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
   // Freeform and Surfacing as seen live in QUICKSURFACE 8.0.128 (2026-11-02):
   // large keys first, then columns of small labelled keys; no File or Export.
   const freeformTab = <>
-    <Group label="Create New Freeform">{tool('New Freeform', 'surface', () => {}, true, 'Quad-based freeform surfacing is not implemented in Quick Scan yet')}{tool('Auto Freeform', 'scan', () => {}, true, 'Automatic freeform surfacing is not implemented in Quick Scan yet')}
-      <div className="ribbon-text-stack">{soonText('Wrap Surface', 'elCylinder')}{soonText('From 3D Sketch', 'sketch')}{soonText('From quad OBJ', 'load')}</div></Group>
+    <Group label="Create New Freeform">{tool('New Freeform', 'freeform', () => {}, true, 'Quad-based freeform surfacing is not implemented in Quick Scan yet')}{tool('Auto Freeform', 'scan', () => {}, true, 'Automatic freeform surfacing is not implemented in Quick Scan yet')}
+      <div className="ribbon-text-stack">{soonText('Wrap Surface', 'elCylinder')}{soonText('From 3D Sketch', 'sketch3')}{soonText('From quad OBJ', 'load')}</div></Group>
     <Group label="Tools"><div className="ribbon-text-stack">{cadText('thicken', 'Thicken', 'shell')}{cadText('offsetBody', 'Offset', 'sheet')}{soonText('Convert to CAD body', 'exportStep')}</div></Group>
   </>
   const surfacingTab = <>
     <Group label="Create">{cad('surface', 'Fit Surface', 'surface', true)}{cad('loft', 'Loft', 'loft')}
       <div className="ribbon-text-stack">{soonText('Fill Surface', 'fillHoles')}{cadText('sweep', 'Sweep', 'spline')}{cadText('pipe', 'Pipe', 'elCylinder')}</div>
       <div className="ribbon-text-stack">{cadText('sheet', 'From 2D sketch', 'sheet')}</div>
-      {cad('network', '3D Sketch', 'sketch', true)}
+      {cad('network', '3D Sketch', 'sketch3', true)}
       <div className="ribbon-text-stack">{cadText('thread', 'Helix', 'rotateCw')}{soonText('Roll Sketch', 'revolve')}</div></Group>
     <Group label="Tools">
       <div className="ribbon-text-stack">{soonText('Duplicate Face', 'deleteSurface')}{cadText('offsetBody', 'Offset', 'sheet')}{cadText('thicken', 'Thicken', 'shell')}</div>
@@ -421,7 +428,7 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
             <button key={view} className="ribbon-text-key" data-test={`ribbon-${label.toLowerCase()}`} disabled={!onView} title={`${label} view`} onClick={() => onView?.(view)}>{label}</button>
           ))}
         </div>
-        {tool('Coordinate System', 'elPoint', () => useNavigationView.getState().setCoordinates(!useNavigationView.getState().coordinates), false, 'Show or hide the world coordinate system')}
+        {tool('Coordinate System', 'coordinateSystem', () => useNavigationView.getState().setCoordinates(!useNavigationView.getState().coordinates), false, 'Show or hide the world coordinate system')}
       </Group>
       <Group label="Background style"><div className="ribbon-text-stack">{smallText('Linear', 'mesh', () => useNavigationView.getState().setBackground('linear'), false, 'Background: a gradient from top to bottom')}{smallText('Studio', 'mesh', () => useNavigationView.getState().setBackground('studio'), false, 'Background: a studio vignette, lighter in the middle')}</div></Group>
       <Group label="Display">{tool(wireframe ? 'Solid view' : 'Wireframe', 'mesh', () => useStore.getState().setWireframe(!wireframe), !file)}{tool(translucent ? 'Opaque' : 'Transparent', 'transparent', () => useStore.getState().setTranslucent(!translucent), !file)}{tool('Show scan', 'eye', () => useStore.getState().setScanHidden(false), !file)}{tool('Hide scan', 'eyeOff', () => useStore.getState().setScanHidden(true), !file)}</Group>

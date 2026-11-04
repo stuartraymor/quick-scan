@@ -18,6 +18,7 @@ import { useFlat } from '../state/flatStore'
 import { forgetKeptParts, keepUnownedParts, projectSections } from './projectSections'
 import { ProjectClient } from '../core/project/projectClient'
 import { PROJECT_EXTENSION, projectStem, rigidFromJson } from '../core/project/manifest'
+import { desktopProjectWriter, recentProjectTargets } from './projectWriter'
 import { saveFile } from './exports'
 import {
   blankManifest,
@@ -76,7 +77,10 @@ export function useProject({
 
   /** The session as a project file, and the session marked saved — what
    *  Save Project downloads and project.save hands back. */
-  const packProject = () => imports.run(async (): Promise<PackedProject> => {
+  const target = useRef<{ file: File | null; token: string | null }>({ file: null, token: null })
+  // project.save returns bytes to the AI host. Desktop UI saves also wait for
+  // the native write, keeping the captured snapshot dirty on cancellation.
+  const pack = (destination: 'host' | 'save' | 'saveAs') => imports.run(async (): Promise<PackedProject> => {
     const store = useStore.getState()
     if (!projectHasContent(sources.current)) return { error: 'There is nothing to save yet — no scan, image or work.' }
     store.setError(null)
@@ -86,12 +90,26 @@ export function useProject({
       const { manifest, members } = snapshot
       const bytes = await client().pack(manifest, members)
       const stem = projectStem(store.projectName, store.fileName, useFlat.getState().imageName)
+      const name = `${stem}.${PROJECT_EXTENSION}`
+      if (destination !== 'host') {
+        const writer = desktopProjectWriter()
+        if (writer?.saveProject) {
+          const result = await writer.saveProject(name, bytes, destination === 'saveAs', target.current.token, target.current.file)
+          if (result.canceled) {
+            useStore.setState({ busy: false, statusText: 'Save canceled.' })
+            return { error: 'Save canceled.' }
+          }
+          target.current = { file: null, token: result.token }
+        } else {
+          saveFile(name, new Blob([bytes as BlobPart], { type: 'application/zip' }))
+        }
+      }
       recovery.markSaved(snapshot)
       useStore.setState({
         busy: false,
         statusText: `Project saved — ${(bytes.byteLength / 1e6).toFixed(1)} MB.`,
       })
-      return { name: `${stem}.${PROJECT_EXTENSION}`, bytes }
+      return { name, bytes }
     } catch (e) {
       if (projectClient.current?.dead) projectClient.current = null
       useStore.setState({ busy: false, statusText: '' })
@@ -101,9 +119,9 @@ export function useProject({
     }
   })
 
-  const saveProject = () => packProject().then((packed) => {
-    if ('bytes' in packed) saveFile(packed.name, new Blob([packed.bytes as BlobPart], { type: 'application/zip' }))
-  })
+  const packProject = () => pack('host')
+  const saveProject = () => pack('save')
+  const saveProjectAs = () => pack('saveAs')
 
   /** Open a project in place of the session — after asking, when there is
    *  work to lose, unless the caller has settled that (`settled`). */
@@ -147,6 +165,7 @@ export function useProject({
       commitNominal(nominal)
       commitImage(image)
       committed = true
+      target.current = { file: null, token: null }
       // The scan keeps the name it was opened under, whatever the file it
       // is now kept as.
       useStore.setState({ appliedAlignment: alignment, ...(manifest.scan ? { fileName: manifest.scan.fileName } : {}) })
@@ -188,6 +207,7 @@ export function useProject({
         busy: false,
         statusText: `Project opened — ${file.name}.${unowned.length > 0 ? ' It also holds work this build has no workspace for; that is kept, and saved with the project.' : ''}`,
       })
+      target.current = recovered ? { file: null, token: null } : { file, token: recentProjectTargets.get(file) ?? null }
       if (recovered) recovery.restored()
       else recovery.markSaved(capture())
     } catch (e) {
@@ -217,11 +237,12 @@ export function useProject({
     elementScope.current = null
     applyState()
     useDeviation.setState((s) => ({ scopeVersion: s.scopeVersion + 1 }))
+    target.current = { file: null, token: null }
     forgetKeptParts()
     sceneRef.current?.frameAll()
     useStore.setState({ busy: false, statusText: 'New project.' })
     recovery.markSaved(capture())
   }, () => settled || !recovery.dirty || window.confirm('Start a new project? The changes in this one that are not saved are lost.'))
 
-  return { saveProject, packProject, openProject, newProject, recovery }
+  return { saveProject, saveProjectAs, packProject, openProject, newProject, recovery }
 }

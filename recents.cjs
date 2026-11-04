@@ -38,4 +38,18 @@ function read(file, p) {
   if (size > LARGEST) throw new Error('That file is too large to open from the recent list.');
   return { name: path.basename(p), data: fs.readFileSync(p) };
 }
-module.exports = { MAX, allowed, load, remember, clear, describe, read };
+/** Replace only a complete project archive. A failed write leaves the previous
+ *  file intact, including when the disk is full or the destination is locked. */
+async function writeProject(file, bytes) {
+  if (!path.isAbsolute(file) || path.extname(file).toLowerCase() !== '.scanruler') throw Error('Choose a .scanruler project file.');
+  if (!(bytes instanceof Uint8Array) || bytes[0] !== 0x50 || bytes[1] !== 0x4b) throw Error('Invalid project archive.');
+  const temp = path.join(path.dirname(file), `.quickscan-${require('node:crypto').randomUUID()}.tmp`);
+  const handle = await fs.promises.open(temp, 'wx');
+  try {
+    try { await handle.writeFile(bytes); await handle.sync(); } finally { await handle.close(); }
+    await fs.promises.rename(temp, file);
+  } finally {
+    await fs.promises.rm(temp, { force: true }).catch(() => {});
+  }
+}
+module.exports = { writeProject, MAX, allowed, load, remember, clear, describe, read };

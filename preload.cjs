@@ -19,6 +19,10 @@ contextBridge.exposeInMainWorld('quickScanFiles', {
   recent: () => ipcRenderer.invoke('files:recent'),
   remember: file => { try { const p = webUtils.getPathForFile(file); return p ? ipcRenderer.invoke('files:remember', p) : Promise.resolve([]); } catch { return Promise.resolve([]); } },
   open: p => ipcRenderer.invoke('files:open', p),
+  saveProject: (name, bytes, saveAs, token, file) => {
+    const openedPath = file ? webUtils.getPathForFile(file) : '';
+    return ipcRenderer.invoke('files:saveProject', { name, bytes, saveAs, token, openedPath });
+  },
   clear: () => ipcRenderer.invoke('files:clear'),
   onChanged: cb => { const h = () => cb(); ipcRenderer.on('files:changed', h); return () => ipcRenderer.removeListener('files:changed', h); },
 });

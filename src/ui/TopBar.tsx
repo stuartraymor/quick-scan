@@ -154,6 +154,7 @@ function markEnds(el: HTMLElement) {
 export function TopBar({
   onNewProject,
   onSaveProject,
+  onSaveProjectAs,
   onOpenProject,
   onOpenScan,
   onOpenImage,
@@ -165,6 +166,7 @@ export function TopBar({
 }: {
   onNewProject: () => void
   onSaveProject: () => void
+  onSaveProjectAs: () => void
   onOpenProject: (file: File) => void
   onOpenScan: (file: File) => void
   onOpenImage: (file: File) => void
@@ -274,7 +276,7 @@ export function TopBar({
         </button>
       )}
       <span className="project-save-status" data-test="project-save-status"
-        title={`${recovery.status || 'Checkpoints are stored only in this browser.'} Checkpoints and project files include completed work; finish active drawings before leaving. Save Project downloads a portable copy.`}>
+        title={`${recovery.status || 'Checkpoints are stored only in this browser.'} Checkpoints and project files include completed work; finish active drawings before leaving. Save writes a portable project file.`}>
         {recovery.dirty ? 'Unsaved changes' : 'No unsaved changes'}
         {recovery.status && <small role="status">{recovery.status}</small>}
       </span>
@@ -313,11 +315,11 @@ export function TopBar({
       <button
         className="ghost withicon"
         data-test="save-project-as"
-        onClick={onSaveProject}
+        onClick={onSaveProjectAs}
         disabled={busy || !savable}
         title="Save as — save the project under a new name (the desktop app asks where)"
       >
-        <Icon name="save" size={16} />
+        <Icon name="saveAs" size={16} />
         <span className="btxt">Save as</span>
       </button>
       <button
@@ -359,6 +361,7 @@ export function TopBar({
       savable={savable}
       onNew={onNewProject}
       onSave={onSaveProject}
+      onSaveAs={onSaveProjectAs}
       onOpen={() => openRef.current?.click()}
       onImportScan={() => scanRef.current?.click()}
       onImportCad={() => cadRef.current?.click()}

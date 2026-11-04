@@ -20,7 +20,7 @@ const { DesktopRibbon } = await import('../src/ui/DesktopRibbon')
 const noop = () => {}
 const props = {
   onFit: noop, onSection: noop, onAlign: noop, onAutoAlign: noop, onFineAlign: noop, onPointAlign: noop,
-  onExport: noop, onOpen: noop, onSave: noop, onDeselect: noop, onSnapshot: noop, onSurfaceArea: noop, onVolume: noop, onHideSelected: noop,
+  onExport: noop, onOpen: noop, onSave: noop, onSaveAs: noop, onDeselect: noop, onSnapshot: noop, onSurfaceArea: noop, onVolume: noop, onHideSelected: noop,
   onIsolate: noop, onShowHidden: noop, savable: false,
 }
 const render = (tab: string) => { useShell.setState({ ribbonTab: tab }); return renderToStaticMarkup(<DesktopRibbon {...props} />) }

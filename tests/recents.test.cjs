@@ -16,3 +16,17 @@ test('reads only listed files and flags missing ones', () => {
   fs.unlinkSync(p); assert.equal(r.describe(list).find(e => e.path === p).exists, false);
 });
 test('corrupt file is an empty list; clear empties', () => { fs.writeFileSync(list, '{nope'); assert.deepEqual(r.load(list), []); r.remember(list, mk('z.stl')); assert.deepEqual(r.clear(list), []); });
+
+test('project save replaces the whole archive and preserves the old file on failure', async () => {
+  const target = mk('existing.scanruler');
+  const archive = Uint8Array.from([0x50, 0x4b, 3, 4]);
+  await r.writeProject(target, archive);
+  assert.deepEqual(fs.readFileSync(target), Buffer.from(archive));
+  await assert.rejects(r.writeProject(target, new Uint8Array(1)), /Invalid project/);
+  assert.deepEqual(fs.readFileSync(target), Buffer.from(archive));
+  const locked = path.join(dir, 'directory.scanruler');
+  fs.mkdirSync(locked);
+  await assert.rejects(r.writeProject(locked, archive));
+  assert.ok(fs.statSync(locked).isDirectory());
+  assert.equal(fs.readdirSync(dir).filter(name => name.endsWith('.tmp')).length, 0);
+});

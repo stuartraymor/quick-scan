@@ -170,6 +170,21 @@ const ICONS = {
       <path className="i-th i-ft" d="M10.6 12h2.8M12 10.6v2.8" />
     </>
   ),
+  sketch3: (
+    <>
+      <path className="i-ft i-ds" d="m3 18 8 4 10-6-8-4Z" />
+      <path className="i-a" d="m3 18 5-11 7 5 6-9" />
+      <circle className="i-adt" cx="8" cy="7" r="1.5" />
+      <circle className="i-adt" cx="15" cy="12" r="1.5" />
+    </>
+  ),
+  freeform: (
+    <>
+      <path className="i-g" d="M2 15Q4 5 10 4q6 5 12 4-1 7-7 13-7-1-13-6Z" />
+      <path className="i-a" d="M6 8q5 7 13 8M4 12q5 7 13 7M15 7q-6 4-7 11" />
+      <circle className="i-adt" cx="10" cy="12" r="1.5" />
+    </>
+  ),
   surface: (
     <>
       <path className="i-f" d="M3 13q5-8 11-8 5 3 7 8-6 1-11 7-5-2-7-7Z" />
@@ -828,6 +843,28 @@ const ICONS = {
       <path className="i-g" d="M5 3h9l5 5v13H5Z" />
       <path d="M14 3v5h5" />
       <path className="i-a" d="M12 11v7M8.5 14.5h7" />
+    </>
+  ),
+  saveAs: (
+    <>
+      <path className="i-g" d="M3 3h12l4 4v3M3 3v16h7M7 3v5h7V3" />
+      <path className="i-a" d="m10 20 1-4 8-8 3 3-8 8-4 1Z M17 10l3 3" />
+    </>
+  ),
+  coordinateSystem: (
+    <>
+      <path stroke="#ec6363" d="m12 13 9 4m-3-4 3 4-5 1" />
+      <path stroke="#6ab976" d="m10 13-7 5m1-5-1 5 5-1" />
+      <path stroke="#62aaff" d="M11 12V2m-3 4 3-4 3 4" />
+      <path className="i-g" d="m7 12 4-2 4 2v4l-4 2-4-2Z" />
+      <path className="i-th" d="m7 12 4 2 4-2m-4 2v4" />
+    </>
+  ),
+  prepareScan: (
+    <>
+      <path className="i-g" d="m2 16 4-9 10-3 5 8-6 7-13-3Z" />
+      <path className="i-th" d="m2 16 8-4-4-5m4 5 6-8m-6 8 5 7m-5-7 11 0" />
+      <path className="i-a" strokeWidth="2.4" d="m14 19 3 3 6-8" />
     </>
   ),
   save: (

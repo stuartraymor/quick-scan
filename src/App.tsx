@@ -1578,7 +1578,7 @@ export default function App() {
   })
 
   // Drag & drop anywhere.
-  const { saveProject, packProject, openProject, newProject, recovery } = useProject({
+  const { saveProject, saveProjectAs, packProject, openProject, newProject, recovery } = useProject({
     sources,
     clientRef,
     sceneRef,
@@ -1851,6 +1851,7 @@ export default function App() {
         recovery={recovery}
         onNewProject={() => void newProject()}
         onSaveProject={saveProject}
+        onSaveProjectAs={saveProjectAs}
         onOpenProject={openProject}
         onOpenScan={openFile}
         onOpenImage={openImage}
@@ -1875,6 +1876,7 @@ export default function App() {
         pluginTools={active?.ribbon}
         cadActions={ribbonActions}
         onSave={saveProject}
+        onSaveAs={saveProjectAs}
         savable={(fileName !== null && vertexCountLoaded) || flatImageName !== null || runtimes.some((r) => r.canSave)}
         onDeselect={clearPaint}
         onSnapshot={() => void handleSnapshot()}

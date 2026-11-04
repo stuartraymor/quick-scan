@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Full user workflow on a real mesh: section points -> circular brush fit ->
 // graphical constraints/dimension -> OCCT solid -> actual archive round trip.
-import { mkdirSync, readdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { check, click, finish, launchApp, loadScan, shotPath, sleep } from '../../../scripts/e2e-lib.mjs'
 import { openReverse, reverseHelpers } from './lib.mjs'
 
+const version = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8')).version
 const fixture = shotPath('workflow-cylinder-r10.obj'), n = 160, obj = []
 for (const z of [-5, 5]) for (let i = 0; i < n; i++) obj.push(`v ${10 * Math.cos(i * Math.PI * 2 / n)} ${10 * Math.sin(i * Math.PI * 2 / n)} ${z}`)
 obj.push('v 0 0 -5', 'v 0 0 5')
@@ -24,7 +25,7 @@ const at = (point) => re((p) => window.__re.sheet().sheetScreenPoint(p), point)
 const pointClick = async (p) => { const pixel = await at(p); await page.mouse.click(pixel.x, pixel.y); await sleep(120) }
 let summary = {}
 try {
-  must(await page.$eval('[data-test=app-version]', (el) => el.textContent.includes('0.0.44')), 'fresh runtime identifies version 0.0.44')
+  must(await page.$eval('[data-test=app-version]', (el, expected) => el.textContent.trim() === `v${expected}`, version), `fresh runtime identifies version ${version}`)
   await loadScan(page, fixture)
   await openReverse(page)
   if (await page.$('[data-test=support-card] .sc-x')) await click(page, '[data-test=support-card] .sc-x')
@@ -92,7 +93,7 @@ try {
   const body = await re(() => { const s = window.__re.store.getState(), b = s.bodies[0], topology = window.__re.topology(b.id); return { id: b.id, volume: b.volume, closed: b.closed, faces: topology?.faces.length, edges: topology?.edges.length, kinds: s.features.map((f) => f.kind), buildError: s.buildError } })
   must(body.closed && Math.abs(body.volume - Math.PI * 100 * 12) < 0.2 && body.faces >= 3 && body.edges >= 3 && !body.buildError, `OCCT builds a closed solid with measured volume and real face/edge topology (${JSON.stringify(body)})`)
   await page.screenshot({ path: shotPath('04-closed-cylinder-body.png') })
-  await fill('[data-test=project-name]', 'Quick Scan 0.0.44 full workflow')
+  await fill('[data-test=project-name]', `Quick Scan ${version} full workflow`)
   await click(page, '[data-test=save-project]')
   let file = null
   for (let i = 0; i < 150 && !file; i++) { await sleep(200); const name = readdirSync(downloads).find((f) => f.endsWith('.scanruler')); if (name) file = join(downloads, name) }
@@ -109,7 +110,7 @@ try {
   must(await re(() => { const d = window.__re.store.getState().sketchDraft; return d.sketch.constraints.some((c) => c.kind === 'diameter' && c.value === 20) && d.sketch.referenceChains.reduce((sum, c) => sum + c.length, 0) > 200 && d.report.ok }), 'double-clicking History reopens an editable solved sketch with its driving dimension and reference cloud')
   await page.screenshot({ path: shotPath('06-reopened-editable-sketch.png') })
   await click(page, '[data-test=sketch-cancel]'); await built()
-  summary = { version: '0.0.44', fixture, project: file, referenceCount, preview, constrained, dimensioned, body, restored }
+  summary = { version, fixture, project: file, referenceCount, preview, constrained, dimensioned, body, restored }
   writeFileSync(shotPath('workflow-results.json'), JSON.stringify(summary, null, 2))
 } catch (error) { check(false, error.stack ?? error.message) }
 await finish(browser, consoleErrors)
