@@ -45,7 +45,7 @@ try{
  const sketch=await inspect();captures.push(sketch)
  check(sketch.title==='Create Sketch'&&!sketch.overflow,'2D Sketch opens a dedicated Create Sketch widget')
  const order=await page.$$eval('[data-test=place-sketch] [data-test]',els=>els.map(e=>e.getAttribute('data-test')))
- const want=['place-mode-extruded','place-mode-revolved','place-planes','place-pick','place-offset','place-offset-apply','place-define-interactive','place-snap-xy','place-hide-scan','place-flip','place-on-slice','place-through-selection','place-stacked','place-stacked-count','place-stacked-apply','place-outline-mode']
+ const want=['place-mode-extruded','place-mode-revolved','place-planes','place-pick','place-hint','place-offset','place-offset-apply','place-define-interactive','place-snap-xy','place-hide-scan','place-flip','place-on-slice','place-through-selection','place-stacked','place-stacked-count','place-stacked-apply','place-outline-mode']
  const at=want.map(k=>order.indexOf(k))
  check(at.every((i,n)=>i>=0&&(n===0||i>at[n-1])),'Create Sketch lists its controls in QUICKSURFACE order: mode, plane, parallel to, offset, define interactive, snap, ignore scan data, flip, slicing plane, through selection, stacked sections, outline mode')
  check(await page.$eval('[data-test=place-flip]',e=>e.disabled&&e.title.includes('Not built')),'options with no behaviour yet are greyed and say so, not silently inert')

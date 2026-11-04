@@ -15,6 +15,9 @@ import { planeOffset, planeTakesOffset, type PlaneRef } from '../core/features'
 import { useLength } from '../../../src/app/useUnits'
 import { useStore } from '../../../src/state/store'
 import { PlaneSelect } from './PlaneSelect'
+import { usePlacePick } from '../state/placePickStore'
+import { createPortal } from 'react-dom'
+import { cornerBoxPlace } from '../../../src/ui/cornerBox'
 import { commandHost } from '../../../src/commands/host'
 import { cloneSketch } from '../core/sketch'
 import { collectExtrudedReference, ReferenceCancelled, type StackExtent } from '../core/stackedReference'
@@ -91,6 +94,13 @@ export function PlaceSketch({ chainsOf }: { chainsOf: () => { chains: Vec2[][] }
   const previousFrame = useRef<string | null>(null)
   const [typedAngle, setTypedAngle] = useState<string | null>(null)
   useEffect(() => () => { run.current++ }, [])
+  const pickArmed = usePlacePick((s) => s.armed)
+  const picked = usePlacePick((s) => s.picked)
+  // Leaving Create Sketch lets go of an armed pick.
+  useEffect(() => () => usePlacePick.getState().setArmed(false), [])
+  // A plane clicked in the view while "Pick ..." is armed becomes the plane.
+  const placeRef = useRef<((ref: PlaneRef) => void) | null>(null)
+  useEffect(() => { if (picked) { const ref = usePlacePick.getState().take(); if (ref) placeRef.current?.(ref) } }, [picked])
   const currentFrame = draft?.placing ? frameKey(draft.frame) : null
   useEffect(() => {
     const moved = previousFrame.current !== null && previousFrame.current !== currentFrame
@@ -116,11 +126,14 @@ export function PlaceSketch({ chainsOf }: { chainsOf: () => { chains: Vec2[][] }
     setTypedAngle(null)
     if (typedAngle !== null && typedAngle.trim() !== '' && Number.isFinite(v)) re.setSketchAngle(v)
   }
+  const referenceName = draft.plane.kind === 'plane' ? useStore.getState().elements.find((e) => e.id === (draft.plane as { id: number }).id)?.name
+    : draft.plane.kind === 'section' ? useStore.getState().sections.find((x) => x.id === (draft.plane as { id: number }).id)?.name : undefined
   const place = (ref: PlaneRef) => {
     run.current++; setWorking(null); setExtent(undefined); setStacked(false); setReferenceMessage(null); appliedStack.current = null
     // A new plane, the sketch drafted afresh on it, still placing.
     if (re.startSketchOn(ref)) placing()
   }
+  placeRef.current = place
   const commit = () => {
     run.current++; setWorking(null); appliedStack.current = null
     const v = len.fromDisplay(Number(typed))
@@ -226,10 +239,12 @@ export function PlaceSketch({ chainsOf }: { chainsOf: () => { chains: Vec2[][] }
           <input type="number" step="any" data-test="place-rotation" value={typedAngle ?? radial.angleDeg} onChange={(e) => setTypedAngle(e.target.value)} onBlur={commitAngle} onKeyDown={(e) => e.key === 'Enter' && commitAngle()} />
         </label>
       )}
-      <label className="field" title="Parallel to a coordinate plane, or to a plane or section already made">
-        <span>{plane ? `Parallel to ${plane.axis === 'z' ? 'OXY' : plane.axis === 'x' ? 'OYZ' : 'OXZ'}` : 'Parallel to'}</span>
-        <PlaneSelect value={draft.plane} testId="place-pick" placeholder="Pick …" onChange={(ref) => place(ref)} />
-      </label>
+      <div className="field re-place-parallel" title="Parallel to a coordinate plane, or to a plane or section already made">
+        <span data-test="place-parallel-label">{plane ? `Parallel to ${plane.axis === 'z' ? 'OXY' : plane.axis === 'x' ? 'OYZ' : 'OXZ'}` : referenceName ?? ''}</span>
+        <button type="button" data-test="place-pick" className={pickArmed ? 'on' : undefined} aria-pressed={pickArmed} disabled={!!radial}
+          title="Click a plane in the view to sketch on it" onClick={() => usePlacePick.getState().setArmed(!pickArmed)}>Pick ...</button>
+      </div>
+      {pickArmed && <label className="field" title="Or choose a plane or section from the list"><span>or</span><PlaneSelect value={draft.plane} testId="place-pick-list" placeholder="Choose …" onChange={(ref) => { usePlacePick.getState().setArmed(false); place(ref) }} /></label>}
       {planeTakesOffset(draft.plane) && !radial && (
         <div className="toolrow re-place-offset">
         <label className="field">
@@ -247,7 +262,7 @@ export function PlaceSketch({ chainsOf }: { chainsOf: () => { chains: Vec2[][] }
         <button data-test="place-offset-apply" disabled={!!working || !canApplyOffset} onClick={commit}>Apply</button>
         </div>
       )}
-      <p className="hint">Drag the yellow arrow to carry the plane through the part; the cut is outlined in yellow.</p>
+      <PlaceHint lineActive={sectionLine.active} />
       <button className={sectionLine.active ? 'block on' : 'block'} aria-pressed={sectionLine.active} data-test="place-define-interactive" disabled={!!working || !useStore.getState().fileName} title="Click the start and the end of a section line on the part; the sketch plane stands upright through it" onClick={() => { if (sectionLine.active) { sectionLine.cancel(); useStore.getState().setStatus('') } else { sectionLine.start(); useStore.getState().setStatus('Click to define the start of the section line.') } }}>Define interactive</button>
       <label className="checkrow" title="Define interactive holds the section line to whichever of X or Y it runs nearest">
         <input type="checkbox" data-test="place-snap-xy" checked={sectionLine.snap} onChange={(e) => sectionLine.setSnap(e.target.checked)} />
@@ -320,5 +335,23 @@ export function PlaceSketch({ chainsOf }: { chainsOf: () => { chains: Vec2[][] }
         <button data-test="place-cancel" onClick={() => { run.current++; setWorking(null); re.discardSketch() }}>Cancel</button>
       </div>
     </section>
+  )
+}
+
+/** QUICKSURFACE's Create Sketch hint, boxed in the view's bottom-right
+ *  corner: "Click to define start of the section line" while the dialog is
+ *  up, "Define the section plane for 2D Sketch" once Define interactive is on. */
+export const PLACE_HINT = 'Click to define start of the section line'
+export const PLACE_LINE_HINT = 'Define the section plane for 2D Sketch'
+function PlaceHint({ lineActive }: { lineActive: boolean }) {
+  const view = document.querySelector('.desktop-mid')
+  const rect = view?.getBoundingClientRect()
+  if (!rect) return null
+  return createPortal(
+    <div data-test="place-hint" title="Drag the yellow arrow to carry the plane through the part; the cut is outlined in yellow."
+      style={{ position: 'fixed', ...cornerBoxPlace(rect), padding: '4px 8px', background: 'color-mix(in srgb, var(--panel, #1e2126) 88%, transparent)', border: '1px solid var(--line, #3a3f47)', color: 'var(--ink, #e8eaed)', fontSize: 12, pointerEvents: 'none', zIndex: 40 }}>
+      {lineActive ? PLACE_LINE_HINT : PLACE_HINT}
+    </div>,
+    document.body,
   )
 }

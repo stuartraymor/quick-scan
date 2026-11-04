@@ -21,24 +21,36 @@ export function planeResidual(p: Plane, x: number, y: number, z: number): number
 /** Total-least-squares plane: the centroid, plus the direction the points
  *  scatter least along as the normal. Exact — this *is* the Gaussian best-fit
  *  for a plane, so no iterative refinement step is needed. */
-export function fitPlaneTLS(positions: Float32Array, idx: ArrayLike<number>): Plane | null {
+export function fitPlaneTLS(positions: Float32Array, idx: ArrayLike<number>, weights?: ArrayLike<number>): Plane | null {
   const n = idx.length
   if (n < 3) return null
 
-  const [mx, my, mz] = centroidOf(positions, idx)
+  // Weighted by the surface each point stands for when weights are given
+  // (see vertexArea): the centroid and the scatter are then the surface's.
+  let sw = 0, mx = 0, my = 0, mz = 0
+  if (weights) {
+    for (let i = 0; i < n; i++) {
+      const v = idx[i], w = weights[v] > 0 ? weights[v] : 0, j = v * 3
+      sw += w; mx += w * positions[j]; my += w * positions[j + 1]; mz += w * positions[j + 2]
+    }
+  }
+  if (!(sw > 0)) [mx, my, mz] = centroidOf(positions, idx)
+  else { mx /= sw; my /= sw; mz /= sw }
+  const weighted = sw > 0
 
   let cxx = 0, cxy = 0, cxz = 0, cyy = 0, cyz = 0, czz = 0
   for (let i = 0; i < n; i++) {
-    const j = idx[i] * 3
+    const v = idx[i], j = v * 3
+    const w = weighted ? (weights![v] > 0 ? weights![v] : 0) : 1
     const x = positions[j] - mx
     const y = positions[j + 1] - my
     const z = positions[j + 2] - mz
-    cxx += x * x
-    cxy += x * y
-    cxz += x * z
-    cyy += y * y
-    cyz += y * z
-    czz += z * z
+    cxx += w * x * x
+    cxy += w * x * y
+    cxz += w * x * z
+    cyy += w * y * y
+    cyz += w * y * z
+    czz += w * z * z
   }
 
   const { values, vectors } = symmetricEigen3([cxx, cxy, cxz, cxy, cyy, cyz, cxz, cyz, czz])
@@ -87,8 +99,9 @@ export function fitPlaneClipped(
   positions: Float32Array,
   idx: Uint32Array | ArrayLike<number>,
   k: number,
+  weights?: ArrayLike<number>,
 ): ClippedPlaneFit | null {
-  const r = clippedRefit<Plane>(positions, idx, k, (used) => fitPlaneTLS(positions, used), planeResidual)
+  const r = clippedRefit<Plane>(positions, idx, k, (used) => fitPlaneTLS(positions, used, weights), planeResidual, true)
   return r && { plane: r.model, sigma: r.sigma, span: r.span, min: r.min, max: r.max, used: r.used }
 }
 

@@ -53,13 +53,15 @@ const RIM_TUBE_PX = 1.5
 const GHOST_OPACITY = 0.95
 /** A created primitive is drawn in a deeper shade of its palette colour and more
  *  solid than a see-through wash, so it stands out from the scan under it at a
- *  glance — and a plane runs past the patch it was fitted to, so a flat face
- *  reads as the plane it defines rather than a sticker on the scan. These are
- *  for the eye only: the fit, its measurements and exports keep the real extent. */
+ *  glance. These are for the eye only: the fit, its measurements and exports
+ *  keep the real extent. */
 export const PRIMITIVE_SHADE = 1
 export const PRIMITIVE_OPACITY = 0.62
 export const PRIMITIVE_OPACITY_SELECTED = 0.78
-export const PLANE_OVERHANG = 1.6
+// QUICKSURFACE draws a plane at its own extent, its yellow rim and resize
+// handles on the sheet's edge: a sheet drawn past the patch left the handles
+// standing inside it, and a drag could not keep its edge under the pointer.
+export const PLANE_OVERHANG = 1
 
 /** A colour deepened by `shade` (0 to 1): the palette colour as a primitive's body. */
 export function deepen(color: string | number, shade = PRIMITIVE_SHADE): number {

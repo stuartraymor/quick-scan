@@ -203,8 +203,8 @@ export function AnalysisRow({ testPrefix }: { testPrefix: string }) {
       <label className="checkrow">
         <input type="checkbox" data-test="re-analysis-on" checked={on} onChange={(e) => setOn(e.target.checked)} />
         <span>
-          Deviation map
-          <InfoDot title="Deviation map">
+          Analysis
+          <InfoDot title="Analysis — deviation map">
             <p>
               Colours the scan near the ghost by how far it lies from the ghost's surface — green on it, red outside the body, blue inside — on the Deviation ramp at ± this range, and darker past it. The rest of the scan keeps its colour. Drag the grips and watch the feature settle onto the scan.
             </p>

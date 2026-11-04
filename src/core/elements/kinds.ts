@@ -16,11 +16,18 @@ export interface ElementKindInfo {
   label: string
   /** Lower case, for mid-sentence hints. */
   noun: string
+  /** What a new element of the kind is named before its number, when that
+   *  differs from the label: QUICKSURFACE 8.0.128 names a line "Ref. Line(1)"
+   *  and lists it under "Ref. geometry" (seen 2026-11-04). */
+  nameStem?: string
 }
+
+/** The name a new element of the kind starts with, before "(n)". */
+export const elementNameStem = (info: ElementKindInfo): string => info.nameStem ?? info.label
 
 export const ELEMENT_KINDS: readonly ElementKindInfo[] = [
   { id: 'point', label: 'Point', noun: 'point' },
-  { id: 'line', label: 'Line', noun: 'line' },
+  { id: 'line', label: 'Line', noun: 'line', nameStem: 'Ref. Line' },
   { id: 'plane', label: 'Plane', noun: 'plane' },
   { id: 'sphere', label: 'Sphere', noun: 'sphere' },
   { id: 'cylinder', label: 'Cylinder', noun: 'cylinder' },

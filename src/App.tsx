@@ -832,6 +832,8 @@ export default function App() {
    *  draft's slots. Clicking an element that is already used takes it out. */
   const handleElementPick = (id: number, clientX = 0, clientY = 0) => {
     if (commandRunning()) return
+    // A plugin that has armed a pick of its own takes the click first.
+    for (const r of runtimesRef.current) if (r.claimElementPick?.(id)) return
     const store = useStore.getState()
     // A section's cut, clicked while a dimension takes it as a plane.
     if (store.dimDraft && !store.draft && store.sections.some((sec) => sec.id === id)) {

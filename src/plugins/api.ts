@@ -199,6 +199,10 @@ export interface PluginRuntime {
   pick?(hit: PickHit): void
   /** A click on a measured element, while element picking is on. */
   elementPick?(id: number, clientX: number, clientY: number): void
+  /** A click on a measured element in any workspace, offered to every plugin
+   *  before the shell takes it — a dialog of the plugin's that has armed a
+   *  pick, say. True when the plugin took the click. */
+  claimElementPick?(id: number): boolean
   /** A marking gesture ended; true when the workspace took it. */
   paintChange?(): boolean
   /** The workspace's colouring of the scan: one value per scan vertex, the

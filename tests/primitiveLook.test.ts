@@ -22,7 +22,7 @@ describe('primitive look', () => {
     expect(PRIMITIVE_OPACITY).toBeGreaterThan(0.55)
     expect(PRIMITIVE_OPACITY_SELECTED).toBeGreaterThan(PRIMITIVE_OPACITY)
   })
-  it('draws a plane past its patch', () => {
-    expect(PLANE_OVERHANG).toBeGreaterThan(1.2)
+  it('draws a plane at its own extent, its handles on the sheet rim, as QUICKSURFACE does', () => {
+    expect(PLANE_OVERHANG).toBe(1)
   })
 })

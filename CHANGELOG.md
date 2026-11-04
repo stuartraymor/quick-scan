@@ -1,3 +1,46 @@
+## 0.0.104 - 2026-11-04
+
+- 2D Sketch → Fit Line weighs each section point by the length of section it stands for, as QUICKSURFACE 8.0.128 does: on an edge sectioned unevenly the line now lies within 0.13 µm of QUICKSURFACE's (was 5 µm), and a line snapped horizontal or vertical runs through the points' weighted centre. Fit Circle and Fit Arc are unchanged: they count points, as QUICKSURFACE does to within a few µm.
+
+## 0.0.103 - 2026-11-04
+
+- A new line is named "Ref. Line(1)", "Ref. Line(2)"… and Objects lists lines under "Ref. geometry", as QUICKSURFACE 8.0.128 does. Lines already in a saved project keep their names.
+
+## 0.0.102 - 2026-11-04
+
+- Extract primitives: a Line is now the line the marked points lie least far from in total (distances summed, not squared), as QUICKSURFACE 8.0.128 fits it. Measured on known-truth strips: on a folded edge the line now lies where QUICKSURFACE puts it (within 0.01 µm, was 132 µm off), and on a densely meshed strip within 0.01 µm (was 3 µm and 0.017°).
+
+## 0.0.101 - 2026-11-04
+
+- Extract primitives: a plane fitted to a marked area counts every marked point once, as QUICKSURFACE 8.0.128 does (measured on basic_part and on known-truth meshes: within 0.0001° and 0.01 µm). 0.0.100 weighted it by area, which put a densely meshed patch up to 9 µm off QUICKSURFACE. The click-to-fit plane keeps its area weighting, which compensates for the region it grows into a dense rim.
+- Curved fits (cylinder, sphere, cone) checked against QUICKSURFACE on the same points: they already agreed to under 1 µm, so they are unchanged. A regression test now pins a cylinder to QUICKSURFACE's recorded fit.
+
+## 0.0.100 - 2026-11-03
+
+- A plane fitted by clicking the scan is weighted by the area each point stands for, so a densely meshed rim no longer pulls it off the face (basic_part: 3.8 µm off QUICKSURFACE before, 0.5 µm after).
+- The "used points" settings (1σ, 2σ, 3σ) set their cut-off from the first fit and hold it: at 1σ a plane, line, sphere, cylinder or cone keeps about 70% of its points instead of whittling them down to a handful.
+
+## 0.0.99 - 2026-11-03
+
+- Align by Coordinate System with a cylinder, cone or line as the primary offers X Axis / Y Axis / Z Axis, as QUICKSURFACE does. A secondary running along the primary's axis is taken as Top and sets where zero sits along it; Right and Front are greyed.
+- A primitive's plane is drawn at its fitted size, so the move and resize arrows sit on its corners and edges.
+
+## 0.0.98 - 2026-11-03
+
+- Align by Coordinate System leaves the part still while previewing and draws the new axes on it, as QUICKSURFACE does; Apply moves the part as before. The preview axes show whether or not Coordinate System is ticked in Objects.
+
+## 0.0.97 - 2026-11-03
+
+- Extrude shows Full depth (the distance between its two ends) above Depth 1 and Depth 2, and a ticked, greyed Solid box.
+
+## 0.0.96 - 2026-11-03
+
+- Extrude: the deviation overlay is labelled Analysis and starts off; Top plane / Depth 1 and Bottom plane / Depth 2 labels follow the grips, with a Labels box to hide them.
+
+## 0.0.95 - 2026-11-03
+
+- Create Sketch: Define interactive's hints show in the corner of the view ("Click to define start of the section line", then "Define the section plane for 2D Sketch"), and a Pick ... button takes a plane clicked in the view, as in QUICKSURFACE.
+
 ## 0.0.88 - 2026-11-03
 
 - New mesh imports start in the established Z-up isometric view instead of a principal-axis broadside view.

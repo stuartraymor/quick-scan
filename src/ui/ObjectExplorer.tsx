@@ -133,7 +133,7 @@ export function ObjectExplorer({ pluginObjects, pluginHistoryEntries = [], plugi
       for (const plugin of pluginVisibility) plugin.setVisible(shown)
     })
   }
-  const elementGroups = [ ['plane', 'Planes'], ['cylinder', 'Cylinders'], ['cone', 'Cones'], ['sphere', 'Spheres'], ['line', 'Lines'], ['point', 'Points'], ['circle', 'Circles'], ['torus', 'Tori'] ] as const
+  const elementGroups = [ ['plane', 'Planes'], ['cylinder', 'Cylinders'], ['cone', 'Cones'], ['sphere', 'Spheres'], ['line', 'Ref. geometry'], ['point', 'Points'], ['circle', 'Circles'], ['torus', 'Tori'] ] as const
   const historyElements = archive?.elements ?? elements
   const historySections = archive?.sections ?? sections
   const elementRow = (el: (typeof elements)[number], location: 'object' | 'history') => { const rolled = !elements.some(active => active.id === el.id); return <div key={el.id} data-test={`explorer-${location === 'history' ? 'history-' : ''}element-row-${el.id}`} className={`explorer-row${isSelected(`element:${el.id}`) ? ' selected' : ''}${rolled ? ' is-rolled' : ''}`} onContextMenu={event => openMenu(event, 'element', el.id)}>

@@ -171,3 +171,23 @@ describe('brush fit draft commit', () => {
     expect(useSketchBrush.getState().selectionOverflow).toBe(false)
   })
 })
+describe('Fit Line weighs points by the section they stand for, as QUICKSURFACE does', () => {
+  // An edge along y = 0 whose left half was sectioned 8× denser and lies
+  // 0.03 mm low: counted by point the line sits near the dense half; weighted by
+  // length, half way. QUICKSURFACE 8.0.128 put it 0.09 µm from the length-
+  // weighted line (analysis/fit-accuracy-2026-11-04, make-profile.mjs).
+  const edge: Vec2[] = [...Array.from({ length: 640 }, (_, i): Vec2 => [-40 + i * 0.0625, -0.03]), ...Array.from({ length: 81 }, (_, i): Vec2 => [i * 0.5, 0])]
+  it('lies at the length-weighted height and snaps through it', () => {
+    const fit = fitBrushPrimitive('line', sample(edge), options)
+    expect(fit.ok && fit.axis).toBe('horizontal')
+    if (!fit.ok || fit.entity.kind !== 'line') throw new Error('no line')
+    // Each point stands for half of each gap to its neighbours.
+    const w = edge.map((p, i) => ((i > 0 ? Math.hypot(p[0] - edge[i - 1][0], p[1] - edge[i - 1][1]) : 0) + (i + 1 < edge.length ? Math.hypot(edge[i + 1][0] - p[0], edge[i + 1][1] - p[1]) : 0)) / 2)
+    const y = edge.reduce((s, p, i) => s + w[i] * p[1], 0) / w.reduce((s, x) => s + x, 0)
+    expect(fit.entity.a[1]).toBeCloseTo(y, 9)
+    expect(fit.entity.b[1]).toBeCloseTo(y, 9)
+    expect(Math.abs(y + 0.015)).toBeLessThan(0.001)
+    expect(fit.entity.a[0]).toBeCloseTo(-40, 9)
+    expect(fit.entity.b[0]).toBeCloseTo(40, 9)
+  })
+})

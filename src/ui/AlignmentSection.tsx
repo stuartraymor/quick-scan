@@ -21,6 +21,7 @@ import {
   type Element,
 } from '../state/store'
 import { alignmentReferences, alignmentTileAxis } from '../state/alignModel'
+import { secondaryAlongPrimary } from '../core/alignment'
 import { InfoDot } from './InfoDot'
 import { providersFor } from './RefSelect'
 import { useLength } from '../app/useUnits'
@@ -36,6 +37,14 @@ const PLANE_TILES: { label: string; axis: AxisDir }[] = [
   { label: 'Top', axis: 'z+' },
   { label: 'Right', axis: 'x+' },
   { label: 'Front', axis: 'y-' },
+]
+
+/** What an axis becomes, as QUICKSURFACE lists them for a cylinder, cone or
+ *  line taken as primary: X Axis, Y Axis, Z Axis — Z by default. */
+const AXIS_TILES: { label: string; axis: AxisDir }[] = [
+  { label: 'X Axis', axis: 'x+' },
+  { label: 'Y Axis', axis: 'y+' },
+  { label: 'Z Axis', axis: 'z+' },
 ]
 
 /** The six inputs of the manual move / rotate box, in the order the values
@@ -173,6 +182,26 @@ export function AlignmentSection({
     useStore.getState().setStatus('Choose the primary, secondary and tertiary features that define the coordinate system, then press Apply.')
   }, [draftOpen])
   const len = useLength()
+  // The fits in the primary and secondary slots, when they are elements: a
+  // primary axis lists X / Y / Z Axis, and a secondary running its way can
+  // only stand on the primary's own axis — the other tiles go grey.
+  const refs = alignmentReferences(elements)
+  const primaryFit = alignDraft?.primary != null ? refs.find((e) => e.id === alignDraft.primary)?.fit ?? null : null
+  const secondaryFit = alignDraft?.secondary != null ? refs.find((e) => e.id === alignDraft.secondary)?.fit ?? null : null
+  const primaryIsAxis = !!primaryFit && (primaryFit.kind === 'cylinder' || primaryFit.kind === 'cone' || primaryFit.kind === 'line')
+  const primaryTiles = primaryIsAxis ? AXIS_TILES : PLANE_TILES
+  const secondaryAlong = !!primaryFit && !!secondaryFit && secondaryAlongPrimary(primaryFit, secondaryFit)
+  // A secondary running the primary's way takes the primary's own axis, as
+  // QUICKSURFACE selects it (Top for a cylinder standing on Z Axis); one that
+  // was there and no longer runs that way moves off it.
+  const primaryAxisNow = alignDraft?.primaryAxis
+  const secondaryAxisNow = alignDraft?.secondaryAxis
+  useEffect(() => {
+    if (!primaryAxisNow || !secondaryAxisNow) return
+    const same = axisIndex(secondaryAxisNow) === axisIndex(primaryAxisNow)
+    if (secondaryAlong && !same) setAlignmentAxis('secondary', primaryAxisNow)
+    else if (!secondaryAlong && same && secondaryFit) setAlignmentAxis('secondary', axisIndex(primaryAxisNow) === 1 ? 'z+' : 'y-')
+  }, [secondaryAlong, primaryAxisNow, secondaryAxisNow, secondaryFit, setAlignmentAxis])
   const manualNums = manual?.map((v) => (Number.isFinite(v) ? v : 0)) ?? null
   const manualIdentity = manualNums === null || manualNums.every((v) => v === 0)
 
@@ -375,7 +404,7 @@ export function AlignmentSection({
           </div>
           <StepHead text="Primary feature" />
           <AlignSelect
-            label="Face"
+            label={primaryIsAxis ? 'Axis' : 'Face'}
             roles={['plane', 'axis']}
             value={alignDraft.primary}
             picks={alignDraft.primaryPicks.length}
@@ -390,10 +419,10 @@ export function AlignmentSection({
             onFlip={() => useStore.getState().flipAlignmentAxis('primary')}
           />
           {(alignDraft.primary !== null || alignDraft.primaryPicks.length >= ALIGN_PICK_COUNT.primary) && <div className="toolrow" role="group" aria-label="Primary feature becomes" data-test="align-primary-tiles">
-            {PLANE_TILES.map((t) => (
+            {primaryTiles.map((t) => (
               <button
                 key={t.label}
-                data-test={`align-tile-${t.label.toLowerCase()}`}
+                data-test={`align-tile-${t.label.toLowerCase().replace(' ', '-')}`}
                 aria-pressed={axisIndex(alignDraft.primaryAxis) === axisIndex(t.axis)}
                 onClick={() => setAlignmentAxis('primary', t.axis)}
               >
@@ -427,7 +456,7 @@ export function AlignmentSection({
           />
           {(alignDraft.secondary !== null || alignDraft.secondaryPicks.length >= ALIGN_PICK_COUNT.secondary) && <div className="toolrow" role="group" aria-label="Secondary feature becomes" data-test="align-secondary-tiles">
             {PLANE_TILES.map(({ label, axis }) => <button key={label} type="button"
-              data-test={`align-secondary-${label.toLowerCase()}`} disabled={axisIndex(axis) === axisIndex(alignDraft.primaryAxis)}
+              data-test={`align-secondary-${label.toLowerCase()}`} disabled={secondaryAlong ? axisIndex(axis) !== axisIndex(alignDraft.primaryAxis) : axisIndex(axis) === axisIndex(alignDraft.primaryAxis)}
               className={axisIndex(alignDraft.secondaryAxis) === axisIndex(axis) ? 'on' : undefined}
               aria-pressed={axisIndex(alignDraft.secondaryAxis) === axisIndex(axis)}
               onClick={() => setAlignmentAxis('secondary', alignmentTileAxis(alignDraft.secondaryAxis, axis))}>{label}</button>)}

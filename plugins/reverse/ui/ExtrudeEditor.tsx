@@ -14,9 +14,13 @@ import { extrudeDraftReady, useReverse } from '../state/reStore'
 import { DirectionField } from './DirectionField'
 import { AnalysisRow, Num, OpFields, PreviewLine, ProfilesField, useRegionCount } from './featureFields'
 import { PlaneSelect } from './PlaneSelect'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { useShell } from '../../../src/state/shellStore'
+import { useGripLabels } from '../state/gripLabelStore'
 
 export function ExtrudeEditor() {
+  const labelsShown = useGripLabels((s) => s.shown)
   const draft = useReverse((s) => s.extrudeDraft)
   const features = useReverse((s) => s.features)
   const bodies = useReverse((s) => s.bodies)
@@ -90,6 +94,15 @@ export function ExtrudeEditor() {
       )}
       <PreviewLine preview={preview} testPrefix="extrude" />
       <AnalysisRow testPrefix="extrude" />
+      <label className="checkrow" title="QUICKSURFACE's Solid: Quick Scan always extrudes a solid; a surface extrude is not built in Quick Scan yet">
+        <input type="checkbox" data-test="extrude-solid" checked disabled readOnly />
+        <span>Solid</span>
+      </label>
+      <label className="checkrow" title="The words by the grips in the view">
+        <input type="checkbox" data-test="extrude-labels" checked={labelsShown} onChange={(e) => useGripLabels.getState().setShown(e.target.checked)} />
+        <span>Labels</span>
+      </label>
+      <GripLabels />
       <label className="field">
         <span>Extent</span>
         <select
@@ -147,6 +160,11 @@ export function ExtrudeEditor() {
       </div>
       {extent.kind === 'distance' && (
         <>
+          <div className="field" data-test="extrude-full-depth" title="QUICKSURFACE's Full depth: the body's whole thickness, To less From">
+            <span>Full depth</span>
+            <output data-test="extrude-full-depth-value">{Number(len.toDisplay(Math.abs(extent.to - extent.from)).toFixed(len.decimals(4)))}</output>
+            <span>{len.word()}</span>
+          </div>
           <Num label="To" testId="extrude-to" slot="extent.to" value={extent.to} nominal="length" passKeys={{ enter: create }} onCommit={(v) => set({ extent: { ...extent, to: v } })} hint="How far along the sketch plane's normal the body ends — in front of the plane. The arrow on that face drags it; a click on the part in front of the plane sets it." />
           <Num label="From" testId="extrude-from" slot="extent.from" value={extent.from} nominal="length" onCommit={(v) => set({ extent: { ...extent, from: v } })} hint="How far along the normal the body starts — 0 is the plane itself, negative is behind it. The arrow on that face drags it; a click on the part behind the plane sets it." />
           <p className="hint" data-test="extrude-pick-hint">
@@ -256,5 +274,44 @@ export function ExtrudeEditor() {
         </button>
       </div>
     </div>
+  )
+}
+
+/** The grips' words, boxed by them in the view and following it as it turns. */
+function GripLabels() {
+  const labels = useGripLabels((s) => s.labels)
+  const shown = useGripLabels((s) => s.shown)
+  const [, redraw] = useState(0)
+  useEffect(() => {
+    if (!shown || labels.length === 0) return
+    let id = 0
+    const tick = () => { redraw((n) => n + 1); id = requestAnimationFrame(tick) }
+    id = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(id)
+  }, [shown, labels])
+  const at = useShell.getState().screenPointOf
+  if (!shown || !at || labels.length === 0) return null
+  return createPortal(
+    <>
+      {(() => {
+        // Seen along the extrude the two grips fall together: the second
+        // label steps down clear of the first, as QUICKSURFACE keeps them.
+        const placed: { x: number; y: number }[] = []
+        return [...labels].sort((a, b) => Number(b.text.startsWith('Top')) - Number(a.text.startsWith('Top'))).map((l) => {
+          const p = at(l.at)
+          if (!p) return null
+          let y = p.y
+          while (placed.some((q) => Math.abs(q.x - p.x) < 160 && Math.abs(q.y - y) < 22)) y += 24
+          placed.push({ x: p.x, y })
+          return (
+            <div key={l.text} className="grip-label" data-test="extrude-grip-label"
+              style={{ position: 'fixed', left: p.x + 14, top: y, transform: 'translateY(-50%)', background: 'var(--panel, #1e2126)', color: 'var(--ink, #e8eaed)', border: '1px solid var(--line, #3a3f47)', padding: '1px 6px', fontSize: 12, whiteSpace: 'nowrap', pointerEvents: 'none', zIndex: 45 }}>
+              {l.text}
+            </div>
+          )
+        })
+      })()}
+    </>,
+    document.body,
   )
 }

@@ -64,6 +64,8 @@ import { saveFile } from '../../../src/app/exports'
 import { onScan } from '../../../src/app/scanEvents'
 import { createReverseSession, installReverseSession, meshDiagonal, stepFilesFor } from './reSession'
 import { offerSolids } from '../../../src/app/solids'
+import { usePlacePick } from '../state/placePickStore'
+import { gripLabelText, useGripLabels } from '../state/gripLabelStore'
 
 /** The slice chains on the sketch plane, as points and as the flat edge
  *  chains the sheet draws. */
@@ -716,6 +718,8 @@ export function useReverseWorkspace({
   // ---- the feature being set up: its profiles on offer, its ghost, its grips -------
   const extrudeDraft = useReverse((s) => s.extrudeDraft)
   const revolveDraft = useReverse((s) => s.revolveDraft)
+  // Create Sketch's "Pick ..." takes a plane clicked in the view.
+  const placePickArmed = usePlacePick((s) => s.armed)
   const nextFeatureId = useReverse((s) => s.nextFeatureId)
   const draft = extrudeDraft ?? revolveDraft
   const featureOpen = onReverse && (draft !== null || featureDraft !== null)
@@ -741,7 +745,7 @@ export function useReverseWorkspace({
     // A feature picks its profiles through the part; a click with no
     // editor open takes a region only where the scan does not hide it. A
     // hole or an extract takes an element too.
-    const wantsElement = (featureOpen && revolveDraft !== null) || (featureDraft?.kind === 'hole' || featureDraft?.kind === 'extract')
+    const wantsElement = (featureOpen && revolveDraft !== null) || (featureDraft?.kind === 'hole' || featureDraft?.kind === 'extract') || placePickArmed
     reSceneOf(scene).setSketchProfilePick(profileOpen || idle, picked, profileOpen)
     reSceneOf(scene).setSketchLinePick((featureOpen && revolveDraft !== null) || idle)
     reSceneOf(scene).setCoordinatePlanePick(idle, idle && selection?.kind === 'coordinatePlane' ? selection.axis : null)
@@ -752,7 +756,7 @@ export function useReverseWorkspace({
     return () => {
       if (onReverse) scene.setElementHoverLights(false)
     }
-  }, [featureOpen, draft, revolveDraft, featureDraft, onReverse, editorOpen, selection, sceneRef])
+  }, [featureOpen, draft, revolveDraft, featureDraft, onReverse, editorOpen, selection, sceneRef, placePickArmed])
 
   // The bodies' faces and edges as click targets: what an editor asks for
   // (a fillet its edges, a shell its faces, on the bodies it names), or,
@@ -1417,6 +1421,8 @@ export function useReverseWorkspace({
       }
     }
     scene.setFeatureGrips(grips, ghostColor())
+    // An extrude's grips carry QUICKSURFACE's words by them in the view.
+    useGripLabels.getState().setLabels(extrudeDraft && featureOpen ? grips.flatMap((g) => { const text = gripLabelText(g.side); return text ? [{ text, at: g.position }] : [] }) : [])
     // Runs on the listed dependencies only, not on everything it reads.
   }, [featureOpen, extrudeDraft, revolveDraft, featureDraft, features, sceneRef])
 

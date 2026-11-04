@@ -29,6 +29,9 @@ export class DatumStage {
   private group: THREE.Group | null = null
   private cleanup: (() => void)[] = []
   private radius = 0
+  /** Where the stage stands, column-major: on the part, in place of the
+   *  part being moved onto it. Null is the world origin. */
+  private pose: number[] | null = null
 
   constructor(private scene: THREE.Scene) {}
 
@@ -141,7 +144,23 @@ export class DatumStage {
       this.cleanup.push(() => label.element.remove())
     }
 
+    this.applyPose()
     this.scene.add(group)
+  }
+
+  /** Stand the stage at a pose — the new coordinate system drawn on the part
+   *  where it sits, as QUICKSURFACE previews an alignment — or back at the
+   *  origin with null. */
+  place(columnMajor: number[] | null): void {
+    this.pose = columnMajor
+    this.applyPose()
+  }
+
+  private applyPose(): void {
+    if (!this.group) return
+    this.group.matrixAutoUpdate = false
+    this.group.matrix.copy(this.pose ? new THREE.Matrix4().fromArray(this.pose) : new THREE.Matrix4())
+    this.group.matrixWorldNeedsUpdate = true
   }
 
   private tearDown(): void {

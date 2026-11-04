@@ -321,6 +321,8 @@ export function fitConeClipped(
       return c
     },
     coneResidual,
+    // Held, as for the cylinder.
+    true,
   )
   return r && { cone: r.model, sigma: r.sigma, span: r.span, min: r.min, max: r.max, used: r.used }
 }

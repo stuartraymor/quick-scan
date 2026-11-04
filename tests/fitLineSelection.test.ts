@@ -12,7 +12,8 @@ const fit = (points: Vec3[], sigma: 0 | 2 = 0) => fitLineOnSelection(graph(point
 describe('orthogonal best-fit line on selected scan points', () => {
   it('recovers an exact sloping line and its drawn extent', () => {
     const result = fit(Array.from({ length: 31 }, (_, i): Vec3 => [100 + 2*i, -20 + 3*i, 8 + 6*i]))
-    expect(result.center).toEqual([130,25,98])
+    // Weighted refits leave rounding of the order of 1e-15 mm.
+    result.center.forEach((v, i) => expect(v).toBeCloseTo([130, 25, 98][i], 10))
     result.dir.forEach((v, i) => expect(v).toBeCloseTo([2/7,3/7,6/7][i], 10))
     expect(result.length).toBeCloseTo(210, 10)
     expect(result.sigma).toBeLessThan(1e-10)
@@ -65,6 +66,8 @@ describe('orthogonal best-fit line on selected scan points', () => {
     expect(saved.source.type).toBe('fitted')
     expect(saved.source.type === 'fitted' && saved.source.selection?.length).toBe(25)
     expect(saved.fit?.kind).toBe('line')
+    // As QUICKSURFACE 8.0.128 names it, listed under Ref. geometry.
+    expect(saved.name).toMatch(/^Ref\. Line\(\d+\)$/)
     useStore.getState().cancelDraft()
   })
 })

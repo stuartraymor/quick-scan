@@ -195,6 +195,9 @@ export function fitSphereClipped(
       const dz = z - s.cz
       return Math.sqrt(dx * dx + dy * dy + dz * dz) - s.r
     },
+    // Held, as for a plane: a sphere's rounds settle, and at 1σ a per-round
+    // cut-off ran 20 000 points down to 64 (measured 2026-11-03).
+    true,
   )
   if (!r) return null
   const free = held !== undefined ? freeFit(r.used) : null

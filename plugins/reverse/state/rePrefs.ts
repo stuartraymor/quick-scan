@@ -141,7 +141,9 @@ export const useRePrefs = create<RePrefsState>()((set) => ({
   sketchDimensions: read(SKETCH_DIMENSIONS_KEY) !== '0',
   sketchControlPoints: read(SKETCH_CONTROL_POINTS_KEY) === '1',
   fitOptions: storedFitOptions(),
-  liveMap: read(LIVE_MAP_KEY) !== '0',
+  // Off until asked for, as QUICKSURFACE's Analysis box starts unticked;
+  // an operator who turned it on keeps it on.
+  liveMap: read(LIVE_MAP_KEY) === '1',
   liveMapRange: clampLiveMapRange(Number(read(LIVE_MAP_RANGE_KEY))),
   drawModes: storedDrawModes(),
   polygonSides: clampSides(Number(read(POLYGON_SIDES_KEY) ?? 6)),

@@ -26,6 +26,43 @@ export function brushedPoints(points: readonly BrushPoint[], from: Vec2, to: Vec
   })
 }
 
+/**
+ * Orthogonal least-squares line with each point weighted by the length of
+ * section it stands for: half the distance to each neighbour along its chain
+ * that is also highlighted. QUICKSURFACE 8.0.128's Fit Line weighs points
+ * this way, measured 2026-11-04 (analysis/fit-accuracy-2026-11-04,
+ * make-profile.mjs): on an edge whose one half was sectioned 8× denser and
+ * stood 0.03 mm low it lay 0.09 µm from the length-weighted line and 11 µm
+ * from the one counting points. A point with no highlighted neighbour counts
+ * as the median spacing.
+ */
+function lineByLength(selected: readonly BrushPoint[]): { center: Vec2; dir: Vec2; sigma: number } {
+  const at = new Map(selected.map((p) => [`${p.chain}:${p.index}`, p.p]))
+  const gaps: number[] = []
+  const halves = selected.map((s) => {
+    let sum = 0, sides = 0
+    for (const d of [-1, 1]) {
+      const q = at.get(`${s.chain}:${s.index + d}`)
+      if (q) { const g = Math.hypot(q[0] - s.p[0], q[1] - s.p[1]); sum += g / 2; sides++; gaps.push(g) }
+    }
+    return sides ? sum : NaN
+  })
+  gaps.sort((a, b) => a - b)
+  const lone = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 1
+  const w = halves.map((h) => (Number.isFinite(h) && h > 0 ? h : lone))
+  let sw = 0, mx = 0, my = 0
+  selected.forEach((s, i) => { sw += w[i]; mx += w[i] * s.p[0]; my += w[i] * s.p[1] })
+  mx /= sw; my /= sw
+  let sxx = 0, sxy = 0, syy = 0
+  selected.forEach((s, i) => { const x = s.p[0] - mx, y = s.p[1] - my; sxx += w[i] * x * x; sxy += w[i] * x * y; syy += w[i] * y * y })
+  const theta = 0.5 * Math.atan2(2 * sxy, sxx - syy)
+  let dir: Vec2 = [Math.cos(theta), Math.sin(theta)]
+  if (dir[0] < 0 || (dir[0] === 0 && dir[1] < 0)) dir = [-dir[0], -dir[1]]
+  let ss = 0
+  for (const s of selected) { const e = -(s.p[0] - mx) * dir[1] + (s.p[1] - my) * dir[0]; ss += e * e }
+  return { center: [mx, my], dir, sigma: Math.sqrt(ss / selected.length) }
+}
+
 export function fitBrushPrimitive(kind: BrushPrimitive, selected: readonly BrushPoint[], options: BrushFitOptions): BrushFit {
   if (!(options.tolerance > 0) || !Number.isFinite(options.tolerance)) return { ok: false, error: 'Target tolerance must be greater than zero.' }
   const unique = [...new Map(selected.map((p) => [`${p.p[0]}:${p.p[1]}`, p])).values()]
@@ -43,12 +80,14 @@ export function fitBrushPrimitive(kind: BrushPrimitive, selected: readonly Brush
   let axis: 'horizontal' | 'vertical' | undefined
   try {
     if (kind === 'line') {
-      const fit = fitLinePoints(points)
+      fitLinePoints(points) // its checks and messages for degenerate points
+      const fit = lineByLength(unique)
       const angle = Math.atan2(fit.dir[1], fit.dir[0])
       const limit = Math.max(0, Math.min(45, options.axisDegrees)) * Math.PI / 180
       let dir = fit.dir
       if (limit > 0 && Math.abs(Math.sin(angle)) < Math.sin(limit)) { dir = [1, 0]; axis = 'horizontal' }
       else if (limit > 0 && Math.abs(Math.cos(angle)) < Math.sin(limit)) { dir = [0, 1]; axis = 'vertical' }
+      // Snapped or not, the line runs through the points' weighted centre.
       const projections = points.map((p) => (p[0] - fit.center[0]) * dir[0] + (p[1] - fit.center[1]) * dir[1])
       const lo = Math.min(...projections), hi = Math.max(...projections)
       entity = { kind: 'line', a: [fit.center[0] + lo * dir[0], fit.center[1] + lo * dir[1]], b: [fit.center[0] + hi * dir[0], fit.center[1] + hi * dir[1]], points: points.map((p) => [...p]), scatter: Math.max(fit.sigma, 0.001) }

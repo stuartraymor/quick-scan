@@ -9,7 +9,7 @@
 // navigation, the colour scheme, the export forms, the sharp edges.
 
 import { create } from 'zustand'
-import { elementKindInfo } from '../core/elements/kinds'
+import { elementKindInfo, elementNameStem } from '../core/elements/kinds'
 import {
   creationMethod,
   takesSurface,
@@ -1066,7 +1066,7 @@ export const useStore = create<AppState>()((set, get) => ({
           {
             id,
             kind: d.kind,
-            name: `${elementKindInfo(d.kind).label}(${ofKind})`,
+            name: `${elementNameStem(elementKindInfo(d.kind))}(${ofKind})`,
             color: elementColor(num),
             source,
             status: 'done' as const,

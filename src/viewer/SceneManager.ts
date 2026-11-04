@@ -1787,6 +1787,13 @@ export class SceneManager {
    * target frame and the part are on screen together; while it stays on, the
    * camera is the operator's.
    */
+  /** Stand the datum stage on the part at a pose (column-major), or back at
+   *  the origin — an alignment previewed by its new axes on the part. */
+  setDatumStagePose(columnMajor: number[] | null): void {
+    this.stage.place(columnMajor)
+    this.invalidate()
+  }
+
   setDatumStage(on: boolean): void {
     if (on === this.stage.active()) return
     this.stage.set(on ? this.modelRadius : null)

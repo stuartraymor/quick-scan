@@ -228,6 +228,8 @@ export function fitCylinderClipped(
       return c
     },
     cylinderResidual,
+    // Held: at 1σ a per-round cut-off ran 20 000 points down to 63.
+    true,
   )
   return r && { cylinder: r.model, sigma: r.sigma, span: r.span, min: r.min, max: r.max, used: r.used }
 }

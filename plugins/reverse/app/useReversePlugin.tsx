@@ -37,6 +37,7 @@ import { VIEW_MESH_MAP_SPACING } from '../core/compare'
 import { useReverseWorkspace } from './useReverseWorkspace'
 import { useSketchSceneSync } from './useSketchSceneSync'
 import { bodyColor, chainArcStart, reEditorOpen, snapFaceOf, useReverse } from '../state/reStore'
+import { usePlacePick } from '../state/placePickStore'
 import { useRePrefs } from '../state/rePrefs'
 import type { TangentEdges } from '../core/edgeLines'
 import { installCompareInDeviation, reverseSession } from './reSession'
@@ -302,6 +303,16 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
     const k = el.fit.kind
     if (k === 'line' || k === 'cylinder' || k === 'cone' || k === 'circle') re.setRevolve({ axis: { kind: 'element', id } })
     else store.setStatus(`${el.name} has no axis to revolve about — pick a line, a cylinder, a cone or a circle.`)
+  }
+
+  /** Create Sketch's "Pick ...", in whichever workspace it is open: the
+   *  plane clicked becomes the sketch's plane. */
+  const claimElementPick = (id: number): boolean => {
+    if (!useReverse.getState().sketchDraft?.placing || !usePlacePick.getState().armed) return false
+    const el = useStore.getState().elements.find((e) => e.id === id)
+    if (el?.fit?.kind === 'plane') usePlacePick.getState().pick({ kind: 'plane', id })
+    else useStore.getState().setStatus(`${el?.name ?? 'That'} is not a plane — pick a plane to sketch on.`)
+    return true
   }
 
   /** A Fit Surface's region, marked with the tools: the marking is the
@@ -681,6 +692,7 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
     gripDrag,
     pick: (hit) => void pick(hit),
     elementPick,
+    claimElementPick,
     paintChange,
     hideViewport: sketchStage && !sketchModelShown,
     // No front door: with no scan the workspace opens on a blank stage, as

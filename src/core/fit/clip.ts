@@ -34,9 +34,17 @@ export function clippedRefit<M>(
   k: number,
   fit: (used: Uint32Array) => M | null,
   residual: (model: M, x: number, y: number, z: number) => number,
+  /** Hold the cut-off at k·sigma of the first round. For the exact linear
+   *  fits (plane, line), whose rounds can only settle; the iterative curved
+   *  fits keep their per-round cut-off, which also keeps them confined. */
+  holdThreshold = false,
 ): ClippedRefit<M> | null {
   let used: Uint32Array = idx instanceof Uint32Array ? idx : Uint32Array.from(idx as ArrayLike<number>)
   let result: ClippedRefit<M> | null = null
+  // Held, the cut-off is set once, from the first fit over every point:
+  // re-derived from each round's own sigma, it shrinks the set every round,
+  // and a plane at 1σ ran down to its last ten points.
+  let thr = NaN
 
   for (let iter = 0; iter < 12; iter++) {
     const model = fit(used)
@@ -62,7 +70,7 @@ export function clippedRefit<M>(
     result = { model, sigma, span: hi - lo, min: lo, max: hi, used }
 
     if (k <= 0 || sigma < 1e-9) return result
-    const thr = k * sigma
+    if (!holdThreshold || Number.isNaN(thr)) thr = k * sigma
     let keep = 0
     for (let i = 0; i < used.length; i++) if (Math.abs(res[i]) <= thr) keep++
     if (keep === used.length || keep < 10) return result

@@ -108,6 +108,13 @@ function datumDirection(fit: FitData): Vec3 | null {
   return null
 }
 
+/** Whether a secondary runs the primary's way — too near parallel to clock
+ *  a rotation — so it can only stand on the primary's own axis. */
+export function secondaryAlongPrimary(primary: FitData, secondary: FitData): boolean {
+  const a = datumDirection(primary), b = datumDirection(secondary)
+  return !!a && !!b && acuteAngle(normalize(a)!, b) < MIN_CLOCK_ANGLE
+}
+
 export interface DatumSpec {
   fit: FitData
   axis: AxisDir
@@ -153,7 +160,16 @@ export function computeDatumAlignment(
 
   const m = identityRigid()
 
-  if (secondary) {
+  // A secondary running the primary's way — the top face of a cylinder taken
+  // as primary, say — cannot clock the rotation, but QUICKSURFACE takes it as
+  // the primary's own axis: the primary turns the part, and the secondary only
+  // sets the zero along that axis.
+  const along = secondary !== null && secondaryAlongPrimary(primary.fit, secondary.fit)
+  if (secondary && along) {
+    if (axisIndex(secondary.axis) !== axisIndex(primary.axis))
+      throw new AlignmentError("This feature runs the primary's way — it can only become the primary's own axis.")
+  }
+  if (secondary && !along) {
     const d2raw = datumDirection(secondary.fit)
     if (!d2raw)
       throw new AlignmentError(
@@ -161,10 +177,6 @@ export function computeDatumAlignment(
       )
     if (axisIndex(secondary.axis) === axisIndex(primary.axis))
       throw new AlignmentError('Levelling and rotation cannot use the same axis.')
-    if (acuteAngle(d1, d2raw) < MIN_CLOCK_ANGLE)
-      throw new AlignmentError(
-        'These two directions are parallel — they cannot set the rotation. Use a different element or points.',
-      )
     // Project the secondary direction perpendicular to the primary: the
     // primary always wins exactly, the secondary only clocks.
     const d2 = normalize(addScaled(d2raw, d1, -dot(d2raw, d1)))!

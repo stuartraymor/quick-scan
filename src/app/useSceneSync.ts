@@ -635,7 +635,11 @@ export function useSceneSync({
       ? (alignmentPreview(alignDraft, elements, modelSize, centerOf).preview?.rigid ??
         (centerOf ? translationToOrigin(centerOf) : null))
       : null
-    sceneRef.current?.setAlignPreview(rigid ? rigidToColumnMajor(rigid) : null)
+    // Align Interactive moves the part, as it is the part being dragged. Align
+    // by Coordinate System leaves it where it is and stands the new axes on it,
+    // as QUICKSURFACE previews it: the stage carried back by the alignment.
+    sceneRef.current?.setAlignPreview(interactive && rigid ? rigidToColumnMajor(rigid) : null)
+    sceneRef.current?.setDatumStagePose(!interactive && rigid ? rigidToColumnMajor(rigidInvert(rigid)) : null)
     const grips:PluginGrip[] = []
     if (interactive) {
       const inv = rigidInvert(interactiveRigid)
@@ -680,8 +684,10 @@ export function useSceneSync({
   // was just placed) and in the plain broadside pose otherwise.
   const alignOpen = alignDraft !== null
   useEffect(() => {
-    sceneRef.current?.setDatumStage(alignOpen && coordinatesShown)
-  }, [alignOpen, coordinatesShown])
+    // Shown whenever the editor is open: QUICKSURFACE previews an alignment by
+    // its new axes on the part, whether or not the Coordinate System is ticked.
+    sceneRef.current?.setDatumStage(alignOpen)
+  }, [alignOpen])
   useEffect(() => {
     const scene = sceneRef.current
     if (!scene) return

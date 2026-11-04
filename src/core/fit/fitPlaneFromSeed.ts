@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { vertexAreas } from './vertexArea'
 // A plane from a click or from a painted selection, ready to be an element.
 // A bare plane has no side and no size, so both are added: the normal is
 // turned by a vote of the surface normals to point out of the part, and the
@@ -167,7 +168,9 @@ export function fitPlaneFromSeed(
     estimate: (patch, seed) => ransacPlane(g.positions, within ? guidePatch(g, patch, within) : patch, { seed }),
     grow: (cand) => growPlaneRegion(g, within ? cand.inliers : seeds, cand.plane, cand.sigma, cand.inliers.length, within),
     finish: (grown): (PlaneFit & { region: Uint32Array }) | null => {
-      const fin = fitPlaneClipped(g.positions, grown.region, settings.sigma)
+      // Weighted by area: the grown region takes in some of a densely meshed
+      // rim, which counted by vertex pulled basic_part's face 3.8 µm off.
+      const fin = fitPlaneClipped(g.positions, grown.region, settings.sigma, vertexAreas(g.positions, g.indices))
       if (!fin) return null
       const plane = orientToSurface(fin.plane, g.normals, grown.region)
       const ext = patchExtents(g.positions, grown.region, plane)
@@ -202,7 +205,14 @@ export function fitPlaneFromSeed(
 /** Best-fit plane on a hand-painted selection: steps 4 and 5 of the pipeline
  *  above, on exactly the marked points. The roughness check the seeded path
  *  applies is left out on purpose — there it guards against a region that grew
- *  onto the wrong surface, and here the surface is the user's own choice. */
+ *  onto the wrong surface, and here the surface is the user's own choice.
+ *
+ *  Every marked vertex counts once, as in QUICKSURFACE's Extract primitives:
+ *  on basic_part, the 1° Magic Wand face fitted this way lands within
+ *  0.0001° and 0.01 µm of QUICKSURFACE's plane, and weighted by area 0.34 µm
+ *  off it (analysis/fit-accuracy-2026-11-04). The marked area is the user's,
+ *  so nothing here needs outvoting; the seeded path weights by area because
+ *  the region it grows reaches into a densely meshed rim. */
 export function fitPlaneOnSelection(
   g: MeshGraph,
   selection: Uint32Array,

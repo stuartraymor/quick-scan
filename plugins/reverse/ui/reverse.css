@@ -1456,3 +1456,5 @@
 .re-place .field > input:disabled { opacity: 0.45; }
 .re-place .field { min-width: 0; }
 .re-place .field > input[type='number'] { min-width: 0; flex: 1 1 40px; width: auto !important; }
+.re-place .re-place-parallel { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.re-place .re-place-parallel button { flex: 0 0 45%; }

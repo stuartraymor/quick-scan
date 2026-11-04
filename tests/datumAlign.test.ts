@@ -319,3 +319,27 @@ describe('computeDatumAlignment', () => {
     expect(Math.hypot(roundTrip.t[0], roundTrip.t[1], roundTrip.t[2])).toBeLessThan(1e-9)
   })
 })
+
+describe('a secondary running the primary\'s way (QUICKSURFACE: cylinder on Z Axis, its top face as Top)', () => {
+  const at = (m: ReturnType<typeof computeDatumAlignment>, p: Vec3): Vec3 => {
+    const r = m.r, t = m.t
+    return [0, 1, 2].map((i) => r[i * 3] * p[0] + r[i * 3 + 1] * p[1] + r[i * 3 + 2] * p[2] + t[i]) as Vec3
+  }
+  it('stands the axis on Z and puts the face at Z = 0', () => {
+    const axis = normalize(TILTED)!
+    const base: Vec3 = [12, -7, 30]
+    const top: Vec3 = [base[0] + axis[0] * 15, base[1] + axis[1] * 15, base[2] + axis[2] * 15]
+    const m = computeDatumAlignment({ fit: cylinderFit(base, axis), axis: 'z+' }, { fit: planeFit(top, axis), axis: 'z+' }, null)
+    const a = at(m, base), b = at(m, top)
+    // Both points on the cylinder's axis land on the Z axis …
+    expect(Math.hypot(a[0], a[1])).toBeLessThan(1e-9)
+    expect(Math.hypot(b[0], b[1])).toBeLessThan(1e-9)
+    // … the top face at zero, the base 15 below it.
+    expect(b[2]).toBeCloseTo(0, 9)
+    expect(a[2]).toBeCloseTo(-15, 9)
+  })
+  it('refuses that secondary on any other axis', () => {
+    const axis = normalize(TILTED)!
+    expect(() => computeDatumAlignment({ fit: cylinderFit([0, 0, 0], axis), axis: 'z+' }, { fit: planeFit([1, 1, 1], axis), axis: 'y-' }, null)).toThrow(AlignmentError)
+  })
+})
