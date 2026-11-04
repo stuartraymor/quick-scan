@@ -1,3 +1,7 @@
+## 0.0.113 - 2026-11-04
+
+Collinear picks constrain the complete lines, including picks near their ends. Sketch Duplicate and Offset use the selected display units. Fitted splines render continuously in yellow while retaining their spline and measured-point data.
+
 ## 0.0.112 - 2026-11-04
 
 Keep a measured sketch line solid black above a coincident profile edge after Apply. Includes the explicit datum and invalid-hold fixes from 0.0.111.

@@ -154,7 +154,7 @@ export function SketchBrushOverlay({ scene, chainsOf }: { scene: FlatScene | nul
             const polyline = entityPolyline(entity, 192)
             ctx.beginPath()
             polyline.forEach((p, i) => { const at = scene.sheetScreenPoint(p); if (at) { if (i === 0) ctx.moveTo(at.x - rect.left, at.y - rect.top); else ctx.lineTo(at.x - rect.left, at.y - rect.top) } })
-            ctx.strokeStyle = state.primitive === 'line' && !painting ? '#000000' : '#009c42'; ctx.lineWidth = 2.5; ctx.stroke()
+            ctx.strokeStyle = state.primitive === 'curve' ? '#ffe05a' : state.primitive === 'line' && !painting ? '#000000' : '#009c42'; ctx.lineWidth = 2.5; ctx.stroke()
           }
         }
       }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useState } from 'react'
 import type { SketchChains } from '../app/useReverseWorkspace'
-import { addConstraint, cloneSketch, entityOf, nearestOnEntity, type ConstraintKind } from '../core/sketch'
+import { cloneSketch, entityOf, nearestOnEntity, type ConstraintKind } from '../core/sketch'
 import { useReverse } from '../state/reStore'
 import { useRePrefs } from '../state/rePrefs'
 import { useSketchBrush } from '../state/sketchBrushStore'
@@ -30,14 +30,6 @@ export function SketchControls({chainsOf}:{chainsOf:()=>SketchChains|null}) {
  const key=(icon:SketchCommandIconName,label:string,id:string,action:()=>void,on=false,disabled=false)=><button key={id} type="button" data-test={id} aria-label={label} title={label} aria-pressed={on} className={on?'on':undefined} disabled={disabled} onClick={action}><SketchCommandIcon name={icon}/></button>
  const relation=(kind:ConstraintKind)=>{
    presentation.setTool(null)
-   if(kind==='collinear') {
-    if(d.selection.length<2){re.armRelation('coincident');return}
-    const lines=d.selection.map(id=>entityOf(d.sketch,id))
-    if(lines.some(e=>e?.kind!=='line')) {useReverse.setState({sketchDraft:{...d,error:'Collinear takes two or more lines.'}});return}
-    const sketch=cloneSketch(d.sketch)
-    for(const e of lines.slice(1)) addConstraint(sketch,{kind:'collinear',line:lines[0]!.id,on:{line:e!.id}})
-    re.setSketch(sketch);return
-   }
    if(has)re.addRelation(kind);else re.armRelation(kind)
  }
  const active=(t:string)=>!presentation.tool&&d.tool===t
@@ -71,7 +63,7 @@ export function SketchControls({chainsOf}:{chainsOf:()=>SketchChains|null}) {
    {key('project','Project other visible sketches','sketch-tool-project',()=>{tool('select');useSketchCornerTrim.getState().setOpen(false);useSketchProject.getState().setOpen(true)})}
   </div>
   {edit&&<div className="sketch-edit-values" data-test="sketch-edit-values">
-   {edit==='offset'?<label>Offset <input data-test="sketch-offset-distance" type="number" value={distance} step="0.1" onChange={e=>setDistance(Number(e.target.value))}/> mm <button onClick={()=>setDistance(-distance)}>Flip</button></label>:<><label>X <input data-test="sketch-duplicate-x" type="number" value={dx} onChange={e=>setDx(Number(e.target.value))}/></label><label>Y <input data-test="sketch-duplicate-y" type="number" value={dy} onChange={e=>setDy(Number(e.target.value))}/></label></>}
+   {edit==='offset'?<label>Offset <input data-test="sketch-offset-distance" type="number" value={len.toDisplay(distance)} step={len.step(0.1)} onChange={e=>setDistance(len.fromDisplay(Number(e.target.value)))}/> {len.word()} <button onClick={()=>setDistance(-distance)}>Flip</button></label>:<><label>X ({len.word()}) <input data-test="sketch-duplicate-x" type="number" value={len.toDisplay(dx)} onChange={e=>setDx(len.fromDisplay(Number(e.target.value)))}/></label><label>Y ({len.word()}) <input data-test="sketch-duplicate-y" type="number" value={len.toDisplay(dy)} onChange={e=>setDy(len.fromDisplay(Number(e.target.value)))}/></label></>}
    <button data-test="sketch-edit-apply" onClick={()=>{if(edit==='offset'?offsetSketchSelection(distance):duplicateSketchSelection([dx,dy]))setEdit(null)}}>Apply</button><button onClick={()=>setEdit(null)}>Cancel</button>
   </div>}
   <div className="sketch-section-label">Constraints</div>

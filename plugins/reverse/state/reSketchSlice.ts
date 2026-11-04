@@ -870,6 +870,14 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
         return { sketchDraft: settle({ ...d, sketch }, before) }
       }
       if (picked.length !== d.selection.length) return { sketchDraft: { ...d, error: 'The selection contains a piece that is no longer in this sketch.' } }
+      if (kind === 'collinear') {
+        if (picked.some(e => e.kind !== 'line')) return { sketchDraft: { ...d, error: 'Collinear takes lines only.' } }
+        if (picked.length < 2) return { sketchDraft: { ...d, ...toolIdle(), tool: 'relation', armedRelation: 'collinear', selection: picked.map(e => e.id), selectedConstraint: null, error: null } }
+        const sketch = cloneSketch(d.sketch)
+        let id = 0
+        for (const e of picked.slice(1)) id = addConstraint(sketch, { kind: 'collinear', line: e.id, on: { line: picked[0].id } })
+        return { sketchDraft: { ...settle({ ...d, sketch }, before), selectedConstraint: id } }
+      }
       if (kind === 'coincident') {
         // On two selected pieces: two lines lie along each other; a
         // circle meets by its centre; anything else meets at its nearest
