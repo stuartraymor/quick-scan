@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { boxAngle } from '../geometry/planarBounds'
 import { vertexAreas } from './vertexArea'
 // A plane from a click or from a painted selection, ready to be an element.
 // A bare plane has no side and no size, so both are added: the normal is
@@ -16,19 +17,14 @@ import { guidePatch, type FitGuide } from './guide'
 import type { AxialWindow } from '../types'
 import { requireSelection } from './selection'
 
-/** In-plane rotations tried when boxing the patch in, over a quarter turn —
- *  past that the box repeats. */
-const FRAME_STEPS = 45
-const FRAME_SAMPLES = 4096
-
 /** The tightest rectangle around the measured patch, in the plane itself, so
  *  the element is drawn as the piece of surface it was fitted to. The obvious
  *  choice — the patch's principal axes — is arbitrary for a square patch and
  *  then boxes it in diagonally, sticking well out past its real edges; the
  *  smallest-area frame is stable whatever the shape. */
-function patchExtents(
+export function patchExtents(
   positions: Float32Array,
-  region: Uint32Array,
+  region: ArrayLike<number>,
   p: Plane,
 ): { center: Vec3; basisU: Vec3; basisV: Vec3; extentU: number; extentV: number } | null {
   const n = region.length
@@ -44,41 +40,14 @@ function patchExtents(
   mz /= n
 
   const [u0, v0] = orthoBasis([p.nx, p.ny, p.nz])
-  const step = Math.max(1, Math.ceil(n / FRAME_SAMPLES))
-  const sa: number[] = []
-  const sb: number[] = []
-  for (let i = 0; i < n; i += step) {
-    const j = region[i] * 3
-    const x = positions[j] - mx
-    const y = positions[j + 1] - my
-    const z = positions[j + 2] - mz
-    sa.push(x * u0[0] + y * u0[1] + z * u0[2])
-    sb.push(x * v0[0] + y * v0[1] + z * v0[2])
+  if(n<3)return null
+  const uv=new Float64Array(n*2)
+  for(let i=0;i<n;i++){
+    const j=region[i]*3,x=positions[j]-mx,y=positions[j+1]-my,z=positions[j+2]-mz
+    uv[2*i]=x*u0[0]+y*u0[1]+z*u0[2]
+    uv[2*i+1]=x*v0[0]+y*v0[1]+z*v0[2]
   }
-  if (sa.length < 3) return null
-
-  let bestArea = Infinity
-  let bestAngle = 0
-  for (let t = 0; t < FRAME_STEPS; t++) {
-    const angle = (t / FRAME_STEPS) * (Math.PI / 2)
-    const c = Math.cos(angle)
-    const s = Math.sin(angle)
-    let lo1 = Infinity, hi1 = -Infinity, lo2 = Infinity, hi2 = -Infinity
-    for (let i = 0; i < sa.length; i++) {
-      const q1 = sa[i] * c + sb[i] * s
-      const q2 = -sa[i] * s + sb[i] * c
-      if (q1 < lo1) lo1 = q1
-      if (q1 > hi1) hi1 = q1
-      if (q2 < lo2) lo2 = q2
-      if (q2 > hi2) hi2 = q2
-    }
-    const area = (hi1 - lo1) * (hi2 - lo2)
-    if (area < bestArea) {
-      bestArea = area
-      bestAngle = angle
-    }
-  }
-
+  const bestAngle=boxAngle(uv)
   const ca = Math.cos(bestAngle)
   const sn = Math.sin(bestAngle)
   const basisU: Vec3 = [

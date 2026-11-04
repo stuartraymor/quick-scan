@@ -10,6 +10,8 @@
 
 import type { CylinderFit, FitData, LineFit, PlaneFit, Vec3 } from '../types'
 import { add, dot, len, normalize, scale, sub } from '../vec'
+import { patchExtents } from '../fit/fitPlaneFromSeed'
+import { fitCircle2d } from '../fit/circle2d'
 import { orthoBasis } from '../fit/linalg'
 
 export type ConstraintId =
@@ -117,23 +119,13 @@ function figures(res: number[]): { sigma: number; formError: number; residualMin
 
 /** A plane with its normal held to `n`, measured again on the points: through
  *  their mean, or at `offset` (n · x) when that is held too. */
-function planeWith(fit: PlaneFit, pos: Float32Array, idx: ArrayLike<number>, n: Vec3, offset?: number): PlaneFit {
+function planeWith(fit: PlaneFit, pos: Float32Array, idx: ArrayLike<number>, n: Vec3, offset?: number): PlaneFit | null {
   const c = centroid(pos, idx)
   const d = offset ?? dot(n, c)
-  const [bu, bv] = orthoBasis(n)
-  const res: number[] = []
-  let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity
-  for (let i = 0; i < idx.length; i++) {
-    const p = point(pos, idx[i])
-    res.push(dot(n, p) - d)
-    const pu = dot(bu, p), pv = dot(bv, p)
-    if (pu < u0) u0 = pu
-    if (pu > u1) u1 = pu
-    if (pv < v0) v0 = pv
-    if (pv > v1) v1 = pv
-  }
-  const center = add(add(scale(bu, (u0 + u1) / 2), scale(bv, (v0 + v1) / 2)), scale(n, d))
-  return { ...fit, ...figures(res), center, normal: n, basisU: bu, basisV: bv, extentU: (u1 - u0) / 2, extentV: (v1 - v0) / 2 }
+  const ext=patchExtents(pos,idx,{nx:n[0],ny:n[1],nz:n[2],d})
+  if(!ext)return null
+  const res=Array.from(idx,i=>dot(n,point(pos,i))-d)
+  return {...fit,...figures(res),...ext,normal:n}
 }
 
 /** A cylinder with its axis held to `a`: the circle the points make seen down
@@ -148,22 +140,11 @@ function cylinderWith(fit: CylinderFit, pos: Float32Array, idx: ArrayLike<number
     cu = dot(bu, through)
     cv = dot(bv, through)
   } else {
-    // Kåsa: x² + y² = 2·cu·x + 2·cv·y + k, least squares in (cu, cv, k).
-    let sxx = 0, sxy = 0, sx = 0, syy = 0, sy = 0, sxz = 0, syz = 0, sz = 0
-    for (let i = 0; i < n; i++) {
-      const p = point(pos, idx[i])
-      const x = dot(bu, p), y = dot(bv, p), z = x * x + y * y
-      sxx += x * x; sxy += x * y; sx += x; syy += y * y; sy += y; sxz += x * z; syz += y * z; sz += z
-    }
-    // Normal equations for [2cu, 2cv, k]; solved by Cramer's rule.
-    const m = [[sxx, sxy, sx], [sxy, syy, sy], [sx, sy, n]]
-    const rhs = [sxz, syz, sz]
-    const det3 = (q: number[][]) => q[0][0] * (q[1][1] * q[2][2] - q[1][2] * q[2][1]) - q[0][1] * (q[1][0] * q[2][2] - q[1][2] * q[2][0]) + q[0][2] * (q[1][0] * q[2][1] - q[1][1] * q[2][0])
-    const D = det3(m)
-    if (!(Math.abs(D) > 1e-12)) return null
-    const col = (k: number) => det3(m.map((row, r) => row.map((v, c) => (c === k ? rhs[r] : v))))
-    cu = col(0) / D / 2
-    cv = col(1) / D / 2
+    const x=new Float64Array(n), y=new Float64Array(n)
+    for(let i=0;i<n;i++){const p=point(pos,idx[i]);x[i]=dot(bu,p);y[i]=dot(bv,p)}
+    const circle=fitCircle2d(x,y)
+    if(!circle)return null
+    cu=circle.cu;cv=circle.cv
   }
   let rsum = 0, lo = Infinity, hi = -Infinity
   const dists: number[] = []
@@ -207,12 +188,26 @@ export function withDirection(fit: FitData, pos: Float32Array, idx: ArrayLike<nu
   return null
 }
 
+/** Minimize squared orthogonal distances with a normal constrained to the
+ * plane across ref. For isotropic scatter the initial orientation is as good. */
+function bestNormalAcross(pos:Float32Array, idx:ArrayLike<number>, ref:Vec3, initial:Vec3):Vec3 {
+ const [u,v]=orthoBasis(ref), c=centroid(pos,idx)
+ let xx=0,xy=0,yy=0
+ for(let i=0;i<idx.length;i++){const p=sub(point(pos,idx[i]),c),x=dot(p,u),y=dot(p,v);xx+=x*x;xy+=x*y;yy+=y*y}
+ if(Math.hypot(xx-yy,2*xy)<=1e-12*(xx+yy))return initial
+ const t=.5*Math.atan2(2*xy,xx-yy)
+ return alike(add(scale(u,-Math.sin(t)),scale(v,Math.cos(t))),initial)
+}
 /** Step 2's dropdown: the fit held parallel or perpendicular to a coordinate
  *  plane, or null when it cannot be (no direction, or it lies along the
  *  datum's normal and perpendicular is then undetermined). */
 export function constrainFit(fit: FitData, pos: Float32Array, idx: ArrayLike<number>, constraint: ConstraintId, refs: readonly ConstraintRef[] = []): FitData | null {
   const dir = constrainedDirection(fit, constraint, refs)
-  return dir ? withDirection(fit, pos, idx, dir) : null
+  if (!dir) return null
+  const target=constraint.split('-')[1]
+  const ref=target?.startsWith('el') ? refs.find(r=>r.id===Number(target.slice(2)))?.fit : undefined
+  const axis=ref ? directionOf(ref) : DATUM_NORMAL[target as keyof typeof DATUM_NORMAL]
+  return withDirection(fit,pos,idx,fit.kind==='plane' && axis && Math.abs(dot(axis,dir))<1e-8 ? bestNormalAcross(pos,idx,axis,dir) : dir)
 }
 
 export interface Neighbour { name: string; fit: FitData }
@@ -240,6 +235,7 @@ export function autoConstrainFit(fit: FitData, pos: Float32Array, idx: ArrayLike
   }
   if (!best) return { fit, notes: [] }
   const notes: string[] = [`${best.how} to ${best.to.name}${best.off > 0.005 ? ` (${best.off.toFixed(2)}° off)` : ''}`]
+  if(fit.kind==="plane" && best.how==="perpendicular") best.dir=bestNormalAcross(pos,idx,directionOf(best.to.fit)!,best.dir)
   let out = withDirection(fit, pos, idx, best.dir)
   if (!out) return { fit, notes: [] }
   if (best.how === 'parallel') {

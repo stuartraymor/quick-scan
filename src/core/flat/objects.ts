@@ -1,3 +1,4 @@
+import { convexHull } from '../geometry/planarBounds'
 // SPDX-License-Identifier: AGPL-3.0-only
 // The parts lying on a flatbed scan, found and measured: a grey threshold
 // parts material from background, the material falls apart into connected
@@ -314,32 +315,6 @@ function traceOutline(
     out.push((c + 0.5) * sx, (r + 0.5) * sy)
   }
   return Float64Array.from(out)
-}
-
-/** The convex hull of flattened x,y points, counter-clockwise, collinear
- *  points dropped (Andrew's monotone chain). */
-function convexHull(points: ArrayLike<number>): Float64Array {
-  const n = points.length >> 1
-  const order = Array.from({ length: n }, (_, i) => i)
-  order.sort((a, b) => points[2 * a] - points[2 * b] || points[2 * a + 1] - points[2 * b + 1])
-  const hull: number[] = []
-  const cross = (o: number, a: number, b: number) =>
-    (points[2 * a] - points[2 * o]) * (points[2 * b + 1] - points[2 * o + 1]) -
-    (points[2 * a + 1] - points[2 * o + 1]) * (points[2 * b] - points[2 * o])
-  const chain = (indices: number[]) => {
-    const stack: number[] = []
-    for (const i of indices) {
-      while (stack.length >= 2 && cross(stack[stack.length - 2], stack[stack.length - 1], i) <= 0) stack.pop()
-      stack.push(i)
-    }
-    stack.pop()
-    return stack
-  }
-  const lower = chain(order)
-  const upper = chain(order.slice().reverse())
-  const all = n <= 1 ? order : lower.concat(upper)
-  for (const i of all) hull.push(points[2 * i], points[2 * i + 1])
-  return Float64Array.from(hull)
 }
 
 /** An angle folded into (-π/2, π/2] — a direction, not a heading. */
