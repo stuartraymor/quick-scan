@@ -1,3 +1,11 @@
+## 0.0.110 - 2026-11-04
+
+Top-left application menu > Settings maps a local example folder. Help > Examples matches reference names and lists personal models from its subfolders. The three included examples remain available offline.
+
+## 0.0.109 - 2026-11-04
+
+Constrained plane previews measure the selected footprint and fit the perpendicular direction to the data. Cylinder fits remain stable away from the origin.
+
 ## 0.0.107 - 2026-11-04
 
 Fit Primitives follows the cursor and tests the visible brush in screen pixels. Sketch tools follow the app theme, and sketch and model labels are spaced together. Help lists the ten original reference names and remembers a local library alongside the three bundled examples.

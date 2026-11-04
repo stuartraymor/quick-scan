@@ -2,6 +2,10 @@
 import catalog from './referenceExamples.json'
 import bundled from './bundledExamples.json'
 
+export type LocalModel = {key:string;file:string;label:string}
+export interface Library {folder:string; entries:LocalModel[];slots:Record<string, LocalModel & {verify:boolean}>;truncated?:boolean;unavailable?:boolean}
+export const libraryBridge=()=> (window as unknown as {quickScanFiles?: {exampleLibrary?:()=>Promise<Library>;chooseExamples?:()=>Promise<boolean>;clearExamples?:()=>Promise<void>}}).quickScanFiles
+export const libraryChanged='quickscan:example-library-changed'
 export function localFolderPicker() {
   return (window as unknown as { quickScanFiles?: {chooseExamples?: () => Promise<boolean>} }).quickScanFiles?.chooseExamples
 }
@@ -25,6 +29,12 @@ export async function installedExamples(base = import.meta.env.BASE_URL) {
 }
 
 export async function fetchReferenceExample(id: string, base: string = import.meta.env.BASE_URL): Promise<File> {
+  if(id.startsWith('local:')){
+    const [,key,...file]=id.split(':')
+    const response=await fetch(base.replace(/\/*$/, '/')+'mapped-examples/'+key)
+    if(!response.ok)throw Error('Example file is unavailable. Refresh the mapped folder in Settings.')
+    return new File([await response.blob()],file.join(':'))
+  }
   const sample = bundled.find(item => item.id === id)
   const item = sample ?? catalog.find(item => item.id === id)
   if (!item) throw new Error('Unknown example model.')

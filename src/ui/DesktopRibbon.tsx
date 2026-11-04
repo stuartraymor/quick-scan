@@ -17,7 +17,7 @@ import { Icon, type IconName } from './icons'
 import { AiWizard } from './AiWizard'
 import { useAgentConnectionHint } from '../commands/agentSetup'
 import { useUpdater } from './UpdateButton'
-import { BUNDLED_EXAMPLES, REFERENCE_CATALOG, installedExamples, localFolderPicker } from '../app/referenceExamples'
+import { libraryBridge, libraryChanged, type Library, BUNDLED_EXAMPLES, REFERENCE_CATALOG, installedExamples, localFolderPicker } from '../app/referenceExamples'
 import { APP_VERSION } from '../version'
 import { AGENT_STATUS, useAgentLink } from '../commands/agentLink'
 import { UndoRedo } from './UndoRedo'
@@ -241,11 +241,14 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
   </div></details>
   const patternMenu = <details className="ribbon-dropdown"><summary className="desktop-ribbon-tool" title="Patterns and mirror"><Icon name="pattern" size={25}/><span>Pattern ▾</span></summary><div className="ribbon-menu">{cad('pattern','Linear / circular pattern','pattern')}{cad('mirror','Mirror','mirror')}</div></details>
   const [localExamples, setLocalExamples] = useState<typeof BUNDLED_EXAMPLES>([])
+  const [library,setLibrary]=useState<Library|null>(null)
   useEffect(() => {
     if (tab !== 'help') return
     let active = true
-    void installedExamples().then(items => { if (active) setLocalExamples(items) }).catch(() => { if (active) setLocalExamples([]) })
-    return () => { active = false }
+    const update=async()=>{const lib=await libraryBridge()?.exampleLibrary?.();const items=await installedExamples();if(active){setLibrary(lib??null);setLocalExamples(items)}}
+    const refresh=()=>{void update().catch(()=>{if(active){setLibrary(null);setLocalExamples([])}})}
+    refresh();window.addEventListener(libraryChanged,refresh)
+    return () => { active = false;window.removeEventListener(libraryChanged,refresh) }
   }, [tab])
   const examplesMenu = <details className="ribbon-dropdown" data-test="examples-menu">
     <summary className="desktop-ribbon-tool" title="Open an example model" aria-label="Examples" aria-disabled={busy || picking || exampleBusy}
@@ -254,25 +257,28 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
       {[localFolderPicker() ? REFERENCE_CATALOG : localExamples, BUNDLED_EXAMPLES].map((items, index) => items.length > 0 && <div role="group" aria-label={index ? 'Included with Quick Scan' : 'Local reference examples'} key={index}>
       <div className="example-group-label">{index ? 'Included with Quick Scan' : 'Local reference examples'}</div>
       {items.map(item => {
-        const missing = index === 0 && !localExamples.some(i => i.id === item.id)
-        return <button key={item.id} role="menuitem" title={missing ? 'Choose the local folder containing ' + item.file : item.file} data-test={`example-${item.id}`} disabled={!onExample || busy || picking || exampleBusy}
+        const mapped=index===0 ? library?.slots[item.id] : undefined
+        const missing = index === 0 && !mapped && !localExamples.some(i => i.id === item.id)
+        return <button key={item.id} role="menuitem" title={missing ? 'Choose the local folder containing ' + item.file : mapped?.label ?? item.file} data-test={`example-${item.id}`} disabled={!onExample || busy || picking || exampleBusy}
           onClick={async event => {
             event.currentTarget.closest('details')?.removeAttribute('open')
             if (missing) {
               try {
                 if (!await localFolderPicker()?.()) return
+                const lib=await libraryBridge()?.exampleLibrary?.();setLibrary(lib??null)
                 const found = await installedExamples(); setLocalExamples(found)
-                if (!found.some(i => i.id === item.id)) { useStore.setState({errorText:item.file+' is missing from the selected folder.'}); return }
-              } catch { useStore.setState({errorText:'Choose a folder containing the original example STL files.'}); return }
+                const m=lib?.slots[item.id]
+                if(m && !m.verify){onExample?.('local:'+m.key+':'+m.file);return}
+                if (!found.some(i => i.id === item.id)) { useStore.setState({errorText:item.file+' was not found. Check My examples or change the mapped folder in Settings.'}); return }
+              } catch { useStore.setState({errorText:'Could not read that folder. Check the mapping in Settings.'}); return }
             }
-            onExample?.(item.id)
-          }}>{item.label}{missing && <span aria-hidden="true" style={{float:'right', color:'var(--dim)'}}>�</span>}</button>
+            onExample?.(mapped && !mapped.verify ? 'local:'+mapped.key+':'+mapped.file : item.id)
+          }}>{item.label}{missing && <span aria-hidden="true" style={{float:'right', color:'var(--dim)'}}>&hellip;</span>}</button>
       })}
       </div>)}
-      {localFolderPicker() && <button type="button" data-test="example-library-folder" onClick={async () => {
-        try { if (await localFolderPicker()?.()) setLocalExamples(await installedExamples()) }
-        catch { useStore.setState({errorText:'Could not use that folder. Choose a folder containing the original example STL files.'}) }
-      }}>Choose local example folder…</button>}
+      {library?.entries.some(e=>!Object.values(library.slots).some(s=>s.verify && s.key===e.key)) && <div role="group" aria-label="My examples"><div className="example-group-label">My examples</div>
+        {library.entries.filter(e=>!Object.values(library.slots).some(s=>s.verify && s.key===e.key)).map(e=><button key={e.key} role="menuitem" title={e.label} disabled={busy||picking||exampleBusy} onClick={ev=>{ev.currentTarget.closest('details')?.removeAttribute('open');onExample?.('local:'+e.key+':'+e.file)}}>{e.label}</button>)}
+      </div>}
     </div>
   </details>
   const fileGroup = <Group label="File">{tool('Open', 'load', onOpen, busy || picking, 'Open a scan or project')}{tool('Save', 'save', onSave, busy || !savable, 'Save the entire Quick Scan project')}</Group>

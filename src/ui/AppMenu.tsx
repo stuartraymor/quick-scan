@@ -4,6 +4,7 @@
 // documents on the right. Recent documents exist in the desktop app only —
 // a browser cannot reopen a file by its path.
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { ExampleLibrarySettings } from './ExampleLibrarySettings'
 import { useDismiss } from './useDismiss'
 import { Icon, type IconName } from './icons'
 import { ExportMeshButton } from './ExportMeshButton'
@@ -67,6 +68,7 @@ export function AppMenu({
   const hasScan = useStore((s) => s.fileName !== null)
   const updater = useUpdater()
   const files = filesBridge()
+  const [settings, setSettings] = useState(false)
   const [recent, setRecent] = useState<RecentDocument[]>([])
   const [problem, setProblem] = useState<string | null>(null)
   const panel = useRef<HTMLDivElement>(null)
@@ -84,6 +86,7 @@ export function AppMenu({
   useEffect(() => {
     if (open) panel.current?.querySelector<HTMLElement>('button:not(:disabled)')?.focus()
   }, [open])
+  if (settings) return <ExampleLibrarySettings onClose={() => { setSettings(false); document.querySelector<HTMLElement>('[data-app-menu-button]')?.focus() }} />
   if (!open) return null
   const close = () => setOpen(false)
   const item = (label: string, icon: IconName, run: () => void, opts: { disabled?: boolean; title?: string; test: string; hint?: string }) => (
@@ -141,6 +144,8 @@ export function AppMenu({
             title="Save the scan as an STL or 3MF where it now stands"
           />
         </div>
+        <hr />
+        {item('Settings', 'settings', () => setSettings(true), { test: 'menu-settings' })}
         {updater && (
           <>
             <hr />

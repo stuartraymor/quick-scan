@@ -20,33 +20,60 @@ else {
     const libraryFile = path.join(app.getPath('appData'), 'QuickScan-shared', 'example-library.json');
     let library = '';
     try { const p = JSON.parse(fs.readFileSync(libraryFile, 'utf8')); if (typeof p === 'string' && path.isAbsolute(p)) library = p; } catch { /* first launch */ }
+    const {indexFolder,resolveKey}=require('./example-library.cjs');
+    const catalog=require('./src/app/referenceExamples.json');
+    const ours=e=>e.senderFrame?.url?.startsWith('scanruler://app/');
+    let index=null, refresh=null;
+    const scan=async()=>{
+      const dir=library;
+      if(!dir) return null;
+      const next=await indexFolder(dir,catalog);
+      if(library===dir) index=next;
+      return next;
+    };
+    const inspect=async()=>{
+      try {
+        if(!refresh)refresh=scan().finally(()=>{refresh=null});
+        await refresh;
+        return {folder:library,entries:index?.entries??[],slots:index?.slots??{},truncated:!!index?.truncated};
+      } catch {index=null;return {folder:library,entries:[],slots:{},unavailable:true}}
+    };
+    const save=async dir=>{
+      await fs.promises.mkdir(path.dirname(libraryFile),{recursive:true});
+      await fs.promises.writeFile(libraryFile,JSON.stringify(dir));library=dir;index=null;
+    };
+    ipcMain.handle('files:exampleLibrary',event=>ours(event)?inspect():null);
+    ipcMain.handle('files:clearExamples',async event=>{if(ours(event))await save('')});
     ipcMain.handle('files:chooseExamples', async event => {
-      if (!event.senderFrame?.url?.startsWith('scanruler://app/')) return false;
-      const pick = await dialog.showOpenDialog(win, { title: 'Choose local example folder', properties: ['openDirectory'] });
+      if (!ours(event)) return false;
+      const pick = await dialog.showOpenDialog(win, { title: 'Choose local example folder', defaultPath:library||undefined, properties: ['openDirectory'] });
       if (pick.canceled || !pick.filePaths[0]) return false;
-      const dir = pick.filePaths[0];
-      const names = await fs.promises.readdir(dir);
-      if (!names.some(n => ['lego','basic_part','aerosol_knob','bearinghousing','machine_part','tool','steel','impeller','yholder','qsm'].includes(path.parse(n).name) && path.extname(n)==='.stl'))
-        throw Error('No recognized example STL files in this folder.');
-      await fs.promises.mkdir(path.dirname(libraryFile), {recursive:true});
-      await fs.promises.writeFile(libraryFile, JSON.stringify(dir)); library = dir; return true;
+      const dir=pick.filePaths[0], next=await indexFolder(dir,catalog);
+      await save(dir); index=next; return true;
     });
-    const exampleDirs = () => [library, process.env.QS_EXAMPLES_DIR, path.join(app.getPath('appData'), 'QuickScan', 'reference-examples'), path.join(root, 'reference-examples')].filter(Boolean);
+    const exampleDirs = () => [ process.env.QS_EXAMPLES_DIR, path.join(app.getPath('appData'), 'QuickScan', 'reference-examples'), path.join(root, 'reference-examples')].filter(Boolean);
     ipcMain.handle('files:examples', event => {
       if (!event.senderFrame?.url?.startsWith('scanruler://app/')) return [];
-      return exampleDirs().flatMap(dir => {
+      return [...Object.entries(index?.slots??{}).filter(([,v])=>v.verify).map(([id])=>catalog.find(c=>c.id===id).file), ...exampleDirs().flatMap(dir => {
         try { return fs.readdirSync(dir, {withFileTypes: true}).filter(entry => entry.isFile() && /\.stl$/i.test(entry.name)).map(entry => entry.name); }
         catch { return []; }
-      });
+      })];
     });
-    protocol.handle('scanruler', request => {
+    protocol.handle('scanruler', async request => {
       const url = new URL(request.url);
+      if(url.host==='app' && url.pathname.startsWith('/mapped-examples/')){
+        const key=url.pathname.slice('/mapped-examples/'.length);
+        try {const f=await resolveKey(index,key);if(f)return net.fetch(pathToFileURL(f).href)}catch{}
+        return new Response('Example not found',{status:404});
+      }
       // Help > Examples: the reference example meshes are third-party files
       // and are not shipped. They are read from a local folder on this PC.
       if (url.host === 'app' && url.pathname.startsWith('/reference-examples/')) {
         const name = path.basename(decodeURIComponent(url.pathname));
         if (!/^(?:lego|basic_part|aerosol_knob|bearinghousing|machine_part|tool|steel|impeller|yholder|qsm)\.stl$/.test(name)) return new Response('Not found', {status: 404});
-        const found = exampleDirs().map(d => path.join(d, name)).find(f => fs.existsSync(f));
+        const ref=catalog.find(c=>c.file===name), slot=index?.slots[ref?.id];
+        const mapped=slot?.verify ? await resolveKey(index,slot.key).catch(()=>null) : null;
+        const found = mapped || exampleDirs().map(d => path.join(d, name)).find(f => fs.existsSync(f));
         return found ? net.fetch(pathToFileURL(found).href) : new Response('Not found', { status: 404 });
       }
       const file = path.resolve(root, '.' + decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname));

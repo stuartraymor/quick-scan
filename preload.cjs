@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld('quickScanUpdater', {
   onProgress: cb => { const h = (_e, p) => cb(p); ipcRenderer.on('updater:progress', h); return () => ipcRenderer.removeListener('updater:progress', h); },
 });
 contextBridge.exposeInMainWorld('quickScanFiles', {
+  exampleLibrary: () => ipcRenderer.invoke('files:exampleLibrary'),
+  clearExamples: () => ipcRenderer.invoke('files:clearExamples'),
   chooseExamples: () => ipcRenderer.invoke('files:chooseExamples'),
   examples: () => ipcRenderer.invoke('files:examples'),
   recent: () => ipcRenderer.invoke('files:recent'),
