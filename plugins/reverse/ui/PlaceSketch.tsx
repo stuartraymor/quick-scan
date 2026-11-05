@@ -11,7 +11,8 @@
 import { useSectionLine } from '../state/sectionLineStore'
 import { useEffect, useRef, useState } from 'react'
 import { useReverse } from '../state/reStore'
-import { planeOffset, planeTakesOffset, type PlaneRef } from '../core/features'
+import { planeAtOffset, planeOffset, planeTakesOffset, type PlaneRef } from '../core/features'
+import { resolvePlaneFrame } from '../core/resolve'
 import { useLength } from '../../../src/app/useUnits'
 import { useStore } from '../../../src/state/store'
 import { PlaneSelect } from './PlaneSelect'
@@ -29,7 +30,6 @@ const TILES: { axis: 'z' | 'x' | 'y'; label: string; title: string }[] = [
   { axis: 'x', label: '(OYZ)', title: 'A plane parallel to OYZ — normal along X' },
   { axis: 'y', label: '(OXZ)', title: 'A plane parallel to OXZ — normal along Y' },
 ]
-const NOT_BUILT = 'Not built in Quick Scan yet'
 
 const world = (plane: PlaneRef) => (plane.kind === 'world' ? plane : null)
 const AXES: { axis: 'x' | 'y' | 'z'; label: string; title: string }[] = [
@@ -80,6 +80,7 @@ export function PlaceSketch({ chainsOf }: { chainsOf: () => { chains: Vec2[][] }
   const draft = useReverse((s) => s.sketchDraft)
   const len = useLength()
   const [typed, setTyped] = useState<string | null>(null)
+  const [onSlicingPlane, setOnSlicingPlane] = useState(true)
   const [stacked, setStacked] = useState(false)
   const [count, setCount] = useState(20)
   const [hideScan, setHideScan] = useState(false)
@@ -197,14 +198,31 @@ export function PlaceSketch({ chainsOf }: { chainsOf: () => { chains: Vec2[][] }
       useReverse.getState().setSketch(sketch); return true
     } finally { if (run.current === token) setWorking(null) }
   }
+  // The collected points are local to the slice. Projecting them onto
+  // its parallel datum preserves those coordinates and the sketch axes.
+  const preparePlacement = async () => {
+    if (!await prepareReference()) return false
+    const d = useReverse.getState().sketchDraft
+    if (!d?.placing) return false
+    if (onSlicingPlane || !planeOffset(d.plane)) return true
+    const plane = planeAtOffset(d.plane, 0)
+    const { sections, elements, modelCenter } = useStore.getState()
+    const base = resolvePlaneFrame(plane, { sections, elements, modelCenter })
+    if (!base) {
+      setReferenceMessage('The selected drawing plane is no longer available.')
+      return false
+    }
+    useReverse.setState({ sketchDraft: { ...d, plane, frame: { ...d.frame, origin: base.origin } } })
+    return true
+  }
   const create = async () => {
-    if (!await prepareReference()) return
+    if (!await preparePlacement()) return
     if (hideScan) useReverse.getState().setSketchModelShown(false)
     useReverse.setState((s) => (s.sketchDraft ? { sketchDraft: { ...s.sketchDraft, placing: false } } : {}))
   }
   const createAndStay = async () => {
     const d = useReverse.getState().sketchDraft
-    if (!d || !await prepareReference()) return
+    if (!d || !await preparePlacement()) return
     const id = useReverse.getState().commitSketch()
     if (id !== null && re.startSketchOn(d.plane)) { placing(); appliedStack.current = null }
     useStore.getState().setStatus(id !== null ? 'One reference sketch created. No primitives fitted; move the plane for the next sketch.' : 'No reference points on this plane; no sketch created.')
@@ -281,8 +299,8 @@ export function PlaceSketch({ chainsOf }: { chainsOf: () => { chains: Vec2[][] }
         </label>
         <button data-test="place-flip" disabled={!!working} title="Turn the sketch plane to face the other way" onClick={() => { run.current++; setWorking(null); appliedStack.current = null; re.flipSketchOrientation() }}>Flip orientation</button>
       </div>
-      <label className="checkrow" title={NOT_BUILT}>
-        <input type="checkbox" data-test="place-on-slice" checked disabled readOnly />
+      <label className="checkrow" title="Draw on the cutting plane, or project its section onto the selected datum.">
+        <input type="checkbox" data-test="place-on-slice" checked={onSlicingPlane} disabled={!!working} onChange={(e) => setOnSlicingPlane(e.target.checked)} />
         <span>Create sketch on slicing plane</span>
       </label>
       <label className="checkrow" title="Cut only across the surface marked on the part; with nothing marked, the whole cut">
