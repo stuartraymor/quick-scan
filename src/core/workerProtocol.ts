@@ -152,6 +152,7 @@ export type WorkerRequest =
   | { type: 'section'; requestId: number; origin: Vec3; normal: Vec3; minLength: number }
   /** The scan's shadow on a plane — see core/section/shadow. Answered as a
    *  section is, with the contour's pieces beside the polylines. */
+  | { type: 'mesh-outline'; requestId: number; frame: SectionFrame }
   | { type: 'shadow'; requestId: number; frame: SectionFrame; tolerance: number; play: number; smoothDeg: number }
   /** The centroid of the volume the scan encloses, on the scan as it now
    *  stands — see geometry/centroid. With `vertices`, a surface marked by

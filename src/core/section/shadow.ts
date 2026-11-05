@@ -177,17 +177,9 @@ export function shadowMesh(
   return shadowOutline(positions, indices, frame, opts).cut
 }
 
-/** The shadow with the exact loops it was read from — what the tests check
- *  the reading against. */
-export function shadowOutline(
-  positions: Float32Array,
-  indices: Uint32Array,
-  frame: SectionFrame,
-  opts: ShadowOptions = {},
-): ShadowOutline {
-  const tol = opts.tolerance !== undefined && opts.tolerance > 0 ? opts.tolerance : SHADOW_TOLERANCE
-  const play = opts.play !== undefined && Number.isFinite(opts.play) ? opts.play : 0
-  const smoothDeg = opts.smoothDeg !== undefined && opts.smoothDeg >= 0 ? Math.min(opts.smoothDeg, 180) : SHADOW_SMOOTH_DEG
+/** Shared projection and boundary tracing for a drawing outline and a
+ *  clearance shadow. Only the latter continues to offset and fit the loops. */
+function traceSilhouette(positions: Float32Array, indices: Uint32Array, frame: SectionFrame, tol: number, maxCells: number) {
   const [ox, oy, oz] = frame.origin
   const [ux, uy, uz] = frame.basisU
   const [vx, vy, vz] = frame.basisV
@@ -219,28 +211,13 @@ export function shadowOutline(
     if (w < wMin) wMin = w
     if (w > wMax) wMax = w
   }
-  const blank = (cell: number, widened: boolean): ShadowOutline => {
-    const shape: ShadowShape = {
-      loops: [],
-      area: 0,
-      play,
-      tolerance: tol,
-      smoothDeg,
-      margin: { min: play, max: play },
-      cell,
-      widened,
-      extent: { min: Number.isFinite(wMin) ? wMin : 0, max: Number.isFinite(wMax) ? wMax : 0 },
-      frame,
-    }
-    return { exact: [], shape, cut: emptyCut(shape) }
-  }
+  const extent = { min: Number.isFinite(wMin) ? wMin : 0, max: Number.isFinite(wMax) ? wMax : 0 }
   const triCount = indices.length / 3
-  if (nv === 0 || triCount === 0) return blank(tol / 2, false)
+  if (nv === 0 || triCount === 0) return { exact: [], cell: tol / 2, widened: false, extent }
 
   // ---- 2. rasterise -------------------------------------------------------
   let cell = tol / 2
   let widened = false
-  const maxCells = opts.maxCells ?? MAX_CELLS
   const spanU = uMax - uMin
   const spanV = vMax - vMin
   if ((spanU / cell + 5) * (spanV / cell + 5) > maxCells) {
@@ -264,7 +241,7 @@ export function shadowOutline(
 
   // ---- 3. trace -----------------------------------------------------------
   const traced = maskLoops(mask, grid, (3 * cell) ** 2)
-  if (traced.length === 0) return blank(cell, widened)
+  if (traced.length === 0) return { exact: [], cell, widened, extent }
 
   // ---- 4. refine onto the union of the projected triangles ----------------
   const union = triangleBuckets(pu, pv, indices, grid, traced)
@@ -272,6 +249,47 @@ export function shadowOutline(
     hole: l.hole,
     points: l.points.map((p) => refineCrossing(p, grid, mask, union.inside)),
   }))
+
+  return { exact, cell, widened, extent }
+}
+
+export function projectedMeshOutline(positions: Float32Array, indices: Uint32Array, frame: SectionFrame): SectionCut {
+  const { exact } = traceSilhouette(positions, indices, frame, SHADOW_TOLERANCE, MAX_CELLS)
+  const count = exact.reduce((sum, loop) => sum + loop.points.length + 1, 0)
+  const points = new Float32Array(count * 3)
+  const offsets = new Uint32Array(exact.length + 1)
+  let next = 0
+  exact.forEach((loop, chain) => {
+    offsets[chain] = next
+    // Include the closing point, as in an ordinary section cut.
+    for (let i = 0; i <= loop.points.length; i++) {
+      const [u, v] = loop.points[i % loop.points.length]
+      for (let k = 0; k < 3; k++) {
+        points[3 * next + k] = frame.origin[k] + u * frame.basisU[k] + v * frame.basisV[k]
+      }
+      next++
+    }
+  })
+  offsets[exact.length] = next
+  return { points, offsets }
+}
+
+/** The shadow with the exact loops it was read from — what the tests check
+ *  the reading against. */
+export function shadowOutline(
+  positions: Float32Array,
+  indices: Uint32Array,
+  frame: SectionFrame,
+  opts: ShadowOptions = {},
+): ShadowOutline {
+  const tol = opts.tolerance !== undefined && opts.tolerance > 0 ? opts.tolerance : SHADOW_TOLERANCE
+  const play = opts.play !== undefined && Number.isFinite(opts.play) ? opts.play : 0
+  const smoothDeg = opts.smoothDeg !== undefined && opts.smoothDeg >= 0 ? Math.min(opts.smoothDeg, 180) : SHADOW_SMOOTH_DEG
+  const { exact, cell, widened, extent } = traceSilhouette(positions, indices, frame, tol, opts.maxCells ?? MAX_CELLS)
+  if (!exact.length) {
+    const shape: ShadowShape = { loops: [], area: 0, play, tolerance: tol, smoothDeg, margin: { min: play, max: play }, cell, widened, extent, frame }
+    return { exact, shape, cut: emptyCut(shape) }
+  }
 
   // ---- 5. the contour: offset, read, checked ------------------------------
   const ref = new SegmentField(exact, cell)
@@ -356,7 +374,7 @@ export function shadowOutline(
     margin,
     cell,
     widened,
-    extent: { min: wMin, max: wMax },
+    extent,
     frame,
   }
   return { exact, shape, cut: { ...liftLoops(loops, frame, cell), shadow: shape } }

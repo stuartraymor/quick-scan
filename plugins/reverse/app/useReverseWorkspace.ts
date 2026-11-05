@@ -9,8 +9,6 @@
 // (reSession.ts), which the commands work through too; this hook draws them
 // and does the rest of the asynchronous work.
 
-import { SHADOW_SMOOTH_DEG, SHADOW_TOLERANCE } from '../../../src/core/section/shadow'
-import { SHADOW_PLAY } from '../../../src/state/sectionModel'
 import { useSectionLine } from '../state/sectionLineStore'
 import { edgesThroughSelection, longChains, sectionModeKey } from '../core/selectionCut'
 import { reSceneOf } from '../viewer/reScene'
@@ -198,7 +196,7 @@ export function useReverseWorkspace({
     // Outline Mesh: the part's shadow through the plane, its short pieces
     // ("Ignore small segments of N points") left out.
     const cutting = outline
-      ? clientRef.current?.shadow(draft.frame, SHADOW_TOLERANCE, SHADOW_PLAY, SHADOW_SMOOTH_DEG)
+      ? clientRef.current?.meshOutline(draft.frame)
       : clientRef.current?.section(origin, n, EDGE_MIN_FEATURE_MM)
     cutting
       ?.then((cut) => {

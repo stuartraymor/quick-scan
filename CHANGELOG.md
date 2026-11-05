@@ -1,3 +1,7 @@
+## 0.0.120
+
+Outline Mesh sketches now use the projected triangle boundary. Manufacturing clearance stays with the separate Shadow section tool. Includes the projected-outline preview and Create fixes tested in 0.0.119.
+
 ## 0.0.119
 
 Create Sketch previews the same section points it will keep. Outline Mesh and Through selection only can finish on their computed contours.

@@ -422,6 +422,13 @@ export class MeshWorkerClient {
     return { points: res.points, offsets: res.offsets, ...(res.normals ? { normals: res.normals } : {}) }
   }
 
+  async meshOutline(frame: SectionFrame): Promise<SectionCut> {
+    const res = await this.request<Extract<WorkerResponse, { type: 'section-ok' }>>({
+      type: 'mesh-outline', requestId: this.nextId++, frame,
+    })
+    return { points: res.points, offsets: res.offsets }
+  }
+
   /** The scan's shadow on the frame's plane — its outline seen along the
    *  normal, read as lines and arcs `play` mm outside the part to
    *  `tolerance`, corners turning by less than `smoothDeg` rounded — as

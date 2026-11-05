@@ -4,7 +4,7 @@
 // the section keeps read as lines and arcs that never come inside the part.
 import { describe, expect, it } from 'vitest'
 import { buildMeshGraph } from '../src/core/geometry/buildGraph'
-import { shadowMesh, shadowOutline, shiftShadow, type ShadowPiece, type ShadowShape } from '../src/core/section/shadow'
+import { projectedMeshOutline, shadowMesh, shadowOutline, shiftShadow, type ShadowPiece, type ShadowShape } from '../src/core/section/shadow'
 import { sliceMesh } from '../src/core/section/slice'
 import { sectionFrameAlong, type SectionFrame } from '../src/core/section/frame'
 import type { Pt } from '../src/core/geometry/outline'
@@ -148,6 +148,26 @@ const area = (p: readonly Pt[]) => {
   for (let i = 0, j = p.length - 1; i < p.length; j = i++) s += p[j][0] * p[i][1] - p[i][0] * p[j][1]
   return s / 2
 }
+
+describe('Outline Mesh sketch points', () => {
+  it('projects onto a parallel plane above the scan without adding a clearance', () => {
+    const mesh = welded(voxels([3, 3, 1], 10, (i, j) => i !== 1 || j !== 1))
+    const frame: SectionFrame = { ...XY, origin: [0, 0, 25] }
+    const cut = projectedMeshOutline(mesh.positions, mesh.indices, frame)
+    expect(cut.offsets.length).toBe(3) // outer boundary and through hole
+    for (let chain = 0; chain < 2; chain++) {
+      const start = cut.offsets[chain], end = cut.offsets[chain + 1] - 1
+      expect(cut.points.slice(start * 3, start * 3 + 3)).toEqual(cut.points.slice(end * 3, end * 3 + 3))
+      for (let i = start; i <= end; i++) {
+        const [x, y, z] = cut.points.subarray(3*i, 3*i+3)
+        expect(z).toBe(25)
+        const toOuter = Math.min(Math.abs(x), Math.abs(x-30), Math.abs(y), Math.abs(y-30))
+        const toHole = Math.min(Math.abs(x-10), Math.abs(x-20), Math.abs(y-10), Math.abs(y-20))
+        expect(Math.min(toOuter, toHole)).toBeLessThan(0.001)
+      }
+    }
+  })
+})
 
 describe('the shadow of a mesh on a plane', () => {
   // A cube turned off every axis: seen along Z its outline is the hexagon
