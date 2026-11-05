@@ -17,7 +17,7 @@ import { letGo, type ShareReport, sharePieces } from '../core/shareFit'
 import { alreadyJoined, autoJoinPair, autoJoinLinePairs, closeChain, CORNER_GAP_MM, inferCorners, joinEnds, sharpenCorner } from '../core/corners'
 import { datumTraces, traceNear } from '../core/datums'
 import { dimPlaceAt } from '../core/dimLayout'
-import { detached, moveAnchor, rigidCluster, rotateSketch, translateEntity } from '../core/drag'
+import { detached, moveAnchor, reshapeArc, rigidCluster, rotateSketch, translateEntity } from '../core/drag'
 import { arcAbout, circleFrom, coincidentFor, dimensionFor, dimensionIsImmediate, dimPickAt, drawClicks, rectangleCorners, relPickAt, tangentArc } from '../core/draw'
 import { planeOffset, type PlaneRef, planeTakesOffset, type SketchFeature, withPlaneOffset } from '../core/features'
 import { cornerLinesAt } from '../core/filletCorner'
@@ -678,10 +678,18 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
         const useOriginal = original?.kind && (snap.kind === null || snap.kind === 'edge' || snap.kind === 'grid' || (original.kind === 'intersection' && snap.kind === 'entity'))
         const point = useOriginal ? original.point : snap.point
         drag.guideSnap = useOriginal ? original.kind : null
-        moved = moveAnchor(detached(e), drag.at, point)
-        drag.last = point
+        const arcGrip = drag.origin.kind === 'arc' && (drag.at === 'a' || drag.at === 'b' || drag.at === 'p0')
+        moved = arcGrip && drag.origin.kind === 'arc'
+          ? detached(reshapeArc(drag.origin, drag.at, point))
+          : moveAnchor(detached(e), drag.at, point)
+        const target = arcGrip ? anchorPoint(moved, drag.at) : point
+        drag.last = target
         drag.snapped = useOriginal ? null : snapHold(snap)
-        pull.push({ anchor: { entity: moved.id, at: drag.at }, to: point })
+        if (arcGrip && len2(sub2(target, point)) > 1e-7) drag.snapped = null
+        pull.push({ anchor: { entity: moved.id, at: drag.at }, to: target })
+        if (arcGrip) for (const at of ['a','b','p0'] as const) {
+          if (at !== drag.at) pull.push({anchor:{entity:moved.id,at},to:anchorPoint(moved,at)})
+        }
         // Extending the original carrier leaves the opposite endpoint at
         // its original position. This is a temporary pull, never a Fix.
         if (useOriginal && drag.origin.kind === 'line' && (drag.at === 'a' || drag.at === 'b')) {
@@ -846,7 +854,7 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
         const pairs = autoJoinLinePairs(d.sketch, d.selection)
         if (!pairs.length) return {}
         const before = cloneSketch(d.sketch)
-        for (const [p,q] of pairs) joinEnds(d.sketch, p, q, Infinity)
+        for (const [p,q] of pairs) joinEnds(d.sketch, p, q, Infinity, true)
         return { sketchDraft: settle({ ...d }, before, undefined, false, true) }
       }
       const [a, b] = pair

@@ -2,7 +2,7 @@
 import { beforeEach, expect, it } from 'vitest'
 import { useReverse } from '../state/reStore'
 import { XY } from './reKit'
-import { addConstraint, addEntity, type SketchLine } from '../core/sketch'
+import { addConstraint, addEntity, anchorPoint, type SketchLine, type SketchArc } from '../core/sketch'
 import { autoJoinLinePairs, canAutoJoin } from '../core/corners'
 import { solveSketch } from '../core/solver'
 const s = () => useReverse.getState()
@@ -26,6 +26,27 @@ it('joins the two open pieces without preselection, keeping carriers and opposit
   expect(d().history).toHaveLength(1)
   s().undoSketch(); expect((d().sketch.entities[0] as SketchLine).b).toEqual([-87.57373005,-181.675616739])
   s().redoSketch(); expect((d().sketch.entities[0] as SketchLine).b).toEqual(a.b)
+})
+it('joins nearby mixed line and arc corners without changing the analytic carriers', () => {
+  s().startSketch({kind:'world',axis:'z',offset:0},XY,[
+    {kind:'line',a:[10,-10],b:[10,-.5]},
+    {kind:'arc',c:[0,0],r:10,start:.05,sweep:Math.PI/2-.1},
+    {kind:'line',a:[-.5,10],b:[-10,10]},
+  ])
+  const before=structuredClone(d().sketch)
+  s().joinSelected()
+  const [a,b,c]=d().sketch.entities as [SketchLine,SketchArc,SketchLine]
+  expect(a.b).toEqual([10,0]); expect(a.a).toEqual([10,-10])
+  expect(b.c).toEqual([0,0]); expect(b.r).toBe(10)
+  expect(anchorPoint(b,'a')[0]).toBeCloseTo(10,10)
+  expect(anchorPoint(b,'b')[1]).toBeCloseTo(10,10)
+  expect(c.a).toEqual([0,10]); expect(c.b).toEqual([-10,10])
+  expect(d().sketch.constraints.filter(c=>c.kind==='coincident')).toHaveLength(2)
+  expect(d().report?.ok).toBe(true)
+  const after=structuredClone(d().sketch)
+  s().joinSelected(); expect(d().sketch).toEqual(after); expect(d().history).toHaveLength(1)
+  s().undoSketch(); expect(d().sketch).toEqual(before)
+  s().redoSketch(); expect(d().sketch).toEqual(after)
 })
 it('repeated selected joins do not duplicate constraints, drift, or consume undo', () => {
   useReverse.setState({sketchDraft:{...d(),selection:d().sketch.entities.map(e=>e.id)}})

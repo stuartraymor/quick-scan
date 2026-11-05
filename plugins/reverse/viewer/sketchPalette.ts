@@ -86,4 +86,4 @@ export const SKETCH_LINE = { piece: 2.5, selected: 3.5, hover: 5, construction: 
 /** The dots on the ends of the pieces, pixels across: enough to say where
  *  one piece stops and the next begins, no more — and the end the Dimension
  *  tool has picked. */
-export const SKETCH_DOT = { end: 4, picked: 8, hover: 10, origin: 6 }
+export const SKETCH_DOT = { end: 6, picked: 8, hover: 10, origin: 6 }

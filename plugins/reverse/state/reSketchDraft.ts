@@ -5,6 +5,7 @@
 // cursor is over on the sheet.
 
 import { FitError } from '../../../src/core/fit/errors'
+import { sketchGrips } from '../core/drag'
 import type { Vec2 } from '../../../src/core/flat/types'
 import { len2, sub2 } from '../../../src/core/flat/vec2'
 import { alignToAxes, mergeAlignedLines } from '../core/axisAlign'
@@ -149,8 +150,8 @@ export function dragHandleAt(sketch: Sketch, spot: Vec2, radius: number): { enti
   let best: { entity: number; at: AnchorAt | 'body' } | null = null
   let bestD = radius
   for (const e of sketch.entities) {
-    for (const at of anchorsOf(e)) {
-      const d = len2(sub2(anchorPoint(e, at), spot))
+      for (const {at, point} of sketchGrips(e)) {
+        const d = len2(sub2(point, spot))
       if (d <= bestD) {
         bestD = d
         best = { entity: e.id, at }

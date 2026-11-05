@@ -230,7 +230,7 @@ const entityIn = byKind(
   [
     obj({ ...pieceCommon, kind: kind('line'), a: vec2('Its start, [u, v] mm.'), b: vec2('Its end, [u, v] mm.') }, ['kind', 'a', 'b']),
     obj(
-      { ...pieceCommon, kind: kind('arc'), c: vec2('Its centre, [u, v] mm.'), r: num('Its radius, mm.', { exclusiveMinimum: 0 }), start: num('Where it starts, radians counter-clockwise from +u; anchor a is here.'), sweep: num('How far it runs counter-clockwise, radians; anchor b is at start + sweep.') },
+      { ...pieceCommon, kind: kind('arc'), c: vec2('Its centre, [u, v] mm.'), r: num('Its radius, mm.', { exclusiveMinimum: 0 }), start: num('Where it starts, radians counter-clockwise from +u; anchor a is here.'), sweep: num('How far it runs counter-clockwise, radians; anchor b is at start + sweep.'), gripT: num('Through-point grip position along the arc, default 0.5.', {minimum:0,maximum:1}) },
       ['kind', 'c', 'r', 'start', 'sweep'],
     ),
     obj({ ...pieceCommon, kind: kind('circle'), c: vec2('Its centre, [u, v] mm.'), r: num('Its radius, mm.', { exclusiveMinimum: 0 }) }, ['kind', 'c', 'r']),

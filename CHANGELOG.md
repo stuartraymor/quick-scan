@@ -1,3 +1,10 @@
+## 0.0.136 — Square sketch grips and curved editing
+
+- Black square grips expose line endpoints and midpoints, arc endpoints, through-points and centers, and spline poles. Fitted splines show their dashed control polygon.
+- Arc endpoint and through-point dragging preserves the two untouched defining points, matching the measured native three-point interaction.
+- Auto Join discovers nearby open line–arc and arc–arc intersections as well as line corners; fixed/projected pieces are excluded. The shared Modify icon now depicts a curved joined profile.
+- Arbitrary spline Auto Join, crossing an arc grip through its chord, and prior fitting differences remain open. Local candidate; GitHub publication held.
+
 ## 0.0.135 — Fitted control curves and isolated sketch dragging
 
 - Fit Curve now estimates an editable cubic B-spline from the highlighted section points, with real control poles shared by display, constraints and CAD export. Existing interpolation curves retain their definition.

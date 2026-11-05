@@ -1298,13 +1298,19 @@ export class FlatScene {
   /** Dots on the sheet, the same size at any zoom — the ends of a sketch's
    *  pieces, so it can be seen where one stops and the next begins. Drawn
    *  over the pieces; `size` is the diameter in pixels. */
-  setFlatDots(items: readonly { at: Vec2; color: string; size: number }[]): void {
+  setFlatDots(items: readonly { at: Vec2; color: string; size: number; shape?: 'round' | 'square' }[]): void {
     for (const dispose of this.dotCleanup) dispose()
     this.dotCleanup = []
     this.dotGroup.clear()
-    const bySize = new Map<number, typeof items[number][]>()
-    for (const item of items) bySize.set(item.size, [...(bySize.get(item.size) ?? []), item])
-    for (const [size, dots] of bySize) {
+    const batches = new Map<string, typeof items[number][]>()
+    for (const item of items) {
+      const key = `${item.size}:${item.shape ?? 'round'}`
+      const batch = batches.get(key)
+      if (batch) batch.push(item)
+      else batches.set(key, [item])
+    }
+    for (const dots of batches.values()) {
+      const { size, shape } = dots[0]
       const positions = new Float32Array(dots.length * 3)
       const colors = new Float32Array(dots.length * 3)
       const c = new THREE.Color()
@@ -1320,7 +1326,7 @@ export class FlatScene {
         size: size * window.devicePixelRatio,
         sizeAttenuation: false,
         vertexColors: true,
-        map: this.roundDot(),
+        map: shape === 'square' ? null : this.roundDot(),
         alphaTest: 0.5,
         transparent: true,
         depthTest: false,

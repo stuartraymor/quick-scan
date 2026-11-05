@@ -194,7 +194,7 @@ function arcsTangentPoint(a: SketchArc, b: SketchArc, tol: number): Vec2 | null 
  * with a coincidence, plus a tangency where one was found. Returns whether a
  * tangency was added.
  */
-export function joinEnds(sketch: Sketch, p: Anchor, q: Anchor, gap: number): boolean {
+export function joinEnds(sketch: Sketch, p: Anchor, q: Anchor, gap: number, exactCarrier = false): boolean {
   const ea = entityOf(sketch, p.entity)
   const eb = entityOf(sketch, q.entity)
   if (!ea || !eb) return false
@@ -205,7 +205,7 @@ export function joinEnds(sketch: Sketch, p: Anchor, q: Anchor, gap: number): boo
   const within = (x: Vec2 | null) => x && len2(sub2(x, pa)) <= reach && len2(sub2(x, pb)) <= reach
   let meet: Vec2 = mid
   let tangent = false
-  const tanTol = gap * TANGENT_SHARE
+  const tanTol = exactCarrier ? 1e-9 : gap * TANGENT_SHARE
 
   if (ea.kind === 'line' && eb.kind === 'line') {
     const x = lineIntersection(ea, eb)
@@ -278,16 +278,26 @@ export function autoJoinPair(sketch: Sketch, selection: readonly number[]): [Ske
   const pieces = selection.length
     ? sketch.entities.filter(e => selection.includes(e.id))
     : sketch.entities.filter(e => !e.construction && endsOf(e).length > 0)
-  return pieces.length === 2 ? [pieces[0], pieces[1]] : null
+  return pieces.length === 2 && pieces.every(e=>!e.fixed && !e.projected && !e.construction && endsOf(e).length > 0) ? [pieces[0], pieces[1]] : null
 }
 
-/** Nearby open line corners, independent of creation order. Preserve ends
+/** Actual intersections of analytic carriers. Candidate discovery never
+ * bends an arc or invents a midpoint between disjoint curves. */
+function carrierCrossings(a: SketchLine | SketchArc, b: SketchLine | SketchArc): Vec2[] {
+  if (a.kind === 'line' && b.kind === 'line') { const p=lineIntersection(a,b); return p?[p]:[] }
+  if (a.kind === 'line' && b.kind === 'arc') return lineCircle(a,b.c,b.r)
+  if (a.kind === 'arc' && b.kind === 'line') return lineCircle(b,a.c,a.r)
+  if (a.kind === 'arc' && b.kind === 'arc') return circleCircle(a.c,a.r,b.c,b.r)
+  return []
+}
+
+/** Nearby open analytic corners, independent of creation order. Preserve ends
  * already used by another piece, including connections outside selection.
- * Multi-piece arcs/splines remain outside this measured line-profile path.
+ * Splines are not extrapolated by replacing them with straight segments.
  * The quarter-length reach is a conservative Quick Scan safeguard, not a
  * claim about QUICKSURFACE's undocumented distance threshold. */
 export function autoJoinLinePairs(sketch: Sketch, selection: readonly number[]): [Anchor, Anchor][] {
-  const lines = sketch.entities.filter((e): e is SketchLine => e.kind === 'line' &&
+  const lines = sketch.entities.filter((e): e is SketchLine | SketchArc => (e.kind === 'line' || e.kind === 'arc') &&
     !e.construction && !e.fixed && !e.projected && (!selection.length || selection.includes(e.id)))
   const key = (p: Anchor) => `${p.entity}:${p.at}`
   const occupied = new Set<string>()
@@ -302,15 +312,18 @@ export function autoJoinLinePairs(sketch: Sketch, selection: readonly number[]):
   }
   const candidates: {p: Anchor; q: Anchor; cost: number}[] = []
   for (let i = 0; i < lines.length; i++) for (let j = i + 1; j < lines.length; j++) {
-    const a = lines[i], b = lines[j], meet = lineIntersection(a, b)
+    const a = lines[i], b = lines[j]
+    for (const meet of carrierCrossings(a,b)) {
     if (!meet || !meet.every(Number.isFinite)) continue
-    const near = (line: SketchLine): Anchor => ({entity: line.id,
-      at: len2(sub2(line.a, meet)) <= len2(sub2(line.b, meet)) ? 'a' : 'b'})
+    const near = (line: SketchLine | SketchArc): Anchor => ({entity: line.id,
+      at: len2(sub2(anchorPoint(line,'a'), meet)) <= len2(sub2(anchorPoint(line,'b'), meet)) ? 'a' : 'b'})
     const p = near(a), q = near(b)
     if (occupied.has(key(p)) || occupied.has(key(q))) continue
     const da = len2(sub2(anchorPoint(a, p.at), meet)), db = len2(sub2(anchorPoint(b, q.at), meet))
-    const reach = Math.max(CORNER_GAP_MM, Math.min(len2(sub2(a.b,a.a)), len2(sub2(b.b,b.a))) / 4)
+    const length = (e: SketchLine | SketchArc) => e.kind === 'line' ? len2(sub2(e.b,e.a)) : e.r * e.sweep
+    const reach = Math.max(CORNER_GAP_MM, Math.min(length(a), length(b)) / 4)
     if (Math.max(da, db) <= reach) candidates.push({p, q, cost: da + db})
+    }
   }
   candidates.sort((a,b) => a.cost - b.cost || a.p.entity - b.p.entity || a.q.entity - b.q.entity)
   const pairs: [Anchor, Anchor][] = []

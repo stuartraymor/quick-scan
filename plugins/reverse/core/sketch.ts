@@ -71,6 +71,8 @@ export interface SketchArc {
   r: number
   start: number
   sweep: number
+  /** Position of the editable through-point along the arc, default halfway. */
+  gripT?: number
   points?: Vec2[]
   scatter?: number
   fixed?: boolean
@@ -292,7 +294,7 @@ export function anchorPoint(e: SketchEntity, at: AnchorAt): Vec2 {
     case 'line':
       return at === 'b' ? e.b : at === 'a' ? e.a : [(e.a[0] + e.b[0]) / 2, (e.a[1] + e.b[1]) / 2]
     case 'arc':
-      return at === 'a' ? arcPoint(e, e.start) : at === 'b' ? arcPoint(e, e.start + e.sweep) : e.c
+      return at === 'a' ? arcPoint(e, e.start) : at === 'b' ? arcPoint(e, e.start + e.sweep) : at === 'p0' ? arcPoint(e, e.start + e.sweep * (e.gripT ?? 0.5)) : e.c
     case 'circle':
       return e.c
     case 'spline': {

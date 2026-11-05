@@ -8,10 +8,11 @@
 // times a second, and only the sheet needs to know where it is.
 
 import { sketchIconPaths, type SketchCommandIconName } from '../ui/SketchCommandIcon'
+import { sketchGrips } from '../core/drag'
 import { useEffect, useRef, type MutableRefObject } from 'react'
 import type { FlatFit, Vec2 } from '../../../src/core/flat/types'
 import { len2, normalize2, sub2 } from '../../../src/core/flat/vec2'
-import { anchorPoint, anchorsOf, constraintEntities, entityOf, fixedEntityOf, fixedPieces, fixId, isDimension, lineDir, type Anchor, type Constraint, type Sketch, type SketchEntity } from '../core/sketch'
+import { anchorPoint, constraintEntities, entityOf, fixedEntityOf, fixedPieces, fixId, isDimension, lineDir, type Anchor, type Constraint, type Sketch, type SketchEntity } from '../core/sketch'
 import { datumName, datumTraces, traceSegment, type DatumPlane } from '../core/datums'
 import { piecesInBox } from '../core/boxSelect'
 import { dimPlaceAt, dimShape } from '../core/dimLayout'
@@ -209,6 +210,23 @@ export const sketchPointVisible = (showAll: boolean, selected: boolean, hovered:
 
 /** A screen-scaled dotted original carrier. Its dashes extend beyond both
  *  original ends and the current drag position, with a bounded work count. */
+export function controlPolygonMarks(points: readonly Vec2[], unitsPerPixel: number): FlatFit[] {
+  const result: FlatFit[] = []
+  if (!(unitsPerPixel > 0) || !Number.isFinite(unitsPerPixel)) return result
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1], b = points[i], length = len2(sub2(b, a))
+    if (!(length > 1e-9) || !Number.isFinite(length)) continue
+    const count = Math.min(160, Math.max(1, Math.ceil(length / (unitsPerPixel * 7))))
+    for (let j = 0; j < count; j++) {
+      const t = j / count, u = Math.min(1, (j + 0.5) / count)
+      const fit = lineFit([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t],
+        [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u])
+      if (fit) result.push(fit)
+    }
+  }
+  return result
+}
+
 export function dragCarrierMarks(a: Vec2, b: Vec2, at: Vec2, radius: number): FlatFit[] {
   const dx = b[0] - a[0]
   const dy = b[1] - a[1]
@@ -602,15 +620,24 @@ export function useSketchSceneSync({
         }
       }
     }
+    // Fitted cubic poles generally lie off the curve. Their dashed control
+    // polygon explains what the square grips control without replacing the
+    // exact spline with that polygon.
+    for (const e of sketch.entities) {
+      if (e.kind !== 'spline' || !e.controlKnots ||
+        !sketchPointVisible(useRePrefs.getState().sketchControlPoints, selected.has(e.id), lit.has(e.id))) continue
+      for (const fit of controlPolygonMarks(e.pts, view.unitsPerScreenPx()))
+        items.push({fit, color: palette.construction, name:'', value:'', label:false, width:1, drawOrder:3.8})
+    }
     view.setFlatElements(items)
     // A dot on every end of a line or an arc: where one piece stops and the
     // next begins, which a run of fitted pieces in one colour does not say.
-    const dots: { at: Vec2; color: string; size: number }[] = []
+    const dots: { at: Vec2; color: string; size: number; shape?: 'round' | 'square' }[] = []
     // A spline's fit points too: what it is drawn through, and dragged by.
     for (const e of sketch.entities) {
       if (e.kind !== 'line' && e.kind !== 'arc' && e.kind !== 'spline') continue
       if (!sketchPointVisible(useRePrefs.getState().sketchControlPoints, selected.has(e.id), lit.has(e.id))) continue
-      for (const at of anchorsOf(e)) dots.push({ at: anchorPoint(e, at), color: selected.has(e.id) ? palette.selected : palette.dot, size: SKETCH_DOT.end })
+      for (const {point} of sketchGrips(e)) dots.push({ at: point, color: '#111111', size: SKETCH_DOT.end, shape: 'square' })
     }
     for (const p of picks) {
       if (p.kind !== 'point') continue

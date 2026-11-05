@@ -7,10 +7,31 @@
 
 import type { Vec2 } from '../../../src/core/flat/types'
 import { add2, sub2 } from '../../../src/core/flat/vec2'
-import { addConstraint, addEntity, anchorPoint, constraintEntities, entityOf, splinePointIndex, type AnchorAt, type Constraint, type Sketch, type SketchEntity } from './sketch'
+import { addConstraint, addEntity, anchorPoint, anchorsOf, arcThrough, constraintEntities, entityOf, splinePointIndex, type AnchorAt, type Constraint, type Sketch, type SketchArc, type SketchEntity } from './sketch'
 import { solveSketch } from './solver'
 
 const TWO_PI = 2 * Math.PI
+
+/** Three-point arc grips. Preserve the two untouched defining points;
+ * solving toward just one endpoint otherwise moves the entire circle. */
+export function reshapeArc(e: SketchArc, at: AnchorAt, p: Vec2): SketchArc {
+  const a = at === 'a' ? p : anchorPoint(e, 'a')
+  const b = at === 'b' ? p : anchorPoint(e, 'b')
+  const through = at === 'p0' ? p : anchorPoint(e, 'p0')
+  const fit = arcThrough(a, b, through)
+  // Keep endpoint identity for existing relations. Crossing the chord to
+  // reverse winding needs an explicit topology change, not silent swapping.
+  if (!fit || !fit.startsAtP) return e
+  const angle = Math.atan2(through[1] - fit.c[1], through[0] - fit.c[0])
+  const gripT = (((angle - fit.start) % TWO_PI + TWO_PI) % TWO_PI) / fit.sweep
+  return { ...e, c: fit.c, r: fit.r, start: fit.start, sweep: fit.sweep, gripT }
+}
+
+export function sketchGrips(e: SketchEntity): { at: AnchorAt | 'body'; point: Vec2 }[] {
+  if (e.kind === 'line') return [{at:'a',point:e.a},{at:'b',point:e.b},{at:'body',point:anchorPoint(e,'center')}]
+  if (e.kind === 'arc') return (['a','b','p0','center'] as const).map(at=>({at,point:anchorPoint(e,at)}))
+  return anchorsOf(e).map(at=>({at,point:anchorPoint(e,at)}))
+}
 
 /** An angle brought into (0, 2π] — an arc's sweep, which is never nothing. */
 function positiveSweep(a: number): number {
