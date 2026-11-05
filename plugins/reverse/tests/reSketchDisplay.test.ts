@@ -19,6 +19,23 @@ describe('sketch display preferences', () => {
     expect(store.getState()).toMatchObject({ sketchRelations: true, sketchDimensions: true, sketchControlPoints: false })
   })
 
+  it('starts unruled and preserves an existing grid-snap choice on migration', async () => {
+    expect((await prefs()).store.getState()).toMatchObject({ sketchGrid: false, gridSnap: false })
+    expect((await prefs({ 'scanruler.gridsnap': '1' })).store.getState()).toMatchObject({ sketchGrid: true, gridSnap: true })
+    expect((await prefs({ 'scanruler.gridsnap': '1', 'scanruler.sketchgrid': '0' })).store.getState()).toMatchObject({ sketchGrid: false, gridSnap: true })
+  })
+
+  it('remembers grid display without changing snap or solver settings', async () => {
+    const { store, data } = await prefs()
+    store.getState().setSketchGrid(true)
+    expect(store.getState()).toMatchObject({ sketchGrid: true, gridSnap: false })
+    store.getState().setGridSnap(true)
+    store.getState().setSketchGrid(false)
+    expect(store.getState()).toMatchObject({ sketchGrid: false, gridSnap: true })
+    expect(Object.fromEntries(data)).toMatchObject({ 'scanruler.sketchgrid': '0', 'scanruler.gridsnap': '1' })
+    expect((await prefs(Object.fromEntries(data))).store.getState()).toMatchObject({ sketchGrid: false, gridSnap: true })
+  })
+
   it('preserves independent stored choices and persists toggles', async () => {
     const { store, data } = await prefs({ 'scanruler.sketchrelations': '0', 'scanruler.sketchdimensions': '0', 'scanruler.sketchcontrolpoints': '1' })
     expect(store.getState()).toMatchObject({ sketchRelations: false, sketchDimensions: false, sketchControlPoints: true })

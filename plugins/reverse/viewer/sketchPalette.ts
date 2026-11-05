@@ -5,12 +5,9 @@
 // the part and its slice are what it is drawn against. So the part under
 // the sheet is veiled towards the stage (the `.viewslot.sketch` scrim in the
 // stylesheet), the cut face is a quiet tone one step off the stage, flat and
-// unlit (a lit cap seen face on comes out near white), the slice is a thin
-// muted line drawn part-way see-through, and the pieces are saturated, at
-// full strength and heavier than the slice they were fitted to — a piece
-// covers its slice, and the slice shows where the piece leaves it. The
-// dimensions are drawn in the sheet's strongest ink. One set for the dark
-// instrument, one for the light.
+// unlit (a lit cap seen face on comes out near white). Yellow, opaque
+// references stay visible against the scan; fitted pieces cover the reference
+// they reproduce. The surrounding dark interface retains its blue accents.
 
 export interface SketchPalette {
   /** The cut face of the part. */
@@ -45,8 +42,8 @@ export interface SketchPalette {
 
 const DARK: SketchPalette = {
   cap: 0x47535f,
-  slice: '#aeb8c4',
-  sliceOpacity: 0.5,
+  slice: '#ffff80',
+  sliceOpacity: 1,
   fitted: '#4db8ff',
   free: '#c48bff',
   constrained: '#f2f5f8',
@@ -62,8 +59,8 @@ const DARK: SketchPalette = {
 
 const LIGHT: SketchPalette = {
   cap: 0xb9bfc6,
-  slice: '#4a5560',
-  sliceOpacity: 0.5,
+  slice: '#ffff80',
+  sliceOpacity: 1,
   fitted: '#0a63c9',
   free: '#7a3cc9',
   constrained: '#14181d',

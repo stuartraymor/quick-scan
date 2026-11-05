@@ -296,6 +296,7 @@ export function SketchEditor({ chainsOf }: { chainsOf: () => SketchChains | null
   const chainCount = useReverse((s) => s.chainCount)
   const chainsStatus = useReverse((s) => s.chainsStatus)
   const gridSnap = useRePrefs((s) => s.gridSnap)
+  const showGrid = useRePrefs((s) => s.sketchGrid)
   const drawModes = useRePrefs((s) => s.drawModes)
   const polygonSides = useRePrefs((s) => s.polygonSides)
   const len = useLength()
@@ -595,6 +596,7 @@ export function SketchEditor({ chainsOf }: { chainsOf: () => SketchChains | null
         <button data-test="sketch-align" disabled={!oneLine} onClick={()=>re.getState().alignToSelected()}>Align sheet</button>
       </div>
       <div className="toolrow">
+        <label><input data-test="sketch-show-grid" type="checkbox" checked={showGrid} onChange={e=>useRePrefs.getState().setSketchGrid(e.target.checked)}/> Show grid</label>
         <label><input data-test="sketch-grid-snap" type="checkbox" checked={gridSnap} onChange={e=>useRePrefs.getState().setGridSnap(e.target.checked)}/> Snap to grid</label>
         <button data-test="sketch-rel-coincident" onClick={()=>hasSelection?re.getState().addRelation('coincident'):re.getState().armRelation('coincident')}>Coincident</button>
         <button data-test="sketch-rel-concentric" onClick={()=>hasSelection?re.getState().addRelation('concentric'):re.getState().armRelation('concentric')}>Concentric</button>

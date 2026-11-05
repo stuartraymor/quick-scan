@@ -6,6 +6,8 @@ import type { SketchChains } from '../app/useReverseWorkspace'
 import { brushPoints, type BrushPoint } from '../core/sketchBrush'
 import { entityPolyline, type SketchEntity } from '../core/sketch'
 import { useSketchBrush } from '../state/sketchBrushStore'
+import { useReverse } from '../state/reStore'
+import { SKETCH_LINE } from '../viewer/sketchPalette'
 
 /** A plugin-owned canvas over the real sheet. Input is captured only for
  *  left-button paint; middle/right navigation still reaches FlatScene. */
@@ -145,9 +147,24 @@ export function SketchBrushOverlay({ scene, chainsOf }: { scene: FlatScene | nul
           const x = cx - rect.left, y = cy - rect.top
           if (x < 0 || y < 0 || x > rect.width || y > rect.height) continue
           const on = selected.has(point.key)
-          ctx.fillStyle = on ? '#ff9d00' : '#d94d39'
+          ctx.fillStyle = on ? '#ff9d00' : '#ffff80'
           ctx.fillRect(x - (on ? 2 : 1), y - (on ? 2 : 1), on ? 4 : 2, on ? 4 : 2)
         }
+        // The reference-point canvas sits above the actual sketch renderer.
+        // Let committed geometry show through it, retaining its real colour,
+        // selection highlighting and curve definition instead of repainting it.
+        ctx.globalCompositeOperation = 'destination-out'
+        ctx.lineWidth = SKETCH_LINE.piece + 1
+        for (const entity of useReverse.getState().sketchDraft?.sketch.entities ?? []) {
+          if (entity.construction) continue
+          ctx.beginPath()
+          entityPolyline(entity, 192).forEach((p, i) => {
+            const at = scene.sheetScreenPoint(p)
+            if (at) { if (i === 0) ctx.moveTo(at.x - rect.left, at.y - rect.top); else ctx.lineTo(at.x - rect.left, at.y - rect.top) }
+          })
+          ctx.stroke()
+        }
+        ctx.globalCompositeOperation = 'source-over'
         if (state.preview?.ok) {
           const entities = state.preview.shapeSketch?.entities.filter((e) => !e.construction) ?? [{ ...state.preview.entity, id: 0 } as SketchEntity]
           for (const entity of entities) {
@@ -160,10 +177,11 @@ export function SketchBrushOverlay({ scene, chainsOf }: { scene: FlatScene | nul
       }
       frame = requestAnimationFrame(render)
     }
+    const unsubscribeSketch = useReverse.subscribe((s, old) => { if (s.sketchDraft !== old.sketchDraft) lastDrawn = null })
     const unsubscribe = useSketchBrush.subscribe((s, old) => { if (s.brushPx !== old.brushPx || s.primitive !== old.primitive) follow() })
     frame = requestAnimationFrame(render)
     return () => {
-      unsubscribe(); cancelAnimationFrame(frame); host.style.cursor = previousCursor
+      unsubscribeSketch(); unsubscribe(); cancelAnimationFrame(frame); host.style.cursor = previousCursor
       host.removeEventListener('pointerdown', down, true); host.removeEventListener('pointermove', move, true); host.removeEventListener('pointerup', up, true)
       host.removeEventListener('pointercancel', cancel, true); host.removeEventListener('pointerleave', leave); host.removeEventListener('click', click, true); host.removeEventListener('wheel', wheel, true)
       window.removeEventListener('keydown', key, true)

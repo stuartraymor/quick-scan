@@ -430,7 +430,7 @@ export function useSketchSceneSync({
     // A millimetre grid on the sheet's own frame, its spacing following the
     // zoom — what a hand drawing free geometry steadies itself on. The
     // frame is the part's own, so the grid is anchored on the origin.
-    view.setGrid({ origin: [0, 0], xDir: [1, 0] })
+    view.setGrid(useRePrefs.getState().sketchGrid ? { origin: [0, 0], xDir: [1, 0] } : null)
   }
 
   /** The drawing tool's clicks so far and the ghost of what they are about
@@ -709,13 +709,14 @@ export function useSketchSceneSync({
     view.setSketchDimensions(dims, { color: colors().dimension, className: 'sketch-dim' })
   }
 
+  const showGrid = useRePrefs((s) => s.sketchGrid)
   const chainsVersion = useReverse((s) => s.chainsVersion)
   const draftOpen = useReverse((s) => s.sketchDraft !== null)
   useEffect(() => {
     pushSheet()
     pushSketch()
     // Runs on the listed dependencies only, not on everything it reads.
-  }, [chainsVersion, draftOpen])
+  }, [chainsVersion, draftOpen, showGrid])
 
   const draft = useReverse((s) => s.sketchDraft)
   const showRelations = useRePrefs((s) => s.sketchRelations)

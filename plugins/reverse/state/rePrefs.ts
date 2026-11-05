@@ -12,6 +12,7 @@ import { DEFAULT_DRAW_MODES, type DrawModes } from '../core/draw'
 import { POLYGON_MAX_SIDES } from '../core/sketch'
 
 const GRID_SNAP_KEY = 'scanruler.gridsnap'
+const SKETCH_GRID_KEY = 'scanruler.sketchgrid'
 const SKETCH_RELATIONS_KEY = 'scanruler.sketchrelations'
 const SKETCH_DIMENSIONS_KEY = 'scanruler.sketchdimensions'
 const SKETCH_CONTROL_POINTS_KEY = 'scanruler.sketchcontrolpoints'
@@ -86,11 +87,13 @@ function storedDrawModes(): DrawModes {
 
 interface RePrefsState {
   /** Whether a point drawn on the sketch sheet snaps to the grid as well as
-   *  to ends, the slice and pieces. Off by default: the grid is there to read
-   *  against, and a scan's own points are what a profile is drawn to; a hand
+   *  to ends, the slice and pieces. Off by default: a scan's own points
+   *  are what a profile is drawn to; a hand
    *  that wants round numbers switches it on with the key by the sketch
    *  tools. */
   gridSnap: boolean
+  /** Optional display grid. Reference fitting starts on an unruled sheet. */
+  sketchGrid: boolean
   /** Whether relations are drawn beside their pieces. On for new profiles;
    *  an existing stored choice is preserved. Selected relations stay visible. */
   sketchRelations: boolean
@@ -122,6 +125,7 @@ interface RePrefsState {
   playbackCaption: boolean
   playbackSkipSketches: boolean
   setGridSnap: (on: boolean) => void
+  setSketchGrid: (on: boolean) => void
   setSketchRelations: (on: boolean) => void
   setSketchDimensions: (on: boolean) => void
   setSketchControlPoints: (on: boolean) => void
@@ -137,6 +141,8 @@ interface RePrefsState {
 
 export const useRePrefs = create<RePrefsState>()((set) => ({
   gridSnap: read(GRID_SNAP_KEY) === '1',
+  // Preserve the grid for operators who already opted into grid snapping.
+  sketchGrid: (read(SKETCH_GRID_KEY) ?? read(GRID_SNAP_KEY)) === '1',
   sketchRelations: read(SKETCH_RELATIONS_KEY) !== '0',
   sketchDimensions: read(SKETCH_DIMENSIONS_KEY) !== '0',
   sketchControlPoints: read(SKETCH_CONTROL_POINTS_KEY) === '1',
@@ -151,6 +157,10 @@ export const useRePrefs = create<RePrefsState>()((set) => ({
   playbackCaption: read(PLAYBACK_CAPTION_KEY) !== '0',
   playbackSkipSketches: read(PLAYBACK_SKIP_SKETCHES_KEY) === '1',
 
+  setSketchGrid: (sketchGrid) => {
+    write(SKETCH_GRID_KEY, sketchGrid ? '1' : '0')
+    set({ sketchGrid })
+  },
   setGridSnap: (gridSnap) => {
     write(GRID_SNAP_KEY, gridSnap ? '1' : '0')
     set({ gridSnap })

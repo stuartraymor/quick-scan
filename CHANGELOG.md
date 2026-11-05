@@ -1,3 +1,12 @@
+## 0.0.125
+
+- Corrected the Fit primitives point-overlay layering so committed black lines and other sketch geometry remain visible while the fitting panel is open. This supersedes the unpublished 0.0.124 candidate, whose installed brush check exposed the overlap.
+
+## 0.0.124
+
+- Sketch reference sections stay yellow and opaque in Edit Sketch and Fit primitives, making the mesh profile visible against the scanned part. Completed fitted lines retain their black stroke.
+- New sketch sessions use an unruled sheet. Show grid is available under sketch settings and remembered independently from Snap to grid; existing grid-snap users retain their grid on migration.
+
 ## 0.0.123
 
 Newly chosen sketch planes use a standing Z direction, with Y up for horizontal planes. The saved plane reference retains this choice through offsets and regeneration. Create Sketch releases its placement handle, sheet hint and placement guidance when entering Edit Sketch.
