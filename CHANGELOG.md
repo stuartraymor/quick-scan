@@ -1,3 +1,7 @@
+## 0.0.122
+
+Coordinate alignment sends a secondary Front plane normal to positive Y and keeps Flip across target changes. Auto Constrain can fit a plane perpendicular to a coordinate plane, including when a named datum supplies the same direction.
+
 ## 0.0.121
 
 A fitted primary plane defines the heading of a single-plane alignment and centers the open coordinates on its measured patch. The datum moves with the part and is recovered from the support points in older projects.

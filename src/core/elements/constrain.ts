@@ -238,13 +238,28 @@ export function autoConstrainFit(fit: FitData, pos: Float32Array, idx: ArrayLike
   // A first plane can snap to OXY, OYZ or OXZ even when the history is empty.
   // The world plane supplies a direction. Fit the offset to the selected points.
   if (fit.kind === 'plane') {
-    let closest = best?.off ?? Infinity;
-    let world: ConstraintId | undefined;
+    let closest = best?.off ?? Infinity
+    let world: ConstraintId | undefined
+    let hasParallelWorld = false
     for (const datum of ['oxy', 'oyz', 'oxz'] as const) {
       const angle = angleDeg(own, DATUM_NORMAL[datum]);
+      if (angle <= tol.tiltDeg) hasParallelWorld = true
       if (angle <= tol.tiltDeg && angle < closest) {
         world = `parallel-${datum}`;
         closest = angle;
+      }
+    }
+    // A parallel hold determines both tilt angles. When none is in
+    // range, the plane may still stand perpendicular to a coordinate plane.
+    // For indistinguishable directions, prefer the world reference.
+    if (!hasParallelWorld && best?.how !== 'parallel') {
+      for (const datum of ['oxy', 'oyz', 'oxz'] as const) {
+        const angle = offRightDeg(own, DATUM_NORMAL[datum])
+        const wins = angle < closest || (!world && Math.abs(angle - closest) < 1e-9)
+        if (angle <= tol.tiltDeg && wins) {
+          world = `perpendicular-${datum}`
+          closest = angle
+        }
       }
     }
     if (world) {

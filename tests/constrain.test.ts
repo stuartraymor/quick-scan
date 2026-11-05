@@ -107,12 +107,24 @@ describe('autoConstrainFit', () => {
     expect(notes.join(' ')).not.toContain('coincident')
   })
 
-  it('leaves a plane alone when it is further than the tilt tolerance off', () => {
-    const { pos, idx } = planePoints([0, 0, 5], tilt(2))
-    const own = planeFit([0, 0, 5], tilt(2))
+  it('leaves a plane alone when all reference angles exceed the tilt tolerance', () => {
+    const n: Vec3 = [0.025, -0.025, Math.sqrt(1 - 2 * 0.025 ** 2)]
+    const { pos, idx } = planePoints([0, 0, 5], n)
+    const own = planeFit([0, 0, 5], n)
     const out = autoConstrainFit(own, pos, idx, [existing])
     expect(out.fit).toBe(own)
     expect(out.notes).toEqual([])
+  })
+
+  it('offers the same perpendicular world hold with or without a matching named datum', () => {
+    const normal: Vec3 = [-0.8, 0.6, 0]
+    const {pos,idx} = planePoints([11, 4, 0],normal)
+    for (const neighbours of [[], [{ ...existing, id: 1 }]]) {
+      const own = planeFit([11, 4, 0], [-0.8*Math.cos(0.003), 0.6*Math.cos(0.003), Math.sin(0.003)])
+      const hold = autoConstrainFit(own,pos,idx,neighbours)
+      expect(hold.choice?.id).toBe('perpendicular-oxy')
+      expect((hold.fit as PlaneFit).normal[2]).toBe(0)
+    }
   })
 
   it('squares a plane that is nearly perpendicular to an existing one', () => {
@@ -124,8 +136,10 @@ describe('autoConstrainFit', () => {
   })
 
   it('holds a first plane to the coordinate system inside the tolerance, measuring its offset and residual', () => {
-    const { pos, idx } = planePoints([0, 0, 5], tilt(0.3))
-    const own = planeFit([0, 0, 5], tilt(0.3))
+    const angle = 0.3 * Math.PI / 180
+    const n: Vec3 = [Math.sin(angle)/Math.sqrt(2), -Math.sin(angle)/Math.sqrt(2), Math.cos(angle)]
+    const { pos, idx } = planePoints([0, 0, 5], n)
+    const own = planeFit([0, 0, 5], n)
     const result = autoConstrainFit(own, pos, idx, [])
     expect(result.choice?.id).toBe('parallel-oxy')
     expect((result.fit as PlaneFit).normal).toEqual([0, 0, 1])

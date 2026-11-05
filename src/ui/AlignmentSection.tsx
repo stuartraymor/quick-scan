@@ -36,7 +36,7 @@ function StepHead({ text }: { text: string }) {
 const PLANE_TILES: { label: string; axis: AxisDir }[] = [
   { label: 'Top', axis: 'z+' },
   { label: 'Right', axis: 'x+' },
-  { label: 'Front', axis: 'y-' },
+  { label: 'Front', axis: 'y+' },
 ]
 
 /** What an axis becomes, as QUICKSURFACE lists them for a cylinder, cone or
@@ -46,10 +46,6 @@ const AXIS_TILES: { label: string; axis: AxisDir }[] = [
   { label: 'Y Axis', axis: 'y+' },
   { label: 'Z Axis', axis: 'z+' },
 ]
-
-// The primary Front tile puts the face normal on +Y. The secondary
-// plane picker retains its own signed target and Flip behavior.
-const PRIMARY_PLANE_TILES = PLANE_TILES.map(t => t.axis === 'y-' ? { ...t, axis: 'y+' as const } : t)
 
 /** The six inputs of the manual move / rotate box, in the order the values
  *  are stored. A move is a length, typed in the units shown. */
@@ -193,7 +189,7 @@ export function AlignmentSection({
   const primaryFit = alignDraft?.primary != null ? refs.find((e) => e.id === alignDraft.primary)?.fit ?? null : null
   const secondaryFit = alignDraft?.secondary != null ? refs.find((e) => e.id === alignDraft.secondary)?.fit ?? null : null
   const primaryIsAxis = !!primaryFit && (primaryFit.kind === 'cylinder' || primaryFit.kind === 'cone' || primaryFit.kind === 'line')
-  const primaryTiles = primaryIsAxis ? AXIS_TILES : PRIMARY_PLANE_TILES
+  const primaryTiles = primaryIsAxis ? AXIS_TILES : PLANE_TILES
   const secondaryAlong = !!primaryFit && !!secondaryFit && secondaryAlongPrimary(primaryFit, secondaryFit)
   // A secondary running the primary's way takes the primary's own axis, as
   // QUICKSURFACE selects it (Top for a cylinder standing on Z Axis); one that
@@ -204,7 +200,7 @@ export function AlignmentSection({
     if (!primaryAxisNow || !secondaryAxisNow) return
     const same = axisIndex(secondaryAxisNow) === axisIndex(primaryAxisNow)
     if (secondaryAlong && !same) setAlignmentAxis('secondary', primaryAxisNow)
-    else if (!secondaryAlong && same && secondaryFit) setAlignmentAxis('secondary', axisIndex(primaryAxisNow) === 1 ? 'z+' : 'y-')
+    else if (!secondaryAlong && same && secondaryFit) setAlignmentAxis('secondary', axisIndex(primaryAxisNow) === 1 ? 'z+' : 'y+')
   }, [secondaryAlong, primaryAxisNow, secondaryAxisNow, secondaryFit, setAlignmentAxis])
   const manualNums = manual?.map((v) => (Number.isFinite(v) ? v : 0)) ?? null
   const manualIdentity = manualNums === null || manualNums.every((v) => v === 0)

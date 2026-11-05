@@ -8,10 +8,10 @@ const objects=()=>alignmentReferences([]).slice(0,4).map((e,i)=>({...e,id:i+1,na
 beforeEach(()=>{useStore.setState(useStore.getInitialState(),true);useStore.setState({elements:objects()});m().startAlignment()})
 describe('explicit alignment reference interaction',()=>{
  it('keeps Flip relative to Top/Right/Front when changing target tiles',()=>{
-  expect(alignmentTileAxis('y-','x+')).toBe('x+')
-  expect(alignmentTileAxis('y+','x+')).toBe('x-')
-  expect(alignmentTileAxis('x-','y-')).toBe('y+')
-  expect(alignmentTileAxis('x+','y-')).toBe('y-')
+  expect(alignmentTileAxis('y+','x+')).toBe('x+')
+  expect(alignmentTileAxis('y-','x+')).toBe('x-')
+  expect(alignmentTileAxis('x-','y+')).toBe('y-')
+  expect(alignmentTileAxis('x+','y+')).toBe('y+')
   expect(alignmentTileAxis('z-','x+')).toBe('x-')
  })
  it('refuses a stale assigned datum instead of silently applying a partial transform',()=>{

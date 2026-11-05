@@ -595,7 +595,7 @@ export default function App() {
     // The dialog opens on Top, as QUICKSURFACE's does: the primary's outward
     // normal becomes +Z.
     useStore.getState().setAlignmentAxis('primary', 'z+')
-    useStore.getState().setAlignmentAxis('secondary', 'y-')
+    useStore.getState().setAlignmentAxis('secondary', 'y+')
     useStore.getState().beginAlignmentReferencePick('primary')
     useStore.getState().setStatus(ALIGN_HINT_LINES.join(' '))
   }
