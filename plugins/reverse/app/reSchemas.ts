@@ -239,6 +239,7 @@ const entityIn = byKind(
         ...pieceCommon,
         kind: kind('spline'),
         pts: arr(vec2(''), 'The fit points it runs through, in order, [u, v] mm — a smooth curve (C2) through every one; anchors a and b at the first and last, p1, p2, … between.', { minItems: 2 }),
+        controlKnots: arr(num(), 'Optional distinct increasing knots of an open clamped cubic B-spline. When present, pts are control poles (at least four), not interpolation points; knot count equals pts count minus two. End multiplicity is four; interior multiplicity is one. Cannot be combined with closed or endpoint direction fields.', { minItems: 2 }),
         closed: bool('Round back to the first point, smooth there too (three points at least); its anchors are then p0, p1, ….'),
         startDir: num('The direction it leaves its first point, radians from +u — the solver’s while a tangent holds that end; left out, the end is natural.'),
         endDir: num('The direction it arrives at its last point, radians — as startDir.'),

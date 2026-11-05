@@ -68,6 +68,9 @@ export interface FlatSplineFit extends FlatFitBase {
   fixed: boolean[]
   closed: boolean
   length: number
+  /** Exact cubic spans supplied by a control-pole curve. Legacy interpolating
+   * curves leave this absent. Span endpoints are also stored in points. */
+  beziers?: { poles: [Vec2, Vec2, Vec2, Vec2][]; spans: number[] }
 }
 
 export type FlatFit = FlatPointFit | FlatLineFit | FlatCircleFit | FlatArcFit | FlatSplineFit

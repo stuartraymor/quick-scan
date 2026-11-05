@@ -1,3 +1,9 @@
+## 0.0.135 — Fitted control curves and isolated sketch dragging
+
+- Fit Curve now estimates an editable cubic B-spline from the highlighted section points, with real control poles shared by display, constraints and CAD export. Existing interpolation curves retain their definition.
+- Dragging a sketch piece solves its constraint-connected geometry without refitting unrelated lines. Connected constraints continue to propagate.
+- Native curve pole placement and the measured curve/wall fit discrepancies remain open; this is a held local comparison candidate.
+
 ## 0.0.134 — Explicit brush selection and hover lifecycle
 
 - Offer six fitting commands beside a completed manual brush selection.

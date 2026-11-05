@@ -161,6 +161,10 @@ export function fitSplinePoints(
 
 /** The point on segment k at u in [0, 1]. */
 export function evalSpline(fit: FlatSplineFit, k: number, u: number): Vec2 {
+  if (fit.beziers) {
+    const b = fit.beziers.poles[k], v = 1 - u
+    return [0, 1].map((j) => v ** 3 * b[0][j] + 3 * v * v * u * b[1][j] + 3 * v * u * u * b[2][j] + u ** 3 * b[3][j]) as Vec2
+  }
   const n = fit.points.length
   const p0 = fit.points[k]
   const p1 = fit.points[(k + 1) % n]
@@ -181,6 +185,10 @@ export function evalSpline(fit: FlatSplineFit, k: number, u: number): Vec2 {
 
 /** The derivative on segment k with respect to u. */
 export function evalSplineDerivative(fit: FlatSplineFit, k: number, u: number): Vec2 {
+  if (fit.beziers) {
+    const b = fit.beziers.poles[k], v = 1 - u
+    return [0, 1].map((j) => 3 * (v * v * (b[1][j] - b[0][j]) + 2 * v * u * (b[2][j] - b[1][j]) + u * u * (b[3][j] - b[2][j]))) as Vec2
+  }
   const n = fit.points.length
   const p0 = fit.points[k]
   const p1 = fit.points[(k + 1) % n]
@@ -204,7 +212,7 @@ const GAUSS_X = [0, 0.5384693101056831, -0.5384693101056831, 0.906179845938664, 
 const GAUSS_W = [0.5688888888888889, 0.4786286704993665, 0.4786286704993665, 0.2369268850561891, 0.2369268850561891]
 const PANELS = 4
 
-function arcLength(fit: FlatSplineFit): number {
+export function arcLength(fit: FlatSplineFit): number {
   let total = 0
   for (let k = 0; k < splineSegmentCount(fit.points.length, fit.closed); k++) {
     for (let panel = 0; panel < PANELS; panel++) {
@@ -251,6 +259,11 @@ export function splineHandles(fit: FlatSplineFit): SplineHandle[] {
 
 /** The curve as cubic Béziers on chord-length knots. */
 export function splineBezierForm(fit: FlatSplineFit): SplineBezierForm {
+  if (fit.beziers) {
+    const knots = [0]
+    for (const h of fit.beziers.spans) knots.push(knots[knots.length - 1] + h)
+    return { poles: [fit.beziers.poles[0][0], ...fit.beziers.poles.flatMap((b) => b.slice(1))], knots }
+  }
   const n = fit.points.length
   const poles: Vec2[] = [[fit.points[0][0], fit.points[0][1]]]
   const knots = [0]

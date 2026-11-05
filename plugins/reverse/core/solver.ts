@@ -27,6 +27,7 @@ import { dot2, len2, normalize2, perp2, sub2 } from '../../../src/core/flat/vec2
 import { traceLine, traceOf, traceOffset, type DatumPlane, type DatumTrace } from './datums'
 import {
   anchorPoint,
+  constraintEntities,
   arcPoint,
   splineJoint,
   type Anchor,
@@ -214,6 +215,12 @@ function splineEndDir(s: SketchSpline, end: 'a' | 'b'): Vec2 {
  *  relation holds — taken from the curve as it runs there now — and none
  *  at an end nothing holds, which is natural again. */
 function withHeldEnds(s: SketchSpline, sketch: Sketch): SketchSpline {
+  // A pole curve's end tangent is determined by its first/last pole pair.
+  // The tangent residual must move those poles, not a detached angle field.
+  if (s.controlKnots) {
+    const { startDir: _a, endDir: _b, ...curve } = s
+    return curve
+  }
   const held = new Set<'a' | 'b'>()
   if (!isClosed(s)) {
     for (const c of sketch.constraints) {
@@ -268,8 +275,23 @@ export function solveSketch(sketch: Sketch, options: SolveOptions = {}): SolveRe
   // Which parameters may move: a fixed entity's stay put by being left out
   // of the unknowns (their columns are never perturbed or updated).
   const free = new Uint8Array(n).fill(1)
+  // A drag edits its constraint-connected component. Re-optimizing an
+  // unrelated fitted piece on every mouse event introduces endpoint drift.
+  // Keep those columns out of this solve without adding permanent Fixes.
+  const active = options.pull?.length ? new Set(options.pull.map((p) => p.anchor.entity)) : null
+  if (active) {
+    let changed = true
+    while (changed) {
+      changed = false
+      for (const c of sketch.constraints) {
+        const ids = constraintEntities(c)
+        if (!ids.some((id) => active.has(id))) continue
+        for (const id of ids) if (!active.has(id)) { active.add(id); changed = true }
+      }
+    }
+  }
   for (const e of sketch.entities) {
-    if (e.fixed) {
+    if (e.fixed || (active && !active.has(e.id))) {
       const s = slots.get(e.id)!
       for (let i = 0; i < s.count; i++) free[s.offset + i] = 0
     }

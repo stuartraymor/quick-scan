@@ -92,7 +92,9 @@ export interface SketchCircle {
   construction?: boolean
 }
 
-/** A curve through fit points (see sketchSpline.ts): `pts` in order, the
+/** A cubic curve (see sketchSpline.ts). With controlKnots, pts are editable
+ *  B-spline poles. Without them, the legacy curve runs through fit points:
+ *  `pts` in order, the
  *  curve smooth through every one, and back round to the first when
  *  `closed`. Its ends are natural — the curve runs on straight past them —
  *  unless a tangent relation holds one, when the direction it leaves its
@@ -102,6 +104,9 @@ export interface SketchSpline {
   id: number
   kind: 'spline'
   pts: Vec2[]
+  /** Distinct knots of an open clamped cubic (end multiplicity 4, inner 1).
+   * When present, pts are control poles; absent preserves legacy interpolation. */
+  controlKnots?: number[]
   closed?: boolean
   startDir?: number
   endDir?: number

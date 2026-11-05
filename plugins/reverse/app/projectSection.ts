@@ -17,6 +17,7 @@ import { fullTurn, type FaceRef, type Feature, type MoveFaceFeature } from '../c
 import { validateFolders, type BodyFolder } from '../core/bodyFolders'
 import { evaluateParameters, type Parameter } from '../core/parameters'
 import { useReverse, type BodyStyles } from '../state/reStore'
+import { validControlSpline } from '../core/controlSpline'
 
 /** A feature as the file holds it: a surface's region — a typed array in
  *  the store — as a plain list, the way an element's marked surface
@@ -97,7 +98,9 @@ export function validateFeatureJson(e: Record<string, unknown>): void {
   fields(e, 'kind name', 'string', 'feature')
   if (e.kind === 'sketch') {
     const sketch = object(e.sketch, 'feature.sketch')
-    entries(sketch.entities, 'sketch.entities')
+    entries(sketch.entities, 'sketch.entities', (p) => {
+      if (p.kind === 'spline' && !validControlSpline(p)) invalid('sketch.entities.controlKnots')
+    })
     entries(sketch.constraints, 'sketch.constraints')
     if (sketch.referenceChains !== undefined) {
       let count = 0

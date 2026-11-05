@@ -34,6 +34,7 @@ import { dimensionKind } from '../core/parameters'
 import { curveMoved, projectEdge, projectFaceOutline, projectSketchEntity, retakeMoved } from '../core/project'
 import { arcsOfChain, chainsOfEdges, segmentChain } from '../core/segment'
 import { splineCurve, splineSamples } from '../core/sketchSpline'
+import { validControlSpline } from '../core/controlSpline'
 import { addConstraint, addEntity, addPolygon, anchorPoint, arcPoint, arcThrough, addRectangle, addRectangleCentre, addTurnedRectangle, type AnchorAt, anchorsOf, cloneSketch, type Constraint, constraintEntities, type ConstraintInput, type ConstraintKind, DIMENSION_KINDS, emptySketch, endsOf, type EntityInput, entityOf, inferRelations, patternPieces, POLYGON_MAX_SIDES, type PolygonFit, relationTakes, renumbered, type Sketch, type SketchArc, type SketchEntity, type SketchPatternSpec, type SketchSpline, splineJoint, splinePointIndex, TOUCH_MM } from '../core/sketch'
 import { insetChains, insetKeeps, likeStation, runFactsWords, STATION_FOLD_HELP, stationFaults, type StationLoop, stationLoop } from '../core/stations'
 import { measureDimension, type Pull } from '../core/solver'
@@ -477,6 +478,8 @@ export function sketchOf(input: Json, frame: SketchFeature['frame'], stored?: Sk
   }
   for (const e of entities) {
     if (e.kind !== 'spline') continue
+    if (!validControlSpline(e)) invalid(`The spline ${e.id} has invalid cubic control knots.`)
+    if (e.controlKnots) continue // Coincident poles are valid; interpolation points are not.
     const pts = (e.pts ?? []) as Vec2[]
     if (pts.length < (e.closed ? 3 : 2)) invalid(`The spline ${e.id} needs ${e.closed ? 'three fit points at least to close' : 'two fit points at least'} — it has ${pts.length}.`)
     pts.forEach((p, i) => {
@@ -1410,6 +1413,7 @@ function pieceSet(e: SketchEntity, given: Json, where: string): { next: SketchEn
         if (named.length > 0) invalid(`${where}: give pts, the whole list, or fit points by name — not ${named.join(', ')} with pts.`)
         if (!Array.isArray(given.pts) || !given.pts.every((p) => Array.isArray(p) && p.length === 2 && p.every((v) => typeof v === 'number' && Number.isFinite(v)))) invalid(`${where}.pts: expected a list of [u, v], mm.`) // units-ok: a command's error — the commands take and answer mm
         const next = { ...e, pts: (given.pts as Vec2[]).map((p): Vec2 => [p[0], p[1]]) }
+        if (!validControlSpline(next)) invalid(`${where}.pts: keep the control-pole count unchanged, or replace the complete curve with matching controlKnots.`)
         return { next, at: anchorsOf(next) }
       }
       const at = Object.keys(given) as AnchorAt[]

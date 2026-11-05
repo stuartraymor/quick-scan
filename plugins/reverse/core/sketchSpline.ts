@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// Fitted control-pole curves carry controlKnots and evaluate/export as exact
+// cubics. The interpolation path below remains for existing saved drawings.
 // The sketch's spline: a smooth curve through the fit points it was drawn
 // by — the interpolating spline the 2D workspace draws (flat/spline.ts):
 // cubic Hermite between the points on chord-length parameters, C2 through
@@ -14,9 +16,10 @@
 // being C2 at every inner point, and so one smooth edge to offset, shell
 // and round against rather than a chain of patches.
 
-import { evalSpline, evalSplineDerivative, fitSplinePoints, HANDLE_REACH } from '../../../src/core/flat/spline'
+import { arcLength, evalSpline, evalSplineDerivative, fitSplinePoints, HANDLE_REACH } from '../../../src/core/flat/spline'
 import type { FlatSplineFit, Vec2 } from '../../../src/core/flat/types'
 import type { SketchSpline } from './sketch'
+import { validControlSpline } from './controlSpline'
 
 /** What a spline is drawn by: the sketch piece's own fields. `startDir` and
  *  `endDir` are the directions the curve leaves its first point and
@@ -24,6 +27,7 @@ import type { SketchSpline } from './sketch'
  *  end, natural otherwise. */
 export interface SplineShape {
   pts: readonly Vec2[]
+  controlKnots?: readonly number[]
   closed?: boolean
   startDir?: number
   endDir?: number
@@ -54,6 +58,7 @@ const segmentsOfFit = (fit: FlatSplineFit): number => (fit.closed ? fit.points.l
  *  through it, a hand that clicked twice — still give a curve, its tangents
  *  read off the neighbours, rather than none. */
 export function splineCurve(e: SplineShape): FlatSplineFit {
+  if (e.controlKnots) return controlCurve(e)
   const pts = e.pts
   const n = pts.length
   const closed = isClosed(e)
@@ -196,6 +201,7 @@ const lerp = (a: Vec2, b: Vec2, u: number): Vec2 => [a[0] + (b[0] - a[0]) * u, a
 
 /** Segment k as a Bézier, and the chord its parameter spans. */
 function segmentBezier(fit: FlatSplineFit, k: number): { bezier: Bezier; h: number } {
+  if (fit.beziers) return { bezier: fit.beziers.poles[k], h: fit.beziers.spans[k] }
   const n = fit.points.length
   const p0 = fit.points[k]
   const p1 = fit.points[(k + 1) % n]
@@ -360,6 +366,30 @@ export function bsplineSamples(b: BSpline<number[]>, count: number): number[][] 
   return Array.from({ length: count + 1 }, (_, i) => bsplineAt(b, t0 + ((t1 - t0) * i) / count))
 }
 
+/** Exact cubic spans of the saved control-pole curve, never an interpolating
+ * approximation. Four evaluations determine each cubic polynomial. */
+function controlCurve(e: SplineShape): FlatSplineFit {
+  const knots = e.controlKnots!
+  if (!validControlSpline(e)) throw new Error('Invalid cubic control curve knots.')
+  const b: BSpline = { poles: e.pts.map((p) => [...p]), knots: [...knots], mults: knots.map((_, i) => i === 0 || i === knots.length - 1 ? 4 : 1) }
+  const poles: Bezier[] = [], spans: number[] = []
+  for (let k = 0; k + 1 < knots.length; k++) {
+    const h = knots[k + 1] - knots[k], at = (u: number) => bsplineAt(b, knots[k] + u * h) as Vec2
+    const p0 = at(0), p3 = at(1), f1 = at(1 / 3), f2 = at(2 / 3)
+    const p1 = [0, 1].map((j) => p0[j] + (54 * (f1[j] - p0[j]) - 27 * (f2[j] - p0[j]) + 6 * (p3[j] - p0[j])) / 18) as Vec2
+    const p2 = [0, 1].map((j) => p0[j] + (54 * (f2[j] - p0[j]) - 27 * (f1[j] - p0[j]) - 15 * (p3[j] - p0[j])) / 18) as Vec2
+    poles.push([p0, p1, p2, p3]); spans.push(h)
+  }
+  const points = [poles[0][0], ...poles.map((p) => p[3])]
+  const tangents = points.map((_, i): Vec2 => {
+    const k = Math.min(i, poles.length - 1), a = poles[k][i === poles.length ? 2 : 0], b = poles[k][i === poles.length ? 3 : 1]
+    return [3 * (b[0] - a[0]) / spans[k], 3 * (b[1] - a[1]) / spans[k]]
+  })
+  const fit: FlatSplineFit = { kind: 'spline', points, tangents, fixed: points.map(() => false), closed: false, length: 0, sigma: 0, usedPoints: e.pts.length, beziers: { poles, spans } }
+  fit.length = arcLength(fit)
+  return fit
+}
+
 /** A spline given the slice points along it as its soft data — what the
  *  solver then pulls it onto, its fit points free to move as far as its
  *  relations let them — or null when none lie along it. They are taken
@@ -375,7 +405,7 @@ export function fitSplineToPoints(e: SketchSpline, slice: readonly Vec2[]): Sket
 }
 
 /** The RMS of a spline's slice points off the curve, millimetres. */
-export function splineScatter(e: Pick<SketchSpline, 'pts' | 'closed' | 'startDir' | 'endDir' | 'points'>): number {
+export function splineScatter(e: Pick<SketchSpline, 'pts' | 'closed' | 'startDir' | 'endDir' | 'points' | 'controlKnots'>): number {
   const points = e.points ?? []
   if (points.length === 0) return 0
   const fit = splineCurve(e)

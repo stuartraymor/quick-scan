@@ -170,6 +170,7 @@ export function projectSketchEntity(e: SketchEntity, from: SectionFrame, onto: S
     return {
       kind: 'spline',
       pts: e.pts.map((p) => toSheet(onto, liftPoint(from, p))),
+      ...(e.controlKnots ? { controlKnots: [...e.controlKnots] } : {}),
       ...(e.closed ? { closed: true } : {}),
       ...(e.startDir !== undefined ? { startDir: dirOf(e.startDir) } : {}),
       ...(e.endDir !== undefined ? { endDir: dirOf(e.endDir) } : {}),
@@ -221,10 +222,10 @@ export function retake(piece: SketchEntity, fresh: EntityInput | null): SketchEn
       // Another sketch's spline, its fit points as many as before — the
       // relations hang on them by their place.
       if (piece.kind !== 'spline' || fresh.pts.length !== piece.pts.length) return null
-      const { startDir: _s, endDir: _e, ...rest } = piece
+      const { startDir: _s, endDir: _e, controlKnots: _knots, ...rest } = piece
       void _s
       void _e
-      return { ...rest, pts: fresh.pts, ...(fresh.startDir !== undefined ? { startDir: fresh.startDir } : {}), ...(fresh.endDir !== undefined ? { endDir: fresh.endDir } : {}) }
+      return { ...rest, pts: fresh.pts, ...(fresh.controlKnots ? { controlKnots: [...fresh.controlKnots] } : {}), ...(fresh.startDir !== undefined ? { startDir: fresh.startDir } : {}), ...(fresh.endDir !== undefined ? { endDir: fresh.endDir } : {}) }
     }
     case 'point':
       return piece.kind === 'point' ? { ...piece, p: fresh.p } : null

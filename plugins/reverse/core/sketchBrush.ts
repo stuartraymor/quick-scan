@@ -4,7 +4,8 @@
 import type { Vec2 } from '../../../src/core/flat/types'
 import { fitArcPoints, fitCirclePoints, fitLinePoints } from '../../../src/core/flat/fit'
 import { addConstraint, addEntity, cloneSketch, nearestOnEntity, renumbered, type ConstraintInput, type EntityInput, type Sketch, type SketchEntity } from './sketch'
-import { fitPointsAlong } from './sketchSpline'
+import { splineScatter } from './sketchSpline'
+import { fitControlSpline } from './controlSpline'
 import { fitBrushClosedShape } from './sketchBrushShapes'
 
 export type BrushPrimitive = 'line' | 'arc' | 'circle' | 'curve' | 'rectangle' | 'slot' | 'hexagon'
@@ -98,9 +99,9 @@ export function fitBrushPrimitive(kind: BrushPrimitive, selected: readonly Brush
       if (orderedPoints.some((p, i) => i > 0 && p.index > orderedPoints[i - 1].index + 1)) return { ok: false, error: 'Fit Curve needs a continuous highlighted run. Fill the gaps between the selected points.' }
       const ordered = orderedPoints.map((p) => p.p)
       const count = Math.max(4, Math.min(64, Math.round(options.curvePoints)))
-      const pts = fitPointsAlong(ordered, count, false)
-      if (!pts) return { ok: false, error: 'Those points do not span a curve.' }
-      entity = { kind: 'spline', pts, points: ordered.map((p) => [...p]), scatter: options.tolerance / 3 }
+      const curve = fitControlSpline(ordered, count)
+      const data = ordered.map((p): Vec2 => [...p])
+      entity = { kind: 'spline', ...curve, points: data, scatter: Math.max(splineScatter({ ...curve, points: data }), 0.001) }
     } else {
       const fit = kind === 'arc' ? fitArcPoints(points) : fitCirclePoints(points)
       entity = kind === 'arc' && fit.kind === 'arc'
