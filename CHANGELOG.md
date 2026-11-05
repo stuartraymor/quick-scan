@@ -1,3 +1,11 @@
+## 0.0.131 — two-piece Auto Join and fitted sketch restoration
+
+- Auto Join works without preselection on the tested two-open-piece sketch. Larger sketches still require selecting two pieces; ordering and reference adaptation remain under comparison.
+- Repeating an existing endpoint join no longer adds redundant constraints or undo entries.
+- Joining satisfied carriers, reopening and undo/redo preserve valid geometry instead of unnecessarily refitting it. Unsatisfied constraints and explicit refits still solve.
+- Candidate 0.0.130 failed the installed unchanged-carrier check and is not counted.
+- Full parity, deeper curve controls and historical numerical discrepancies remain open. Dark theme and AI tools remain available.
+
 ## 0.0.129 — sketch extension and editing
 
 - Snap line endpoints to crossings of extended carriers, with visible original endpoints and crossing markers. Ctrl bypass and one-step undo preserved.

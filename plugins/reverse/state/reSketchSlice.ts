@@ -14,7 +14,7 @@ import { usePrefs } from '../../../src/state/prefsStore'
 import { useStore } from '../../../src/state/store'
 import { piecesInBox } from '../core/boxSelect'
 import { letGo, type ShareReport, sharePieces } from '../core/shareFit'
-import { closeChain, CORNER_GAP_MM, inferCorners, joinEnds, sharpenCorner } from '../core/corners'
+import { alreadyJoined, autoJoinPair, closeChain, CORNER_GAP_MM, inferCorners, joinEnds, sharpenCorner } from '../core/corners'
 import { datumTraces, traceNear } from '../core/datums'
 import { dimPlaceAt } from '../core/dimLayout'
 import { detached, moveAnchor, rigidCluster, rotateSketch, translateEntity } from '../core/drag'
@@ -148,7 +148,7 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
           found: [],
           history: [],
           error: null,
-        }),
+        }, undefined, undefined, false, true),
       }
     }),
 
@@ -840,15 +840,18 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
   joinSelected: () =>
     set((s) => {
       const d = s.sketchDraft
-      if (!d || d.selection.length !== 2) return {}
-      const a = entityOf(d.sketch, d.selection[0])
-      const b = entityOf(d.sketch, d.selection[1])
-      if (!a || !b) return {}
+      if (!d) return {}
+      const pair = autoJoinPair(d.sketch, d.selection)
+      if (!pair) return {}
+      const [a, b] = pair
       const ends = nearestEnds(a, b)
       if (!ends) return { sketchDraft: { ...d, error: 'A circle has no end to join.' } }
+      // A repeated command is a no-op: do not add a redundant equation,
+      // rerun a fitted solve, or consume another undo entry.
+      if (alreadyJoined(d.sketch, ends[0], ends[1])) return {}
       const before = cloneSketch(d.sketch)
       joinEnds(d.sketch, ends[0], ends[1], Infinity)
-      return { sketchDraft: settle({ ...d }, before) }
+      return { sketchDraft: settle({ ...d }, before, undefined, false, true) }
     }),
 
   addRelation: (kind) =>
@@ -1184,7 +1187,7 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
           if (f.order.every((p) => sketch.entities.some((e) => e.id === p.id))) fitted[Number(k)] = f
         }
       }
-      return { sketchDraft: settle({ ...d, ...toolIdle(), sketch, history, future, fitted, selection: [], selectedConstraint: null }) }
+      return { sketchDraft: settle({ ...d, ...toolIdle(), sketch, history, future, fitted, selection: [], selectedConstraint: null }, undefined, undefined, false, true) }
     }),
 
   redoSketch: () => set((s) => {
@@ -1195,7 +1198,7 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
     fittedBefore.set(current, d.fitted)
     return { sketchDraft: settle({ ...d, ...toolIdle(), sketch,
       history: [...d.history.slice(-(MAX_HISTORY - 1)), current], future: d.future!.slice(0, -1),
-      fitted: fittedBefore.get(sketch) ?? {}, selection: [], selectedConstraint: null }) }
+      fitted: fittedBefore.get(sketch) ?? {}, selection: [], selectedConstraint: null }, undefined, undefined, false, true) }
   }),
 
   solveNow: () => set((s) => (s.sketchDraft ? { sketchDraft: settle({ ...s.sketchDraft }) } : {})),

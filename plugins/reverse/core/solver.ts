@@ -84,6 +84,9 @@ export interface Pull {
 }
 
 export interface SolveOptions {
+  /** Restoring a solved snapshot or joining exact carriers must not refit
+   * otherwise satisfied geometry. Still solve if any hard equation fails. */
+  preserveSatisfied?: boolean
   /** Points being dragged, pulled to the cursor while everything else
    *  follows the constraints. */
   pull?: readonly Pull[]
@@ -884,6 +887,9 @@ export function solveSketch(sketch: Sketch, options: SolveOptions = {}): SolveRe
   }
 
   const quick = Boolean(options.quick)
+  if (options.preserveSatisfied && !options.pull?.length && worstHard(blocks, x) < 1e-10) {
+    return finish(sketch, slots, x, blocks, 0, softCount, quick, false)
+  }
   descend(blocks, quick ? QUICK_ITERATIONS : MAX_ITERATIONS, quick ? 1e-6 : 1e-9, quick ? 1e-8 : 1e-12)
   // A fitted spline's points found their feet on the curve where it began;
   // where it has moved they are found again and the curve settled to them,
@@ -928,9 +934,10 @@ function finish(
   iterations: number,
   softCount: number,
   quick: boolean,
+  writeGeometry = true,
 ): SolveReport {
   // Write the parameters back.
-  sketch.entities = sketch.entities.map((e) => {
+  if (writeGeometry) sketch.entities = sketch.entities.map((e) => {
     const s = slots.get(e.id)!
     const out = withParams(e, x, s.offset)
     if (out.kind === 'arc' || out.kind === 'circle') out.r = Math.abs(out.r)

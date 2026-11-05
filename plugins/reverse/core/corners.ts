@@ -21,6 +21,7 @@ import {
   arcAngleOf,
   constraintEntities,
   entityOf,
+  endsOf,
   nearestOnEntity,
   TOUCH_MM,
   unwindAngle,
@@ -263,13 +264,23 @@ function gapOf(sketch: Sketch, p: Anchor, q: Anchor): number {
   return len2(sub2(anchorPoint(ea, p.at), anchorPoint(eb, q.at)))
 }
 
-function alreadyJoined(sketch: Sketch, p: Anchor, q: Anchor): boolean {
+export function alreadyJoined(sketch: Sketch, p: Anchor, q: Anchor): boolean {
   return sketch.constraints.some(
     (c) =>
       c.kind === 'coincident' &&
       ((c.p.entity === p.entity && c.p.at === p.at && c.q.entity === q.entity && c.q.at === q.at) ||
         (c.q.entity === p.entity && c.q.at === p.at && c.p.entity === q.entity && c.p.at === q.at)),
   )
+}
+
+/** With no preselection, Auto Join can operate directly on a two-piece
+ * sketch. Larger sketches retain explicit selection until their ordering
+ * and reference-guided join behavior has been verified. */
+export function autoJoinPair(sketch: Sketch, selection: readonly number[]): [SketchEntity, SketchEntity] | null {
+  const pieces = selection.length
+    ? sketch.entities.filter(e => selection.includes(e.id))
+    : sketch.entities.filter(e => !e.construction && endsOf(e).length > 0)
+  return pieces.length === 2 ? [pieces[0], pieces[1]] : null
 }
 
 /**

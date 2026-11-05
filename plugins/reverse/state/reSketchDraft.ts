@@ -167,12 +167,12 @@ export function dragHandleAt(sketch: Sketch, spot: Vec2, radius: number): { enti
  *  is one step of a drag, solved briefly from where the sketch stands
  *  and with the regions left as they were — the planar graph is found
  *  again when the hand lets go, not on every frame. */
-export function settle(d: SketchDraft, before?: Sketch, pull?: readonly Pull[], quick = false): SketchDraft {
+export function settle(d: SketchDraft, before?: Sketch, pull?: readonly Pull[], quick = false, preserveSatisfied = false): SketchDraft {
   if (before) d = { ...d, future: [] }
   const history = before ? [...d.history.slice(-(MAX_HISTORY - 1)), before] : d.history
   let report: SolveReport | null = null
   try {
-    report = solveSketch(d.sketch, { ...(pull ? { pull } : {}), quick, datums: datumTraces(d.frame) })
+    report = solveSketch(d.sketch, { ...(pull ? { pull } : {}), quick, preserveSatisfied, datums: datumTraces(d.frame) })
   } catch (e) {
     return { ...d, history, error: e instanceof Error ? e.message : String(e) }
   }
