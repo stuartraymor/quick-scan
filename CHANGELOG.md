@@ -1,3 +1,9 @@
+## 0.0.133 — Preserve fitted corners when adding primitives
+
+- Appending a fitted primitive preserves already satisfied geometry; unsatisfied constraints still solve.
+- Fitted-line scatter now describes the final direction after horizontal/vertical inference.
+- Same-part native selection differences and full Auto Join/curve parity remain under investigation.
+
 ## 0.0.132 — Nearby profile corners and Corner Trim placement
 
 - Auto Join can connect nearby open corners across multiple straight pieces in one undo step, preserving existing connections. Multi-piece curves remain under comparison.

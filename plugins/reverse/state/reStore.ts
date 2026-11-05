@@ -302,7 +302,7 @@ export interface ReState {
    *  written out rather than drawn comes in by. */
   /** `pull`: pieces the caller put where they stand, solved as a drag lets
    *  go, the rest of the sketch giving way to them. */
-  setSketch: (sketch: Sketch, pull?: readonly Pull[]) => void
+  setSketch: (sketch: Sketch, pull?: readonly Pull[], preserveSatisfied?: boolean) => void
   editSketch: (id: number) => void
   /** The draft thrown away without a feature — for the workspace's own
    *  housekeeping (a new scan), not a key: the sketch's one exit is

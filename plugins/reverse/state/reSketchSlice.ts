@@ -161,13 +161,13 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
       return { sketchDraft: settle({ ...d, selection: ids.slice(-1), selectedConstraint: null }, before) }
     }),
 
-  setSketch: (sketch, pull) =>
+  setSketch: (sketch, pull, preserveSatisfied = false) =>
     set((s) => {
       const d = s.sketchDraft
       if (!d) return {}
       const idle = { ...dropDimension(d), ...toolIdle() }
       const before = cloneSketch(idle.sketch)
-      return { sketchDraft: settle({ ...idle, sketch: cloneSketch(sketch), selection: [], selectedConstraint: null }, before, pull) }
+      return { sketchDraft: settle({ ...idle, sketch: cloneSketch(sketch), selection: [], selectedConstraint: null }, before, pull, false, preserveSatisfied) }
     }),
   discardSketch: () => set((s) => ({ sketchDraft: null, ...(s.sketchDraft?.featureId !== undefined ? { buildVersion: s.buildVersion + 1 } : {}) })),
   setSketchTool: (tool) =>

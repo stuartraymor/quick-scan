@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { beforeEach, describe, expect, it } from 'vitest'
 import { brushPoints, brushedPoints, fitBrushPrimitive, sketchWithBrushFit } from '../core/sketchBrush'
-import { emptySketch } from '../core/sketch'
+import { addConstraint, addEntity, emptySketch, type SketchLine } from '../core/sketch'
 import { fitBrushClosedShape } from '../core/sketchBrushShapes'
 import type { Vec2 } from '../../../src/core/flat/types'
 import { useSketchBrush } from '../state/sketchBrushStore'
@@ -129,6 +129,25 @@ beforeEach(() => {
 })
 
 describe('brush fit draft commit', () => {
+  it('keeps an existing fitted corner exact when appending a brush primitive, including undo and reopen', () => {
+    const state = () => useReverse.getState()
+    const sketch = state().sketchDraft!.sketch
+    const h = addEntity(sketch, {kind:'line',a:[20,-30],b:[-10,-30],points:[[20,-30.001],[5,-29.998],[-10,-30.001]],pointWeights:[1,1,1],scatter:.001})
+    const v = addEntity(sketch, {kind:'line',a:[-10,-30],b:[-10,20],points:[[-10.002,-30],[-9.998,0],[-10.001,20]],pointWeights:[1,1,1],scatter:.001})
+    addConstraint(sketch,{kind:'horizontal',entity:h})
+    addConstraint(sketch,{kind:'vertical',entity:v})
+    addConstraint(sketch,{kind:'coincident',p:{entity:h,at:'b'},q:{entity:v,at:'a'}})
+    const before = structuredClone(sketch)
+    useSketchBrush.getState().setSelected(sample([[30,-20],[30,0],[30,20]]))
+    expect(useSketchBrush.getState().apply()).toBe(true)
+    const after = structuredClone(state().sketchDraft!.sketch)
+    expect(after.entities.slice(0,2)).toEqual(before.entities)
+    expect(state().sketchDraft!.report?.ok).toBe(true)
+    state().undoSketch(); expect(state().sketchDraft!.sketch).toEqual(before)
+    state().redoSketch(); expect(state().sketchDraft!.sketch).toEqual(after)
+    const id=state().commitSketch()!
+    state().editSketch(id); expect(state().sketchDraft!.sketch).toEqual(after)
+  })
   it('adds one undoable measured primitive and restores it on redo', () => {
     const s = useSketchBrush.getState()
     s.setOpen(true)
@@ -172,6 +191,18 @@ describe('brush fit draft commit', () => {
   })
 })
 describe('Fit Line weighs points by the section they stand for, as QUICKSURFACE does', () => {
+  it('records scatter against the actual axis-snapped line, not the unsnapped TLS line', () => {
+    for (const vertical of [false,true]) {
+      const points:Vec2[]=[[-10,-.1],[0,0],[10,.1]].map(([x,y])=>vertical?[y,x]:[x,y])
+      const fit=fitBrushPrimitive('line',sample(points),options)
+      if(!fit.ok || fit.entity.kind!=='line') throw Error('Expected line')
+      expect(fit.axis).toBe(vertical?'vertical':'horizontal')
+      expect(fit.entity.scatter).toBeCloseTo(Math.sqrt(.02/3),12)
+      expect(fit.maxDeviation).toBeCloseTo(.1,12)
+      const free=fitBrushPrimitive('line',sample(points),{...options,axisDegrees:0})
+      expect(free.ok && (free.entity as SketchLine).scatter).toBe(.001)
+    }
+  })
   // An edge along y = 0 whose left half was sectioned 8× denser and lies
   // 0.03 mm low: counted by point the line sits near the dense half; weighted by
   // length, half way. QUICKSURFACE 8.0.128 put it 0.09 µm from the length-

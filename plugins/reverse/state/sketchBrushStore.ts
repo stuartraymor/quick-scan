@@ -71,7 +71,9 @@ export const useSketchBrush = create<SketchBrushState>()((set, get) => {
       const fit = fitBrushPrimitive(s.primitive, s.selected, s)
       const sketch = sketchWithBrushFit(draft.sketch, fit)
       if (!sketch || !fit.ok) { set({ preview: fit, message: fit.ok ? 'The primitive could not be fitted.' : fit.error }); return false }
-      useReverse.getState().setSketch(sketch)
+      // The brush already fitted the new primitive. Appending it must not
+      // refit unrelated, satisfied geometry. Unsatisfied relations still solve.
+      useReverse.getState().setSketch(sketch, undefined, true)
       set({ preview: null, selected: [], message: `Fitted ${s.primitive === 'curve' ? 'curve' : s.primitive} to ${s.selected.length} points (maximum deviation ${fit.maxDeviation.toFixed(3)} mm).` })
       return true
     },
