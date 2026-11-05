@@ -615,10 +615,14 @@ export function useReverseWorkspace({
       clear()
       return
     }
-    // A sketch being drawn has no picker open: its plane is the one thing
-    // to show, whatever hint a list that has since gone left behind.
+    // Placement owns the sheet hint and offset handle. The editor uses
+    // the actual sketch sheet and must release those placement controls.
     const draft = useReverse.getState().sketchDraft
     if (draft) {
+      if (!draft.placing) {
+        clear()
+        return clear
+      }
       reSceneOf(scene).setPlaneHint(draft.frame, SKETCH_COLOR, draft.name, 0.06)
       // The arrow that walks the plane through the part, while the plane takes an offset.
       reSceneOf(scene).setSliceArrow(planeTakesOffset(draft.plane) ? draft.frame : null, planeOffset(draft.plane), (v) => useReverse.getState().setSketchOffset(v))
@@ -643,7 +647,7 @@ export function useReverseWorkspace({
     scene.setHintedElements(hint.ref.kind === 'element' ? [hint.ref.id] : [])
     return clear
     // Runs on the listed dependencies only, not on everything it reads.
-  }, [hint, onReverse, sketchFrameKey, sketchName, sceneRef])
+  }, [hint, onReverse, sketchFrameKey, sketchName, sketchPlacing, sceneRef])
 
   // ---- the sketches on the part ----------------------------------------------------------
   // Every visible committed sketch, stood up in its plane, with its closed

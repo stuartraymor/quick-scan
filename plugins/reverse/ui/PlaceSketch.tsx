@@ -12,7 +12,7 @@ import { useSectionLine } from '../state/sectionLineStore'
 import { useEffect, useRef, useState } from 'react'
 import { useReverse } from '../state/reStore'
 import { planeAtOffset, planeOffset, planeTakesOffset, type PlaneRef } from '../core/features'
-import { resolvePlaneFrame } from '../core/resolve'
+import { placementPlaneRef, resolvePlaneFrame } from '../core/resolve'
 import { useLength } from '../../../src/app/useUnits'
 import { useStore } from '../../../src/state/store'
 import { PlaneSelect } from './PlaneSelect'
@@ -136,7 +136,8 @@ export function PlaceSketch({ chainsOf }: { chainsOf: () => SketchChains | null 
   const place = (ref: PlaneRef) => {
     run.current++; setWorking(null); setExtent(undefined); setStacked(false); setReferenceMessage(null); appliedStack.current = null
     // A new plane, the sketch drafted afresh on it, still placing.
-    if (re.startSketchOn(ref)) placing()
+    const { sections, elements, modelCenter } = useStore.getState()
+    if (re.startSketchOn(placementPlaneRef(ref, { sections, elements, modelCenter }))) placing()
   }
   placeRef.current = place
   const commit = () => {
@@ -223,6 +224,7 @@ export function PlaceSketch({ chainsOf }: { chainsOf: () => SketchChains | null 
     if (!await preparePlacement()) return
     if (hideScan) useReverse.getState().setSketchModelShown(false)
     useReverse.setState((s) => (s.sketchDraft ? { sketchDraft: { ...s.sketchDraft, placing: false } } : {}))
+    useStore.getState().setStatus('')
   }
   const createAndStay = async () => {
     const d = useReverse.getState().sketchDraft

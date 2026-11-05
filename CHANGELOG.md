@@ -1,3 +1,7 @@
+## 0.0.123
+
+Newly chosen sketch planes use a standing Z direction, with Y up for horizontal planes. The saved plane reference retains this choice through offsets and regeneration. Create Sketch releases its placement handle, sheet hint and placement guidance when entering Edit Sketch.
+
 ## 0.0.122
 
 Coordinate alignment sends a secondary Front plane normal to positive Y and keeps Flip across target changes. Auto Constrain can fit a plane perpendicular to a coordinate plane, including when a named datum supplies the same direction.

@@ -17,7 +17,7 @@ import { refused, run, startHeadless, stlBytes, type Headless } from '../../../t
 import { createReverseSession, installReverseSession, type ReverseSession } from '../app/reSession'
 import type { PlaneRef, ResolveContext } from '../core/features'
 import { ReClient } from '../core/reClient'
-import { describePlaneRef, resolvePlaneFrame } from '../core/resolve'
+import { describePlaneRef, placementPlaneRef, resolvePlaneFrame } from '../core/resolve'
 import { localKernel } from './reLocal'
 import plugin from '../plugin'
 // After the plugin, as the app loads it: the commands sit in an import cycle.
@@ -73,6 +73,28 @@ describe('a plane through an axis', () => {
 })
 
 describe('up on a plane', () => {
+  it('places new picked planes upright and retains saved or explicit axes', () => {
+    const old: PlaneRef = { kind: 'plane', id: 3 }
+    const before = resolvePlaneFrame(old, ctx)!
+    const picked = placementPlaneRef(old, ctx)
+    expect(picked).toEqual({ ...old, up: 'z' })
+    const frame = resolvePlaneFrame(picked, ctx)!
+    expectVec(frame.basisU, [-1, 0, 0])
+    expectVec(frame.basisV, [0, 0, 1])
+    expectVec(frame.normal, [0, 1, 0])
+    expectRightHanded(frame)
+    expectVec(resolvePlaneFrame({ ...picked, offset: -0.5 } as PlaneRef, ctx)!.basisV, frame.basisV)
+    expectVec(resolvePlaneFrame(old, ctx, before.basisU)!.basisU, before.basisU)
+    expect(old).toEqual({ kind: 'plane', id: 3 })
+    const explicit: PlaneRef = { kind: 'plane', id: 3, up: 'x' }
+    expect(placementPlaneRef(explicit, ctx)).toBe(explicit)
+    const top = placementPlaneRef({ kind: 'world', axis: 'z', offset: 0 }, ctx)
+    expectVec(resolvePlaneFrame(top, ctx)!.basisU, [1, 0, 0])
+    expectVec(resolvePlaneFrame(top, ctx)!.basisV, [0, 1, 0])
+    const radial: PlaneRef = { kind: 'radial', axis: { kind: 'world', axis: 'z' }, angleDeg: 20 }
+    expect(placementPlaneRef(radial, ctx)).toBe(radial)
+  })
+
   it('runs v up Z on a standing plane whichever way its normal points, u = up × normal', () => {
     for (const ref of [
       { kind: 'plane', id: 2, up: 'z' },

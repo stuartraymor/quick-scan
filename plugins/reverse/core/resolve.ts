@@ -54,6 +54,17 @@ export function resolvePlaneFrame(ref: PlaneRef, ctx: ResolveContext, seedU?: Ve
  *  share in the plane, about 6° — as a section picture's `up` has it. */
 const UP_MIN_SHARE = 0.1
 
+/** Give newly chosen sketch planes a standing Z direction. Store the choice
+ * on the reference so regeneration and offset changes keep the same axes.
+ * Existing sketches continue resolving from their saved reference and frame. */
+export function placementPlaneRef(ref: PlaneRef, ctx: ResolveContext): PlaneRef {
+  if (ref.kind !== 'plane' && ref.kind !== 'section' && ref.kind !== 'world') return ref
+  if (ref.up) return ref
+  const frame = resolvePlaneFrame(ref, ctx)
+  if (!frame) return ref
+  return { ...ref, up: upU('z', frame.normal) ? 'z' : 'y' }
+}
+
 /** The u a plane's `up` asks for: up × normal, so v runs up the plane as
  *  near as it lets — or null with no `up`, or one along the normal that has
  *  no way up it. */
