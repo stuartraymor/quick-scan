@@ -14,6 +14,36 @@ beforeEach(() => {
     { kind: 'line', a: [-96.44214408,-174.075319788], b: [-96.44214408,-44.335401858] },
   ])
 })
+it('does not force a separated fitted curve onto a line carrier or consume undo', () => {
+  // Native Basic part export: the left wall is outside the cubic control
+  // hull. A midpoint join tilts that wall and displaces the curve 1.6166 mm.
+  const poles: [number,number][] = [[-60.945846528,-132.166333121],[-56.860267162,-128.645572662],[-55.990977645,-132.159474119],[-55.961908795,-132.170331806],[56.438040039,-132.161204655],[57.543114758,-132.148046239],[59.507684329,-132.155053225],[60.211099483,-132.15318324]]
+  for (const selected of [false,true]) for (const angle of [0,.7,Math.PI]) {
+    const map = ([x,y]:number[]):[number,number] => [1e4+x*Math.cos(angle)-y*Math.sin(angle),-2e4+x*Math.sin(angle)+y*Math.cos(angle)]
+    s().startSketch({kind:'world',axis:'z',offset:0},XY,[
+      {kind:'spline',pts:poles.map(map),controlKnots:[0,.2,.4,.6,.8,1]},
+      {kind:'line',a:map([-62.830848343,-125.980722964]),b:map([-62.830848343,-7.478476653])},
+    ])
+    if(selected) useReverse.setState({sketchDraft:{...d(),selection:d().sketch.entities.map(e=>e.id)}})
+    const before=structuredClone(d().sketch)
+    expect(canAutoJoin(before,d().selection)).toBe(false)
+    for(let i=0;i<3;i++)s().joinSelected()
+    expect(d().sketch).toEqual(before);expect(d().history).toHaveLength(0)
+    expect(d().sketch.constraints).toHaveLength(0)
+  }
+})
+
+it('does not reject a line reaching a cubic endpoint when its control hull touches the carrier', () => {
+  s().startSketch({kind:'world',axis:'z',offset:0},XY,[
+    {kind:'spline',pts:[[0,0],[1,2],[2,2],[3,0]],controlKnots:[0,1]},
+    {kind:'line',a:[0,0],b:[0,-10]},
+  ])
+  expect(canAutoJoin(d().sketch,[])).toBe(true)
+  const before=structuredClone(d().sketch.entities)
+  s().joinSelected()
+  expect(d().sketch.entities).toEqual(before)
+  expect(d().sketch.constraints).toHaveLength(1)
+})
 it('joins the two open pieces without preselection, keeping carriers and opposite ends', () => {
   s().joinSelected()
   const [a,b] = d().sketch.entities as SketchLine[]

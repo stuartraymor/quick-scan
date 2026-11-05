@@ -1,3 +1,9 @@
+## 0.0.138
+
+- Auto Join rejects fitted cubic/line pairs whose entire control hull lies to one side of the line carrier, preventing forced endpoint deformation in the measured Basic part gap.
+- Keep the Edit Sketch Auto Join command available when no join is eligible; repeated clicks remain harmless.
+- General spline extrapolation, curve-adaptive joins and earlier fitting discrepancies remain under comparison. GitHub publication held.
+
 ## 0.0.137 — Measured analytic Auto Join behavior
 
 - Automatic line/arc joining requires a real crossing, leaving the measured tangent and separated pairs unchanged as observed in QUICKSURFACE.

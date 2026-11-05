@@ -2,7 +2,6 @@
 import { useState } from 'react'
 import type { SketchChains } from '../app/useReverseWorkspace'
 import { cloneSketch, entityOf, nearestOnEntity, type ConstraintKind } from '../core/sketch'
-import { canAutoJoin } from '../core/corners'
 import { useReverse } from '../state/reStore'
 import { useRePrefs } from '../state/rePrefs'
 import { useSketchBrush } from '../state/sketchBrushStore'
@@ -53,7 +52,7 @@ export function SketchControls({chainsOf}:{chainsOf:()=>SketchChains|null}) {
   <div className="sketch-section-label">Modify</div>
   <div className="sketch-command-row modify" data-test="sketch-edit">
    {key('select','Modify — select and drag sketch entities','sketch-tool-select',()=>tool('select'),active('select'))}
-   {key('join','Auto Join — join nearby open lines and arcs, or two selected pieces','sketch-join',()=>re.joinSelected(),false,!canAutoJoin(d.sketch,d.selection))}
+   {key('join','Auto Join — join eligible nearby ends','sketch-join',()=>re.joinSelected())}
    {key('corner','Corner Trim','sketch-sharpen',()=>{tool('select');useSketchProject.getState().setOpen(false);useSketchCornerTrim.getState().setOpen(true)})}
    {key('trim','Trim — paint unwanted spans between intersections','sketch-trim',()=>extra('trim'),presentation.tool==='trim')}
    {key('dimension','Dimensions (D)','sketch-dimension',()=>{presentation.setTool(null);if(has)re.dimensionSelection();else tool('dimension')},active('dimension'))}
