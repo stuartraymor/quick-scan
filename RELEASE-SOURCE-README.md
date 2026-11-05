@@ -1,9 +1,9 @@
-# Quick Scan 0.0.44 corresponding source
+# Quick Scan 0.0.120 corresponding source
 
-This source continues the verified v0.0.43 tag and the local 0.0.40–0.0.42 review increments. The release branch is based on that tag; the repository main branch contains older application source and was not overwritten.
+The versioned release branch contains the Electron application, reverse-engineering plugin, worker, automation catalog and original icon resources used to package the Windows installer. The commit tagged for this version identifies the corresponding source.
 
-Build with Node.js 22+: npm ci, npm run build, node package-desktop.mjs; use installer/build-installer.ps1 for a Windows installer. The desktop package must include agent-setup.cjs, preload.cjs and recents.cjs. The MCP integration test additionally needs npm --prefix mcp ci.
+Use Node.js 22 or newer. Install dependencies with `npm ci` and `npm --prefix mcp ci`. Run `npm test` and `npm run build`, then `node package-desktop.mjs` to package the Electron desktop. On Windows the Inno Setup script at `installer/build-installer.ps1` accepts the packaged application directory and an installer output directory. The desktop includes the file, update, example-library and agent bridges.
 
-See docs/AI_SETUP.md and RELEASE-VERIFICATION.md for behavior, test coverage and remaining QuickSurface parity gaps. No exact-equivalence claim is made. Reference samples are separately excluded from this source archive; preserve the catalog/license boundaries when rebuilding a sample-enabled installer.
+Three Quick Scan example meshes ship with the app. Help also lists ten reference part names. Set the local example directory under the Quick Scan icon, Settings, to resolve them on each machine.
 
-SOURCE-HASHES.json records SHA-256 of every other file in this normalized-LF corresponding source archive. Original upstream attribution and AGPL-3.0-only licensing are preserved.
+`SOURCE-HASHES.json` records SHA-256 for each other tracked file using its normalized Git bytes. The release includes the Windows installer's separate SHA-256. See `RELEASE-VERIFICATION.md` for tested workflows and open differences. Upstream attribution and the AGPL-3.0-only license are retained.
