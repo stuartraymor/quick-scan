@@ -22,6 +22,8 @@ import { cornerBoxPlace } from '../../../src/ui/cornerBox'
 import { commandHost } from '../../../src/commands/host'
 import { cloneSketch } from '../core/sketch'
 import { collectExtrudedReference, ReferenceCancelled, type StackExtent } from '../core/stackedReference'
+import { sectionModeKey } from '../core/selectionCut'
+import type { SketchChains } from '../app/useReverseWorkspace'
 import { frameKey } from '../../../src/core/section/frame'
 import type { Vec2 } from '../../../src/core/flat/types'
 
@@ -51,16 +53,18 @@ const placing = () => useReverse.setState((s) => (s.sketchDraft ? { sketchDraft:
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 /** Wait for the slice chains of the sketch draft as it stands now. */
-async function chainsNow(chainsOf: () => { chains: Vec2[][]; key?: string } | null): Promise<Vec2[][] | null> {
+async function chainsNow(chainsOf: () => SketchChains | null): Promise<Vec2[][] | null> {
   const version = useReverse.getState().chainsVersion
   const draft = useReverse.getState().sketchDraft
-  const expected = draft ? `${JSON.stringify(draft.plane)}|${frameKey(draft.frame)}|${draft.level ?? 0}` : null
+  const { throughSelection, outline, outlineMinPoints } = useSectionLine.getState()
+  const modes = sectionModeKey(throughSelection, outline, outlineMinPoints)
+  const expected = draft ? `${JSON.stringify(draft.plane)}|${frameKey(draft.frame)}|${draft.level ?? 0}${modes}` : null
   for (let i = 0; i < 400; i++) {
     const s = useReverse.getState()
     if (s.sketchDraft !== draft) return null
     if (s.chainsStatus === 'failed') return null
     const chains = chainsOf()
-    if (s.chainsStatus === 'ready' && chains && (chains.key === undefined || chains.key === expected) && (s.chainsVersion !== version || i > 2)) return chains.chains
+    if (s.chainsStatus === 'ready' && chains && chains.key === expected && (s.chainsVersion !== version || i > 2)) return chains.chains
     await sleep(50)
   }
   return null
@@ -76,7 +80,7 @@ function PlaneTile({ axis }: { axis: 'x' | 'y' | 'z' }) {
   </svg>
 }
 
-export function PlaceSketch({ chainsOf }: { chainsOf: () => { chains: Vec2[][] } | null }) {
+export function PlaceSketch({ chainsOf }: { chainsOf: () => SketchChains | null }) {
   const draft = useReverse((s) => s.sketchDraft)
   const len = useLength()
   const [typed, setTyped] = useState<string | null>(null)

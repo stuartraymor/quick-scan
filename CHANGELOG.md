@@ -1,3 +1,7 @@
+## 0.0.119
+
+Create Sketch previews the same section points it will keep. Outline Mesh and Through selection only can finish on their computed contours.
+
 ## 0.0.118
 
 Create Sketch can collect a cross-section at an offset and draw it on the picked datum. Completed fitted circles use a solid black stroke in Edit Sketch.

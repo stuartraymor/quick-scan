@@ -7,6 +7,10 @@
 import type { EdgeChains } from '../../../src/core/flat/edges'
 import type { SectionFrame } from '../../../src/core/section/frame'
 
+export function sectionModeKey(throughSelection: boolean, outline: boolean, minPoints: number): string {
+  return (throughSelection ? '|selection' : '') + (outline ? `|outline:${minPoints}` : '')
+}
+
 /** The chains of `edges` (sheet coordinates of `frame`) kept where they pass
  *  within `tolMm` of a marked vertex lying within `bandMm` of the plane.
  *  `marked` holds the marked vertices' positions, x,y,z after one another. */

@@ -12,10 +12,9 @@
 import { SHADOW_SMOOTH_DEG, SHADOW_TOLERANCE } from '../../../src/core/section/shadow'
 import { SHADOW_PLAY } from '../../../src/state/sectionModel'
 import { useSectionLine } from '../state/sectionLineStore'
-import { edgesThroughSelection, longChains } from '../core/selectionCut'
+import { edgesThroughSelection, longChains, sectionModeKey } from '../core/selectionCut'
 import { reSceneOf } from '../viewer/reScene'
 import { useZebra } from '../state/zebraStore'
-import { commandHost } from '../../../src/commands/host'
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { EDGE_MIN_FEATURE_MM, type EdgeChains } from '../../../src/core/flat/edges'
 import type { Vec2 } from '../../../src/core/flat/types'
@@ -158,8 +157,9 @@ export function useReverseWorkspace({
       chainsRef.current = null
       return
     }
-    const key = (referenceChains !== undefined ? `${draftPlaneKey}|reference:${++referenceStamp.current}` : draftPlaneKey!) + (throughSelection ? '|selection' : '') + (outline ? `|outline:${outlineMin}` : '')
+    const key = (referenceChains !== undefined ? `${draftPlaneKey}|reference:${++referenceStamp.current}` : draftPlaneKey!) + sectionModeKey(throughSelection, outline, outlineMin)
     if (chainsRef.current?.key === key) return
+    chainsRef.current = null
     const land = (all: EdgeChains) => {
       const edges = throughSelection ? selectedOnly(all, draft.frame) : all
       const current = useReverse.getState().sketchDraft
@@ -526,41 +526,20 @@ export function useReverseWorkspace({
   const sketchOpen = onReverse && sketchFrameKey !== null
   // Placing the plane (Create Sketch): the 3D view stays as it is, with the slicing arrow.
   const sketchPlacing = useReverse((s) => s.sketchDraft?.placing === true)
-  // The scan cut where the plane being placed lies, outlined in yellow and
-  // following the arrow (QUICKSURFACE's Create Sketch). Each move asks the
-  // worker for the cut a moment after the plane settles; a cut that arrives
-  // for a plane already moved on is dropped.
-  const placingKey = useReverse((s) => (s.sketchDraft?.placing ? frameKey(s.sketchDraft.frame) : null))
+  // Draw the worker result that Create will keep, including outlines and
+  // selection filters. A second plane cut would disagree with those modes.
+  const chainsVersion = useReverse((s) => s.chainsVersion)
   useEffect(() => {
     const scene = sceneRef.current
     if (!scene) return
-    if (!placingKey || !onReverse || !useStore.getState().fileName) {
+    const { sketchDraft, chainsStatus } = useReverse.getState()
+    const result = chainsRef.current
+    if (onReverse && sketchDraft?.placing && result && chainsStatus === 'ready') {
+      scene.setCutPreview(sketchDraft.frame, referenceCut(result.chains, sketchDraft.frame), '#ffd400')
+    } else {
       scene.setCutPreview(null, null, '')
-      return
     }
-    let stale = false
-    const reference = useReverse.getState().sketchDraft?.sketch.referenceChains
-    if (reference !== undefined) {
-      const d = useReverse.getState().sketchDraft
-      if (d) scene.setCutPreview(d.frame, referenceCut(reference, d.frame), '#ffd400')
-      return () => { stale = true }
-    }
-    const timer = setTimeout(() => {
-      const d = useReverse.getState().sketchDraft
-      const worker = commandHost().session.clientRef.current
-      if (!d || !worker) return
-      worker
-        .section(d.frame.origin, d.frame.normal, EDGE_MIN_FEATURE_MM)
-        .then((cut) => {
-          if (!stale) sceneRef.current?.setCutPreview(d.frame, cut, '#ffd400')
-        })
-        .catch(() => {})
-    }, 40)
-    return () => {
-      stale = true
-      clearTimeout(timer)
-    }
-  }, [placingKey, onReverse, sceneRef, referenceChains])
+  }, [onReverse, sceneRef, sketchPlacing, draftPlaneKey, referenceChains, throughSelection, outline, outlineMin, chainsVersion])
   useEffect(() => () => sceneRef.current?.setCutPreview(null, null, ''), [sceneRef])
   const dark = usePrefs((s) => s.dark)
   const unitsShown = usePrefs((s) => s.units)
