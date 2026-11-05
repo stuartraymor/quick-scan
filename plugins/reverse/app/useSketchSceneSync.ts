@@ -639,6 +639,7 @@ export function useSketchSceneSync({
       view.setCursor('')
       view.setBoxSelect(false)
       hovered.current = { key: '', pick: null }
+      hover.current = null
       pointed.current = null
       placing.current = null
       return

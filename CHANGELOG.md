@@ -1,3 +1,9 @@
+## 0.0.134 — Explicit brush selection and hover lifecycle
+
+- Offer six fitting commands beside a completed manual brush selection.
+- Clear transient hover when leaving the viewport or ending sketch editing.
+- Native wall-fit discrepancy, curve joining and deeper controls remain open.
+
 ## 0.0.133 — Preserve fitted corners when adding primitives
 
 - Appending a fitted primitive preserves already satisfied geometry; unsatisfied constraints still solve.

@@ -343,6 +343,7 @@ export class FlatScene {
       },
     })
     this.container.addEventListener('pointermove', this.hoverMove)
+    this.container.addEventListener('pointerleave', this.hoverLeave)
     this.viewport.nav.setPlanar(true)
 
     // Unlit: the scan is a document, not a body — the lights must not shade it.
@@ -832,6 +833,11 @@ export class FlatScene {
     document.addEventListener('pointerup', up)
     document.addEventListener('pointercancel', up)
     e.preventDefault()
+  }
+
+  private hoverLeave = (e: PointerEvent): void => {
+    this.setPinHover(false)
+    this.onHoverPoint?.(null, e.clientX, e.clientY, e.altKey, modHeld(e))
   }
 
   private hoverMove = (e: PointerEvent): void => {
@@ -1913,6 +1919,7 @@ export class FlatScene {
 
   dispose(): void {
     this.container.removeEventListener('pointermove', this.hoverMove)
+    this.container.removeEventListener('pointerleave', this.hoverLeave)
     this.container.style.cursor = ''
     this.dropBand()
     this.setGrid(null)

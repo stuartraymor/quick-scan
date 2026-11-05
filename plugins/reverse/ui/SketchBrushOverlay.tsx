@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FlatScene } from '../../../src/viewer/FlatScene'
 import type { Vec2 } from '../../../src/core/flat/types'
 import type { SketchChains } from '../app/useReverseWorkspace'
@@ -8,18 +8,23 @@ import { entityPolyline, type SketchEntity } from '../core/sketch'
 import { useSketchBrush } from '../state/sketchBrushStore'
 import { useReverse } from '../state/reStore'
 import { SKETCH_LINE } from '../viewer/sketchPalette'
+import { SketchCommandIcon } from './SketchCommandIcon'
 
 /** A plugin-owned canvas over the real sheet. Input is captured only for
  *  left-button paint; middle/right navigation still reaches FlatScene. */
 /** The tag beside the brush: the fit in hand. */
 const FIT_TAG: Record<string, string> = { line: 'Fit Line', arc: 'Fit Arc', circle: 'Fit Circle', rectangle: 'Rectangle', slot: 'Slot', hexagon: 'Hexagon', curve: 'Fit Curve' }
+const SELECTION_FITS = ['line', 'arc', 'circle', 'rectangle', 'slot', 'hexagon'] as const
 
 export function SketchBrushOverlay({ scene, chainsOf }: { scene: FlatScene | null; chainsOf: () => SketchChains | null }) {
   const open = useSketchBrush((s) => s.open)
+  const selectedCount = useSketchBrush((s) => s.selected.length)
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
   const ring = useRef<HTMLDivElement>(null)
   const chainRef = useRef(chainsOf)
   chainRef.current = chainsOf
+  useEffect(() => { if (!open || !selectedCount) setMenu(null) }, [open, selectedCount])
   useEffect(() => {
     const el = canvas.current, host = el?.parentElement
     if (!open || !scene || !el || !host) return
@@ -90,9 +95,11 @@ export function SketchBrushOverlay({ scene, chainsOf }: { scene: FlatScene | nul
       if (selected.size <= 12000 && !state.selectionOverflow) state.setSelected([...selected.values()])
       else useSketchBrush.setState({selectionOverflow:true,preview:null,message:'Highlight at most 12,000 points per fit. Clear the selection and fit one contour at a time.'})
     }
+    const overMenu = (e: Event) => e.target instanceof Element && !!e.target.closest('[data-test="sketch-fit-selection-menu"]')
     const down = (e: PointerEvent) => {
-      if (e.button !== 0) return
+      if (e.button !== 0 || overMenu(e)) return
       e.preventDefault(); e.stopImmediatePropagation()
+      setMenu(null)
       painting = true; last = null
       cursor = { x: e.clientX, y: e.clientY }; follow()
       if (useSketchBrush.getState().instant && !e.shiftKey && !e.altKey) useSketchBrush.getState().clear()
@@ -100,6 +107,7 @@ export function SketchBrushOverlay({ scene, chainsOf }: { scene: FlatScene | nul
       paint(e)
     }
     const move = (e: PointerEvent) => {
+      if (!painting && overMenu(e)) { cursor = null; follow(); host.style.cursor = previousCursor; return }
       cursor = { x: e.clientX, y: e.clientY }; follow()
       host.style.cursor = e.buttons === 0 || painting ? 'none' : previousCursor
       if (!painting) return
@@ -111,8 +119,12 @@ export function SketchBrushOverlay({ scene, chainsOf }: { scene: FlatScene | nul
       painting = false; lastDrawn = null; last = null
       if (host.hasPointerCapture(e.pointerId)) host.releasePointerCapture(e.pointerId)
       if (useSketchBrush.getState().instant && !e.shiftKey && !e.altKey) useSketchBrush.getState().apply()
+      else if (useSketchBrush.getState().selected.length) {
+        const rect = host.getBoundingClientRect(), scale = rect.width / (host.offsetWidth || 1)
+        setMenu({ x: Math.max(4, Math.min(host.clientWidth - 188, (e.clientX - rect.left) / scale + 8)), y: Math.max(4, Math.min(host.clientHeight - 38, (e.clientY - rect.top) / scale + 8)) })
+      }
     }
-    const cancel = () => { painting = false; lastDrawn = null; last = null; cursor = null; follow(); host.style.cursor = previousCursor }
+    const cancel = () => { painting = false; lastDrawn = null; last = null; cursor = null; follow(); host.style.cursor = previousCursor; setMenu(null) }
     const leave = () => { if (!painting) { cursor = null; follow(); host.style.cursor = previousCursor } }
     const wheel = (e: WheelEvent) => {
       if (!e.ctrlKey) return
@@ -120,7 +132,7 @@ export function SketchBrushOverlay({ scene, chainsOf }: { scene: FlatScene | nul
       const state = useSketchBrush.getState()
       state.setBrushPx(state.brushPx + (e.deltaY < 0 ? 4 : -4)); follow()
     }
-    const click = (e: MouseEvent) => { if (e.button === 0) { e.preventDefault(); e.stopImmediatePropagation() } }
+    const click = (e: MouseEvent) => { if (e.button === 0 && !overMenu(e)) { e.preventDefault(); e.stopImmediatePropagation() } }
     const key = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || (e.target as HTMLElement | null)?.closest('input,textarea,[contenteditable="true"]')) return
       e.preventDefault(); e.stopImmediatePropagation(); useSketchBrush.getState().setOpen(false)
@@ -188,5 +200,9 @@ export function SketchBrushOverlay({ scene, chainsOf }: { scene: FlatScene | nul
       el.getContext('2d')?.clearRect(0, 0, el.width, el.height)
     }
   }, [open, scene])
-  return open ? <><div ref={ring} hidden className="sketch-fit-cursor" aria-hidden="true"/><canvas ref={canvas} aria-label="Circular section-point fitting brush" data-test="sketch-fit-brush-overlay" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 5 }} /></> : null
+  return open ? <><div ref={ring} hidden className="sketch-fit-cursor" aria-hidden="true"/><canvas ref={canvas} aria-label="Circular section-point fitting brush" data-test="sketch-fit-brush-overlay" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 5 }} />
+    {menu && selectedCount > 0 && <div role="toolbar" aria-label="Fit selected reference points" data-test="sketch-fit-selection-menu" style={{ position: 'absolute', left: menu.x, top: menu.y, display: 'flex', padding: 3, gap: 2, border: '1px solid var(--line-strong)', borderRadius: 4, background: 'var(--panel)', color: 'var(--ink)', boxShadow: '0 2px 8px #0006', zIndex: 7, cursor: 'default' }}>
+      {SELECTION_FITS.map(kind => <button key={kind} type="button" title={FIT_TAG[kind]} aria-label={FIT_TAG[kind]} data-test={'sketch-fit-selected-'+kind} style={{ width: 28, height: 28, padding: 2, color: 'inherit' }} onClick={() => { const state = useSketchBrush.getState(); state.setPrimitive(kind); if (state.apply()) setMenu(null) }}><SketchCommandIcon name={kind}/></button>)}
+    </div>}
+  </> : null
 }
