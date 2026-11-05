@@ -94,7 +94,7 @@ describe('editable cubic control curves', () => {
   })
 
   it('preserves control knots in the real project section and rejects malformed saved curves', () => {
-    const feature = { kind: 'sketch' as const, id: 1, name: 'Curve', plane: { kind: 'world' as const, axis: 'z' as const, offset: 0 }, frame: XY, sketch: { entities: [structuredClone(curve)], constraints: [], nextId: 2 } }
+    const feature = { kind: 'sketch' as const, id: 1, name: 'Curve', visible: true, plane: { kind: 'world' as const, axis: 'z' as const, offset: 0 }, frame: XY, sketch: { entities: [structuredClone(curve)], constraints: [], nextId: 2 } }
     const json = JSON.parse(JSON.stringify(featureToJson(feature)))
     validateFeatureJson(json)
     applyReversePart({ features: [json], nextFeatureId: 2, nextOfKind: { sketch: 1 }, elementsShown: true })
