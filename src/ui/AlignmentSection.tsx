@@ -47,6 +47,10 @@ const AXIS_TILES: { label: string; axis: AxisDir }[] = [
   { label: 'Z Axis', axis: 'z+' },
 ]
 
+// The primary Front tile puts the face normal on +Y. The secondary
+// plane picker retains its own signed target and Flip behavior.
+const PRIMARY_PLANE_TILES = PLANE_TILES.map(t => t.axis === 'y-' ? { ...t, axis: 'y+' as const } : t)
+
 /** The six inputs of the manual move / rotate box, in the order the values
  *  are stored. A move is a length, typed in the units shown. */
 const MANUAL_FIELDS = [
@@ -189,7 +193,7 @@ export function AlignmentSection({
   const primaryFit = alignDraft?.primary != null ? refs.find((e) => e.id === alignDraft.primary)?.fit ?? null : null
   const secondaryFit = alignDraft?.secondary != null ? refs.find((e) => e.id === alignDraft.secondary)?.fit ?? null : null
   const primaryIsAxis = !!primaryFit && (primaryFit.kind === 'cylinder' || primaryFit.kind === 'cone' || primaryFit.kind === 'line')
-  const primaryTiles = primaryIsAxis ? AXIS_TILES : PLANE_TILES
+  const primaryTiles = primaryIsAxis ? AXIS_TILES : PRIMARY_PLANE_TILES
   const secondaryAlong = !!primaryFit && !!secondaryFit && secondaryAlongPrimary(primaryFit, secondaryFit)
   // A secondary running the primary's way takes the primary's own axis, as
   // QUICKSURFACE selects it (Top for a cylinder standing on Z Axis); one that

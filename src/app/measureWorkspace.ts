@@ -10,6 +10,7 @@
 import type { RefObject } from 'react'
 import { creationMethod } from '../core/elements/construct'
 import { elementKindInfo } from '../core/elements/kinds'
+import { planeDatum } from '../core/fit/fitPlaneFromSeed'
 import { fitWindow } from '../core/elements/extend'
 import { circleFromPoints } from '../core/fit/circle'
 import type { FitGuide } from '../core/fit/guide'
@@ -93,6 +94,20 @@ export function measureWorkspace({ clientRef, sceneRef }: MeasureDeps) {
       // the elements on the fit landing finds the points already there.
       rememberSurface(elementId, result.region)
       if (!regionsOnly || !el?.fit) useStore.getState().resolveFit(elementId, result)
+      else if (el.fit.kind === 'plane' && !el.fit.datum) {
+        // An older project's saved plane remains authoritative. Recover its
+        // datum from the corresponding vertices after the scan is restored.
+        const pos = sceneRef.current?.scanPositions?.()
+        if (pos) {
+          const up: Vec3 = alignment ? [alignment.r[1], alignment.r[4], alignment.r[7]] : [0, 1, 0]
+          const right: Vec3 = alignment ? [alignment.r[0], alignment.r[3], alignment.r[6]] : [1, 0, 0]
+          const datum = planeDatum(pos, result.region, el.fit.normal, el.fit.center, up, right)
+          if (datum) useStore.setState(s => ({
+            elements: s.elements.map(e => e === el && e.fit?.kind === 'plane'
+              ? { ...e, fit: { ...e.fit, datum } } : e),
+          }))
+        }
+      }
       const fitted = useStore.getState().elements.find((e) => e.id === elementId)
       if (fitted) sceneRef.current?.applyRegion(elementId, fitted.color, result.region)
     } catch (e) {

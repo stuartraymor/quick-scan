@@ -10,12 +10,37 @@ import { vertexAreas } from './vertexArea'
 
 import type { FitSettings, MeshGraph, Plane, PlaneFit, Vec3 } from '../types'
 import { FitError } from './errors'
+import { addScaled, cross, dot, normalize } from '../vec'
 import { orthoBasis } from './linalg'
 import { fitPlaneClipped, ransacPlane } from './plane'
 import { growPlaneRegion, seededFit } from './regionGrow'
 import { guidePatch, type FitGuide } from './guide'
 import type { AxialWindow } from '../types'
 import { requireSelection } from './selection'
+
+/** The single-plane alignment uses the projected patch bounds in a
+ *  reproducible plane frame. Keep the actual plane and its display extents
+ *  independent of this choice of origin and heading. */
+export function planeDatum(
+  positions: Float32Array, region: ArrayLike<number>, normal: Vec3, onPlane: Vec3,
+  up: Vec3 = [0, 1, 0], right: Vec3 = [1, 0, 0],
+): PlaneFit['datum'] {
+  const u = normalize(cross(up, normal)) ?? normalize(addScaled(right, normal, -dot(right, normal)))
+  if (!u || region.length === 0) return undefined
+  const frontU = normalize(addScaled(right, normal, -dot(right, normal))) ?? u
+  const v = cross(normal, u)
+  let uMin = Infinity, uMax = -Infinity, vMin = Infinity, vMax = -Infinity
+  for (let i = 0; i < region.length; i++) {
+    const j = 3 * region[i]
+    const dx = positions[j] - onPlane[0], dy = positions[j + 1] - onPlane[1], dz = positions[j + 2] - onPlane[2]
+    const x = dx * u[0] + dy * u[1] + dz * u[2]
+    const y = dx * v[0] + dy * v[1] + dz * v[2]
+    uMin = Math.min(uMin, x); uMax = Math.max(uMax, x)
+    vMin = Math.min(vMin, y); vMax = Math.max(vMax, y)
+  }
+  if (!Number.isFinite(uMin + uMax + vMin + vMax)) return undefined
+  return { u, frontU, origin: addScaled(addScaled(onPlane, u, (uMin + uMax) / 2), v, (vMin + vMax) / 2) }
+}
 
 /** The tightest rectangle around the measured patch, in the plane itself, so
  *  the element is drawn as the piece of surface it was fitted to. The obvious
@@ -26,7 +51,7 @@ export function patchExtents(
   positions: Float32Array,
   region: ArrayLike<number>,
   p: Plane,
-): { center: Vec3; basisU: Vec3; basisV: Vec3; extentU: number; extentV: number } | null {
+): { center: Vec3; basisU: Vec3; basisV: Vec3; extentU: number; extentV: number; datum: PlaneFit['datum'] } | null {
   const n = region.length
   let mx = 0, my = 0, mz = 0
   for (let i = 0; i < n; i++) {
@@ -83,8 +108,10 @@ export function patchExtents(
   const cz = mz + cu * basisU[2] + cv * basisV[2]
   // Pull the middle of the patch onto the fitted plane itself.
   const off = p.nx * cx + p.ny * cy + p.nz * cz - p.d
+  const center: Vec3 = [cx - off * p.nx, cy - off * p.ny, cz - off * p.nz]
   return {
-    center: [cx - off * p.nx, cy - off * p.ny, cz - off * p.nz],
+    center,
+    datum: planeDatum(positions, region, [p.nx,p.ny,p.nz], center),
     basisU,
     basisV,
     extentU: (maxU - minU) / 2,
@@ -151,6 +178,7 @@ export function fitPlaneFromSeed(
       return {
         kind: 'plane',
         center: ext.center,
+        datum: ext.datum,
         normal: [plane.nx, plane.ny, plane.nz],
         basisU: ext.basisU,
         basisV: ext.basisV,
@@ -202,6 +230,7 @@ export function fitPlaneOnSelection(
   return {
     kind: 'plane',
     center: ext.center,
+    datum: ext.datum,
     normal: [plane.nx, plane.ny, plane.nz],
     basisU: ext.basisU,
     basisV: ext.basisV,

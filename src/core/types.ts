@@ -238,6 +238,9 @@ export interface PlaneFit extends FitBase {
   /** Middle of the fitted patch (lies in the plane). */
   center: Vec3
   normal: Vec3
+  /** Coordinate-alignment frame of the selected surface. The displayed
+   *  minimum-area rectangle has its own orientation and centre. */
+  datum?: { origin: Vec3; u: Vec3; frontU: Vec3 }
   /** In-plane principal axes and half-extents of the patch, for drawing it. */
   basisU: Vec3
   basisV: Vec3

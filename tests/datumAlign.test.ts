@@ -11,7 +11,8 @@ import {
 import { alignmentPreview, type AlignDraft } from '../src/state/store'
 import { rigidCompose, rigidInvert, rigidRotationAngle } from '../src/core/deviation/rigid'
 import { orthoBasis } from '../src/core/fit/linalg'
-import { normalize } from '../src/core/vec'
+import { planeDatum } from '../src/core/fit/fitPlaneFromSeed'
+import { cross, normalize } from '../src/core/vec'
 import type { CylinderFit, PlaneFit, PointFit, SphereFit, Vec3 } from '../src/core/types'
 
 const NO_STATS = { sigma: 0, usedPoints: 0, regionSize: 0 }
@@ -55,6 +56,35 @@ describe('computeDatumAlignment', () => {
     const moved = transformFit(p, m) as PlaneFit
     expect(moved.normal[1]).toBeCloseTo(-1, 9)
     expect(moved.center[1]).toBeCloseTo(0, 9)
+  })
+
+  it.each(['z+', 'x+', 'y+'] as const)('keeps a fitted patch origin and heading when aligning it to %s', axis => {
+    const p = planeFit([30, -40, 50], TILTED)
+    const n = p.normal
+    const u = normalize(cross([0, 1, 0], n))!, v = cross(n, u)
+    // An asymmetric distribution, with all extremes represented. Neither
+    // the sample mean nor the scan centre is the patch-bounds centre.
+    const uv = [[-6,-4], [10,-4], [-6,8], [-5,-3], [-5,-3]]
+    const pos = Float32Array.from(uv.flatMap(([x,y]) => p.center.map((a,i) => a+x*u[i]+y*v[i])))
+    p.datum = planeDatum(pos, [0,1,2,3,4], n, p.center)!
+    const origin = p.center.map((a,i) => a+2*u[i]+2*v[i])
+    p.datum.origin.forEach((x,i) => expect(x).toBeCloseTo(origin[i],4))
+    const m = computeDatumAlignment({fit:p,axis},null,null,[100,200,-50])
+    const moved = transformFit(p,m) as PlaneFit
+    moved.datum!.origin.forEach(x=>expect(x).toBeCloseTo(0,7))
+    const i = axis === 'x+' ? 0 : axis === 'y+' ? 1 : 2
+    expect(moved.normal[i]).toBeCloseTo(1,8)
+    if (axis === 'y+') expect(moved.datum!.frontU[0]).toBeCloseTo(1,8)
+    else expect(cross(moved.normal,moved.datum!.u)[1]).toBeCloseTo(1,8)
+    const again = computeDatumAlignment({fit:moved,axis},null,null)
+    expect(rigidRotationAngle(again)).toBeCloseTo(0,6)
+    expect(Math.hypot(...again.t)).toBeCloseTo(0,7)
+  })
+
+  it('produces a finite frame when the plane is parallel to the heading reference', () => {
+    const d = planeDatum(Float32Array.from([1,10,2, 3,10,4, 5,10,2]), [0,1,2], [0,1,0], [0,10,0])
+    expect(d?.u).toEqual([1,0,0])
+    expect(d?.origin).toEqual([3,10,3])
   })
 
   it('puts a primary cylinder onto the global axis line', () => {

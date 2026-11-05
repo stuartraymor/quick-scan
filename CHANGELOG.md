@@ -1,3 +1,7 @@
+## 0.0.121
+
+A fitted primary plane defines the heading of a single-plane alignment and centers the open coordinates on its measured patch. The datum moves with the part and is recovered from the support points in older projects.
+
 ## 0.0.120
 
 Outline Mesh sketches now use the projected triangle boundary. Manufacturing clearance stays with the separate Shadow section tool. Includes the projected-outline preview and Create fixes tested in 0.0.119.

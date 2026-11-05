@@ -138,7 +138,8 @@ const MIN_CLOCK_ANGLE = 0.2
  * - The origin point sets the zero of every coordinate the datums left open.
  *
  * With `centerOf` given (the part's bounding-box centre), any coordinate still
- * open after that is moved so the part ends up centred on it — a part fresh
+ * open after that is centred on the fitted primary plane’s measured bounds
+ * (or on the scan-box centre for other datums). A part fresh
  * from the scanner lands on the coordinate planes instead of keeping an
  * arbitrary offset. Without it, anything unconstrained keeps its position:
  * the rotation pivots about the primary datum's centre so the part does not
@@ -169,6 +170,7 @@ export function computeDatumAlignment(
     if (axisIndex(secondary.axis) !== axisIndex(primary.axis))
       throw new AlignmentError("This feature runs the primary's way — it can only become the primary's own axis.")
   }
+  const datum = primary.fit.kind === 'plane' ? primary.fit.datum : undefined
   if (secondary && !along) {
     const d2raw = datumDirection(secondary.fit)
     if (!d2raw)
@@ -189,6 +191,19 @@ export function computeDatumAlignment(
         m.r[i * 3 + j] = e1[i] * d1[j] + e2[i] * d2[j] + e3[i] * d3[j]
       }
     }
+  } else if (datum) {
+    // A Front alignment keeps the projected X direction along X. Top
+    // and Right keep the projected Y direction along Y.
+    const front = axisIndex(primary.axis) === 1
+    const localU = front ? datum.frontU : datum.u
+    const localV = cross(d1, localU)
+    const targetU: Vec3 = front ? [1, 0, 0] : cross([0, 1, 0], e1)
+    const targetV = cross(e1, targetU)
+    for (let i = 0; i < 3; i++) {
+      for (let j = 0; j < 3; j++) {
+        m.r[i * 3 + j] = targetU[i] * localU[j] + targetV[i] * localV[j] + e1[i] * d1[j]
+      }
+    }
   } else {
     // Minimal rotation carrying d1 onto e1.
     const axis = cross(d1, e1)
@@ -207,7 +222,7 @@ export function computeDatumAlignment(
 
   // Translation: pivot about the primary centre, then let each datum zero the
   // coordinates it owns, and the origin point everything still open.
-  const c1 = primary.fit.center
+  const c1 = datum?.origin ?? primary.fit.center
   const out = new Float64Array(3)
   rigidRotate(rigid, c1[0], c1[1], c1[2], out)
   rigid.t[0] = c1[0] - out[0]
@@ -231,7 +246,7 @@ export function computeDatumAlignment(
   zeroAt(c1, datumCoords(primary))
   if (secondary) zeroAt(secondary.fit.center, datumCoords(secondary))
   if (origin) zeroAt(origin.center, [0, 1, 2])
-  if (centerOf) zeroAt(centerOf, [0, 1, 2])
+  if (centerOf) zeroAt(datum?.origin ?? centerOf, [0, 1, 2])
 
   return rigid
 }
@@ -349,6 +364,7 @@ export function transformFit(fit: FitData, m: Rigid): FitData {
         ...fit,
         center: movePoint(m, fit.center),
         normal: moveDir(m, fit.normal),
+        ...(fit.datum ? { datum: { origin: movePoint(m, fit.datum.origin), u: moveDir(m, fit.datum.u), frontU: moveDir(m, fit.datum.frontU) } } : {}),
         basisU: moveDir(m, fit.basisU),
         basisV: moveDir(m, fit.basisV),
       }
