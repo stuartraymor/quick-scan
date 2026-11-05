@@ -2,6 +2,7 @@
 // The Extrude and Revolve boxes' actions: started on a sketch or a face,
 // edited, their profiles picked, their numbers set, and committed.
 
+import { negateExpression } from '../core/extrudeDepth'
 import { scanReach } from './scanReach'
 import type { StoreApi } from 'zustand'
 import { dot, sub } from '../../../src/core/vec'
@@ -122,7 +123,13 @@ export const solidSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'extrude
       if (d && (d.extent.kind === 'toNext' || d.extent.kind === 'toLast' || d.extent.kind === 'toBody')) return { extrudeDraft: { ...d, extent: { ...d.extent, reverse: !d.extent.reverse } } }
       if (!d || d.extent.kind !== 'distance') return {}
       const neg = (v: number) => (v === 0 ? 0 : -v)
-      return { extrudeDraft: faceExtrudeOp({ ...d, extent: { ...d.extent, from: neg(d.extent.from), to: neg(d.extent.to) } }) }
+      const exprs = d.exprs && { ...d.exprs }
+      if (exprs) {
+        for (const key of ['extent.from', 'extent.to']) {
+          if (exprs[key]) exprs[key] = negateExpression(exprs[key])
+        }
+      }
+      return { extrudeDraft: faceExtrudeOp({ ...d, exprs, extent: { ...d.extent, from: neg(d.extent.from), to: neg(d.extent.to) } }) }
     }),
   cancelExtrude: () =>
     set((s) => {

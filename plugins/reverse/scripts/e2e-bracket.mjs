@@ -159,6 +159,7 @@ if (picked) {
     await page.keyboard.press('Enter')
     await sleep(150)
   }
+  await click(page, '[data-test=extrude-signed]')
   await typeInto('[data-test=extrude-from]', bounds.min[2] - centreZ)
   await typeInto('[data-test=extrude-to]', bounds.max[2] - centreZ)
   await click(page, '[data-test=extrude-create]')

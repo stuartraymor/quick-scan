@@ -1,3 +1,7 @@
+## 0.0.116
+
+Full depth resizes both extrusion sides proportionally. Depth 2 extends behind the sketch and accepts a positive distance. Signed offsets remain available for intervals entirely on one side, and endpoint expressions retain their meaning when reversing direction.
+
 ## 0.0.115
 
 Auto Constrain can hold the first fitted plane to a nearby coordinate plane. The preview shows the applied relation. Picking a manual hold switches off Auto, and enabling Auto reevaluates the selected area.

@@ -67,6 +67,8 @@ await page.waitForSelector('[data-test=kernel-status]')
 await sleep(300)
 await page.waitForFunction(() => window.__re.store.getState().kernelStatus === 'ready', { timeout: 180_000 })
 
+if (await page.$eval('[data-test=tool-inspector]', panel => panel.hidden)) await click(page, '[data-test=show-tool-inspector]')
+
 // ---- the list -------------------------------------------------------------------------
 check((await text('[data-test=parameter-count]')) === '0', 'the Parameters section opens with none')
 await click(page, '[data-test=parameter-add]')

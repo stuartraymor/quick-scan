@@ -92,6 +92,7 @@ if (regionCount >= 1) {
   const typeInto = async (sel, value) => {
     await page.focus(sel); await page.$eval(sel, (el) => (el.value = '')); await page.type(sel, String(Math.round(value * 1000) / 1000)); await page.keyboard.press('Enter'); await sleep(150)
   }
+  await click(page, '[data-test=extrude-signed]')
   await typeInto('[data-test=extrude-from]', lo[2])
   await typeInto('[data-test=extrude-to]', hi[2])
   await click(page, '[data-test=extrude-create]')

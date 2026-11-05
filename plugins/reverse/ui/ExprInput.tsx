@@ -30,6 +30,7 @@ export function ExprInput({
   unit,
   testId,
   places = 3,
+  min,
   dataDimension,
   passKeys,
   onCommit,
@@ -46,6 +47,7 @@ export function ExprInput({
   unit?: string
   testId: string
   places?: number
+  min?: number
   dataDimension?: number
   /** For a field that takes the keys by itself as its box opens: while
    *  nothing is typed into it, the keys it has no use for do what they do
@@ -64,8 +66,8 @@ export function ExprInput({
   const shown = expr ?? fieldText(value, kind, places, units)
   const word = unit === '' ? '' : kind === 'length' ? unitWord(units) : (unit ?? '')
   const result = formatValue(value, kind, units)
-  const take = (text: string): boolean => {
-    const t = text.trim()
+  const take = (input: HTMLInputElement): boolean => {
+    const t = input.value.trim()
     if (t === '' || t === shown) {
       setError(null)
       return true
@@ -76,7 +78,16 @@ export function ExprInput({
       return false
     }
     setError(null)
-    onCommit(r.value, r.expr)
+    if (min !== undefined && r.value < min) {
+      if (r.expr) {
+        setError('The expression gives a depth below zero.')
+        return false
+      }
+      input.value = fieldText(min, kind, places, units)
+      onCommit(min, null)
+    } else {
+      onCommit(r.value, r.expr)
+    }
     return true
   }
   const keys = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -85,7 +96,7 @@ export function ExprInput({
       if (passKeys && untouched) {
         e.currentTarget.blur()
         passKeys.enter()
-      } else if (take(e.currentTarget.value)) {
+      } else if (take(e.currentTarget)) {
         onEnter?.()
         e.currentTarget.blur()
       }
@@ -113,7 +124,7 @@ export function ExprInput({
           key={shown}
           defaultValue={shown}
           title={expr ? `${expr} = ${result}` : undefined}
-          onBlur={(e) => take(e.target.value)}
+          onBlur={(e) => take(e.currentTarget)}
           onKeyDown={keys}
         />
         <i>{expr ? `= ${result}` : word}</i>

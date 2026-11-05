@@ -254,9 +254,10 @@ export function OpFields({ op, canCut, testPrefix, onOp }: { op: 'new' | 'join' 
  *  click to take — not while an expression drives it. `kind` is what the
  *  field wants, read off the unit when not given: no unit is a length,
  *  held in millimetres and shown in the display units. */
-export function Num({ label, value, unit, testId, nominal, slot, kind, passKeys, onCommit, hint }: { label: string; value: number; unit?: string; testId: string; nominal?: NominalKind; slot?: string; kind?: ParameterKind; passKeys?: { enter: () => void }; onCommit: (v: number) => void; hint?: string }) {
-  const expr = useReverse((s) => (slot ? (s.extrudeDraft ?? s.revolveDraft ?? s.featureDraft)?.exprs?.[slot] : undefined))
+export function Num({ label, value, unit, testId, nominal, slot, kind, passKeys, onCommit, hint, mapExpression, min }: { label: string; value: number; unit?: string; testId: string; nominal?: NominalKind; slot?: string; kind?: ParameterKind; mapExpression?: (expr: string) => string; min?: number; passKeys?: { enter: () => void }; onCommit: (v: number) => void; hint?: string }) {
+  const storedExpr = useReverse((s) => (slot ? (s.extrudeDraft ?? s.revolveDraft ?? s.featureDraft)?.exprs?.[slot] : undefined))
   const units = useLength().units
+  const expr = storedExpr && mapExpression ? mapExpression(storedExpr) : storedExpr
   const round = nominal && !expr ? nominalOf(value, nominal) : null
   const fieldKind: ParameterKind = kind ?? (nominal === 'angle' || unit === '°' ? 'angle' : unit === undefined ? 'length' : 'number')
   return (
@@ -281,9 +282,10 @@ export function Num({ label, value, unit, testId, nominal, slot, kind, passKeys,
         unit={unit}
         testId={testId}
         passKeys={passKeys}
+        min={min}
         onCommit={(v, e) => {
           onCommit(v)
-          if (slot) useReverse.getState().setDraftExpr(slot, e)
+          if (slot) useReverse.getState().setDraftExpr(slot, e && mapExpression ? mapExpression(e) : e)
         }}
       />
     </label>

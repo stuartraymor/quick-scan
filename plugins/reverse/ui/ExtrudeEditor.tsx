@@ -11,6 +11,7 @@ import type { FaceRef, PlaneRef, SketchFeature } from '../core/features'
 import { MAX_TAPER_DEG } from '../core/preview'
 import { describeFaceIn } from '../core/topo'
 import { extrudeDraftReady, useReverse } from '../state/reStore'
+import { ExtrudeDistanceFields } from './ExtrudeDistanceFields'
 import { DirectionField } from './DirectionField'
 import { AnalysisRow, Num, OpFields, PreviewLine, ProfilesField, useRegionCount } from './featureFields'
 import { PlaneSelect } from './PlaneSelect'
@@ -128,7 +129,7 @@ export function ExtrudeEditor() {
             })
           }}
         >
-          <option value="distance">Distance</option>
+          <option value="distance">Two-sided</option>
           <option value="toPlane">To a plane</option>
           <option value="toFace">To a face of a body</option>
           <option value="toBody">To a body</option>
@@ -159,24 +160,8 @@ export function ExtrudeEditor() {
         </button>
       </div>
       {extent.kind === 'distance' && (
-        <>
-          <div className="field" data-test="extrude-full-depth" title="QUICKSURFACE's Full depth: the body's whole thickness, To less From">
-            <span>Full depth</span>
-            <output data-test="extrude-full-depth-value">{Number(len.toDisplay(Math.abs(extent.to - extent.from)).toFixed(len.decimals(4)))}</output>
-            <span>{len.word()}</span>
-          </div>
-          <Num label="To" testId="extrude-to" slot="extent.to" value={extent.to} nominal="length" passKeys={{ enter: create }} onCommit={(v) => set({ extent: { ...extent, to: v } })} hint="How far along the sketch plane's normal the body ends — in front of the plane. The arrow on that face drags it; a click on the part in front of the plane sets it." />
-          <Num label="From" testId="extrude-from" slot="extent.from" value={extent.from} nominal="length" onCommit={(v) => set({ extent: { ...extent, from: v } })} hint="How far along the normal the body starts — 0 is the plane itself, negative is behind it. The arrow on that face drags it; a click on the part behind the plane sets it." />
-          <p className="hint" data-test="extrude-pick-hint">
-            Or click the part: in front of the plane sets To, behind it From.
-            <InfoDot title="Up to a point on the part">
-              <p>
-                Click the scan, a body or a body's corner in the viewport: a point in front of the sketch plane puts <b>To</b> at its height over the plane, a point behind it puts <b>From</b> there. A click on the part's top and one on its bottom make the body that spans them, in either order. For a part lying wholly behind the plane, put To at 0 by hand — a click behind the plane never moves it.
-              </p>
-              <p>The height is read off the point once and kept as a number, which the field and the arrow go on changing. A sketch region under the cursor still takes the click as a profile — turn the part so the point is clear of it.</p>
-            </InfoDot>
-          </p>
-        </>
+        <ExtrudeDistanceFields key={draft.featureId ?? 'new'} extent={extent} exprs={draft.exprs}
+          onExtent={(next) => set({ extent: next })} onCreate={create} />
       )}
       {extent.kind === 'symmetric' && (
         <>
