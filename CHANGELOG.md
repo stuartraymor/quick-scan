@@ -1,3 +1,9 @@
+## 0.0.137 — Measured analytic Auto Join behavior
+
+- Automatic line/arc joining requires a real crossing, leaving the measured tangent and separated pairs unchanged as observed in QUICKSURFACE.
+- Preselected analytic pairs containing an arc now use the same exact-carrier path as automatic discovery, avoiding false tangency and circle refitting.
+- The exported native secant fixture, no-op cases, repetition and undo/redo have regression coverage. Broader spline adaptation and previous fitting discrepancies remain open; GitHub is held.
+
 ## 0.0.136 — Square sketch grips and curved editing
 
 - Black square grips expose line endpoints and midpoints, arc endpoints, through-points and centers, and spline poles. Fitted splines show their dashed control polygon.

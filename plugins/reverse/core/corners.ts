@@ -128,13 +128,18 @@ export function lineIntersection(a: SketchLine, b: SketchLine): Vec2 | null {
 }
 
 /** The points where a line's carrier crosses a circle. */
-function lineCircle(l: SketchLine, c: Vec2, r: number): Vec2[] {
+function lineCircle(l: SketchLine, c: Vec2, r: number, crossingsOnly = false): Vec2[] {
   const d = normalize2(sub2(l.b, l.a))
   if (!d) return []
   const off = dot2(sub2(c, l.a), perp2(d))
   if (Math.abs(off) > r) return []
+  // Native Auto Join leaves a tangent line/arc pair open but joins the same
+  // pair after the line moves inside the circle (Basic part IGES, .136).
+  // Use roundoff-scaled degeneracy, not an invented native gap tolerance.
+  const h2 = r * r - off * off
+  if (crossingsOnly && h2 <= 64 * Number.EPSILON * Math.max(1, r * r, off * off)) return []
   const foot = add2(l.a, scale2(d, dot2(sub2(c, l.a), d)))
-  const h = Math.sqrt(Math.max(0, r * r - off * off))
+  const h = Math.sqrt(Math.max(0, h2))
   return h < 1e-9 ? [foot] : [add2(foot, scale2(d, h)), add2(foot, scale2(d, -h))]
 }
 
@@ -273,20 +278,23 @@ export function alreadyJoined(sketch: Sketch, p: Anchor, q: Anchor): boolean {
   )
 }
 
-/** Explicit two-piece joining also supports the existing arc workflow. */
+/** Legacy explicit joining for lines/splines. Analytic pairs containing an
+ * arc use the same intersection eligibility with or without preselection. */
 export function autoJoinPair(sketch: Sketch, selection: readonly number[]): [SketchEntity, SketchEntity] | null {
   const pieces = selection.length
     ? sketch.entities.filter(e => selection.includes(e.id))
     : sketch.entities.filter(e => !e.construction && endsOf(e).length > 0)
-  return pieces.length === 2 && pieces.every(e=>!e.fixed && !e.projected && !e.construction && endsOf(e).length > 0) ? [pieces[0], pieces[1]] : null
+  if (pieces.length !== 2 || pieces.some(e=>e.fixed || e.projected || e.construction || endsOf(e).length === 0)) return null
+  if (pieces.some(e=>e.kind==='arc') && pieces.every(e=>e.kind==='line' || e.kind==='arc')) return null
+  return [pieces[0],pieces[1]]
 }
 
 /** Actual intersections of analytic carriers. Candidate discovery never
  * bends an arc or invents a midpoint between disjoint curves. */
 function carrierCrossings(a: SketchLine | SketchArc, b: SketchLine | SketchArc): Vec2[] {
   if (a.kind === 'line' && b.kind === 'line') { const p=lineIntersection(a,b); return p?[p]:[] }
-  if (a.kind === 'line' && b.kind === 'arc') return lineCircle(a,b.c,b.r)
-  if (a.kind === 'arc' && b.kind === 'line') return lineCircle(b,a.c,a.r)
+  if (a.kind === 'line' && b.kind === 'arc') return lineCircle(a,b.c,b.r,true)
+  if (a.kind === 'arc' && b.kind === 'line') return lineCircle(b,a.c,a.r,true)
   if (a.kind === 'arc' && b.kind === 'arc') return circleCircle(a.c,a.r,b.c,b.r)
   return []
 }

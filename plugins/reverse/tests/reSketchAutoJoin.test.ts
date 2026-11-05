@@ -29,18 +29,19 @@ it('joins the two open pieces without preselection, keeping carriers and opposit
 })
 it('joins nearby mixed line and arc corners without changing the analytic carriers', () => {
   s().startSketch({kind:'world',axis:'z',offset:0},XY,[
-    {kind:'line',a:[10,-10],b:[10,-.5]},
+    {kind:'line',a:[9.99,-10],b:[9.99,-.5]},
     {kind:'arc',c:[0,0],r:10,start:.05,sweep:Math.PI/2-.1},
-    {kind:'line',a:[-.5,10],b:[-10,10]},
+    {kind:'line',a:[-.5,9.99],b:[-10,9.99]},
   ])
   const before=structuredClone(d().sketch)
   s().joinSelected()
   const [a,b,c]=d().sketch.entities as [SketchLine,SketchArc,SketchLine]
-  expect(a.b).toEqual([10,0]); expect(a.a).toEqual([10,-10])
+  const h=Math.sqrt(100-9.99**2)
+  expect(a.b[0]).toBe(9.99); expect(a.b[1]).toBeCloseTo(-h,10); expect(a.a).toEqual([9.99,-10])
   expect(b.c).toEqual([0,0]); expect(b.r).toBe(10)
-  expect(anchorPoint(b,'a')[0]).toBeCloseTo(10,10)
-  expect(anchorPoint(b,'b')[1]).toBeCloseTo(10,10)
-  expect(c.a).toEqual([0,10]); expect(c.b).toEqual([-10,10])
+  expect(anchorPoint(b,'a')[0]).toBeCloseTo(9.99,10)
+  expect(anchorPoint(b,'b')[1]).toBeCloseTo(9.99,10)
+  expect(c.a[0]).toBeCloseTo(-h,10); expect(c.a[1]).toBe(9.99); expect(c.b).toEqual([-10,9.99])
   expect(d().sketch.constraints.filter(c=>c.kind==='coincident')).toHaveLength(2)
   expect(d().report?.ok).toBe(true)
   const after=structuredClone(d().sketch)
@@ -57,6 +58,46 @@ it('repeated selected joins do not duplicate constraints, drift, or consume undo
   expect(d().sketch).toEqual(saved)
   expect(d().history).toHaveLength(history)
   expect(d().report?.redundant).toBe(0)
+})
+
+it('leaves the native tangent and disjoint line/arc examples unchanged, selected or automatic', () => {
+  for (const offset of [0,.0001,1]) for (const selected of [false,true]) {
+    s().startSketch({kind:'world',axis:'z',offset:0},XY,[
+      {kind:'arc',c:[193.36214447,-78.143215179],r:32.177696228,start:0,sweep:Math.PI},
+      {kind:'line',a:[225.539840698+offset,-84.578757763],b:[225.539840698+offset,-142.498615265]},
+    ])
+    if (selected) useReverse.setState({sketchDraft:{...d(),selection:d().sketch.entities.map(e=>e.id)}})
+    const before=structuredClone(d().sketch)
+    expect(canAutoJoin(before,d().selection)).toBe(false)
+    s().joinSelected()
+    expect(d().sketch).toEqual(before); expect(d().history).toHaveLength(0)
+  }
+})
+
+it('matches the exported native secant join without refitting or adding false tangency', () => {
+  for (const selected of [false,true]) {
+    s().startSketch({kind:'world',axis:'z',offset:0},XY,[
+      {kind:'arc',c:[193.36214447,-78.143215179],r:32.177696228,start:0,sweep:Math.PI},
+      {kind:'line',a:[222.322067261,-84.578757763],b:[222.322067261,-142.498615265]},
+    ])
+    if(selected) useReverse.setState({sketchDraft:{...d(),selection:d().sketch.entities.map(e=>e.id)}})
+    const before=structuredClone(d().sketch),arcBefore=before.entities[0] as SketchArc
+    expect(canAutoJoin(before,d().selection)).toBe(true)
+    s().joinSelected()
+    const [arc,line]=d().sketch.entities as [SketchArc,SketchLine]
+    expect(arc.c).toEqual(arcBefore.c); expect(arc.r).toBe(arcBefore.r)
+    expect(line.b).toEqual((before.entities[1] as SketchLine).b)
+    expect(anchorPoint(arc,'b')[0]).toBeCloseTo(anchorPoint(arcBefore,'b')[0],10)
+    expect(Math.hypot(line.a[0]-222.322067261,line.a[1]+92.169155665)).toBeLessThan(.00001)
+    expect(Math.hypot(...anchorPoint(arc,'a').map((v,i)=>v-line.a[i]))).toBeLessThan(1e-10)
+    expect(d().sketch.constraints.filter(c=>c.kind==='tangent')).toHaveLength(0)
+    expect(d().sketch.constraints.filter(c=>c.kind==='coincident')).toHaveLength(1)
+    expect(d().report?.ok).toBe(true)
+    const after=structuredClone(d().sketch)
+    s().joinSelected();expect(d().sketch).toEqual(after);expect(d().history).toHaveLength(1)
+    s().undoSketch();expect(d().sketch).toEqual(before)
+    s().redoSketch();expect(d().sketch).toEqual(after)
+  }
 })
 it('preserves fitted carriers through join, undo, redo, commit and reopening', () => {
   const [h,v] = d().sketch.entities as SketchLine[]
