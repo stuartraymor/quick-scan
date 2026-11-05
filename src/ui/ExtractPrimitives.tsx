@@ -13,7 +13,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useMark, WAND_MAX_DEG, WAND_MIN_DEG, type MarkGesture } from '../state/markStore'
 import { useExtract } from '../state/extractStore'
-import { constraintOptions, type ConstraintId } from '../core/elements/constrain'
+import { constraintOptions, type AutoChoice, type ConstraintId } from '../core/elements/constrain'
 import { useStore } from '../state/store'
 import { useShell } from '../state/shellStore'
 import type { ElementKind } from '../core/types'
@@ -73,7 +73,7 @@ function NumberField({ value, onValid, min, label, test, disabled }: { value: nu
 export function ExtractPrimitives({ onType, preview, onCreate, onClearPreview, onClose, onClear, fitting, onHide, onIsolate, onShowAll, onAnalyse, onAnalysisOff }: {
   onType: (kind: ElementKind) => void
   /** The fit on show, not created yet: QUICKSURFACE previews, then Create. */
-  preview: { kind: ElementKind; sigma: number | null; problem?: string } | null
+  preview: { kind: ElementKind; sigma: number | null; autoChoice?: AutoChoice; problem?: string } | null
   /** Create the previewed primitive; `stay` keeps the dialog for the next. */
   onCreate: (stay?: boolean) => boolean
   onClearPreview: () => void
@@ -96,6 +96,9 @@ export function ExtractPrimitives({ onType, preview, onCreate, onClearPreview, o
   // Primitives already made, offered as constraints the way QUICKSURFACE lists them.
   const elements = useStore((s) => s.elements)
   const constraintRefs = elements.flatMap((e) => (e.fit ? [{ id: e.id, name: e.name, fit: e.fit }] : []))
+  const options = constraintOptions(constraintRefs)
+  const inferred = ex.autoConstrain ? preview?.autoChoice : undefined
+  if (inferred && !options.some(option => option.id === inferred.id)) options.push(inferred)
   const hidden = useShell((s) => s.hiddenTriangles)
   // The quick tools float where the last wand click landed, while that pick is
   // the selection: only a successful surface pick places them.
@@ -225,10 +228,10 @@ export function ExtractPrimitives({ onType, preview, onCreate, onClearPreview, o
         {preview && !fitting && <button data-test="extract-clear-preview" className="qs-clear" onClick={onClearPreview}>Clear</button>}
       </div>
       {preview && <>
-      <select className="qs-constraint" data-test="extract-constraint" aria-label="Constraint" value={ex.constraint} disabled={fitting}
+      <select className="qs-constraint" data-test="extract-constraint" aria-label="Constraint" value={inferred?.id ?? ex.constraint} disabled={fitting}
         title="Hold the fitted primitive parallel or perpendicular to a coordinate plane: a plane by its normal, a cylinder or line by its axis"
         onChange={(e) => { ex.setConstraint(e.target.value as ConstraintId); if (preview) onType(preview.kind) }}>
-        {constraintOptions(constraintRefs).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+        {options.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
       </select>
       {preview && !fitting && (preview.kind === 'cone' || preview.kind === 'sphere') && (ex.constraint !== 'none' || ex.autoConstrain) && <p className="qs-count" data-test="extract-constraint-note">A {preview.kind} has no direction to hold here.</p>}
       <label className="checkrow">

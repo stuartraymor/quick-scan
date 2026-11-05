@@ -123,10 +123,15 @@ describe('autoConstrainFit', () => {
     expect(notes[0]).toContain('perpendicular to Plane 1')
   })
 
-  it('does nothing with no primitives made yet', () => {
-    const { pos, idx } = planePoints([0, 0, 5], tilt(0.1))
-    const own = planeFit([0, 0, 5], tilt(0.1))
-    expect(autoConstrainFit(own, pos, idx, []).fit).toBe(own)
+  it('holds a first plane to the coordinate system inside the tolerance, measuring its offset and residual', () => {
+    const { pos, idx } = planePoints([0, 0, 5], tilt(0.3))
+    const own = planeFit([0, 0, 5], tilt(0.3))
+    const result = autoConstrainFit(own, pos, idx, [])
+    expect(result.choice?.id).toBe('parallel-oxy')
+    expect((result.fit as PlaneFit).normal).toEqual([0, 0, 1])
+    expect((result.fit as PlaneFit).center[2]).toBeCloseTo(5, 4)
+    expect(result.fit.sigma).toBeGreaterThan(0.001)
+    expect(autoConstrainFit(own, pos, idx, [], { tiltDeg: 0.1, coincidenceMm: 1 }).fit).toBe(own)
   })
 })
 

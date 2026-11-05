@@ -210,7 +210,9 @@ export function constrainFit(fit: FitData, pos: Float32Array, idx: ArrayLike<num
   return withDirection(fit,pos,idx,fit.kind==='plane' && axis && Math.abs(dot(axis,dir))<1e-8 ? bestNormalAcross(pos,idx,axis,dir) : dir)
 }
 
-export interface Neighbour { name: string; fit: FitData }
+export interface Neighbour { id?: number; name: string; fit: FitData }
+export interface AutoChoice { id: ConstraintId; label: string }
+interface AutoFit { fit: FitData; notes: string[]; choice?: AutoChoice }
 
 /** Auto Constrain: the new fit snapped to the primitives already made. A
  *  direction within `tiltDeg` of parallel — or of perpendicular — to one of
@@ -218,7 +220,7 @@ export interface Neighbour { name: string; fit: FitData }
  *  `coincidenceMm` of a parallel one's is moved onto it, and a cylinder whose
  *  axis then lies within it of a parallel one's onto that axis. `notes` say
  *  what was done, for the status line. */
-export function autoConstrainFit(fit: FitData, pos: Float32Array, idx: ArrayLike<number>, others: readonly Neighbour[], tol: ConstraintTolerances = DEFAULT_TOLERANCES): { fit: FitData; notes: string[] } {
+export function autoConstrainFit(fit: FitData, pos: Float32Array, idx: ArrayLike<number>, others: readonly Neighbour[], tol: ConstraintTolerances = DEFAULT_TOLERANCES): AutoFit {
   const own = directionOf(fit)
   if (!own || !canConstrain(fit)) return { fit, notes: [] }
   let best: { dir: Vec3; off: number; how: 'parallel' | 'perpendicular'; to: Neighbour } | null = null
@@ -231,6 +233,26 @@ export function autoConstrainFit(fit: FitData, pos: Float32Array, idx: ArrayLike
     if (perp <= tol.tiltDeg && (!best || perp < best.off)) {
       const flat = unit(sub(own, scale(od, dot(own, od))))
       if (flat) best = { dir: flat, off: perp, how: 'perpendicular', to: o }
+    }
+  }
+  // A first plane can snap to OXY, OYZ or OXZ even when the history is empty.
+  // The world plane supplies a direction. Fit the offset to the selected points.
+  if (fit.kind === 'plane') {
+    let closest = best?.off ?? Infinity;
+    let world: ConstraintId | undefined;
+    for (const datum of ['oxy', 'oyz', 'oxz'] as const) {
+      const angle = angleDeg(own, DATUM_NORMAL[datum]);
+      if (angle <= tol.tiltDeg && angle < closest) {
+        world = `parallel-${datum}`;
+        closest = angle;
+      }
+    }
+    if (world) {
+      const held = constrainFit(fit, pos, idx, world);
+      if (held) {
+        const label = constraintLabel(world, []);
+        return { fit: held, notes: [label], choice: { id: world, label } };
+      }
     }
   }
   if (!best) return { fit, notes: [] }
@@ -255,7 +277,15 @@ export function autoConstrainFit(fit: FitData, pos: Float32Array, idx: ArrayLike
       }
     }
   }
-  return { fit: out, notes }
+  // For an axis and a plane, parallel *directions* mean that the axis is
+  // perpendicular to the plane. The dropdown describes the actual entities.
+  const mixed = (fit.kind === 'plane') !== (best.to.fit.kind === 'plane');
+  const parallel = (best.how === 'parallel') !== mixed;
+  const mode = parallel ? 'parallel' : 'perpendicular';
+  const choice: AutoChoice | undefined = best.to.id === undefined ? undefined : {
+    id: `${mode}-el${best.to.id}`, label: `${parallel ? 'Parallel' : 'Perpendicular'} to ${best.to.name}`,
+  };
+  return { fit: out, notes, choice }
 }
 
 /** Analysis: the indices (positions in `idx`) of marked points lying further

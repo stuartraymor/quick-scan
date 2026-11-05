@@ -36,7 +36,7 @@ import { elementKindInfo } from './core/elements/kinds'
 import { creationMethod, takesSurface } from './core/elements/construct'
 import { extensionOf, fitWindow, isExtendable, sideValue } from './core/elements/extend'
 import { roleOf } from './core/elements/refs'
-import { autoConstrainFit, canConstrain, constrainFit, constraintLabel, pointsBeyond } from './core/elements/constrain'
+import { type AutoChoice, autoConstrainFit, canConstrain, constrainFit, constraintLabel, pointsBeyond } from './core/elements/constrain'
 import { useExtract } from './state/extractStore'
 import { evaluateDimensions } from './core/dimensions'
 import { attachSurfaceScene, forgetSurface, surfaceSource } from './app/surfaces'
@@ -976,7 +976,7 @@ export default function App() {
    *  selected in step 1 and previewed until Create or Create & Stay. */
   const [extractFitting, setExtractFitting] = useState(false)
   /** The primitive fitted in Extract primitives and shown, not yet created. */
-  const [extractPreview, setExtractPreview] = useState<{ kind: ElementKind; sigma: number | null; selection: Uint32Array; problem?: string } | null>(null)
+  const [extractPreview, setExtractPreview] = useState<{ kind: ElementKind; sigma: number | null; selection: Uint32Array; problem?: string; autoChoice?: AutoChoice } | null>(null)
   const createExtracted = (stay = true) => {
     const made = extractPreview && !extractPreview.problem ? handleConfirmDraft() : null
     if (!extractPreview || made === null) return false
@@ -1005,7 +1005,7 @@ export default function App() {
   /** The fit held to the constraint chosen in step 2 and, with Auto Constrain on,
    *  snapped to the primitives already made — measured again on the same marked
    *  points. Null when nothing applies. */
-  const constrainedPreview = (fit: FitData, selection: Uint32Array): { fit: FitData; notes: string[]; problem?: string } | null => {
+  const constrainedPreview = (fit: FitData, selection: Uint32Array): { fit: FitData; notes: string[]; autoChoice?: AutoChoice; problem?: string } | null => {
     const ex = useExtract.getState()
     const pos = sceneRef.current?.scanPositions()
     if (ex.constraint === 'none' && !ex.autoConstrain) return null
@@ -1019,10 +1019,9 @@ export default function App() {
       if (held) { next = held; notes.push(label) }
       else return { fit, notes, problem: `Cannot fit the selection ${label}.` }
     } else if (ex.autoConstrain) {
-      const others = useStore.getState().elements.filter((e) => e.fit).map((e) => ({ name: e.name, fit: e.fit as FitData }))
+      const others = useStore.getState().elements.filter((e) => e.fit).map((e) => ({ id: e.id, name: e.name, fit: e.fit as FitData }))
       const auto = autoConstrainFit(next, pos, selection, others, { tiltDeg: ex.tiltDeg, coincidenceMm: ex.coincidenceMm })
-      next = auto.fit
-      notes.push(...auto.notes)
+      return auto.notes.length ? { fit: auto.fit, notes: auto.notes, autoChoice: auto.choice } : null
     }
     return next === fit && notes.length === 0 ? null : { fit: next, notes }
   }
@@ -1085,7 +1084,7 @@ export default function App() {
       }
       if (d && d.status !== 'failed') {
         // As in QUICKSURFACE: the fit is a preview until Create.
-        setExtractPreview({ kind, sigma: d.fit?.sigma ?? null, selection })
+        setExtractPreview({ kind, sigma: d.fit?.sigma ?? null, selection, autoChoice: held?.autoChoice })
         const name = kind[0].toUpperCase() + kind.slice(1)
         useStore.getState().setStatus(`${name} preview${d.fit?.sigma != null ? ` — σ ${boundLength(usePrefs.getState().units).fmt(d.fit.sigma, 4)}` : ''}${held?.notes.length ? ` — ${held.notes.join(', ')}` : ''}. Create to keep it, or pick another type.`)
         sceneRef.current?.setPaintedVertices(selection, EXTRACT_MARK_COLOR)

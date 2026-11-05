@@ -1,3 +1,7 @@
+## 0.0.115
+
+Auto Constrain can hold the first fitted plane to a nearby coordinate plane. The preview shows the applied relation. Picking a manual hold switches off Auto, and enabling Auto reevaluates the selected area.
+
 ## 0.0.114
 
 Desktop Save writes the opened project. Save As chooses a new target. Cancel preserves unsaved work. Save As has a pencil icon, and coordinate alignment and scan preparation have shared original graphics. 3D Sketch and New Freeform now have distinct ribbon icons.
