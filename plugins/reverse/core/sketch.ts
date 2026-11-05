@@ -39,6 +39,9 @@ export interface SketchLine {
   b: Vec2
   /** The slice points the piece was fitted to, or none for free geometry. */
   points?: Vec2[]
+  /** Relative section lengths for brush-fit samples, in the same order as
+   * points. Optional so older, point-counted fits keep their meaning. */
+  pointWeights?: number[]
   /** The scatter of those points, millimetres — the weight the soft data
    *  carries against the constraints. */
   scatter?: number

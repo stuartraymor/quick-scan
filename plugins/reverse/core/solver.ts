@@ -134,6 +134,8 @@ interface Block {
    *  met or not, as any relation, but no row of the constraint Jacobian. */
   bound?: boolean
   eval: (x: Float64Array) => number[]
+  /** Exact derivative where carrier invariance is sensitive to subtraction. */
+  derivative?: (x: Float64Array, parameter: number) => number[]
   /** Takes the block's linearisation again where the solve has got to — a
    *  fitted spline's points finding their feet on the curve as it moved —
    *  and says how far the feet went, in the curve's own parameter. */
@@ -302,7 +304,12 @@ export function solveSketch(sketch: Sketch, options: SolveOptions = {}): SolveRe
       weight: FREE_WEIGHT,
       eval: (xs) => Array.from(init, (v, i) => (xs[at + i] - v) * unit[i]),
     })
-    const points = 'points' in e && e.points && e.points.length > 0 ? thin(e.points) : null
+    // A brush line must retain the preview's objective. Thinning by array
+    // index or dropping section-length weights biases densely sampled areas.
+    // Legacy fits without weights retain their original point-counted model.
+    const weights = e.kind === 'line' && e.pointWeights?.length === e.points?.length &&
+      e.pointWeights?.every((w) => Number.isFinite(w) && w > 0) ? e.pointWeights : null
+    const points = 'points' in e && e.points && e.points.length > 0 ? (weights ? e.points : thin(e.points)) : null
     if (!points || e.kind === 'point') continue
     const scatter = Math.max(('scatter' in e && e.scatter) || 0, 1e-3)
     softCount += points.length
@@ -319,9 +326,35 @@ export function solveSketch(sketch: Sketch, options: SolveOptions = {}): SolveRe
     }
     const o = s.offset
     if (e.kind === 'line') {
+      const totalWeight = weights?.reduce((sum, w) => sum + w, 0) ?? count
+      // Three centred moment residuals give exactly the same weighted sum
+      // of squared orthogonal distances as all samples. This avoids both
+      // density-dependent subsampling and thousands of finite differences.
+      let mx = 0, my = 0, xx = 0, xy = 0, yy = 0
+      if (weights) {
+        for (let i = 0; i < count; i++) { mx += weights[i] / totalWeight * px[i]; my += weights[i] / totalWeight * py[i] }
+        for (let i = 0; i < count; i++) {
+          const u = px[i] - mx, v = py[i] - my, w = weights[i] / totalWeight
+          xx += w * u * u; xy += w * u * v; yy += w * v * v
+        }
+      }
+      const sx = Math.sqrt(xx), cross = sx > 0 ? xy / sx : 0
+      const sy = Math.sqrt(Math.max(0, yy - cross * cross)), rootCount = Math.sqrt(count)
       blocks.push({
         params: range(s),
         weight: 1 / scatter,
+        derivative: weights ? (xs, p) => {
+          const ax = xs[o], ay = xs[o + 1], vx = xs[o + 2] - ax, vy = xs[o + 3] - ay
+          const length = Math.hypot(vx, vy), dx = length > 0 ? vx / length : 1, dy = length > 0 ? vy / length : 0
+          const j = p - o, sign = j < 2 ? -1 : 1
+          const du = length > 0 ? sign * (j % 2 === 0 ? dy * dy : -dx * dy) / length : 0
+          const dv = length > 0 ? sign * (j % 2 === 0 ? -dx * dy : dx * dx) / length : 0
+          return [
+            ((my - ay) * du - (mx - ax) * dv + (j === 0 ? dy : j === 1 ? -dx : 0)) * rootCount,
+            (-dv * sx + du * cross) * rootCount,
+            du * sy * rootCount,
+          ]
+        } : undefined,
         eval: (xs) => {
           const ax = xs[o]
           const ay = xs[o + 1]
@@ -337,6 +370,11 @@ export function solveSketch(sketch: Sketch, options: SolveOptions = {}): SolveRe
           }
           // Signed distance off the carrier: the point against the left
           // normal (−dy, dx).
+          if (weights) return [
+            ((my - ay) * dx - (mx - ax) * dy) * rootCount,
+            (-dy * sx + dx * cross) * rootCount,
+            dx * sy * rootCount,
+          ]
           const out = new Array<number>(count)
           for (let i = 0; i < count; i++) out[i] = (py[i] - ay) * dx - (px[i] - ax) * dy
           return out
@@ -476,14 +514,20 @@ export function solveSketch(sketch: Sketch, options: SolveOptions = {}): SolveRe
         return [p[0] - q[0], p[1] - q[1]]
       })
     } else if (c.kind === 'horizontal') {
+      const fitted = slots.get(c.entity)?.entity
+      const useDirection = fitted?.kind === 'line' && !!fitted.points?.length
       hard(c, [c.entity], (xs) => {
         const l = lineOf(xs, c.entity)
-        return l ? [l.b[1] - l.a[1]] : [0]
+        // Constrain direction, not endpoint separation: an unnormalized
+        // row rewards shortening a slightly tilted fitted line each solve.
+        return l ? [useDirection ? (l.b[1] - l.a[1]) / Math.max(Math.hypot(l.b[0] - l.a[0], l.b[1] - l.a[1]), 1e-12) * L : l.b[1] - l.a[1]] : [0]
       })
     } else if (c.kind === 'vertical') {
+      const fitted = slots.get(c.entity)?.entity
+      const useDirection = fitted?.kind === 'line' && !!fitted.points?.length
       hard(c, [c.entity], (xs) => {
         const l = lineOf(xs, c.entity)
-        return l ? [l.b[0] - l.a[0]] : [0]
+        return l ? [useDirection ? (l.b[0] - l.a[0]) / Math.max(Math.hypot(l.b[0] - l.a[0], l.b[1] - l.a[1]), 1e-12) * L : l.b[0] - l.a[0]] : [0]
       })
     } else if (c.kind === 'parallel') {
       hard(c, [c.a, c.b], (xs) => {
@@ -763,6 +807,7 @@ export function solveSketch(sketch: Sketch, options: SolveOptions = {}): SolveRe
         // of x taken once per iteration and put back after each.
         const J: number[][] = []
         for (const p of cols) {
+          if (b.derivative) { J.push(b.derivative(x, p).map((v) => v * b.weight)); continue }
           const h = 1e-6 * Math.max(1, Math.abs(x[p]))
           xt[p] = x[p] + h
           const rp = b.eval(xt)

@@ -1,3 +1,12 @@
+## 0.0.127
+
+- Restrict the fitted-line direction correction to lines carrying scan samples, preserving the established behavior of free drawn and projected sketches. Supersedes uninstalled 0.0.126 after its projection regression.
+
+## 0.0.126
+
+- Horizontal and vertical constraints no longer shorten fitted line endpoints on repeated editing/solving.
+- Brush Fit Line retains its section-length weights through confirmation and project saves. An exact weighted-moment objective keeps the solver consistent with the preview without subsampling bias.
+
 ## 0.0.125
 
 - Corrected the Fit primitives point-overlay layering so committed black lines and other sketch geometry remain visible while the fitting panel is open. This supersedes the unpublished 0.0.124 candidate, whose installed brush check exposed the overlap.

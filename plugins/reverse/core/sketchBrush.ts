@@ -36,7 +36,7 @@ export function brushedPoints(points: readonly BrushPoint[], from: Vec2, to: Vec
  * from the one counting points. A point with no highlighted neighbour counts
  * as the median spacing.
  */
-function lineByLength(selected: readonly BrushPoint[]): { center: Vec2; dir: Vec2; sigma: number } {
+function lineByLength(selected: readonly BrushPoint[]): { center: Vec2; dir: Vec2; sigma: number; weights: number[] } {
   const at = new Map(selected.map((p) => [`${p.chain}:${p.index}`, p.p]))
   const gaps: number[] = []
   const halves = selected.map((s) => {
@@ -60,7 +60,7 @@ function lineByLength(selected: readonly BrushPoint[]): { center: Vec2; dir: Vec
   if (dir[0] < 0 || (dir[0] === 0 && dir[1] < 0)) dir = [-dir[0], -dir[1]]
   let ss = 0
   for (const s of selected) { const e = -(s.p[0] - mx) * dir[1] + (s.p[1] - my) * dir[0]; ss += e * e }
-  return { center: [mx, my], dir, sigma: Math.sqrt(ss / selected.length) }
+  return { center: [mx, my], dir, sigma: Math.sqrt(ss / selected.length), weights: w }
 }
 
 export function fitBrushPrimitive(kind: BrushPrimitive, selected: readonly BrushPoint[], options: BrushFitOptions): BrushFit {
@@ -90,7 +90,7 @@ export function fitBrushPrimitive(kind: BrushPrimitive, selected: readonly Brush
       // Snapped or not, the line runs through the points' weighted centre.
       const projections = points.map((p) => (p[0] - fit.center[0]) * dir[0] + (p[1] - fit.center[1]) * dir[1])
       const lo = Math.min(...projections), hi = Math.max(...projections)
-      entity = { kind: 'line', a: [fit.center[0] + lo * dir[0], fit.center[1] + lo * dir[1]], b: [fit.center[0] + hi * dir[0], fit.center[1] + hi * dir[1]], points: points.map((p) => [...p]), scatter: Math.max(fit.sigma, 0.001) }
+      entity = { kind: 'line', a: [fit.center[0] + lo * dir[0], fit.center[1] + lo * dir[1]], b: [fit.center[0] + hi * dir[0], fit.center[1] + hi * dir[1]], points: points.map((p) => [...p]), pointWeights: fit.weights, scatter: Math.max(fit.sigma, 0.001) }
     } else if (kind === 'curve') {
       if (new Set(unique.map((p) => p.chain)).size !== 1) return { ok: false, error: 'Fit Curve needs one connected section chain. Highlight one contour at a time.' }
       const orderedPoints = [...unique].sort((a, b) => a.index - b.index)
