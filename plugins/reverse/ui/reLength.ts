@@ -55,6 +55,11 @@ function bareArithmetic(text: string): boolean {
   return r.ok && r.dim === 'free'
 }
 
+/** A sign alone does not turn a numeric entry into a parameter formula. */
+export function isNumericLiteral(text: string): boolean {
+  return SIGNED_NUMBER.test(text.trim())
+}
+
 /** Bare arithmetic kept so that it reads in inches wherever it is evaluated
  *  again: `(1/4) * 1 in`. */
 const inInches = (text: string): string => `(${text}) * 1 in`
@@ -71,7 +76,7 @@ export function readField(text: string, kind: ParameterKind, scope: Scope, units
   const r = evaluateFor(t, kind, scope)
   if (!r.ok) return { ok: false, error: r.error }
   if (kind !== 'length' || units === 'mm') return { ok: true, value: r.value, expr: isPlainNumber(t) ? null : t }
-  if (SIGNED_NUMBER.test(t)) return { ok: true, value: fromDisplay(r.value, units), expr: null }
+  if (isNumericLiteral(t)) return { ok: true, value: fromDisplay(r.value, units), expr: null }
   if (bareArithmetic(t)) return { ok: true, value: fromDisplay(r.value, units), expr: inInches(t) }
   return { ok: true, value: r.value, expr: t }
 }
@@ -81,7 +86,7 @@ export function readField(text: string, kind: ParameterKind, scope: Scope, units
  *  typed. */
 export function parameterText(expression: string, kind: ParameterKind, units: DisplayUnits): string {
   const t = expression.trim()
-  if (kind !== 'length' || units === 'mm' || !SIGNED_NUMBER.test(t)) return expression
+  if (kind !== 'length' || units === 'mm' || !isNumericLiteral(t)) return expression
   return lengthInputText(Number(t.replace(/\s+/g, '')), units)
 }
 
@@ -90,7 +95,7 @@ export function parameterText(expression: string, kind: ParameterKind, units: Di
 export function parameterExpression(typed: string, kind: ParameterKind, units: DisplayUnits): string {
   const t = typed.trim()
   if (kind !== 'length' || units === 'mm' || t === '') return typed
-  if (SIGNED_NUMBER.test(t)) return `${t} in`
+  if (isNumericLiteral(t)) return `${t} in`
   if (bareArithmetic(t)) return inInches(t)
   return typed
 }

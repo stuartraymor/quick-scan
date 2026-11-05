@@ -17,7 +17,7 @@ import { useUnits } from '../../../src/app/useUnits'
 import { unitWord } from '../../../src/core/units'
 import { formatValue, type ParameterKind } from '../core/expression'
 import { useReverse } from '../state/reStore'
-import { fieldText, readField } from './reLength'
+import { fieldText, isNumericLiteral, readField } from './reLength'
 
 /** The id of the datalist of parameter names, rendered once by the
  *  parameter list. */
@@ -79,7 +79,7 @@ export function ExprInput({
     }
     setError(null)
     if (min !== undefined && r.value < min) {
-      if (r.expr) {
+      if (r.expr && !isNumericLiteral(t)) {
         setError('The expression gives a depth below zero.')
         return false
       }

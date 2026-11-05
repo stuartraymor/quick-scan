@@ -1,4 +1,4 @@
-## 0.0.116
+## 0.0.117
 
 Full depth resizes both extrusion sides proportionally. Depth 2 extends behind the sketch and accepts a positive distance. Signed offsets remain available for intervals entirely on one side, and endpoint expressions retain their meaning when reversing direction.
 
