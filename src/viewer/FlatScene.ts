@@ -1534,7 +1534,7 @@ export class FlatScene {
    *  onNoteDrag; a press released in place selects it. The navigator never
    *  sees the press — the label sits above the canvas — so the sheet stays
    *  put under the drag. */
-  setNotes(items: readonly { id: number; text: string; at: Vec2; editing: boolean; className?: string; tip?: string }[]): void {
+  setNotes(items: readonly { id: number; text: string; at: Vec2; editing: boolean; className?: string; tip?: string; iconPath?: string }[]): void {
     if (this.hoveredNote !== null) {
       this.hoveredNote = null
       this.onNoteHover?.(null)
@@ -1551,6 +1551,17 @@ export class FlatScene {
       // would make the hand wait for.
       if (item.tip) div.dataset.tip = item.tip
       div.textContent = item.text.trim() === '' ? 'Text' : item.text
+      if (item.iconPath) {
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+        svg.setAttribute('viewBox', '0 0 24 24')
+        svg.setAttribute('aria-hidden', 'true')
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+        path.setAttribute('d', item.iconPath)
+        svg.append(path)
+        div.replaceChildren(svg)
+        div.setAttribute('aria-label', item.tip ?? item.text)
+        div.setAttribute('role', 'button')
+      }
       if (item.text.trim() === '') div.classList.add('empty')
       const down = (e: PointerEvent) => {
         if (e.button !== 0) return

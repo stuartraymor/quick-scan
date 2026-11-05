@@ -29,7 +29,7 @@ import { shadowPieceCount, shadowSketch } from '../core/shadowPieces'
 import { addConstraint, addEntity, addPolygon, addRectangle, addRectangleCentre, addTurnedRectangle, type Anchor, type AnchorAt, anchorPoint, anchorsOf, arcThrough, axisRelationOf, cloneSketch, type ConstraintInput, entityOf, fixedEntityOf, isDimension, lineDir, patternPieces, relationTakes, removeConstraint, removeEntities, type Sketch, sketchBounds, type SketchEntity, splineJoint, type SketchSpline } from '../core/sketch'
 import { fitSplineToPoints, splineScatter } from '../core/sketchSpline'
 import { levelImage, moveImage, scaleImage } from '../core/sketchImage'
-import { snapHold, type SnapHold, snapLineDrag, snapSketchPoint } from '../core/snap'
+import { lineDragCrossings, snapHold, type SnapHold, snapLineDrag, snapSketchPoint } from '../core/snap'
 import { measureDimension, type Pull } from '../core/solver'
 import { everyRegion, nameFor, remember } from './reFeatureHelpers'
 import { useRePrefs } from './rePrefs'
@@ -45,14 +45,14 @@ type StoreGet = StoreApi<ReState>['getState']
 /** The drag in the hand. `rigid`, for a shape defined in all but its place
  *  (see rigidCluster), is every piece of it as it was when the drag began:
  *  the hand's move carries them all. */
-let sketchDrag: { entity: number; at: AnchorAt | 'body'; start: Vec2; origin: SketchEntity; last: Vec2; snapped: SnapHold | null; pull: Pull[]; begun: boolean; rigid: SketchEntity[] | null; radius: number; guideSnap: 'original' | 'carrier' | null; raw: boolean } | null = null
+let sketchDrag: { entity: number; at: AnchorAt | 'body'; start: Vec2; origin: SketchEntity; last: Vec2; snapped: SnapHold | null; pull: Pull[]; begun: boolean; rigid: SketchEntity[] | null; radius: number; guideSnap: 'original' | 'carrier' | 'intersection' | null; raw: boolean; crossings: Vec2[] } | null = null
 
 /** Transient geometry only: the scene reads the same original carrier and
  *  acquired position used by the real drag. Never persisted into a project. */
-export function sketchDragGuide(): { a: Vec2; b: Vec2; at: Vec2; radius: number; snapped: 'original' | 'carrier' | null } | null {
+export function sketchDragGuide(): { a: Vec2; b: Vec2; at: Vec2; radius: number; snapped: 'original' | 'carrier' | 'intersection' | null; crossings: Vec2[] } | null {
   const drag = sketchDrag
   if (!drag?.begun || drag.raw || drag.origin.kind !== 'line' || (drag.rigid && drag.rigid.length > 1)) return null
-  return { a: drag.origin.a, b: drag.origin.b, at: drag.last, radius: drag.radius, snapped: drag.guideSnap }
+  return { a: drag.origin.a, b: drag.origin.b, at: drag.last, radius: drag.radius, snapped: drag.guideSnap, crossings: drag.crossings }
 }
 
 /** Which chains were fitted when a history snapshot was taken by a fit or a
@@ -590,7 +590,7 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
     // the click is what selects — a selection made here would be the one
     // that click then takes off again.
     const rigid = rigidCluster(d.sketch, handle)
-    sketchDrag = { entity: handle.entity, at: handle.at, start: spot, origin: detached(e), last: spot, snapped: null, pull: [], begun: false, radius, guideSnap: null, raw: false, rigid: rigid ? (JSON.parse(JSON.stringify(rigid.map((id) => entityOf(d.sketch, id)!))) as SketchEntity[]) : null }
+    sketchDrag = { entity: handle.entity, at: handle.at, start: spot, origin: detached(e), last: spot, snapped: null, pull: [], begun: false, radius, guideSnap: null, raw: false, crossings: e.kind === 'line' ? lineDragCrossings(e, d.sketch) : [], rigid: rigid ? (JSON.parse(JSON.stringify(rigid.map((id) => entityOf(d.sketch, id)!))) as SketchEntity[]) : null }
     return true
   },
 
@@ -628,8 +628,8 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
           drag.last = [drag.start[0] + delta[0], drag.start[1] + delta[1]]
         } else {
           const snap = snapSketchPoint(sketch, spot, radius, snapCtx, new Set(drag.rigid.map((x) => x.id)))
-          const original = drag.rigid.length === 1 && drag.origin.kind === 'line' && (drag.at === 'a' || drag.at === 'b') ? snapLineDrag(drag.origin, drag.at, spot, radius, snapCtx.off) : null
-          const useOriginal = original?.kind && (snap.kind === null || snap.kind === 'edge' || snap.kind === 'grid')
+          const original = drag.rigid.length === 1 && drag.origin.kind === 'line' && (drag.at === 'a' || drag.at === 'b') ? snapLineDrag(drag.origin, drag.at, spot, radius, snapCtx.off, drag.crossings) : null
+          const useOriginal = original?.kind && (snap.kind === null || snap.kind === 'edge' || snap.kind === 'grid' || (original.kind === 'intersection' && snap.kind === 'entity'))
           const point = useOriginal ? original.point : snap.point
           delta = sub2(point, anchorPoint(drag.origin, drag.at))
           drag.snapped = useOriginal ? null : snapHold(snap)
@@ -671,11 +671,11 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
         // or it would snap to itself.
         const snap = snapSketchPoint(sketch, spot, radius, snapCtx, new Set([e.id]))
         const original = drag.origin.kind === 'line' && (drag.at === 'a' || drag.at === 'b')
-          ? snapLineDrag(drag.origin, drag.at, spot, radius, snapCtx.off)
+          ? snapLineDrag(drag.origin, drag.at, spot, radius, snapCtx.off, drag.crossings)
           : null
         // Existing real endpoints/curves/datums win over a carrier aid.
         // The original endpoint itself has priority over slice/grid noise.
-        const useOriginal = original?.kind && (snap.kind === null || snap.kind === 'edge' || snap.kind === 'grid')
+        const useOriginal = original?.kind && (snap.kind === null || snap.kind === 'edge' || snap.kind === 'grid' || (original.kind === 'intersection' && snap.kind === 'entity'))
         const point = useOriginal ? original.point : snap.point
         drag.guideSnap = useOriginal ? original.kind : null
         moved = moveAnchor(detached(e), drag.at, point)

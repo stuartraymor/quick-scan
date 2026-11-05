@@ -16,6 +16,7 @@
 import type { Vec2 } from '../../../src/core/flat/types'
 import { len2, sub2 } from '../../../src/core/flat/vec2'
 import { anchorPoint, anchorsOf, axisRelationOf, nearestOnEntity, type Anchor, type Sketch, type SketchLine } from './sketch'
+import { lineIntersection } from './corners'
 import { traceFoot, traceNear, traceOffset, type DatumPlane, type DatumTrace } from './datums'
 
 /** What there is to snap to besides the sketch itself. */
@@ -51,10 +52,17 @@ export function lineIntent(from: Vec2, to: Vec2): 'horizontal' | 'vertical' | nu
  *  constraint. Its endpoint can return to its original position or extend
  *  along its original infinite carrier. Radius is the caller's screen-pixel
  *  reach converted to sheet units, so the acquisition distance follows zoom. */
-export function snapLineDrag(original: SketchLine, at: 'a' | 'b', spot: Vec2, radius: number, off = false): { point: Vec2; kind: 'original' | 'carrier' | null } {
+export function snapLineDrag(original: SketchLine, at: 'a' | 'b', spot: Vec2, radius: number, off = false, crossings: readonly Vec2[] = []): { point: Vec2; kind: 'original' | 'carrier' | 'intersection' | null } {
   if (off || !(radius > 0) || !Number.isFinite(radius)) return { point: spot, kind: null }
   const held = original[at]
   if (len2(sub2(spot, held)) <= radius) return { point: held, kind: 'original' }
+  let nearest: Vec2 | null = null
+  let distance = radius
+  for (const p of crossings) {
+    const d = len2(sub2(spot, p))
+    if (d <= distance) { nearest = p; distance = d }
+  }
+  if (nearest) return { point: nearest, kind: 'intersection' }
   const dx = original.b[0] - original.a[0]
   const dy = original.b[1] - original.a[1]
   const length = Math.hypot(dx, dy)
@@ -62,6 +70,18 @@ export function snapLineDrag(original: SketchLine, at: 'a' | 'b', spot: Vec2, ra
   const t = ((spot[0] - original.a[0]) * dx + (spot[1] - original.a[1]) * dy) / (length * length)
   const foot: Vec2 = [original.a[0] + t * dx, original.a[1] + t * dy]
   return len2(sub2(spot, foot)) <= radius * 0.65 ? { point: foot, kind: 'carrier' } : { point: spot, kind: null }
+}
+
+/** Virtual crossings of the original carrier and other line carriers.
+ * They are positional aids, not permanent relations to nonexistent endpoints. */
+export function lineDragCrossings(original: SketchLine, sketch: Sketch): Vec2[] {
+  const points: Vec2[] = []
+  for (const e of sketch.entities) {
+    if (e.kind !== 'line' || e.id === original.id) continue
+    const p = lineIntersection(original, e)
+    if (p && p.every(Number.isFinite) && !points.some(q => len2(sub2(p, q)) < 1e-8)) points.push(p)
+  }
+  return points
 }
 
 export interface SnapResult {

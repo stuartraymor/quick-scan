@@ -203,7 +203,7 @@ export function splineDraft(d: SketchDraft, closed: boolean): SketchDraft {
   const id = addEntity(d.sketch, { kind: 'spline', pts, ...(closed ? { closed: true } : {}) })
   const e = entityOf(d.sketch, id)
   if (e?.kind === 'spline') (d.snaps ?? []).forEach((hold, i) => hold && i < pts.length && holdAt(d.sketch, { entity: id, at: splineAnchor(e, i) }, hold))
-  return { ...settle({ ...d, ...toolIdle() }, before), selection: [] }
+  return { ...settle({ ...d, ...toolIdle(), tool: 'select' }, before), selection: [id] }
 }
 
 /** The draft with the corner between two lines rounded: the radius

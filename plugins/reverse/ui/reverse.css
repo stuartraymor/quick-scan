@@ -394,9 +394,36 @@
    the piece under it can still be taken hold of there. */
 .viewport-label.note-label.glyph {
   margin: -7px 0 0 6px;
-  padding: 1px 5px;
+  padding: 1px;
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 2px;
+  box-shadow: none;
+  background: color-mix(in srgb, var(--stage) 85%, transparent);
+  color: var(--ink);
   font-size: 11.5px;
   cursor: pointer;
+}
+
+.viewport-label.note-label.glyph svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+.viewport-label.note-label.glyph.editing {
+  color: var(--accent-d);
+  background: var(--accent-soft);
+  outline: 1px solid var(--accent-d);
 }
 
 /* A glyph under the cursor stands out as what a click takes; the pieces it

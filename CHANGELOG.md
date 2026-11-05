@@ -1,3 +1,10 @@
+## 0.0.129 — sketch extension and editing
+
+- Snap line endpoints to crossings of extended carriers, with visible original endpoints and crossing markers. Ctrl bypass and one-step undo preserved.
+- Finished splines become selected and editable immediately.
+- Compact viewport constraint symbols reuse the independent toolbar vectors; existing collision avoidance and hover/select behavior preserved.
+- Local parity batch; GitHub publication remains held for the outstanding Instant Fit comparison.
+
 ## 0.0.127
 
 - Restrict the fitted-line direction correction to lines carrying scan samples, preserving the established behavior of free drawn and projected sketches. Supersedes uninstalled 0.0.126 after its projection regression.

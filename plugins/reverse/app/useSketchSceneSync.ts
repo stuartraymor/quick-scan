@@ -7,6 +7,7 @@
 // The cursor stays out of the store: a drawing tool rubber-bands to it many
 // times a second, and only the sheet needs to know where it is.
 
+import { sketchIconPaths, type SketchCommandIconName } from '../ui/SketchCommandIcon'
 import { useEffect, useRef, type MutableRefObject } from 'react'
 import type { FlatFit, Vec2 } from '../../../src/core/flat/types'
 import { len2, normalize2, sub2 } from '../../../src/core/flat/vec2'
@@ -497,6 +498,11 @@ export function useSketchSceneSync({
     const guide = draft.tool === 'select' ? sketchDragGuide() : null
     if (guide) {
       fits.push(...dragCarrierMarks(guide.a, guide.b, guide.at, guide.radius))
+      // Keep the original endpoints and nearby virtual crossings visible
+      // before acquisition. Restrict feedback to the travelled carrier span.
+      const reach = Math.max(len2(sub2(guide.a, guide.b)), len2(sub2(guide.a, guide.at))) + guide.radius * 5
+      for (const p of [guide.a, guide.b, ...guide.crossings.filter(p => len2(sub2(p, guide.a)) <= reach)])
+        fits.push(...snapMark('entity', p, guide.radius * 0.22))
       if (guide.snapped) fits.push(...snapMark(guide.snapped === 'original' ? 'anchor' : 'entity', guide.at, guide.radius * 0.6))
     }
     view.setCursor(draft.tool === 'select' ? (pick ? 'pointer' : '') : draft.tool === 'dimension' || draft.tool === 'relation' || draft.tool === 'fillet' || draft.tool === 'chamfer' ? 'pointer' : 'crosshair')
@@ -657,18 +663,18 @@ export function useSketchSceneSync({
     // The display preference controls glyphs independently of dimensions.
     // A relation selected in the panel remains visible for editing.
     const showGlyphs = useRePrefs.getState().sketchRelations
-    const notes: { id: number; text: string; at: Vec2; editing: boolean; className?: string; tip?: string }[] = []
+    const notes: { id: number; text: string; at: Vec2; editing: boolean; className?: string; tip?: string; iconPath?: string }[] = []
     for (const c of sketch.constraints) {
       if (isDimension(c)) continue
       if (!showGlyphs && draft.selectedConstraint !== c.id) continue
       const glyph = GLYPHS[c.kind]
       const at = glyphSpot(c, sketch)
-      if (glyph && at) notes.push({ id: c.id, text: glyph, at, editing: draft.selectedConstraint === c.id, className: 'glyph', tip: relationName(c.kind) })
+      if (glyph && at) notes.push({ id: c.id, text: glyph, at, editing: draft.selectedConstraint === c.id, className: 'glyph', tip: relationName(c.kind), iconPath: sketchIconPaths[c.kind as SketchCommandIconName] })
     }
     for (const e of fixedPieces(sketch)) {
       const id = fixId(e.id)
       if (!showGlyphs && draft.selectedConstraint !== id) continue
-      notes.push({ id, text: FIX_GLYPH, at: fixSpot(e), editing: draft.selectedConstraint === id, className: 'glyph', tip: 'Fix' })
+      notes.push({ id, text: FIX_GLYPH, at: fixSpot(e), editing: draft.selectedConstraint === id, className: 'glyph', tip: 'Fix', iconPath: sketchIconPaths.fix })
     }
     view.setNotes(notes)
     pushDimensions()
