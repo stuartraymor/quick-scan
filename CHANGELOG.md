@@ -3,7 +3,7 @@
 - Snap line endpoints to crossings of extended carriers, with visible original endpoints and crossing markers. Ctrl bypass and one-step undo preserved.
 - Finished splines become selected and editable immediately.
 - Compact viewport constraint symbols reuse the independent toolbar vectors; existing collision avoidance and hover/select behavior preserved.
-- Local parity batch; GitHub publication remains held for the outstanding Instant Fit comparison.
+- Same-wall slow/down/up reference repeats agree within 0.001574 mm against a 0.01 mm target. Full workflow parity and historical unmatched-stroke behavior remain under investigation.
 
 ## 0.0.127
 
