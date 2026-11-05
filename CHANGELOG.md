@@ -1,3 +1,9 @@
+## 0.0.132 — Nearby profile corners and Corner Trim placement
+
+- Auto Join can connect nearby open corners across multiple straight pieces in one undo step, preserving existing connections. Multi-piece curves remain under comparison.
+- Corner Trim is the third Edit Sketch Modify command; the existing direct Fillet remains available.
+- Native same-part and installed acceptance pending; full parity remains unfinished.
+
 ## 0.0.131 — two-piece Auto Join and fitted sketch restoration
 
 - Auto Join works without preselection on the tested two-open-piece sketch. Larger sketches still require selecting two pieces; ordering and reference adaptation remain under comparison.

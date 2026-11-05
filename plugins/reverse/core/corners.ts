@@ -273,14 +273,56 @@ export function alreadyJoined(sketch: Sketch, p: Anchor, q: Anchor): boolean {
   )
 }
 
-/** With no preselection, Auto Join can operate directly on a two-piece
- * sketch. Larger sketches retain explicit selection until their ordering
- * and reference-guided join behavior has been verified. */
+/** Explicit two-piece joining also supports the existing arc workflow. */
 export function autoJoinPair(sketch: Sketch, selection: readonly number[]): [SketchEntity, SketchEntity] | null {
   const pieces = selection.length
     ? sketch.entities.filter(e => selection.includes(e.id))
     : sketch.entities.filter(e => !e.construction && endsOf(e).length > 0)
   return pieces.length === 2 ? [pieces[0], pieces[1]] : null
+}
+
+/** Nearby open line corners, independent of creation order. Preserve ends
+ * already used by another piece, including connections outside selection.
+ * Multi-piece arcs/splines remain outside this measured line-profile path.
+ * The quarter-length reach is a conservative Quick Scan safeguard, not a
+ * claim about QUICKSURFACE's undocumented distance threshold. */
+export function autoJoinLinePairs(sketch: Sketch, selection: readonly number[]): [Anchor, Anchor][] {
+  const lines = sketch.entities.filter((e): e is SketchLine => e.kind === 'line' &&
+    !e.construction && !e.fixed && !e.projected && (!selection.length || selection.includes(e.id)))
+  const key = (p: Anchor) => `${p.entity}:${p.at}`
+  const occupied = new Set<string>()
+  for (const c of sketch.constraints) if (c.kind === 'coincident') {
+    occupied.add(key(c.p)); occupied.add(key(c.q))
+  }
+  for (const line of lines) for (const at of endsOf(line)) {
+    const point = anchorPoint(line, at)
+    if (sketch.entities.some(e => e.id !== line.id && !e.construction &&
+      endsOf(e).some(end => len2(sub2(point, anchorPoint(e, end))) <= TOUCH_MM)))
+      occupied.add(key({entity: line.id, at}))
+  }
+  const candidates: {p: Anchor; q: Anchor; cost: number}[] = []
+  for (let i = 0; i < lines.length; i++) for (let j = i + 1; j < lines.length; j++) {
+    const a = lines[i], b = lines[j], meet = lineIntersection(a, b)
+    if (!meet || !meet.every(Number.isFinite)) continue
+    const near = (line: SketchLine): Anchor => ({entity: line.id,
+      at: len2(sub2(line.a, meet)) <= len2(sub2(line.b, meet)) ? 'a' : 'b'})
+    const p = near(a), q = near(b)
+    if (occupied.has(key(p)) || occupied.has(key(q))) continue
+    const da = len2(sub2(anchorPoint(a, p.at), meet)), db = len2(sub2(anchorPoint(b, q.at), meet))
+    const reach = Math.max(CORNER_GAP_MM, Math.min(len2(sub2(a.b,a.a)), len2(sub2(b.b,b.a))) / 4)
+    if (Math.max(da, db) <= reach) candidates.push({p, q, cost: da + db})
+  }
+  candidates.sort((a,b) => a.cost - b.cost || a.p.entity - b.p.entity || a.q.entity - b.q.entity)
+  const pairs: [Anchor, Anchor][] = []
+  for (const {p,q} of candidates) {
+    if (occupied.has(key(p)) || occupied.has(key(q))) continue
+    pairs.push([p,q]); occupied.add(key(p)); occupied.add(key(q))
+  }
+  return pairs
+}
+
+export function canAutoJoin(sketch: Sketch, selection: readonly number[]): boolean {
+  return !!autoJoinPair(sketch, selection) || autoJoinLinePairs(sketch, selection).length > 0
 }
 
 /**

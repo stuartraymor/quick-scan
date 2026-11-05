@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import type { SketchChains } from '../app/useReverseWorkspace'
 import { cloneSketch, entityOf, nearestOnEntity, type ConstraintKind } from '../core/sketch'
-import { autoJoinPair } from '../core/corners'
+import { canAutoJoin } from '../core/corners'
 import { useReverse } from '../state/reStore'
 import { useRePrefs } from '../state/rePrefs'
 import { useSketchBrush } from '../state/sketchBrushStore'
@@ -53,14 +53,14 @@ export function SketchControls({chainsOf}:{chainsOf:()=>SketchChains|null}) {
   <div className="sketch-section-label">Modify</div>
   <div className="sketch-command-row modify" data-test="sketch-edit">
    {key('select','Modify — select and drag sketch entities','sketch-tool-select',()=>tool('select'),active('select'))}
-   {key('join','Auto Join — join two open pieces; select two when the sketch contains more','sketch-join',()=>re.joinSelected(),false,!autoJoinPair(d.sketch,d.selection))}
-   {key('fillet','Fillet','sketch-tool-fillet',()=>{if(d.selection.length===2)re.filletSelected();else tool('fillet')},active('fillet'))}
+   {key('join','Auto Join — join nearby open line corners, or two selected pieces','sketch-join',()=>re.joinSelected(),false,!canAutoJoin(d.sketch,d.selection))}
+   {key('corner','Corner Trim','sketch-sharpen',()=>{tool('select');useSketchProject.getState().setOpen(false);useSketchCornerTrim.getState().setOpen(true)})}
    {key('trim','Trim — paint unwanted spans between intersections','sketch-trim',()=>extra('trim'),presentation.tool==='trim')}
    {key('dimension','Dimensions (D)','sketch-dimension',()=>{presentation.setTool(null);if(has)re.dimensionSelection();else tool('dimension')},active('dimension'))}
    {key('mirror','Mirror selected entities — include a construction line','sketch-mirror',()=>mirrorSketchSelection(),false,!has)}
    {key('duplicate','Duplicate selected entities','sketch-duplicate',()=>setEdit(edit==='duplicate'?null:'duplicate'),edit==='duplicate',!has)}
    {key('offset','Offset selected entities','sketch-offset-entities',()=>setEdit(edit==='offset'?null:'offset'),edit==='offset',!has)}
-   {key('corner','Corner Trim','sketch-sharpen',()=>{tool('select');useSketchProject.getState().setOpen(false);useSketchCornerTrim.getState().setOpen(true)})}
+   {key('fillet','Fillet','sketch-tool-fillet',()=>{if(d.selection.length===2)re.filletSelected();else tool('fillet')},active('fillet'))}
    {key('project','Project other visible sketches','sketch-tool-project',()=>{tool('select');useSketchCornerTrim.getState().setOpen(false);useSketchProject.getState().setOpen(true)})}
   </div>
   {edit&&<div className="sketch-edit-values" data-test="sketch-edit-values">

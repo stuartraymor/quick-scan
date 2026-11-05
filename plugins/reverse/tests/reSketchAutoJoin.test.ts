@@ -2,7 +2,8 @@
 import { beforeEach, expect, it } from 'vitest'
 import { useReverse } from '../state/reStore'
 import { XY } from './reKit'
-import { addConstraint, type SketchLine } from '../core/sketch'
+import { addConstraint, addEntity, type SketchLine } from '../core/sketch'
+import { autoJoinLinePairs, canAutoJoin } from '../core/corners'
 import { solveSketch } from '../core/solver'
 const s = () => useReverse.getState()
 const d = () => s().sketchDraft!
@@ -66,4 +67,52 @@ it('still solves unsatisfied constraints and explicit refits', () => {
   sketch.constraints=[]
   const explicit=solveSketch(sketch)
   expect(explicit.iterations).toBeGreaterThan(0)
+})
+
+it('joins the native three-line profile without disturbing the existing corner or top ends', () => {
+  s().joinSelected()
+  const sketch = d().sketch
+  addEntity(sketch, {kind:'line', a:[98.747143117,-174.992423452], b:[98.747143117,-42.77440059]})
+  const before = structuredClone(sketch), history = d().history.length
+  expect(canAutoJoin(sketch, [])).toBe(true)
+  s().joinSelected()
+  const [h,left,right] = d().sketch.entities as SketchLine[]
+  expect(h.a).toEqual([98.747143117,-181.675616739]); expect(right.a).toEqual(h.a)
+  expect(h.b).toEqual((before.entities[0] as SketchLine).b)
+  expect(left).toEqual(before.entities[1]); expect(right.b).toEqual((before.entities[2] as SketchLine).b)
+  expect(d().history).toHaveLength(history+1)
+  expect(d().sketch.constraints.filter(c=>c.kind==='coincident')).toHaveLength(2)
+  const joined=structuredClone(d().sketch)
+  for(let i=0;i<5;i++) s().joinSelected()
+  expect(d().sketch).toEqual(joined); expect(d().history).toHaveLength(history+1)
+  s().undoSketch(); expect(d().sketch).toEqual(before)
+  s().redoSketch(); expect(d().sketch).toEqual(joined)
+})
+
+it('joins a four-line profile in one undo step regardless of entity order, leaving parallel open ends alone', () => {
+  const sketch=d().sketch
+  sketch.entities=[]; sketch.constraints=[]
+  const lines: Omit<SketchLine,'id'>[] = [
+    {kind:'line',a:[2,0],b:[18,0]}, {kind:'line',a:[20,2],b:[20,18]},
+    {kind:'line',a:[18,20],b:[2,20]}, {kind:'line',a:[0,18],b:[0,2]},
+  ]
+  for (const i of [2,0,3,1]) addEntity(sketch,lines[i])
+  const before=structuredClone(sketch)
+  s().joinSelected()
+  expect(d().sketch.constraints.filter(c=>c.kind==='coincident')).toHaveLength(4)
+  expect(d().report?.ok).toBe(true); expect(d().history).toHaveLength(1)
+  expect(autoJoinLinePairs(d().sketch,[])).toEqual([])
+  s().undoSketch(); expect(d().sketch).toEqual(before)
+})
+
+it('excludes remote, construction, fixed and projected lines from automatic profile joining', () => {
+  const sketch=d().sketch
+  addEntity(sketch,{kind:'line',a:[500,500],b:[500,600]})
+  expect(autoJoinLinePairs(sketch,[])).toHaveLength(1)
+  for(const flag of ['construction','fixed','projected'] as const){
+    const copy=structuredClone(sketch)
+    Object.assign(copy.entities[1],{[flag]:true})
+    expect(autoJoinLinePairs(copy,[])).toEqual([])
+  }
+  expect(autoJoinLinePairs(sketch,[sketch.entities[2].id])).toEqual([])
 })

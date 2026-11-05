@@ -14,7 +14,7 @@ import { usePrefs } from '../../../src/state/prefsStore'
 import { useStore } from '../../../src/state/store'
 import { piecesInBox } from '../core/boxSelect'
 import { letGo, type ShareReport, sharePieces } from '../core/shareFit'
-import { alreadyJoined, autoJoinPair, closeChain, CORNER_GAP_MM, inferCorners, joinEnds, sharpenCorner } from '../core/corners'
+import { alreadyJoined, autoJoinPair, autoJoinLinePairs, closeChain, CORNER_GAP_MM, inferCorners, joinEnds, sharpenCorner } from '../core/corners'
 import { datumTraces, traceNear } from '../core/datums'
 import { dimPlaceAt } from '../core/dimLayout'
 import { detached, moveAnchor, rigidCluster, rotateSketch, translateEntity } from '../core/drag'
@@ -842,7 +842,13 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
       const d = s.sketchDraft
       if (!d) return {}
       const pair = autoJoinPair(d.sketch, d.selection)
-      if (!pair) return {}
+      if (!pair) {
+        const pairs = autoJoinLinePairs(d.sketch, d.selection)
+        if (!pairs.length) return {}
+        const before = cloneSketch(d.sketch)
+        for (const [p,q] of pairs) joinEnds(d.sketch, p, q, Infinity)
+        return { sketchDraft: settle({ ...d }, before, undefined, false, true) }
+      }
       const [a, b] = pair
       const ends = nearestEnds(a, b)
       if (!ends) return { sketchDraft: { ...d, error: 'A circle has no end to join.' } }
