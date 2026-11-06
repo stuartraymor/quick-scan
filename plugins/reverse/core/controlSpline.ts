@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Independent least-squares cubic fitting. Chord-length parameterization and
+// Independent least-squares cubic fitting. Chord-length parameterization
 // initializes the fit; geometric refinement removes parameterization bias.
 // Fixed section-length weights avoid favoring densely tessellated regions.
 import type { Vec2 } from '../../../src/core/flat/types'
@@ -10,10 +10,10 @@ export function validControlSpline(e: { pts?: unknown; controlKnots?: unknown; c
   return !e.closed && e.startDir === undefined && e.endDir === undefined && Array.isArray(p) && p.length >= 4 && p.every((v) => Array.isArray(v) && v.length === 2 && v.every((x) => typeof x === 'number' && Number.isFinite(x))) && Array.isArray(k) && k.length === p.length - 2 && k.every((x, i) => typeof x === 'number' && Number.isFinite(x) && (i === 0 || x > k[i - 1]))
 }
 
-function basis(knots: number[], count: number, t: number): number[] {
+function basis(knots: number[], count: number, t: number, order = 3): number[] {
   let b: number[] = Array.from({ length: knots.length - 1 }, (_, i) => t >= knots[i] && t < knots[i + 1] ? 1 : 0)
   if (t === knots[count]) { b.fill(0); b[count - 1] = 1 }
-  for (let degree = 1; degree <= 3; degree++) {
+  for (let degree = 1; degree <= order; degree++) {
     b = Array.from({ length: b.length - 1 }, (_, i) => {
       const a = knots[i + degree] - knots[i], c = knots[i + degree + 1] - knots[i + 1]
       return (a > 0 ? (t - knots[i]) / a * b[i] : 0) + (c > 0 ? (knots[i + degree + 1] - t) / c * b[i + 1] : 0)
@@ -86,7 +86,7 @@ export function fitControlSpline(points: readonly Vec2[], requestedCount: number
   // A finite iteration cap keeps difficult or noisy selections predictable.
   // QR grows with samples × poles². Cap total refinement work as well as
   // iterations so large handle counts cannot freeze the interactive editor.
-  const iterations = Math.max(1, Math.min(150, Math.floor(5_000_000 / (points.length * count * count))))
+  const iterations = Math.max(1, Math.min(30, Math.floor(5_000_000 / (points.length * count * count))))
   for (let iteration = 0; iteration < iterations && cost > length * length * 1e-24; iteration++) {
     const spans = controlKnots.length - 1
     // Each span is exactly cubic. Cache Horner coefficients so projections
@@ -132,6 +132,53 @@ export function fitControlSpline(points: readonly Vec2[], requestedCount: number
     const improvement = cost - candidateCost
     poles = candidate; params = next; cost = candidateCost
     if (improvement <= cost * 1e-9 + length * length * 1e-24) break
+  }
+
+  // Joint pole/parameter Gauss-Newton refinement. Eliminate each sample's
+  // tangential parameter displacement before solving the normal residual.
+  const n = 2 * (count - 2)
+  let damping = 1e-7
+  const jointIterations = Math.max(1, Math.min(30, Math.floor(1_000_000 / (points.length * n * n))))
+  for (let iteration = 0; iteration < jointIterations && cost > length * length * 1e-24; iteration++) {
+    const data = params.map((t, i) => {
+      const b = basis(knots, count, t), q = value(poles, t)
+      const db = basis(knots.slice(1, -1), count - 1, t, 2)
+      const tangent: Vec2 = [0, 0]
+      for (let j=0;j<count-1;j++) {
+        const scale=3*db[j]/(knots[j+4]-knots[j+1])
+        tangent[0]+=scale*(poles[j+1][0]-poles[j][0]);tangent[1]+=scale*(poles[j+1][1]-poles[j][1])
+      }
+      const speed = Math.hypot(...tangent)
+      const normal: Vec2 = speed>1e-14 ? [-tangent[1]/speed,tangent[0]/speed] : [0,0]
+      const residual: Vec2 = [q[0]-local[i][0],q[1]-local[i][1]]
+      return { b, tangent, normal, residual, speed }
+    })
+    const rows: number[][] = [], rhs: Vec2[] = []
+    for (let i=1;i+1<points.length;i++) {
+      const {b,normal,residual} = data[i], w=weights[i]
+      rows.push(b.slice(1,-1).flatMap(v=>[v*normal[0]*w,v*normal[1]*w]))
+      rhs.push([-(normal[0]*residual[0]+normal[1]*residual[1])*w,0])
+    }
+    for(let j=0;j<n;j++){const row=Array(n).fill(0);row[j]=Math.sqrt(damping);rows.push(row);rhs.push([0,0])}
+    let delta: Vec2[]
+    try { delta=leastSquares(rows,rhs,n) } catch {break}
+    const dt=params.map((_,i)=>{
+      if(!i||i+1===points.length||data[i].speed<1e-14)return 0
+      const {b,tangent,residual,speed}=data[i], r=[...residual]
+      for(let j=1;j<count-1;j++){r[0]+=b[j]*delta[2*(j-1)][0];r[1]+=b[j]*delta[2*(j-1)+1][0]}
+      return -(r[0]*tangent[0]+r[1]*tangent[1])/(speed*speed)
+    })
+    let accepted=false
+    for(let trial=0;trial<15;trial++){
+      const scale=2**(-trial)
+      const next=params.map((t,i)=>t+scale*dt[i])
+      if(next.some((t,i)=>t<0||t>1||(i>0&&t<next[i-1])))continue
+      const candidate=poles.map((p,j):Vec2=>!j||j===count-1?[...p]:[p[0]+scale*delta[2*(j-1)][0],p[1]+scale*delta[2*(j-1)+1][0]])
+      const candidateCost=objective(candidate,next)
+      if(Number.isFinite(candidateCost)&&candidateCost<cost){poles=candidate;params=next;cost=candidateCost;accepted=true;break}
+    }
+    damping=accepted?Math.max(1e-12,damping*.3):damping*10
+    if(damping>1e3)break
   }
   return { pts: [[...first], ...poles.slice(1, -1).map((p): Vec2 => [p[0] + first[0], p[1] + first[1]]), [...last]], controlKnots }
 }

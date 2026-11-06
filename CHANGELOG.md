@@ -1,3 +1,13 @@
+## 0.0.143 — Local candidate; GitHub held
+
+- Include joint cubic fitting and section-topology fixes below, retaining one isolated-sample weight for coordinates represented only by zero-length runs. Prevent rejection of valid separated clusters of repeated vertices.
+
+## 0.0.142 — Uninstalled, superseded
+
+- Refine cubic poles and sample parameters together using damped geometric least squares. Partial-curve ground-truth accuracy improves while fixed endpoints, bounded work and saved definitions are preserved.
+- Preserve section adjacency before merging duplicate coordinates. Repeated vertices no longer falsely break a continuous curve or bias a length-weighted wall fit; actual selection gaps remain separate.
+- Additional native near-end Auto Join comparison remains a no-op, with no speculative spline deformation added. Native floor/wall fitting differences and general spline adaptation remain under investigation.
+
 ## 0.0.141
 
 - Defer curve preview fitting until painting pauses, retaining immediate brush selection feedback and a fresh full-data fit on release or Apply. This prevents the more accurate fit from running on every pointer sample.

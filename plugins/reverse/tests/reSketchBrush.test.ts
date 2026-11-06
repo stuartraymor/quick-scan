@@ -42,6 +42,41 @@ const transform = (p: Vec2): Vec2 => [25 + p[0] * Math.cos(0.37) - p[1] * Math.s
 const polygonPoints = (corners: Vec2[]): Vec2[] => corners.flatMap((a, j) => Array.from({ length: 30 }, (_, i): Vec2 => { const b = corners[(j + 1) % corners.length], u = i / 30; return transform([a[0] * (1 - u) + b[0] * u, a[1] * (1 - u) + b[1] * u]) }))
 
 describe('section-point brush geometry', () => {
+  it('keeps a continuous curve selectable across repeated section vertices', () => {
+    const data=Array.from({length:41},(_,i):Vec2=>[i/2,.02*Math.sin(i*.2)])
+    const baseline=fitBrushPrimitive('curve',sample(data),options)
+    const repeated=sample(data.flatMap((p,i)=>i===0||i===20||i===40?[p,p,p]:[p]))
+    const fitted=fitBrushPrimitive('curve',[...repeated].reverse(),options)
+    expect(fitted).toEqual(baseline)
+    expect(fitBrushPrimitive('curve',repeated.filter(p=>p.index!==10),options).ok).toBe(false)
+    const overlap=brushPoints([data,data])
+    expect(fitBrushPrimitive('curve',overlap,options).ok).toBe(false)
+  })
+  it('retains length-weighted wall geometry when section vertices repeat', () => {
+    const data=Array.from({length:21},(_,i):Vec2=>[98.7+.03*Math.sin(i*.4),i*5])
+    const original=fitBrushPrimitive('line',sample(data),options)
+    const repeated=sample(data.flatMap((p,i)=>i===0||i===10||i===20?[p,p,p]:[p]))
+    const fitted=fitBrushPrimitive('line',[...repeated,...repeated],options)
+    if(!original.ok||original.entity.kind!=='line'||!fitted.ok||fitted.entity.kind!=='line')throw Error('Expected fitted lines')
+    expect(fitted.entity.a).toEqual(original.entity.a)
+    expect(fitted.entity.b).toEqual(original.entity.b)
+    expect(fitted.entity.points).toEqual(original.entity.points)
+    expect(fitted.entity.pointWeights).toEqual(original.entity.pointWeights)
+    expect(fitted.maxDeviation).toEqual(original.maxDeviation)
+  })
+  it('does not assign segment-length weight across an actual selection gap', () => {
+    const selected=sample([[0,0],[0,1],[2,50],[2,99],[2,100]]).filter(p=>p.index!==2)
+    const fit=fitBrushPrimitive('line',selected,options)
+    if(!fit.ok||fit.entity.kind!=='line')throw Error('Expected fitted line')
+    expect(fit.entity.pointWeights).toEqual([.5,.5,.5,.5])
+  })
+  it('keeps isolated zero-length runs usable as distinct line samples', () => {
+    const isolated=brushPoints([[[0,0]],[[2,5]]])
+    const repeated=brushPoints([[[0,0],[0,0]],[[2,5],[2,5],[2,5]]])
+    const baseline=fitBrushPrimitive('line',isolated,options)
+    expect(baseline.ok).toBe(true)
+    expect(fitBrushPrimitive('line',repeated,options)).toEqual(baseline)
+  })
   it('selects the whole swept circle without skipping fast pointer movement', () => {
     const pts = sample([[0, 0], [5, 0.8], [10, 0], [5, 1.1], [-1.1, 0]])
     expect(brushedPoints(pts, [0, 0], [10, 0], 1).map((p) => p.index)).toEqual([0, 1, 2])

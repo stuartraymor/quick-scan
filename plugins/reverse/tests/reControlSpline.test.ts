@@ -18,6 +18,17 @@ const curve: SketchSpline = { id: 1, kind: 'spline', pts: [[0, 0], [1, 4], [4, 6
 const dist = (a: number[], b: number[]) => Math.hypot(a[0] - b[0], a[1] - b[1])
 describe('geometric parameter refinement', () => {
   const truth={poles:[[0,0],[0,25],[40,-20],[50,0]] as Vec2[],knots:[0,1],mults:[4,4]}
+  it.each([false,true])('recovers a partial cubic with exact endpoints (transformed=%s)', transformed => {
+    const map=([x,y]:Vec2):Vec2=>transformed?[1e6+.6*x-.8*y,-2e6+.8*x+.6*y]:[x,y]
+    const point=(u:number)=>map(bsplineAt(truth,.15+.65*u) as Vec2)
+    const points=Array.from({length:161},(_,i)=>point((i/160)**1.3))
+    const fit=fitControlSpline(points,4),curve=splineCurve(fit)
+    expect(fit.pts[0]).toEqual(points[0]);expect(fit.pts.at(-1)).toEqual(points.at(-1))
+    // Dense independent truth parameters, not just the fitted samples.
+    expect(Math.max(...Array.from({length:301},(_,i)=>nearestOnSpline(curve,point(i/300),32).dist))).toBeLessThan(1e-5)
+    const reverse=splineCurve(fitControlSpline([...points].reverse(),4))
+    expect(Math.max(...points.map(p=>nearestOnSpline(reverse,p,32).dist))).toBeLessThan(1e-5)
+  })
   it.each([1,1.3])('fits an asymmetric cubic at sampling exponent %s without chord-length bias', (power) => {
     const points=Array.from({length:161},(_,i)=>bsplineAt(truth,(i/160)**power) as Vec2)
     const fit=fitControlSpline(points,4), curve=splineCurve(fit)

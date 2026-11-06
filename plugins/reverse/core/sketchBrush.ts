@@ -37,34 +37,45 @@ export function brushedPoints(points: readonly BrushPoint[], from: Vec2, to: Vec
  * from the one counting points. A point with no highlighted neighbour counts
  * as the median spacing.
  */
-function lineByLength(selected: readonly BrushPoint[]): { center: Vec2; dir: Vec2; weights: number[] } {
+function lineByLength(selected: readonly BrushPoint[], unique: readonly BrushPoint[]): { center: Vec2; dir: Vec2; weights: number[] } {
   const at = new Map(selected.map((p) => [`${p.chain}:${p.index}`, p.p]))
   const gaps: number[] = []
   const halves = selected.map((s) => {
     let sum = 0, sides = 0
     for (const d of [-1, 1]) {
       const q = at.get(`${s.chain}:${s.index + d}`)
-      if (q) { const g = Math.hypot(q[0] - s.p[0], q[1] - s.p[1]); sum += g / 2; sides++; gaps.push(g) }
+      if (q) { const g = Math.hypot(q[0] - s.p[0], q[1] - s.p[1]); sum += g / 2; sides++; if (g > 0) gaps.push(g) }
     }
     return sides ? sum : NaN
   })
   gaps.sort((a, b) => a - b)
   const lone = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 1
-  const w = halves.map((h) => (Number.isFinite(h) && h > 0 ? h : lone))
+  // Compute adjacency BEFORE merging coordinates. Repeated section vertices
+  // contribute zero-length edges, not artificial gaps or extra median weights.
+  const combined = new Map<string, number>()
+  selected.forEach((s, i) => {
+    const key = `${s.p[0]}:${s.p[1]}`
+    combined.set(key, (combined.get(key) ?? 0) + (Number.isFinite(halves[i]) ? halves[i] : lone))
+  })
+  // A coordinate represented only by zero-length runs is still an isolated
+  // sample. Apply the fallback once per coordinate, not per repeated vertex.
+  const w = unique.map(s => combined.get(`${s.p[0]}:${s.p[1]}`) || lone)
+  const origin = unique[0].p
   let sw = 0, mx = 0, my = 0
-  selected.forEach((s, i) => { sw += w[i]; mx += w[i] * s.p[0]; my += w[i] * s.p[1] })
+  unique.forEach((s, i) => { sw += w[i]; mx += w[i] * (s.p[0] - origin[0]); my += w[i] * (s.p[1] - origin[1]) })
   mx /= sw; my /= sw
   let sxx = 0, sxy = 0, syy = 0
-  selected.forEach((s, i) => { const x = s.p[0] - mx, y = s.p[1] - my; sxx += w[i] * x * x; sxy += w[i] * x * y; syy += w[i] * y * y })
+  unique.forEach((s, i) => { const x = s.p[0] - origin[0] - mx, y = s.p[1] - origin[1] - my; sxx += w[i] * x * x; sxy += w[i] * x * y; syy += w[i] * y * y })
   const theta = 0.5 * Math.atan2(2 * sxy, sxx - syy)
   let dir: Vec2 = [Math.cos(theta), Math.sin(theta)]
   if (dir[0] < 0 || (dir[0] === 0 && dir[1] < 0)) dir = [-dir[0], -dir[1]]
-  return { center: [mx, my], dir, weights: w }
+  return { center: [mx + origin[0], my + origin[1]], dir, weights: w }
 }
 
 export function fitBrushPrimitive(kind: BrushPrimitive, selected: readonly BrushPoint[], options: BrushFitOptions): BrushFit {
   if (!(options.tolerance > 0) || !Number.isFinite(options.tolerance)) return { ok: false, error: 'Target tolerance must be greater than zero.' }
-  const unique = [...new Map(selected.map((p) => [`${p.p[0]}:${p.p[1]}`, p])).values()]
+  const identities = [...new Map(selected.map((p) => [`${p.chain}:${p.index}`, p])).values()]
+  const unique = [...new Map(identities.map((p) => [`${p.p[0]}:${p.p[1]}`, p])).values()]
   const points = unique.map((p) => p.p)
   const min = kind === 'line' ? 2 : kind === 'curve' ? 4 : 3
   if (points.length < min) return { ok: false, error: `Highlight at least ${min} distinct section points to fit ${kind === 'curve' ? 'a curve' : `a ${kind}`}.` }
@@ -80,7 +91,7 @@ export function fitBrushPrimitive(kind: BrushPrimitive, selected: readonly Brush
   try {
     if (kind === 'line') {
       fitLinePoints(points) // its checks and messages for degenerate points
-      const fit = lineByLength(unique)
+      const fit = lineByLength(identities, unique)
       const angle = Math.atan2(fit.dir[1], fit.dir[0])
       const limit = Math.max(0, Math.min(45, options.axisDegrees)) * Math.PI / 180
       let dir = fit.dir
@@ -94,10 +105,12 @@ export function fitBrushPrimitive(kind: BrushPrimitive, selected: readonly Brush
       const sumSquared = points.reduce((sum, p) => sum + (-(p[0] - fit.center[0]) * dir[1] + (p[1] - fit.center[1]) * dir[0]) ** 2, 0)
       entity = { kind: 'line', a: [fit.center[0] + lo * dir[0], fit.center[1] + lo * dir[1]], b: [fit.center[0] + hi * dir[0], fit.center[1] + hi * dir[1]], points: points.map((p) => [...p]), pointWeights: fit.weights, scatter: Math.max(Math.sqrt(sumSquared / points.length), 0.001) }
     } else if (kind === 'curve') {
-      if (new Set(unique.map((p) => p.chain)).size !== 1) return { ok: false, error: 'Fit Curve needs one connected section chain. Highlight one contour at a time.' }
-      const orderedPoints = [...unique].sort((a, b) => a.index - b.index)
+      if (new Set(identities.map((p) => p.chain)).size !== 1) return { ok: false, error: 'Fit Curve needs one connected section chain. Highlight one contour at a time.' }
+      const orderedPoints = [...identities].sort((a, b) => a.index - b.index)
       if (orderedPoints.some((p, i) => i > 0 && p.index > orderedPoints[i - 1].index + 1)) return { ok: false, error: 'Fit Curve needs a continuous highlighted run. Fill the gaps between the selected points.' }
-      const ordered = orderedPoints.map((p) => p.p)
+      // Zero-length edges are continuous. Collapse only adjacent duplicates
+      // after checking the original indices; retain nonadjacent revisits.
+      const ordered = orderedPoints.filter((p, i) => !i || p.p[0] !== orderedPoints[i - 1].p[0] || p.p[1] !== orderedPoints[i - 1].p[1]).map((p) => p.p)
       const count = Math.max(4, Math.min(64, Math.round(options.curvePoints)))
       const curve = fitControlSpline(ordered, count)
       const data = ordered.map((p): Vec2 => [...p])

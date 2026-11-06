@@ -9,9 +9,10 @@ const s = () => useReverse.getState()
 const d = () => s().sketchDraft!
 it('leaves crossing fitted curves unchanged rather than pulling their endpoints together', () => {
   // Native .139 IGES is unchanged for both a wide crossing and an endpoint
-  // snapped to an interior pole. Neither is a coincident curve endpoint.
+  // snapped to an interior pole. .142 adds a line just beyond the curve's
+  // start with its end below the carrier. None is a coincident curve end.
   const poles: [number,number][] = [[-60.945846528,-132.166333121],[-56.860267162,-128.645572662],[-55.990977645,-132.159474119],[-55.961908795,-132.170331806],[56.438040039,-132.161204655],[57.543114758,-132.148046239],[59.507684329,-132.155053225],[60.211099483,-132.15318324]]
-  for(const [x,y] of [[-50.576823838,-144.771114349],[-55.990977645,-132.159474119]]) for(const selected of [true,false]) for(const angle of [0,.7]) {
+  for(const [x,y] of [[-50.576823838,-144.771114349],[-55.990977645,-132.159474119],[-61.994314671,-139.946620941]]) for(const selected of [true,false]) for(const angle of [0,.7]) {
     const map=([px,py]:number[]):[number,number]=>[1e4+px*Math.cos(angle)-py*Math.sin(angle),-2e4+px*Math.sin(angle)+py*Math.cos(angle)]
     s().startSketch({kind:'world',axis:'z',offset:0},XY,[
       {kind:'spline',pts:poles.map(map),controlKnots:[0,.2,.4,.6,.8,1]},
