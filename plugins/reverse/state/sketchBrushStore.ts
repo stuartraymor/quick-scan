@@ -54,10 +54,10 @@ export const useSketchBrush = create<SketchBrushState>()((set, get) => {
       cancelFit()
       const kind = get().primitive
       set({ selected, selectionOverflow: false })
-      // Closed-shape optimization waits until a stroke pauses; painting
+      // Curve and closed-shape optimization wait until a stroke pauses; painting
       // thousands of points must remain responsive. Release/Apply always
       // performs a fresh full-data fit synchronously before committing.
-      if (kind === 'rectangle' || kind === 'slot' || kind === 'hexagon') {
+      if (kind === 'curve' || kind === 'rectangle' || kind === 'slot' || kind === 'hexagon') {
         set({ preview: null, message: null })
         fitTimer = setTimeout(preview, 120)
       } else preview()

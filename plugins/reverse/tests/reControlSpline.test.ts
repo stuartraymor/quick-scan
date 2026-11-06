@@ -16,6 +16,34 @@ import { ReKernel } from '../core/kernel'
 
 const curve: SketchSpline = { id: 1, kind: 'spline', pts: [[0, 0], [1, 4], [4, 6], [8, -2], [12, 3], [16, 7], [20, 2], [24, 0]], controlKnots: [0, 0.08, 0.3, 0.6, 0.85, 1] }
 const dist = (a: number[], b: number[]) => Math.hypot(a[0] - b[0], a[1] - b[1])
+describe('geometric parameter refinement', () => {
+  const truth={poles:[[0,0],[0,25],[40,-20],[50,0]] as Vec2[],knots:[0,1],mults:[4,4]}
+  it.each([1,1.3])('fits an asymmetric cubic at sampling exponent %s without chord-length bias', (power) => {
+    const points=Array.from({length:161},(_,i)=>bsplineAt(truth,(i/160)**power) as Vec2)
+    const fit=fitControlSpline(points,4), curve=splineCurve(fit)
+    expect(fit.pts[0]).toEqual(points[0]);expect(fit.pts.at(-1)).toEqual(points.at(-1))
+    expect(Math.max(...points.map(p=>nearestOnSpline(curve,p,32).dist))).toBeLessThan(.002)
+    expect(Math.max(...Array.from({length:301},(_,i)=>nearestOnSpline(curve,bsplineAt(truth,i/300) as Vec2,32).dist))).toBeLessThan(.002)
+    expect(fitControlSpline(points,4)).toEqual(fit)
+  })
+  it('preserves curved fitting accuracy after rotation and a large translation', () => {
+    const map=([x,y]:Vec2):Vec2=>[1e6+.6*x-.8*y,-2e6+.8*x+.6*y]
+    const points=Array.from({length:161},(_,i)=>map(bsplineAt(truth,(i/160)**1.3) as Vec2))
+    const fit=fitControlSpline(points,4),curve=splineCurve(fit)
+    expect(Math.max(...points.map(p=>nearestOnSpline(curve,p,32).dist))).toBeLessThan(.002)
+    expect(fit.pts[0]).toEqual(points[0]);expect(fit.pts.at(-1)).toEqual(points.at(-1))
+  })
+  it('retains accuracy when samples are duplicated or densified', () => {
+    const sparse=Array.from({length:161},(_,i)=>bsplineAt(truth,(i/160)**1.3) as Vec2)
+    const duplicate=sparse.flatMap((p,i)=>i%3?[p]:[p,p,p])
+    const dense=Array.from({length:1001},(_,i)=>bsplineAt(truth,(i/1000)**1.3) as Vec2)
+    const baseline=fitControlSpline(sparse,4)
+    const repeated=fitControlSpline(duplicate,4)
+    for(let i=0;i<4;i++)expect(dist(baseline.pts[i],repeated.pts[i])).toBeLessThan(1e-8)
+    const curve=splineCurve(fitControlSpline(dense,4))
+    expect(Math.max(...sparse.map(p=>nearestOnSpline(curve,p,32).dist))).toBeLessThan(.002)
+  })
+})
 const definition = (e: SketchSpline) => ({ poles: e.pts, knots: e.controlKnots!, mults: e.controlKnots!.map((_, i, k) => i === 0 || i === k.length - 1 ? 4 : 1) })
 // Follow application import order, as reSketchEditIds does for the command cycle.
 beforeAll(async () => { await import('../plugin') }, 60_000)

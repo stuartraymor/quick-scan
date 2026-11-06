@@ -1,3 +1,19 @@
+## 0.0.141
+
+- Defer curve preview fitting until painting pauses, retaining immediate brush selection feedback and a fresh full-data fit on release or Apply. This prevents the more accurate fit from running on every pointer sample.
+- Includes crossing-curve Auto Join protection, geometric parameter refinement and the high-pole work cap. Native fitting differences and partial-curve convergence remain open. GitHub held.
+
+## 0.0.140 — Uninstalled candidate
+
+- Supersede the uninstalled 0.0.139 candidate with a computational work cap on cubic refinement; high control-point counts no longer run the entire refinement budget on the UI thread.
+- Includes the crossing fitted-curve Auto Join protection and geometric fitting correction below. Known cubic maximum error is 0.000466 mm; Basic part overlap remains 0.018843 mm. Partial-curve convergence and native fitting differences remain unresolved; GitHub held.
+
+## 0.0.139 — Uninstalled candidate
+
+- Prevent Auto Join from forcing a line and fitted cubic to a midpoint when their endpoints are separate, including the observed crossing and interior-pole cases. Coincident endpoints and analytic line/arc joining remain supported.
+- Refine cubic fitting parameters against geometric residuals with fixed endpoints and section weights, bounded iterations, monotone acceptance and rank-loss fallback. Existing saved curves are not refitted on opening.
+- Known cubic maximum error improves from 1.776595 mm to 0.000466 mm. Basic part/native overlap remains about 0.018843 mm, above the 0.01 mm criterion; the earlier wall difference and general spline-adaptive joining remain open. Rejected before installation for excessive high-pole fitting cost. GitHub held.
+
 ## 0.0.138
 
 - Auto Join rejects fitted cubic/line pairs whose entire control hull lies to one side of the line carrier, preventing forced endpoint deformation in the measured Basic part gap.

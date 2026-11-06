@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Independent least-squares cubic fitting. Chord-length parameterization and
-// section-length weights prevent tessellation density becoming a fit weight.
+// initializes the fit; geometric refinement removes parameterization bias.
+// Fixed section-length weights avoid favoring densely tessellated regions.
 import type { Vec2 } from '../../../src/core/flat/types'
 
 export function validControlSpline(e: { pts?: unknown; controlKnots?: unknown; closed?: unknown; startDir?: unknown; endDir?: unknown }): boolean {
@@ -51,15 +52,86 @@ export function fitControlSpline(points: readonly Vec2[], requestedCount: number
   for (let i = 1; i < points.length; i++) distances.push(distances[i - 1] + Math.hypot(points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1]))
   const length = distances.at(-1)!
   if (!(length > 1e-10)) throw new Error('Those points do not span a curve.')
-  const params = distances.map((d) => d / length)
+  let params = distances.map((d) => d / length)
   const controlKnots = Array.from({ length: count - 2 }, (_, i) => i / (count - 3))
   const knots = [0, 0, 0, ...controlKnots, 1, 1, 1]
-  const first = points[0], last = points.at(-1)!, rows: number[][] = [], rhs: Vec2[] = []
-  for (let i = 1; i + 1 < points.length; i++) {
-    const b = basis(knots, count, params[i]), w = Math.sqrt((params[i + 1] - params[i - 1]) / 2)
-    rows.push(b.slice(1, -1).map((v) => v * w))
-    rhs.push([0, 1].map((d) => ((points[i][d] - first[d]) - b[count - 1] * (last[d] - first[d])) * w) as Vec2)
+  const first = points[0], last = points.at(-1)!
+  // Keep all optimization in a local frame, including polynomial evaluation.
+  const local = points.map((p): Vec2 => [p[0] - first[0], p[1] - first[1]])
+  const weights = params.map((_, i) => i > 0 && i + 1 < params.length ? Math.sqrt((params[i + 1] - params[i - 1]) / 2) : 0)
+  const solve = (ts: number[]): Vec2[] => {
+    const rows: number[][] = [], rhs: Vec2[] = []
+    for (let i = 1; i + 1 < points.length; i++) {
+      const b = basis(knots, count, ts[i]), w = weights[i]
+      rows.push(b.slice(1, -1).map(v => v * w))
+      rhs.push([0, 1].map(d => (local[i][d] - b[count - 1] * local.at(-1)![d]) * w) as Vec2)
+    }
+    return [[0, 0], ...leastSquares(rows, rhs, count - 2), [...local.at(-1)!]]
   }
-  const inner = leastSquares(rows, rhs, count - 2)
-  return { pts: [[...first], ...inner.map((p): Vec2 => [p[0] + first[0], p[1] + first[1]]), [...last]], controlKnots }
+  const value = (poles: Vec2[], t: number): Vec2 => {
+    const b = basis(knots, count, t)
+    return [0, 1].map(d => poles.reduce((sum, p, j) => sum + p[d] * b[j], 0)) as Vec2
+  }
+  const objective = (poles: Vec2[], ts: number[]): number => {
+    let sum = 0
+    for (let i = 1; i + 1 < points.length; i++) {
+      const p = value(poles, ts[i])
+      sum += weights[i] ** 2 * ((p[0] - local[i][0]) ** 2 + (p[1] - local[i][1]) ** 2)
+    }
+    return sum
+  }
+  let poles = solve(params), cost = objective(poles, params)
+  // Alternating bounded Newton projections and weighted QR. Each accepted
+  // step reduces the SAME objective; sample weights and endpoints stay fixed.
+  // A finite iteration cap keeps difficult or noisy selections predictable.
+  // QR grows with samples × poles². Cap total refinement work as well as
+  // iterations so large handle counts cannot freeze the interactive editor.
+  const iterations = Math.max(1, Math.min(150, Math.floor(5_000_000 / (points.length * count * count))))
+  for (let iteration = 0; iteration < iterations && cost > length * length * 1e-24; iteration++) {
+    const spans = controlKnots.length - 1
+    // Each span is exactly cubic. Cache Horner coefficients so projections
+    // and derivatives need no repeated B-spline basis construction.
+    const polynomial = Array.from({ length: spans }, (_, j) => {
+      const v = Array.from({ length: 4 }, (_, i) => value(poles, (j + i / 3) / spans))
+      return [0, 1].map(d => {
+        const z = v[0][d], a = v[1][d] - z, b = v[2][d] - z, c = v[3][d] - z
+        return [4.5 * (c - 3 * b + 3 * a), 4.5 * (4 * b - 5 * a - c), 9 * a - 4.5 * b + c, z]
+      })
+    })
+    const evaluate = (t: number) => {
+      const j = Math.min(spans - 1, Math.floor(t * spans)), u = t * spans - j
+      return polynomial[j].map(([a, b, c, d]) => [((a * u + b) * u + c) * u + d, (3 * a * u + 2 * b) * u + c, 6 * a * u + 2 * b])
+    }
+    const next = [...params]
+    for (let i = 1; i + 1 < points.length; i++) {
+      const v = evaluate(params[i]), ex = v[0][0] - local[i][0], ey = v[1][0] - local[i][1]
+      const gradient = ex * v[0][1] + ey * v[1][1]
+      const hessian = v[0][1] ** 2 + v[1][1] ** 2 + ex * v[0][2] + ey * v[1][2]
+      if (!(hessian > 0)) continue
+      let delta = -gradient / hessian / spans
+      for (let trial = 0; trial < 8; trial++) {
+        // Bound movement by span size, not sample spacing: densification or
+        // duplicate samples must not artificially slow geometric refinement.
+        const t = Math.max(0, Math.min(1, params[i] + Math.max(-0.5 / spans, Math.min(0.5 / spans, delta))))
+        const q = evaluate(t)
+        if ((q[0][0] - local[i][0]) ** 2 + (q[1][0] - local[i][1]) ** 2 < ex * ex + ey * ey) { next[i] = t; break }
+        delta *= 0.5
+      }
+    }
+    // Backtrack the whole update if independently projected samples cross.
+    // Equal parameters (duplicate data) remain allowed and ordered.
+    const unordered = () => next.some((t, i) => i > 0 && t < next[i - 1])
+    for (let trial = 0; trial < 20 && unordered(); trial++) {
+      for (let i = 1; i + 1 < next.length; i++) next[i] = (next[i] + params[i]) / 2
+    }
+    if (unordered()) break
+    let candidate: Vec2[]
+    try { candidate = solve(next) } catch { break } // Retain the last valid fit on rank loss.
+    const candidateCost = objective(candidate, next)
+    if (!Number.isFinite(candidateCost) || candidateCost >= cost) break
+    const improvement = cost - candidateCost
+    poles = candidate; params = next; cost = candidateCost
+    if (improvement <= cost * 1e-9 + length * length * 1e-24) break
+  }
+  return { pts: [[...first], ...poles.slice(1, -1).map((p): Vec2 => [p[0] + first[0], p[1] + first[1]]), [...last]], controlKnots }
 }

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { brushPoints, brushedPoints, fitBrushPrimitive, sketchWithBrushFit } from '../core/sketchBrush'
 import { addConstraint, addEntity, emptySketch, type SketchLine } from '../core/sketch'
 import { fitBrushClosedShape } from '../core/sketchBrushShapes'
@@ -9,6 +9,33 @@ import { useReverse } from '../state/reStore'
 import { XY } from './reKit'
 
 const options = { tolerance: 0.1, axisDegrees: 1, curvePoints: 8 }
+it('keeps curve painting immediate and commits the latest full selection before its preview timer', () => {
+  vi.useFakeTimers()
+  try {
+    useReverse.getState().startSketch({kind:'world',axis:'z',offset:0},XY,[])
+    const brush=useSketchBrush.getState()
+    brush.setOpen(true);brush.setPrimitive('curve')
+    const points=brushPoints([Array.from({length:51},(_,i):Vec2=>[i/5,Math.sin(i/10)])])
+    brush.setSelected(points.slice(0,25))
+    expect(useSketchBrush.getState().preview).toBeNull()
+    expect(useSketchBrush.getState().selected).toHaveLength(25)
+    vi.advanceTimersByTime(60)
+    brush.setSelected(points)
+    expect(useSketchBrush.getState().preview).toBeNull()
+    expect(brush.apply()).toBe(true)
+    const before=structuredClone(useReverse.getState().sketchDraft!.sketch)
+    expect(before.entities[0]).toMatchObject({kind:'spline',points:points.map(p=>p.p)})
+    vi.advanceTimersByTime(500)
+    expect(useReverse.getState().sketchDraft!.sketch).toEqual(before)
+    expect(useSketchBrush.getState().preview).toBeNull()
+    brush.setSelected(points)
+    vi.advanceTimersByTime(120)
+    expect(useSketchBrush.getState().preview?.ok).toBe(true)
+    brush.setSelected(points.slice(0,25));brush.clear()
+    vi.advanceTimersByTime(500)
+    expect(useSketchBrush.getState().preview).toBeNull()
+  } finally { useSketchBrush.getState().setOpen(false);vi.useRealTimers() }
+})
 const sample = (points: Vec2[]) => brushPoints([points])
 const arc = (start = 0, sweep = Math.PI / 2, count = 50): Vec2[] => Array.from({ length: count }, (_, i) => { const a = start + sweep * i / (count - 1); return [3 + 10 * Math.cos(a), -2 + 10 * Math.sin(a)] })
 const transform = (p: Vec2): Vec2 => [25 + p[0] * Math.cos(0.37) - p[1] * Math.sin(0.37), -18 + p[0] * Math.sin(0.37) + p[1] * Math.cos(0.37)]

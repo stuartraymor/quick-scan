@@ -278,20 +278,17 @@ export function alreadyJoined(sketch: Sketch, p: Anchor, q: Anchor): boolean {
   )
 }
 
-/** A clamped cubic lies within its control hull. If every pole is strictly
- * on the same side of a line carrier, there is no intersection to join.
- * Do not manufacture one by tilting the line and pulling a fitted pole to
- * their midpoint. This conservative rejection does not prescribe spline
- * extrapolation or claim that every hull crossing is a curve crossing. */
-function separatedControlCurve(a: SketchEntity, b: SketchEntity): boolean {
+/** Observed fitted line/cubic joins leave both separated and crossing
+ * carriers unchanged. A crossing inside a curve is not a shared endpoint.
+ * Until a carrier-preserving curve join is supported, do not send these
+ * pairs through the legacy midpoint/constraint fallback: it bends the fit.
+ * Keep existing endpoint coincidence support, without moving the carrier. */
+function unsupportedControlCurveJoin(a: SketchEntity, b: SketchEntity): boolean {
   const line = a.kind === 'line' ? a : b.kind === 'line' ? b : null
   const curve = a.kind === 'spline' ? a : b.kind === 'spline' ? b : null
   if (!line || !curve?.controlKnots || curve.closed) return false
-  const direction = normalize2(sub2(line.b, line.a))
-  if (!direction) return true
-  const distances = curve.pts.map(p => cross2(direction, sub2(p, line.a)))
-  const tolerance = 64 * Number.EPSILON * Math.max(1, ...curve.pts.map(p => len2(sub2(p, line.a))))
-  return distances.every(d => d > tolerance) || distances.every(d => d < -tolerance)
+  const tolerance = 64 * Number.EPSILON * Math.max(1, ...curve.pts.map(p => len2(sub2(p, line.a))), len2(sub2(line.b,line.a)))
+  return ![line.a,line.b].some(p => [curve.pts[0],curve.pts.at(-1)!].some(q => len2(sub2(p,q)) <= tolerance))
 }
 
 /** Legacy explicit joining for lines/splines. Analytic pairs containing an
@@ -302,7 +299,7 @@ export function autoJoinPair(sketch: Sketch, selection: readonly number[]): [Ske
     : sketch.entities.filter(e => !e.construction && endsOf(e).length > 0)
   if (pieces.length !== 2 || pieces.some(e=>e.fixed || e.projected || e.construction || endsOf(e).length === 0)) return null
   if (pieces.some(e=>e.kind==='arc') && pieces.every(e=>e.kind==='line' || e.kind==='arc')) return null
-  if (separatedControlCurve(pieces[0], pieces[1])) return null
+  if (unsupportedControlCurveJoin(pieces[0], pieces[1])) return null
   return [pieces[0],pieces[1]]
 }
 
