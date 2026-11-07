@@ -23,7 +23,7 @@ import { axisAgrees, axisOff, guidedEstimate, guidedSeeds, guideRefusal, hasGuid
 import { growCylinderRegion, seededFit } from './regionGrow'
 import { MIN_SELECTED, requireSelection } from './selection'
 
-type CylinderResult = CylinderFit & { region: Uint32Array; told?: FitTold }
+type CylinderResult = CylinderFit & { region: Uint32Array; used?: Uint32Array; told?: FitTold }
 
 /** The fit as it is reported: the axis, the radius and the residual numbers
  *  off the finished best fit, the arc and the point counts off the surface
@@ -57,6 +57,7 @@ function cylinderResult(
     residualMin: fin.min,
     residualMax: fin.max,
     region: used,
+    used: fin.used,
   }
 }
 

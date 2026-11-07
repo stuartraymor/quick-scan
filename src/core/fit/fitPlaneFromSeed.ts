@@ -157,13 +157,13 @@ export function fitPlaneFromSeed(
   settings: FitSettings,
   _window?: AxialWindow,
   guide?: FitGuide,
-): PlaneFit & { region: Uint32Array } {
+): PlaneFit & { region: Uint32Array; used?: Uint32Array } {
   // A plane takes a box alone of the guide: it has no side, size or axis.
   const within = guide?.within ? { within: guide.within } : undefined
   const fit = seededFit(g, seeds, {
     estimate: (patch, seed) => ransacPlane(g.positions, within ? guidePatch(g, patch, within) : patch, { seed }),
     grow: (cand) => growPlaneRegion(g, within ? cand.inliers : seeds, cand.plane, cand.sigma, cand.inliers.length, within),
-    finish: (grown): (PlaneFit & { region: Uint32Array }) | null => {
+    finish: (grown): (PlaneFit & { region: Uint32Array; used?: Uint32Array }) | null => {
       // Weighted by area: the grown region takes in some of a densely meshed
       // rim, which counted by vertex pulled basic_part's face 3.8 µm off.
       const fin = fitPlaneClipped(g.positions, grown.region, settings.sigma, vertexAreas(g.positions, g.indices))
@@ -190,6 +190,7 @@ export function fitPlaneFromSeed(
         formError: fin.span,
         ...orientedExtremes(fin, plane),
         region: grown.region,
+        used: fin.used,
       }
     },
   })
@@ -214,7 +215,7 @@ export function fitPlaneOnSelection(
   g: MeshGraph,
   selection: Uint32Array,
   settings: FitSettings,
-): PlaneFit & { region: Uint32Array } {
+): PlaneFit & { region: Uint32Array; used?: Uint32Array } {
   requireSelection(selection, 'surface')
   const fin = fitPlaneClipped(g.positions, selection, settings.sigma)
   if (!fin) {
@@ -242,5 +243,6 @@ export function fitPlaneOnSelection(
     formError: fin.span,
     ...orientedExtremes(fin, plane),
     region: selection,
+    used: fin.used,
   }
 }

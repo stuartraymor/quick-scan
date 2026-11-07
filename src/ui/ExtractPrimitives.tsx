@@ -73,7 +73,7 @@ function NumberField({ value, onValid, min, label, test, disabled }: { value: nu
 export function ExtractPrimitives({ onType, preview, onCreate, onClearPreview, onClose, onClear, fitting, onHide, onIsolate, onShowAll, onAnalyse, onAnalysisOff }: {
   onType: (kind: ElementKind) => void
   /** The fit on show, not created yet: QUICKSURFACE previews, then Create. */
-  preview: { kind: ElementKind; sigma: number | null; autoChoice?: AutoChoice; problem?: string } | null
+  preview: { kind: ElementKind; sigma: number | null; autoChoice?: AutoChoice; autoCoincident?: boolean; problem?: string } | null
   /** Create the previewed primitive; `stay` keeps the dialog for the next. */
   onCreate: (stay?: boolean) => boolean
   onClearPreview: () => void
@@ -233,6 +233,19 @@ export function ExtractPrimitives({ onType, preview, onCreate, onClearPreview, o
         onChange={(e) => { ex.setConstraint(e.target.value as ConstraintId); if (preview) onType(preview.kind) }}>
         {options.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
       </select>
+      {preview.kind === 'cylinder' && (() => {
+        // QUICKSURFACE's "Coincident axis", under the constraint: enabled for a
+        // cylinder held parallel to another axis; Auto Constrain ticks it when
+        // it moved the axis onto a parallel one within the coincidence tolerance.
+        const target = ex.constraint.startsWith('parallel-el') ? constraintRefs.find((r) => r.id === Number(ex.constraint.slice('parallel-el'.length))) : undefined
+        const can = !!target && (target.fit.kind === 'cylinder' || target.fit.kind === 'cone' || target.fit.kind === 'line')
+        const checked = ex.autoConstrain ? !!preview.autoCoincident : can && ex.coincidentAxis
+        return <label className="checkrow" title="Hold the cylinder's axis on the axis it is parallel to; only the radius is fitted">
+          <input type="checkbox" checked={checked} disabled={fitting || ex.autoConstrain || !can} data-test="extract-coincident-axis"
+            onChange={(e) => { ex.setCoincidentAxis(e.target.checked); onType(preview.kind) }} />
+          <span>Coincident axis</span>
+        </label>
+      })()}
       {preview && !fitting && (preview.kind === 'cone' || preview.kind === 'sphere') && (ex.constraint !== 'none' || ex.autoConstrain) && <p className="qs-count" data-test="extract-constraint-note">A {preview.kind} has no direction to hold here.</p>}
       <label className="checkrow">
         <input type="checkbox" checked={ex.autoConstrain} data-test="extract-auto-constrain" onChange={(e) => { ex.setAutoConstrain(e.target.checked); if (preview) onType(preview.kind) }} />

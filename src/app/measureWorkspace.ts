@@ -34,6 +34,8 @@ export function measureWorkspace({ clientRef, sceneRef }: MeasureDeps) {
   // Region of the pending preview fit, kept out of the store because it is a
   // large typed array that only the scene needs.
   const draftRegion: { current: Uint32Array | null } = { current: null }
+  /** The points the draft's fit kept after its used-points cut-off. */
+  const draftUsed: { current: Uint32Array | null } = { current: null }
   // Bumped whenever the draft changes, so a fit that resolves after the user
   // has already picked again (or cancelled) is discarded.
   const draftSeq = { current: 0 }
@@ -174,10 +176,12 @@ export function measureWorkspace({ clientRef, sceneRef }: MeasureDeps) {
       const result = await clientRef.current!.fitSelection(kind, selection, settings, window)
       if (seq !== draftSeq.current || !useStore.getState().draft) return
       draftRegion.current = result.region
+      draftUsed.current = result.used ?? null
       useStore.getState().resolveDraft(result)
     } catch (e) {
       if (seq !== draftSeq.current || !useStore.getState().draft) return
       draftRegion.current = null
+      draftUsed.current = null
       useStore.getState().failDraft(e instanceof Error ? e.message : String(e))
     }
   }
@@ -371,6 +375,7 @@ export function measureWorkspace({ clientRef, sceneRef }: MeasureDeps) {
 
   return {
     draftRegion,
+    draftUsed,
     draftSeq,
     clearPreview,
     clearPreviewShapeOnly,

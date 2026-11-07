@@ -289,6 +289,11 @@ export type ElementSource =
 
 interface WithRegion {
   region: Uint32Array
+  /** The points the fit kept after its "used points" cut-off. A constrained
+   *  refit must use these, not the whole region, or it re-admits the outliers
+   *  the free fit dropped (QUICKSURFACE: a cylinder held coaxial to its own
+   *  free fit keeps the same radius). Never kept with the fit. */
+  used?: Uint32Array
   /** What the fit has to say beyond its numbers, for the answer that reports
    *  it; like the region, never kept with the fit. */
   told?: FitTold

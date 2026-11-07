@@ -78,7 +78,7 @@ function residual(line: Line, x: number, y: number, z: number): number {
   return Math.hypot(dy * c - dz * b, dz * a - dx * c, dx * b - dy * a)
 }
 
-export function fitLineOnSelection(graph: MeshGraph, selection: Uint32Array, settings: FitSettings): LineFit & { region: Uint32Array } {
+export function fitLineOnSelection(graph: MeshGraph, selection: Uint32Array, settings: FitSettings): LineFit & { region: Uint32Array; used?: Uint32Array } {
   requireSelection(selection, 'edge')
   const result = clippedRefit(graph.positions, selection, settings.sigma, ids => lineL1(graph.positions, ids), residual, true)
   if (!result) throw new FitError('The marked points do not define a unique line — select a longer, narrower edge.')
@@ -93,5 +93,5 @@ export function fitLineOnSelection(graph: MeshGraph, selection: Uint32Array, set
   if (!(hi > lo)) throw new FitError('The marked edge has no measurable length.')
   const mid = (lo + hi) / 2
   return { kind: 'line', center: [center[0] + mid * dir[0], center[1] + mid * dir[1], center[2] + mid * dir[2]], dir, length: hi - lo,
-    sigma: result.sigma, usedPoints: result.used.length, regionSize: selection.length, region: selection }
+    sigma: result.sigma, usedPoints: result.used.length, regionSize: selection.length, region: selection, used: result.used }
 }

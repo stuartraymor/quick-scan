@@ -201,11 +201,21 @@ function bestNormalAcross(pos:Float32Array, idx:ArrayLike<number>, ref:Vec3, ini
 /** Step 2's dropdown: the fit held parallel or perpendicular to a coordinate
  *  plane, or null when it cannot be (no direction, or it lies along the
  *  datum's normal and perpendicular is then undetermined). */
-export function constrainFit(fit: FitData, pos: Float32Array, idx: ArrayLike<number>, constraint: ConstraintId, refs: readonly ConstraintRef[] = []): FitData | null {
+/** True when `constraint` holds a cylinder parallel to another axis
+ *  (a cylinder's, cone's or line's), so "Coincident axis" can apply. */
+export function canHoldCoincidentAxis(fit: FitData, constraint: ConstraintId, refs: readonly ConstraintRef[] = []): boolean {
+  if (fit.kind !== 'cylinder' || !constraint.startsWith('parallel-el')) return false
+  const ref = refs.find((r) => r.id === Number(constraint.slice('parallel-el'.length)))?.fit
+  return !!ref && (ref.kind === 'cylinder' || ref.kind === 'cone' || ref.kind === 'line')
+}
+
+export function constrainFit(fit: FitData, pos: Float32Array, idx: ArrayLike<number>, constraint: ConstraintId, refs: readonly ConstraintRef[] = [], coincidentAxis = false): FitData | null {
   const dir = constrainedDirection(fit, constraint, refs)
   if (!dir) return null
   const target=constraint.split('-')[1]
   const ref=target?.startsWith('el') ? refs.find(r=>r.id===Number(target.slice(2)))?.fit : undefined
+  // Coincident axis: on the other primitive's axis, only the radius free.
+  if (coincidentAxis && ref && canHoldCoincidentAxis(fit, constraint, refs)) return withDirection(fit, pos, idx, dir, { through: ref.center })
   const axis=ref ? directionOf(ref) : DATUM_NORMAL[target as keyof typeof DATUM_NORMAL]
   return withDirection(fit,pos,idx,fit.kind==='plane' && axis && Math.abs(dot(axis,dir))<1e-8 ? bestNormalAcross(pos,idx,axis,dir) : dir)
 }

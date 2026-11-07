@@ -1,3 +1,8 @@
+## 0.0.148 — Local candidate; GitHub held
+
+- Extract primitives: a plane, cylinder or line held to a constraint (chosen or Auto Constrain) is measured again on the points the free fit kept after its used-points cut-off, not on the whole marking. On basic_part a cylinder held coaxial to its own free fit no longer moves its radius (0.0018 mm before) or worsens σ (0.0721 → 0.0753 mm), matching QUICKSURFACE.
+- Extract primitives: "Coincident axis" checkbox under the constraint, as in QUICKSURFACE. A cylinder held parallel to another cylinder, cone or line can be held on that axis with only its radius fitted; Auto Constrain shows it ticked when it moved the axis onto a parallel one.
+
 ## 0.0.147 — Local candidate; GitHub held
 
 - Edit Sketch (Select tool): Shift+drag over scan reference points fits a line or an arc immediately, without opening Fit Primitives, as observed in QUICKSURFACE. Straight strokes give an H/V-snapped line; a stroke whose points a line explains poorly (a rounded or brushed corner) gives one arc.

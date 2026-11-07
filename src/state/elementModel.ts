@@ -143,7 +143,7 @@ export interface DimensionDraft {
 /** The region is a large typed array only the scene needs, so it is stripped
  *  before a fit goes into the store. */
 export function withoutRegion(r: FitOutput): FitData {
-  const { region: _region, told: _told, ...fit } = r
+  const { region: _region, told: _told, used: _used, ...fit } = r
   return fit
 }
 

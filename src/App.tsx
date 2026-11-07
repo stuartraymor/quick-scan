@@ -36,7 +36,7 @@ import { elementKindInfo } from './core/elements/kinds'
 import { creationMethod, takesSurface } from './core/elements/construct'
 import { extensionOf, fitWindow, isExtendable, sideValue } from './core/elements/extend'
 import { roleOf } from './core/elements/refs'
-import { type AutoChoice, autoConstrainFit, canConstrain, constrainFit, constraintLabel, pointsBeyond } from './core/elements/constrain'
+import { type AutoChoice, autoConstrainFit, canConstrain, constrainFit, constraintLabel, pointsBeyond, canHoldCoincidentAxis } from './core/elements/constrain'
 import { useExtract } from './state/extractStore'
 import { evaluateDimensions } from './core/dimensions'
 import { attachSurfaceScene, forgetSurface, surfaceSource } from './app/surfaces'
@@ -148,6 +148,7 @@ export default function App() {
   const { deviation, deviationRgb, elementField, elementRgb, elementScope, thickness, thicknessRgb } = maps
   const {
     draftRegion,
+    draftUsed,
     draftSeq,
     clearPreview,
     clearPaint,
@@ -976,7 +977,7 @@ export default function App() {
    *  selected in step 1 and previewed until Create or Create & Stay. */
   const [extractFitting, setExtractFitting] = useState(false)
   /** The primitive fitted in Extract primitives and shown, not yet created. */
-  const [extractPreview, setExtractPreview] = useState<{ kind: ElementKind; sigma: number | null; selection: Uint32Array; problem?: string; autoChoice?: AutoChoice } | null>(null)
+  const [extractPreview, setExtractPreview] = useState<{ kind: ElementKind; sigma: number | null; selection: Uint32Array; problem?: string; autoChoice?: AutoChoice; autoCoincident?: boolean } | null>(null)
   const createExtracted = (stay = true) => {
     const made = extractPreview && !extractPreview.problem ? handleConfirmDraft() : null
     if (!extractPreview || made === null) return false
@@ -1012,11 +1013,16 @@ export default function App() {
     if (!pos || !canConstrain(fit)) return ex.constraint === 'none' ? null : { fit, notes: [], problem: 'This primitive cannot use the selected direction.' }
     let next = fit
     const notes: string[] = []
+    // Refit on the points the free fit kept, not the whole marking: the
+    // outliers it dropped must stay dropped (QUICKSURFACE keeps a coaxial
+    // cylinder's radius; 0.0.147 re-admitted them and moved it 0.0018 mm).
+    const used = draftUsed.current
+    if (used && used.length >= 3 && used.length <= selection.length) selection = used
     if (ex.constraint !== 'none') {
       const refs = useStore.getState().elements.filter((e) => e.fit).map((e) => ({ id: e.id, name: e.name, fit: e.fit as FitData }))
       const label = constraintLabel(ex.constraint, refs).toLowerCase()
-      const held = constrainFit(next, pos, selection, ex.constraint, refs)
-      if (held) { next = held; notes.push(label) }
+      const held = constrainFit(next, pos, selection, ex.constraint, refs, ex.coincidentAxis)
+      if (held) { next = held; notes.push(ex.coincidentAxis && canHoldCoincidentAxis(fit, ex.constraint, refs) ? `${label}, coincident axis` : label) }
       else return { fit, notes, problem: `Cannot fit the selection ${label}.` }
     } else if (ex.autoConstrain) {
       const others = useStore.getState().elements.filter((e) => e.fit).map((e) => ({ id: e.id, name: e.name, fit: e.fit as FitData }))
@@ -1084,7 +1090,7 @@ export default function App() {
       }
       if (d && d.status !== 'failed') {
         // As in QUICKSURFACE: the fit is a preview until Create.
-        setExtractPreview({ kind, sigma: d.fit?.sigma ?? null, selection, autoChoice: held?.autoChoice })
+        setExtractPreview({ kind, sigma: d.fit?.sigma ?? null, selection, autoChoice: held?.autoChoice, autoCoincident: !!held?.notes.some((n) => n.startsWith('on the axis of')) })
         const name = kind[0].toUpperCase() + kind.slice(1)
         useStore.getState().setStatus(`${name} preview${d.fit?.sigma != null ? ` — σ ${boundLength(usePrefs.getState().units).fmt(d.fit.sigma, 4)}` : ''}${held?.notes.length ? ` — ${held.notes.join(', ')}` : ''}. Create to keep it, or pick another type.`)
         sceneRef.current?.setPaintedVertices(selection, EXTRACT_MARK_COLOR)

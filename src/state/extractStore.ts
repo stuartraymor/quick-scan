@@ -12,6 +12,9 @@ export const DEFAULT_ANALYSIS_MM = 0.1
 interface ExtractState {
   constraint: ConstraintId
   autoConstrain: boolean
+  /** QUICKSURFACE's "Coincident axis": a cylinder held parallel to another
+   *  axis is held on that axis too, with only its radius free. */
+  coincidentAxis: boolean
   tiltDeg: number
   coincidenceMm: number
   analysis: boolean
@@ -20,6 +23,7 @@ interface ExtractState {
   analysed: { far: number; total: number; worst: number } | null
   setConstraint: (c: ConstraintId) => void
   setAutoConstrain: (on: boolean) => void
+  setCoincidentAxis: (on: boolean) => void
   setTiltDeg: (v: number) => void
   setCoincidenceMm: (v: number) => void
   setAnalysis: (on: boolean) => void
@@ -30,13 +34,15 @@ interface ExtractState {
 export const useExtract = create<ExtractState>((set) => ({
   constraint: 'none',
   autoConstrain: false,
+  coincidentAxis: false,
   tiltDeg: DEFAULT_TOLERANCES.tiltDeg,
   coincidenceMm: DEFAULT_TOLERANCES.coincidenceMm,
   analysis: false,
   analysisMm: DEFAULT_ANALYSIS_MM,
   analysed: null,
   setConstraint: (constraint) => set({ constraint, autoConstrain: false }),
-  setAutoConstrain: (autoConstrain) => set({ autoConstrain, constraint: 'none' }),
+  setAutoConstrain: (autoConstrain) => set({ autoConstrain, constraint: 'none', coincidentAxis: false }),
+  setCoincidentAxis: (coincidentAxis) => set({ coincidentAxis }),
   setTiltDeg: (tiltDeg) => set({ tiltDeg }),
   setCoincidenceMm: (coincidenceMm) => set({ coincidenceMm }),
   setAnalysis: (analysis) => set(analysis ? { analysis } : { analysis, analysed: null }),
