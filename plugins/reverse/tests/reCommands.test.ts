@@ -375,6 +375,7 @@ describe('the commands hold to the panel’s rules', () => {
       'reverse.feature.schema',
       'reverse.feature.suppress',
       'reverse.feature.update',
+      'reverse.freeform.cage_convert',
       'reverse.freeform.cage_read',
       'reverse.freeform.cage_write',
       'reverse.import.step',

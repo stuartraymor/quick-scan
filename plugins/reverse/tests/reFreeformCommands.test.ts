@@ -98,6 +98,51 @@ describe('reverse.freeform.cage_read', () => {
   })
 })
 
+interface Converted {
+  steps: number
+  closed: boolean
+  faces: number
+  blocks: number
+  cageQuads: number
+  solid: boolean
+  valid: boolean
+  area: number
+  volume: number | null
+  snapped?: { missed: number }
+  stepText?: string
+  stepCheck?: { ok: boolean; closed?: boolean; valid?: boolean; openEdges?: number; gapMax?: number }
+}
+
+/** A cube of side 20 as a closed quad cage. */
+const cubeObj = (() => {
+  const v = [[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]].map((p) => `v ${p.map((x) => x * 20).join(' ')}`)
+  const f = [[1, 4, 3, 2], [5, 6, 7, 8], [1, 2, 6, 5], [2, 3, 7, 6], [3, 4, 8, 7], [4, 1, 5, 8]].map((q) => `f ${q.join(' ')}`)
+  return [...v, ...f].join('\n') + '\n'
+})()
+
+describe('reverse.freeform.cage_convert', () => {
+  it('converts a closed cube cage to a valid solid and writes it as a STEP file that reads back closed', async () => {
+    const r = await run<Converted>('reverse.freeform.cage_convert', { obj: cubeObj, steps: 3, step: true })
+    expect(r).toMatchObject({ closed: true, solid: true, valid: true, cageQuads: 6, blocks: 6 })
+    // The limit of a 20 mm cube cage is a rounded blob well inside the 8000 mm³ cube (about 2620).
+    expect(r.volume!).toBeGreaterThan(2400)
+    expect(r.volume!).toBeLessThan(2900)
+    expect(r.stepText).toContain('MANIFOLD_SOLID_BREP')
+    expect(r.stepCheck).toMatchObject({ ok: true, closed: true, valid: true, openEdges: 0 })
+  })
+  it('converts the box cage snapped onto the cylinder scan to a sheet on the wall', async () => {
+    const r = await run<Converted>('reverse.freeform.cage_convert', { obj: box, steps: 3, snap: true })
+    expect(r).toMatchObject({ closed: false, solid: false, valid: true, volume: null, cageQuads: 4 })
+    expect(r.snapped!.missed).toBe(0)
+    // The snapped surface is the wall it covers: 2πR × 70 less the ends' pull-in, as cage_read measures.
+    expect(r.area).toBeGreaterThan(2 * Math.PI * R * 70 * 0.9)
+    expect(r.area).toBeLessThan(2 * Math.PI * R * 70 * 1.05)
+  })
+  it('refuses a broken cage and a cage too fine to sample, by name', async () => {
+    expect((await refused('reverse.freeform.cage_convert', { obj: 'v 0 0 0\nv 1 0 0\n' })).message).toMatch(/no faces/)
+  })
+})
+
 describe('reverse.freeform.cage_write', () => {
   it('writes a cage back, refined where asked, that reads as the same cage', async () => {
     const same = await run<{ vertices: number; faces: number; obj: string }>('reverse.freeform.cage_write', { obj: box })
@@ -113,7 +158,7 @@ describe('reverse.freeform.cage_write', () => {
     expect(again.faces).toHaveLength(64)
   })
   it('keeps every command’s schema within the budget', () => {
-    for (const name of ['reverse.freeform.cage_read', 'reverse.freeform.cage_write']) {
+    for (const name of ['reverse.freeform.cage_read', 'reverse.freeform.cage_write', 'reverse.freeform.cage_convert']) {
       const c = listCommands().find((x) => x.name === name)
       expect(c, name).toBeDefined()
       const w = schemaWeight(c!.input)

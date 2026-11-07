@@ -15,10 +15,14 @@ import { parseQuadObj, writeQuadObj } from '../core/freeform/cageIO'
 import { DEFAULT_LIMIT_STEPS, limitMesh } from '../core/freeform/limit'
 import { snapMesh } from '../core/freeform/snap'
 import { subdivided } from '../core/freeform/subdivide'
-import { session } from './reCommandCore'
+import { cagePatches } from '../core/freeform/patches'
+import { ready, session } from './reCommandCore'
 import { scanPaths } from './reNetworkCommands'
 
 const MAX_STEPS = 5
+/** The most refined quads a conversion samples: a cage's quads × 4^steps. */
+const MAX_SAMPLED_QUADS = 600_000
+const MAX_CONVERT_STEPS = 4
 /** How far a surface vertex may be taken onto the scan: the cage's longest side. */
 const stats = (a: number[]) => {
   const n = a.length
@@ -102,5 +106,75 @@ export const cageWrite: Command<{ obj: string; steps?: number }> = {
     const { cage } = read(objText)
     const fine = subdivided(cage, steps)
     return { vertices: vertexCount(fine), faces: fine.faces.length, creases: fine.creases.length, obj: writeQuadObj(fine, steps > 0 ? `Quick Scan freeform cage, refined ${steps}×` : 'Quick Scan freeform cage') }
+  },
+}
+
+export const cageConvert: Command<{ obj: string; steps?: number; snap?: boolean; step?: boolean; name?: string }> = {
+  name: 'cage_convert',
+  title: 'Convert a freeform cage to a CAD body',
+  description:
+    'A freeform cage — a quad OBJ — converted to a CAD body, as QUICKSURFACE’s Convert to CAD body does with no dialog: the cage’s quads are merged into rectangular blocks whose inside is regular (no crease, boundary or extraordinary vertex in it), each block one B-spline face (cut in halves where the kernel’s surface through its samples swings off them) through its surface refined `steps` times (2 unless given, 1–4; once more where the faces do not follow) — the subdivision limit, or with a scan open and snap true that surface snapped onto the scan, as the Freeform shows it — and the faces sewn: a solid when the cage is closed, else a sheet. Answers steps used, faces, blocks, cage quads, largest block, solid, valid, area, volume (solid), and with step true the STEP file (stepText) written and read back (stepCheck: ok, closed, valid, gap, open edges). Nothing is added to the document.',
+  input: obj({ obj: objIn, steps: int('How many times the cage is refined before the faces are made; 2 unless given. More follows the limit more closely and makes heavier faces.', { minimum: 1, maximum: MAX_CONVERT_STEPS }), snap: bool('Snap the refined surface onto the open scan first.'), step: bool('Also write the body as STEP and read it back.'), name: str('The part’s name in the STEP file; "Freeform" unless given.') }, ['obj']),
+  readOnly: true,
+  run: async ({ obj: objText, steps = 2, snap = false, step = false, name = 'Freeform' }) => {
+    const { cage } = read(objText)
+    if (cage.faces.length * 4 ** steps > MAX_SAMPLED_QUADS) return invalid(`The cage has ${cage.faces.length} faces; refined ${steps} times it is more than ${MAX_SAMPLED_QUADS} quads to sample. Give fewer steps.`) as never
+    const s = await ready()
+    const client = s.client()
+    if (!client) return invalid('The CAD kernel is not running.') as never
+    let snapped: { moved: ReturnType<typeof stats>; missed: number } | undefined
+    const patchesAt = (n: number) => {
+      try {
+        if (!snap) return cagePatches(cage, n)
+        const paths = scanPaths(session())
+        return cagePatches(cage, n, (_fine, limit) => {
+          const lm = { positions: limit, normals: new Float64Array(limit.length) }
+          const r = snapMesh(lm, (p: Vec3) => paths.closest(p)?.point ?? null)
+          snapped = { moved: stats(Array.from(r.moved).filter((m) => Number.isFinite(m))), missed: r.missed }
+          return r.positions
+        })
+      } catch (e) {
+        return invalid(`The cage could not be cut into faces: ${(e as Error).message}`) as never
+      }
+    }
+    // A cage refined too little for its curvature gives faces that swing off
+    // their samples (the kernel says so); once more refined, they follow.
+    let used = steps
+    let made: Awaited<ReturnType<typeof client.freeformConvert>>
+    let closed = false
+    for (;;) {
+      const patches = patchesAt(used)
+      closed = patches.closed
+      try {
+        made = await client.freeformConvert({ grids: patches.grids, closed: patches.closed, blocks: patches.blocks.map((b) => ({ rows: b.rows, cols: b.cols, faces: b.faces })) }, name, step)
+        break
+      } catch (e) {
+        const more = /does not follow/.test((e as Error).message) && used < MAX_CONVERT_STEPS && cage.faces.length * 4 ** (used + 1) <= MAX_SAMPLED_QUADS
+        if (!more) return invalid((e as Error).message) as never
+        used++
+      }
+    }
+    const r = made.report
+    const out: Record<string, unknown> = {
+      steps: used,
+      cageFaces: cage.faces.length,
+      closed,
+      faces: r.faces,
+      blocks: r.blocks,
+      cageQuads: r.quads,
+      largestBlock: r.largestBlock,
+      solid: r.solid,
+      valid: r.valid,
+      area: round3(r.area),
+      volume: r.volume === null ? null : round3(r.volume),
+      samples: r.samples,
+    }
+    if (snapped) out.snapped = snapped
+    if (made.step !== undefined) {
+      out.stepText = made.step
+      const b = made.check?.bodies[0]
+      if (made.check) out.stepCheck = { ok: made.check.ok, parts: made.check.parts, ...(b ? { closed: b.closed, valid: b.valid, faces: b.faces, gapMax: round3(b.gap.max), openEdges: b.freeEdgeCount } : {}) }
+    }
+    return out
   },
 }

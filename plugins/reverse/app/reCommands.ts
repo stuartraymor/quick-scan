@@ -27,7 +27,7 @@ import { filletTry } from './reFilletTry'
 import { threadRead } from './reThreadCommand'
 import { parameterAdd, parameterList, parameterRemove, parameterRename, parameterSet } from './reParameterCommands'
 import { noteAdd, noteList, noteResolve, notesNudge } from './reNoteCommands'
-import { cageRead, cageWrite } from './reFreeformCommands'
+import { cageConvert, cageRead, cageWrite } from './reFreeformCommands'
 import { networkCreate, networkEdit, networkRead, networkSuggestCreases } from './reNetworkCommands'
 import { planReplace, planSet, planTick, planUpdate, withPlanGate } from './rePlan'
 
@@ -149,6 +149,7 @@ export const reverseCommands: Command<never>[] = ([
   { ...networkSuggestCreases, name: 'network.suggest_creases' },
   { ...cageRead, name: 'freeform.cage_read' },
   { ...cageWrite, name: 'freeform.cage_write' },
+  { ...cageConvert, name: 'freeform.cage_convert' },
   { ...planSet, name: 'plan.set' },
   { ...planUpdate, name: 'plan.update' },
   { ...planTick, name: 'plan.tick' },
