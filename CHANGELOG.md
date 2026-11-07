@@ -1,4 +1,9 @@
-## 0.0.144 — Local candidate; GitHub held
+## 0.0.145 — Local candidate; GitHub held
+
+- Clear the blue Ctrl-drag paint immediately on release. 0.0.144 relied on an animation-frame fade that stalled in the installed window and left the stroke on screen.
+- Includes the 0.0.144 Ctrl+drag corner join and scan-fitted fillet below.
+
+## 0.0.144 — Rejected after installation
 
 - Edit Sketch (Select tool): Ctrl+drag over a corner joins the two pieces under the brush, using the existing Auto Join that preserves fitted geometry.
 - Ctrl+drag over an already joined line corner creates an Auto Fillet whose radius is fitted to the scan reference points under the brush, with a radius dimension.

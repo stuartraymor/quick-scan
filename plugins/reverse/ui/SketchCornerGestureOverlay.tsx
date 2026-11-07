@@ -16,7 +16,7 @@ export function SketchCornerGestureOverlay({ scene, chainsOf }: { scene: FlatSce
   useEffect(() => {
     const host = anchor.current?.parentElement ?? null
     if (!scene || !host) return
-    let path: Vec2[] = [], pointer: number | null = null, fade = 0
+    let path: Vec2[] = [], pointer: number | null = null
     // QUICKSURFACE paints the brushed area blue while Ctrl is held.
     const draw = (stroke: Vec2[], alpha: number) => {
       const el = canvas.current, ctx = el?.getContext('2d')
@@ -33,12 +33,6 @@ export function SketchCornerGestureOverlay({ scene, chainsOf }: { scene: FlatSce
       if (pts.length === 1) ctx.lineTo(pts[0].x - rect.left + 0.01, pts[0].y - rect.top)
       ctx.stroke(); ctx.globalAlpha = 1
     }
-    const fadeOut = (stroke: Vec2[]) => {
-      cancelAnimationFrame(fade)
-      let a = 1
-      const step = () => { a -= 0.08; draw(stroke, a); if (a > 0) fade = requestAnimationFrame(step) }
-      step()
-    }
     const active = () => {
       const d = useReverse.getState().sketchDraft
       return !!d && d.tool === 'select' && !useSketchBrush.getState().open && !useSketchCornerTrim.getState().open
@@ -48,7 +42,7 @@ export function SketchCornerGestureOverlay({ scene, chainsOf }: { scene: FlatSce
       const p = scene.sheetPoint(e.clientX, e.clientY)
       if (!p) return
       e.preventDefault(); e.stopImmediatePropagation()
-      path = [p]; pointer = e.pointerId; cancelAnimationFrame(fade); draw(path, 1)
+      path = [p]; pointer = e.pointerId; draw(path, 1)
       host.setPointerCapture(e.pointerId)
     }
     const move = (e: PointerEvent) => {
@@ -68,13 +62,14 @@ export function SketchCornerGestureOverlay({ scene, chainsOf }: { scene: FlatSce
       const upp = scene.unitsPerScreenPx()
       const brush = Math.max(useSketchBrush.getState().brushPx, 14) / 2
       applyCornerGesture(path, brush * upp, chainsOf()?.chains.flat() ?? [])
-      fadeOut(path); path = []
+      // Clear synchronously: an animation-frame fade can stall in a throttled window (0.0.144).
+      draw([], 0); path = []
     }
-    const cancel = () => { pointer = null; path = [] }
+    const cancel = () => { pointer = null; path = []; draw([], 0) }
     host.addEventListener('pointerdown', down, true); host.addEventListener('pointermove', move, true)
     host.addEventListener('pointerup', up, true); host.addEventListener('pointercancel', cancel, true)
     return () => {
-      cancelAnimationFrame(fade)
+      draw([], 0)
       host.removeEventListener('pointerdown', down, true); host.removeEventListener('pointermove', move, true)
       host.removeEventListener('pointerup', up, true); host.removeEventListener('pointercancel', cancel, true)
     }
