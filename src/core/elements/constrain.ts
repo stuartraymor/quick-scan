@@ -29,6 +29,7 @@ export interface ConstraintRef { id: number; name: string; fit: FitData }
  *  a cylinder: Not constrained, Parallel to X/Y/Z Axis, Perpendicular to each
  *  plane, Parallel to each cylinder (observed on basic_part, 2026-11-06). */
 const isAxisKind = (kind?: string) => kind === 'cylinder' || kind === 'line'
+const WORLD_AXIS_IDS: readonly ConstraintId[] = ['perpendicular-oyz', 'perpendicular-oxz', 'perpendicular-oxy']
 export const AXIS_CONSTRAINTS: { id: ConstraintId; label: string }[] = [
   { id: 'none', label: 'Not constrained' },
   { id: 'perpendicular-oyz', label: 'Parallel to X Axis' },
@@ -43,12 +44,15 @@ export function constraintOptions(refs: readonly ConstraintRef[], kind?: string)
     for (const r of refs) if ((r.fit.kind === 'cylinder' || r.fit.kind === 'line') && directionOf(r.fit)) out.push({ id: `parallel-el${r.id}`, label: `Parallel to ${r.name}` })
     return out
   }
+  // QUICKSURFACE lists, for a plane: each plane as "Parallel to", then
+  // "Perpendicular to"; then each axis primitive as "Perpendicular to".
   const out = [...CONSTRAINTS]
   for (const r of refs) {
-    if (!directionOf(r.fit)) continue
+    if (!directionOf(r.fit) || r.fit.kind !== 'plane') continue
+    out.push({ id: `parallel-el${r.id}`, label: `Parallel to ${r.name}` })
     out.push({ id: `perpendicular-el${r.id}`, label: `Perpendicular to ${r.name}` })
-    if (r.fit.kind === 'plane') out.push({ id: `parallel-el${r.id}`, label: `Parallel to ${r.name}` })
   }
+  for (const r of refs) if (directionOf(r.fit) && r.fit.kind !== 'plane') out.push({ id: `perpendicular-el${r.id}`, label: `Perpendicular to ${r.name}` })
   return out
 }
 
@@ -221,6 +225,8 @@ function bestNormalAcross(pos:Float32Array, idx:ArrayLike<number>, ref:Vec3, ini
 /** True when `constraint` holds a cylinder parallel to another axis
  *  (a cylinder's, cone's or line's), so "Coincident axis" can apply. */
 export function canHoldCoincidentAxis(fit: FitData, constraint: ConstraintId, refs: readonly ConstraintRef[] = []): boolean {
+  // "Parallel to X/Y/Z Axis" with Coincident axis puts the axis on that world axis.
+  if (fit.kind === 'cylinder' && WORLD_AXIS_IDS.includes(constraint)) return true
   if (fit.kind !== 'cylinder' || !constraint.startsWith('parallel-el')) return false
   const ref = refs.find((r) => r.id === Number(constraint.slice('parallel-el'.length)))?.fit
   return !!ref && (ref.kind === 'cylinder' || ref.kind === 'cone' || ref.kind === 'line')
@@ -231,8 +237,12 @@ export function constrainFit(fit: FitData, pos: Float32Array, idx: ArrayLike<num
   if (!dir) return null
   const target=constraint.split('-')[1]
   const ref=target?.startsWith('el') ? refs.find(r=>r.id===Number(target.slice(2)))?.fit : undefined
-  // Coincident axis: on the other primitive's axis, only the radius free.
-  if (coincidentAxis && ref && canHoldCoincidentAxis(fit, constraint, refs)) return withDirection(fit, pos, idx, dir, { through: ref.center })
+  // Coincident axis: on the other primitive's axis, or on the world axis
+  // through the origin, with only the radius free.
+  if (coincidentAxis && canHoldCoincidentAxis(fit, constraint, refs)) {
+    if (ref) return withDirection(fit, pos, idx, dir, { through: ref.center })
+    if (WORLD_AXIS_IDS.includes(constraint)) return withDirection(fit, pos, idx, dir, { through: [0, 0, 0] })
+  }
   const axis=ref ? directionOf(ref) : DATUM_NORMAL[target as keyof typeof DATUM_NORMAL]
   return withDirection(fit,pos,idx,fit.kind==='plane' && axis && Math.abs(dot(axis,dir))<1e-8 ? bestNormalAcross(pos,idx,axis,dir) : dir)
 }
@@ -255,9 +265,15 @@ export function autoConstrainFit(fit: FitData, pos: Float32Array, idx: ArrayLike
     const od = directionOf(o.fit)
     if (!od || o.fit.kind === 'cone') continue
     const par = angleDeg(own, od)
-    if (par <= tol.tiltDeg && (!best || par < best.off)) best = { dir: alike(od, own), off: par, how: 'parallel', to: o }
+    if (par <= tol.tiltDeg && (!best || best.how === 'perpendicular' || par < best.off)) best = { dir: alike(od, own), off: par, how: 'parallel', to: o }
+    // An axis (cylinder, line) is never held lying in a plane or across
+    // another axis: QUICKSURFACE offers neither for a cylinder, so its Auto
+    // Constrain cannot choose them (0.0.149 picked "Parallel to Plane(2)").
+    if (isAxisKind(fit.kind)) continue
     const perp = offRightDeg(own, od)
-    if (perp <= tol.tiltDeg && (!best || perp < best.off)) {
+    // A parallel hold in range beats any perpendicular one (QUICKSURFACE chose
+    // "Parallel to (OXY)" over a nearer "Perpendicular to Plane(2)").
+    if (perp <= tol.tiltDeg && (!best || (best.how === 'perpendicular' && perp < best.off))) {
       const flat = unit(sub(own, scale(od, dot(own, od))))
       if (flat) best = { dir: flat, off: perp, how: 'perpendicular', to: o }
     }
@@ -271,7 +287,8 @@ export function autoConstrainFit(fit: FitData, pos: Float32Array, idx: ArrayLike
     for (const datum of ['oxy', 'oyz', 'oxz'] as const) {
       const angle = angleDeg(own, DATUM_NORMAL[datum]);
       if (angle <= tol.tiltDeg) hasParallelWorld = true
-      if (angle <= tol.tiltDeg && angle < closest) {
+      // A world plane wins a tie, and beats a perpendicular element hold.
+      if (angle <= tol.tiltDeg && (angle <= closest + 1e-9 || best?.how === 'perpendicular')) {
         world = `parallel-${datum}`;
         closest = angle;
       }

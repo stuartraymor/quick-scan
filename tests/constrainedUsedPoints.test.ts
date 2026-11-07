@@ -102,3 +102,25 @@ describe('cylinder constraint list and Auto Constrain, as QUICKSURFACE 8.0.128 s
     void fit
   })
 })
+
+describe('0.0.150: Auto Constrain never lays a cylinder in a plane; Coincident axis on a world axis', () => {
+  const g = buildMeshGraph({ kind: 'soup', positions: cylinderWithOutliers() })
+  const all = new Uint32Array(g.vertexCount).map((_, i) => i)
+  const free = fitCylinderOnSelection(g, all, { method: 'gaussian', sigma: 3 })
+  it('chooses Parallel to Z Axis, not a plane the axis nearly lies in (0.0.149 regression)', () => {
+    // Axis tilted 0.06° from Z; a vertical plane whose normal is 0.05° off perpendicular to it.
+    const t = 0.06 * Math.PI / 180
+    const own = { ...free, axis: [Math.sin(t), 0, Math.cos(t)] } as unknown as FitData
+    const n = 0.05 * Math.PI / 180
+    const wall = { id: 5, name: 'Plane(2)', fit: { kind: 'plane', center: [0, 0, 0], normal: [Math.cos(t + n), 0, -Math.sin(t + n)] } as unknown as FitData }
+    const auto = autoConstrainFit(own, g.positions, free.used!, [wall], { tiltDeg: 0.5, coincidenceMm: 1 })
+    expect(auto.choice?.label).toBe('Parallel to Z Axis')
+  })
+  it('Parallel to Z Axis with Coincident axis puts the axis on the Z axis', () => {
+    const shifted = { ...free, center: [3, 2, free.center[2]] } as unknown as FitData
+    expect(canHoldCoincidentAxis(shifted, 'perpendicular-oxy')).toBe(true)
+    const on = constrainFit(shifted, g.positions, free.used!, 'perpendicular-oxy', [], true)
+    if (!on || on.kind !== 'cylinder') throw new Error('no fit')
+    expect(Math.hypot(on.center[0], on.center[1])).toBeLessThan(1e-9)
+  })
+})

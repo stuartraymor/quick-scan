@@ -90,13 +90,22 @@ describe('constrainFit on a cylinder', () => {
 describe('autoConstrainFit', () => {
   const existing = { name: 'Plane 1', fit: planeFit([0, 0, 5], [0, 0, 1]) }
 
-  it('snaps a nearly parallel plane parallel and onto the existing plane inside the coincidence tolerance', () => {
-    const { pos, idx } = planePoints([0, 0, 5.4], tilt(0.2))
-    const { fit, notes } = autoConstrainFit(planeFit([0, 0, 5.4], tilt(0.2)), pos, idx, [existing]) as { fit: PlaneFit; notes: string[] }
-    expect(fit.normal).toEqual([0, 0, 1])
-    expect(fit.center[2]).toBeCloseTo(5, 6)
+  it('snaps a nearly parallel plane parallel and onto an existing (not world-aligned) plane inside the coincidence tolerance', () => {
+    // The existing plane leans 1° so the world plane is not a tie candidate.
+    const leaning = { ...existing, fit: planeFit([0, 0, 5], tilt(1)) }
+    const { pos, idx } = planePoints([0, 0, 5.4], tilt(1.2))
+    const { fit, notes } = autoConstrainFit(planeFit([0, 0, 5.4], tilt(1.2)), pos, idx, [leaning]) as { fit: PlaneFit; notes: string[] }
+    expect(fit.normal[1]).toBeCloseTo(tilt(1)[1], 12)
+    expect(fit.center[0] * fit.normal[0] + fit.center[1] * fit.normal[1] + fit.center[2] * fit.normal[2]).toBeCloseTo(5 * tilt(1)[2], 6)
     expect(notes.join(' ')).toContain('parallel to Plane 1')
     expect(notes.join(' ')).toContain('coincident with Plane 1')
+  })
+
+  it('prefers the world plane on a tie with an existing world-aligned plane, without coincidence (QUICKSURFACE, basic_part ledge)', () => {
+    const { pos, idx } = planePoints([0, 0, 5.4], tilt(0.2))
+    const out = autoConstrainFit(planeFit([0, 0, 5.4], tilt(0.2)), pos, idx, [existing])
+    expect(out.choice?.label).toBe('Parallel to (OXY)')
+    expect((out.fit as PlaneFit).center[2]).toBeCloseTo(5.4, 4)
   })
 
   it('stays parallel but off the plane when the gap is over the coincidence tolerance', () => {
@@ -127,11 +136,24 @@ describe('autoConstrainFit', () => {
     }
   })
 
-  it('squares a plane that is nearly perpendicular to an existing one', () => {
+  it('a parallel world plane in range beats a nearer perpendicular hold (QUICKSURFACE)', () => {
     const n: Vec3 = [Math.cos(0.005), 0, Math.sin(0.005)]
     const { pos, idx } = planePoints([20, 0, 0], n)
-    const { fit, notes } = autoConstrainFit(planeFit([20, 0, 0], n), pos, idx, [existing]) as { fit: PlaneFit; notes: string[] }
-    expect(fit.normal[2]).toBeCloseTo(0, 12)
+    const out = autoConstrainFit(planeFit([20, 0, 0], n), pos, idx, [existing])
+    expect(out.choice?.label).toBe('Parallel to (OYZ)')
+  })
+
+  it('squares a plane that is nearly perpendicular to an existing one when no parallel hold is in range', () => {
+    // A leaning existing plane (1°), and a normal 0.29° off lying in it, with no
+    // parallel candidate and the nearest world relation further off (0.42°).
+    const N = tilt(1)
+    const leaning = { ...existing, fit: planeFit([0, 0, 5], N) }
+    const p: Vec3 = [Math.SQRT1_2, N[2] * Math.SQRT1_2, -N[1] * Math.SQRT1_2]
+    const raw: Vec3 = [p[0] + 0.005 * N[0], p[1] + 0.005 * N[1], p[2] + 0.005 * N[2]]
+    const l = Math.hypot(...raw), n: Vec3 = [raw[0] / l, raw[1] / l, raw[2] / l]
+    const { pos, idx } = planePoints([20, 0, 0], n)
+    const { fit, notes } = autoConstrainFit(planeFit([20, 0, 0], n), pos, idx, [leaning]) as { fit: PlaneFit; notes: string[] }
+    expect(Math.abs(fit.normal[0] * N[0] + fit.normal[1] * N[1] + fit.normal[2] * N[2])).toBeLessThan(1e-12)
     expect(notes[0]).toContain('perpendicular to Plane 1')
   })
 

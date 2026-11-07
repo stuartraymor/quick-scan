@@ -238,7 +238,8 @@ export function ExtractPrimitives({ onType, preview, onCreate, onClearPreview, o
         // cylinder held parallel to another axis; Auto Constrain ticks it when
         // it moved the axis onto a parallel one within the coincidence tolerance.
         const target = ex.constraint.startsWith('parallel-el') ? constraintRefs.find((r) => r.id === Number(ex.constraint.slice('parallel-el'.length))) : undefined
-        const can = !!target && (target.fit.kind === 'cylinder' || target.fit.kind === 'cone' || target.fit.kind === 'line')
+        const worldAxis = ex.constraint === 'perpendicular-oxy' || ex.constraint === 'perpendicular-oyz' || ex.constraint === 'perpendicular-oxz'
+        const can = worldAxis || (!!target && (target.fit.kind === 'cylinder' || target.fit.kind === 'cone' || target.fit.kind === 'line'))
         const checked = ex.autoConstrain ? !!preview.autoCoincident : can && ex.coincidentAxis
         return <label className="checkrow" title="Hold the cylinder's axis on the axis it is parallel to; only the radius is fitted">
           <input type="checkbox" checked={checked} disabled={fitting || ex.autoConstrain || !can} data-test="extract-coincident-axis"

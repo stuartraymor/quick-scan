@@ -1,4 +1,12 @@
-## 0.0.149 — Local candidate; GitHub held
+## 0.0.150 — Local candidate; GitHub held
+
+- Auto Constrain for a cylinder or line uses only the relations QUICKSURFACE lists for it: an axis is never held lying in a plane or across another axis (0.0.149 chose "Parallel to Plane(2)" on basic_part where QUICKSURFACE chose "Parallel to Z Axis").
+- Auto Constrain for a plane prefers a parallel hold over a perpendicular one, and the world plane on a tie (QUICKSURFACE chose "Parallel to (OXY)" over "Perpendicular to Plane(2)").
+- Coincident axis also applies to "Parallel to X / Y / Z Axis", putting the cylinder's axis on that world axis.
+- A plane's constraint list shows each plane as "Parallel to" before "Perpendicular to", as QUICKSURFACE does.
+- Includes 0.0.149 below.
+
+## 0.0.149 — Installed; superseded
 
 - Extract primitives: the constraint list follows the primitive, as QUICKSURFACE lists it. For a cylinder or line: Not constrained, Parallel to X / Y / Z Axis, Perpendicular to each plane, Parallel to each cylinder or line (Parallel to a cylinder was missing; plane-only entries no longer appear).
 - Auto Constrain snaps a cylinder or line to the X, Y or Z axis too, preferring the world axis on a tie (QUICKSURFACE chose "Parallel to Z Axis"), and moves it onto that axis within the coincidence tolerance.
