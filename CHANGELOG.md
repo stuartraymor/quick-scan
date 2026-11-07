@@ -1,4 +1,10 @@
-## 0.0.148 — Local candidate; GitHub held
+## 0.0.149 — Local candidate; GitHub held
+
+- Extract primitives: the constraint list follows the primitive, as QUICKSURFACE lists it. For a cylinder or line: Not constrained, Parallel to X / Y / Z Axis, Perpendicular to each plane, Parallel to each cylinder or line (Parallel to a cylinder was missing; plane-only entries no longer appear).
+- Auto Constrain snaps a cylinder or line to the X, Y or Z axis too, preferring the world axis on a tie (QUICKSURFACE chose "Parallel to Z Axis"), and moves it onto that axis within the coincidence tolerance.
+- Includes 0.0.148 below.
+
+## 0.0.148 — Installed; superseded
 
 - Extract primitives: a plane, cylinder or line held to a constraint (chosen or Auto Constrain) is measured again on the points the free fit kept after its used-points cut-off, not on the whole marking. On basic_part a cylinder held coaxial to its own free fit no longer moves its radius (0.0018 mm before) or worsens σ (0.0721 → 0.0753 mm), matching QUICKSURFACE.
 - Extract primitives: "Coincident axis" checkbox under the constraint, as in QUICKSURFACE. A cylinder held parallel to another cylinder, cone or line can be held on that axis with only its radius fitted; Auto Constrain shows it ticked when it moved the axis onto a parallel one.

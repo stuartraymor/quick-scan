@@ -96,7 +96,7 @@ export function ExtractPrimitives({ onType, preview, onCreate, onClearPreview, o
   // Primitives already made, offered as constraints the way QUICKSURFACE lists them.
   const elements = useStore((s) => s.elements)
   const constraintRefs = elements.flatMap((e) => (e.fit ? [{ id: e.id, name: e.name, fit: e.fit }] : []))
-  const options = constraintOptions(constraintRefs)
+  const options = constraintOptions(constraintRefs, preview?.kind)
   const inferred = ex.autoConstrain ? preview?.autoChoice : undefined
   if (inferred && !options.some(option => option.id === inferred.id)) options.push(inferred)
   const hidden = useShell((s) => s.hiddenTriangles)

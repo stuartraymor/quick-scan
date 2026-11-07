@@ -25,7 +25,24 @@ export interface ConstraintRef { id: number; name: string; fit: FitData }
 
 /** Step 2's whole list: the coordinate planes, then each primitive already
  *  made — a plane both ways, an axis (cylinder, cone, line) perpendicular. */
-export function constraintOptions(refs: readonly ConstraintRef[]): { id: ConstraintId; label: string }[] {
+/** An axis primitive is constrained by its axis. QUICKSURFACE 8.0.128 lists, for
+ *  a cylinder: Not constrained, Parallel to X/Y/Z Axis, Perpendicular to each
+ *  plane, Parallel to each cylinder (observed on basic_part, 2026-11-06). */
+const isAxisKind = (kind?: string) => kind === 'cylinder' || kind === 'line'
+export const AXIS_CONSTRAINTS: { id: ConstraintId; label: string }[] = [
+  { id: 'none', label: 'Not constrained' },
+  { id: 'perpendicular-oyz', label: 'Parallel to X Axis' },
+  { id: 'perpendicular-oxz', label: 'Parallel to Y Axis' },
+  { id: 'perpendicular-oxy', label: 'Parallel to Z Axis' },
+]
+
+export function constraintOptions(refs: readonly ConstraintRef[], kind?: string): { id: ConstraintId; label: string }[] {
+  if (isAxisKind(kind)) {
+    const out = [...AXIS_CONSTRAINTS]
+    for (const r of refs) if (r.fit.kind === 'plane' && directionOf(r.fit)) out.push({ id: `perpendicular-el${r.id}`, label: `Perpendicular to ${r.name}` })
+    for (const r of refs) if ((r.fit.kind === 'cylinder' || r.fit.kind === 'line') && directionOf(r.fit)) out.push({ id: `parallel-el${r.id}`, label: `Parallel to ${r.name}` })
+    return out
+  }
   const out = [...CONSTRAINTS]
   for (const r of refs) {
     if (!directionOf(r.fit)) continue
@@ -36,8 +53,8 @@ export function constraintOptions(refs: readonly ConstraintRef[]): { id: Constra
 }
 
 /** The words for a constraint, for the status line. */
-export function constraintLabel(id: ConstraintId, refs: readonly ConstraintRef[]): string {
-  return constraintOptions(refs).find((c) => c.id === id)?.label ?? 'Not constrained'
+export function constraintLabel(id: ConstraintId, refs: readonly ConstraintRef[], kind?: string): string {
+  return constraintOptions(refs, kind).find((c) => c.id === id)?.label ?? constraintOptions(refs).find((c) => c.id === id)?.label ?? 'Not constrained'
 }
 
 export const CONSTRAINTS: { id: ConstraintId; label: string }[] = [
@@ -278,6 +295,32 @@ export function autoConstrainFit(fit: FitData, pos: Float32Array, idx: ArrayLike
         const label = constraintLabel(world, []);
         return { fit: held, notes: [label], choice: { id: world, label } };
       }
+    }
+  }
+  // An axis (cylinder, line) can snap to the X, Y or Z axis; a world axis wins
+  // a tie, as QUICKSURFACE chose "Parallel to Z Axis" for a cylinder over a
+  // plane whose normal is Z. Within the coincidence tolerance the axis is
+  // moved onto the world axis too (manual, "Using Auto Constrains").
+  if (isAxisKind(fit.kind)) {
+    let closest = best?.off ?? Infinity
+    let world: ConstraintId | undefined
+    for (const datum of ['oxy', 'oyz', 'oxz'] as const) {
+      const angle = angleDeg(own, DATUM_NORMAL[datum])
+      if (angle <= tol.tiltDeg && angle <= closest + 1e-9) { world = `perpendicular-${datum}`; closest = angle }
+    }
+    if (world) {
+      let held = constrainFit(fit, pos, idx, world)
+      const label = constraintLabel(world, [], fit.kind)
+      const notes = [label]
+      if (held && held.kind === 'cylinder') {
+        const a = held.axis, c = held.center
+        const across = len(sub(c, scale(a, dot(a, c))))
+        if (across <= tol.coincidenceMm) {
+          const on = withDirection(fit, pos, idx, a, { through: [0, 0, 0] })
+          if (on) { held = on; notes.push(`on the ${label.slice('Parallel to '.length)}`) }
+        }
+      }
+      if (held) return { fit: held, notes, choice: { id: world, label } }
     }
   }
   if (!best) return { fit, notes: [] }

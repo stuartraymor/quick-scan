@@ -1020,7 +1020,7 @@ export default function App() {
     if (used && used.length >= 3 && used.length <= selection.length) selection = used
     if (ex.constraint !== 'none') {
       const refs = useStore.getState().elements.filter((e) => e.fit).map((e) => ({ id: e.id, name: e.name, fit: e.fit as FitData }))
-      const label = constraintLabel(ex.constraint, refs).toLowerCase()
+      const label = constraintLabel(ex.constraint, refs, fit.kind).toLowerCase()
       const held = constrainFit(next, pos, selection, ex.constraint, refs, ex.coincidentAxis)
       if (held) { next = held; notes.push(ex.coincidentAxis && canHoldCoincidentAxis(fit, ex.constraint, refs) ? `${label}, coincident axis` : label) }
       else return { fit, notes, problem: `Cannot fit the selection ${label}.` }
@@ -1090,7 +1090,7 @@ export default function App() {
       }
       if (d && d.status !== 'failed') {
         // As in QUICKSURFACE: the fit is a preview until Create.
-        setExtractPreview({ kind, sigma: d.fit?.sigma ?? null, selection, autoChoice: held?.autoChoice, autoCoincident: !!held?.notes.some((n) => n.startsWith('on the axis of')) })
+        setExtractPreview({ kind, sigma: d.fit?.sigma ?? null, selection, autoChoice: held?.autoChoice, autoCoincident: !!held?.notes.some((n) => n.startsWith('on the ')) })
         const name = kind[0].toUpperCase() + kind.slice(1)
         useStore.getState().setStatus(`${name} preview${d.fit?.sigma != null ? ` — σ ${boundLength(usePrefs.getState().units).fmt(d.fit.sigma, 4)}` : ''}${held?.notes.length ? ` — ${held.notes.join(', ')}` : ''}. Create to keep it, or pick another type.`)
         sceneRef.current?.setPaintedVertices(selection, EXTRACT_MARK_COLOR)

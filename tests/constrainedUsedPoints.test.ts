@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'vitest'
 import { buildMeshGraph } from '../src/core/geometry/buildGraph'
 import { fitCylinderOnSelection } from '../src/core/fit/fitCylinderFromSeed'
-import { canHoldCoincidentAxis, constrainFit, withDirection } from '../src/core/elements/constrain'
+import { autoConstrainFit, canHoldCoincidentAxis, constrainFit, constraintOptions, withDirection } from '../src/core/elements/constrain'
 import type { FitData } from '../src/core/types'
 
 let seed = 777
@@ -71,5 +71,34 @@ describe('Coincident axis (QUICKSURFACE Extract primitives, cylinder parallel to
     if (!on || on.kind !== 'cylinder' || !off || off.kind !== 'cylinder') throw new Error('no fit')
     expect(offAxis(on.center)).toBeLessThan(1e-9)
     expect(offAxis(off.center)).toBeGreaterThan(0.25)
+  })
+})
+
+describe('cylinder constraint list and Auto Constrain, as QUICKSURFACE 8.0.128 shows them', () => {
+  const g = buildMeshGraph({ kind: 'soup', positions: cylinderWithOutliers() })
+  const all = new Uint32Array(g.vertexCount).map((_, i) => i)
+  const free = fitCylinderOnSelection(g, all, { method: 'gaussian', sigma: 3 })
+  const plane = { id: 4, name: 'Plane(1)', fit: { kind: 'plane', center: [0, 0, 0], normal: [0, 0, 1] } as unknown as FitData }
+  const cyl = { id: 6, name: 'Cylinder(1)', fit: { ...free } as unknown as FitData }
+
+  it('lists axes, perpendicular planes and parallel cylinders for a cylinder', () => {
+    expect(constraintOptions([plane, cyl], 'cylinder').map((o) => o.label)).toEqual([
+      'Not constrained', 'Parallel to X Axis', 'Parallel to Y Axis', 'Parallel to Z Axis', 'Perpendicular to Plane(1)', 'Parallel to Cylinder(1)'])
+  })
+  it('a first cylinder near Z snaps to the Z axis (a world axis wins a tie with a Z-normal plane) and onto it within the coincidence tolerance', () => {
+    const fit = { ...free } as unknown as FitData
+    const auto = autoConstrainFit(fit, g.positions, free.used!, [plane], { tiltDeg: 0.5, coincidenceMm: 1 })
+    expect(auto.choice?.label).toBe('Parallel to Z Axis')
+    if (auto.fit.kind !== 'cylinder') throw new Error('not a cylinder')
+    expect(Math.abs(Math.abs(auto.fit.axis[2]) - 1)).toBeLessThan(1e-12)
+    expect(Math.hypot(auto.fit.center[0], auto.fit.center[1])).toBeLessThan(1e-9)
+  })
+  it('an existing cylinder exactly parallel wins over the world axis', () => {
+    const fit = { ...free } as unknown as FitData
+    const tilted = { ...cyl, fit: { ...free, axis: [Math.sin(0.001), 0, Math.cos(0.001)] } as unknown as FitData }
+    const own = { ...free, axis: [Math.sin(0.001), 0, Math.cos(0.001)] } as unknown as FitData
+    const auto = autoConstrainFit(own, g.positions, free.used!, [plane, tilted], { tiltDeg: 0.5, coincidenceMm: 1 })
+    expect(auto.choice?.label).toBe('Parallel to Cylinder(1)')
+    void fit
   })
 })
