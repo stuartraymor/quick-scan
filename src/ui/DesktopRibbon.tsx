@@ -33,6 +33,8 @@ type Props = {
   onFineAlign: () => void
   onPointAlign: () => void
   onExport: () => void
+  /** Scan Data › Export Visible: the scan as shown, hidden triangles left out, as a mesh. Not the elements STEP (`onExport`). */
+  onExportVisible?: () => void
   onExample?: (id: string) => void
   exampleBusy?: boolean
   onOpen: () => void
@@ -59,7 +61,7 @@ function Group({ label, children }: { label: string; children: ReactNode }) {
 }
 
 /** Familiar command positions, backed by the existing session and plugin verbs. */
-export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExport, onOpen, onExample, exampleBusy = false, onSave, onSaveAs, onDeselect, onSnapshot, onSurfaceArea, onVolume, onHideSelected, onIsolate, onShowHidden, onInvertHidden, onAutoColorize, onDefaultColor, onView, onFitView, savable, cadActions }: Props) {
+export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExport, onExportVisible, onOpen, onExample, exampleBusy = false, onSave, onSaveAs, onDeselect, onSnapshot, onSurfaceArea, onVolume, onHideSelected, onIsolate, onShowHidden, onInvertHidden, onAutoColorize, onDefaultColor, onView, onFitView, savable, cadActions }: Props) {
   const file = useStore(s => s.fileName)
   const busy = useStore(s => s.busy)
   const interactive = useInteractiveAlign(s => s.open)
@@ -366,7 +368,7 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
       </div>
     </Group>
     <Group label="Colors"><div className="ribbon-text-stack">{smallText('Auto colorize', 'scanColours', () => onAutoColorize?.(), needsScan || !onAutoColorize, 'Give each mesh a colour of its own')}{smallText('Set Default Color', 'colourPlot', () => onDefaultColor?.(), needsScan || !onDefaultColor, 'Put the default scan colour back')}</div></Group>
-    <Group label="Export Visible">{tool('Export', 'exportStep', onExport, needsScan, 'Export the visible scan data')}</Group>
+    <Group label="Export Visible">{tool('Export', 'mesh', () => onExportVisible?.(), needsScan || !onExportVisible, 'Export the visible scan data as an STL mesh (hidden triangles are left out)')}</Group>
     <Group label="Visibility">{tool('Hide Selected', 'eyeOff', onHideSelected, needsScan || marked === 0, 'Hide the selected triangles')}{tool('Isolate', 'model', onIsolate, needsScan || marked === 0, 'Leave the selected triangles and hide the rest')}</Group>
   </>
   // Freeform and Surfacing as seen live in QUICKSURFACE 8.0.128 (2026-11-02):

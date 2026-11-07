@@ -103,7 +103,7 @@ import type { FieldScale } from './core/field/colormap'
 import { deviationScale } from './core/deviation/deviation'
 import { thicknessScale } from './core/thickness/thickness'
 import { rigidToColumnMajor } from './core/deviation/rigid'
-import { exportElementsStep, exportScanMesh, exportScanPointCloud, runExport, saveBuilt, textBytes, type BuiltFile } from './app/exports'
+import { exportElementsStep, exportScanMesh, exportScanPointCloud, exportVisibleScan, runExport, saveBuilt, textBytes, type BuiltFile } from './app/exports'
 import type { MeshFormat } from './core/exportMesh'
 import { PICK_MARK_TOOL_STATUS } from './app/deviationWorkspace'
 import { useElementField } from './app/useElementField'
@@ -1878,6 +1878,7 @@ export default function App() {
         onFineAlign={() => void runAlign(false)}
         onPointAlign={startPicking}
         onExport={handleExportStep}
+        onExportVisible={() => exportVisibleScan(sceneRef)}
         pluginTools={active?.ribbon}
         cadActions={ribbonActions}
         onSave={saveProject}

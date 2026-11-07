@@ -1,3 +1,7 @@
+## 0.0.152 — Local candidate; GitHub held
+
+- Scan Data → Export Visible → Export saves the scan as shown as an STL mesh, leaving out triangles hidden with Hide Selected or Isolate. It ran the elements STEP export before (audit 2026-11-07, W-01). With the whole scan hidden it saves nothing and says so.
+
 ## 0.0.151 — Local candidate; GitHub held
 
 - Align by Coordinate System: a cylinder, cone or line as the tertiary (zero point) feature fixes the open coordinate where its axis crosses the primary plane, as QUICKSURFACE does. Its fitted mid-length centre was used before, and on basic_part the slightly tilted axis left the aligned part 0.06 mm off in X.

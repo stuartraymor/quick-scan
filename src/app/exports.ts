@@ -195,6 +195,20 @@ export function buildScanMesh(scene: SceneManager | null, format: MeshFormat): B
 export const exportScanMesh = (sceneRef: RefObject<SceneManager | null>, format: MeshFormat) =>
   runExport(async () => saveBuilt(buildScanMesh(sceneRef.current, format)))
 
+/** Scan Data › Export Visible: the scan as it is shown — triangles hidden by
+ *  Hide Selected / Isolate are already out of the drawn index, so they stay
+ *  out of the file — as an STL. With the scan itself hidden there is nothing
+ *  visible to write, and the status line says so instead of saving. */
+export const exportVisibleScan = (sceneRef: RefObject<SceneManager | null>) =>
+  runExport(async () => {
+    const scene = sceneRef.current
+    if (scene && !scene.scanShown()) {
+      useStore.getState().setStatus('Nothing to export — the scan is hidden. Show it, then Export Visible.')
+      return
+    }
+    saveBuilt(buildScanMesh(scene, 'stl'))
+  })
+
 /** The scan as a point cloud — every vertex with its normal, in the pose it
  *  is being shown in, as a binary PLY or an XYZ text file — for the
  *  reverse-engineering tools that model over points rather than triangles.

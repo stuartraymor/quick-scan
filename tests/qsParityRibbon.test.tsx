@@ -61,6 +61,13 @@ describe('QUICKSURFACE ribbon parity', () => {
     expect([...tools(html), ...keys]).toEqual(expect.arrayContaining(['Measure', 'Surface Area', 'Volume', 'Zebra Stripes', 'Environment Map', 'Draft', 'Snapshot', 'Compare', 'Compare to other meshes', 'Wall thickness', '2D Measure']))
   })
 
+  it('Scan Data › Export Visible exports the scan mesh, not the elements STEP (audit W-01)', () => {
+    const html = render('scan')
+    const group = html.slice(html.indexOf('>Export Visible<') - 2000, html.indexOf('>Export Visible<'))
+    const key = [...group.matchAll(/<button class="desktop-ribbon-tool"[^>]*>/g)].pop()?.[0] ?? ''
+    expect(key).toMatch(/title="Export the visible scan data as an STL mesh/)
+  })
+
   it('the former Wall Thickness and 2D Measure tabs show Analysis', () => {
     expect(groups(render('thickness'))).toEqual(groups(render('analysis')))
     expect(groups(render('flat'))).toEqual(groups(render('analysis')))
