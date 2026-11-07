@@ -3,20 +3,24 @@ import { useEffect, useRef } from 'react'
 import type { FlatScene } from '../../../src/viewer/FlatScene'
 import type { Vec2 } from '../../../src/core/flat/types'
 import type { SketchChains } from '../app/useReverseWorkspace'
-import { applyCornerGesture } from '../state/cornerGestureAction'
+import { brushPoints } from '../core/sketchBrush'
+import { applyCornerGesture, applyInstantFit } from '../state/cornerGestureAction'
 import { useReverse } from '../state/reStore'
 import { useSketchBrush } from '../state/sketchBrushStore'
 import { useSketchCornerTrim } from '../state/sketchCornerTrimStore'
 
-/** Ctrl+left-drag in plain Edit Sketch (select tool): join the corner under
- *  the brush, or fillet an already joined one. Brush modes keep their own input. */
+/** Plain Edit Sketch (select tool) brush gestures, as in QUICKSURFACE:
+ *  Ctrl+left-drag joins the corner under the brush, or fillets a joined one;
+ *  Shift+left-drag instant-fits a line or arc to the scan points under it.
+ *  A Shift press without movement stays an additive pick. Brush modes keep their own input. */
 export function SketchCornerGestureOverlay({ scene, chainsOf }: { scene: FlatScene | null; chainsOf: () => SketchChains | null }) {
   const anchor = useRef<HTMLSpanElement>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
   useEffect(() => {
     const host = anchor.current?.parentElement ?? null
     if (!scene || !host) return
-    let path: Vec2[] = [], pointer: number | null = null
+    let path: Vec2[] = [], pointer: number | null = null, mode: 'join' | 'fit' = 'join'
+    let start = { x: 0, y: 0 }, travelled = 0
     // QUICKSURFACE paints the brushed area blue while Ctrl is held.
     const draw = (stroke: Vec2[], alpha: number) => {
       const el = canvas.current, ctx = el?.getContext('2d')
@@ -27,7 +31,7 @@ export function SketchCornerGestureOverlay({ scene, chainsOf }: { scene: FlatSce
       if (alpha <= 0) return
       const pts = stroke.map((q) => scene.sheetScreenPoint(q)).filter((q): q is { x: number; y: number } => !!q)
       if (!pts.length) return
-      ctx.globalAlpha = alpha; ctx.strokeStyle = '#2f7bff66'; ctx.lineCap = ctx.lineJoin = 'round'
+      ctx.globalAlpha = alpha; ctx.strokeStyle = mode === 'fit' ? '#ff9d0066' : '#2f7bff66'; ctx.lineCap = ctx.lineJoin = 'round'
       ctx.lineWidth = Math.max(useSketchBrush.getState().brushPx, 14)
       ctx.beginPath(); pts.forEach((q, i) => { if (i) ctx.lineTo(q.x - rect.left, q.y - rect.top); else ctx.moveTo(q.x - rect.left, q.y - rect.top) })
       if (pts.length === 1) ctx.lineTo(pts[0].x - rect.left + 0.01, pts[0].y - rect.top)
@@ -38,16 +42,18 @@ export function SketchCornerGestureOverlay({ scene, chainsOf }: { scene: FlatSce
       return !!d && d.tool === 'select' && !useSketchBrush.getState().open && !useSketchCornerTrim.getState().open
     }
     const down = (e: PointerEvent) => {
-      if (e.button !== 0 || !e.ctrlKey || e.shiftKey || e.altKey || !active()) return
+      if (e.button !== 0 || e.altKey || e.ctrlKey === e.shiftKey || !active()) return
       const p = scene.sheetPoint(e.clientX, e.clientY)
       if (!p) return
       e.preventDefault(); e.stopImmediatePropagation()
+      mode = e.ctrlKey ? 'join' : 'fit'; start = { x: e.clientX, y: e.clientY }; travelled = 0
       path = [p]; pointer = e.pointerId; draw(path, 1)
       host.setPointerCapture(e.pointerId)
     }
     const move = (e: PointerEvent) => {
       if (pointer !== e.pointerId) return
       e.preventDefault(); e.stopImmediatePropagation()
+      travelled = Math.max(travelled, Math.abs(e.clientX - start.x) + Math.abs(e.clientY - start.y))
       const p = scene.sheetPoint(e.clientX, e.clientY)
       if (p) path.push(p)
       draw(path, 1)
@@ -61,7 +67,16 @@ export function SketchCornerGestureOverlay({ scene, chainsOf }: { scene: FlatSce
       if (host.hasPointerCapture(e.pointerId)) host.releasePointerCapture(e.pointerId)
       const upp = scene.unitsPerScreenPx()
       const brush = Math.max(useSketchBrush.getState().brushPx, 14) / 2
-      applyCornerGesture(path, brush * upp, chainsOf()?.chains.flat() ?? [])
+      const chains = chainsOf()?.chains ?? []
+      if (mode === 'join') applyCornerGesture(path, brush * upp, chains.flat())
+      else if (travelled <= 6) {
+        // A Shift click, not a stroke: hand the additive pick back to the sheet.
+        const at = scene.sheetPoint(start.x, start.y)
+        if (at) scene.onPick?.(at, { alt: false, shift: true, ctrl: false, unitsPerScreenPx: upp })
+      } else {
+        const b = useSketchBrush.getState()
+        applyInstantFit(path, brush * upp, brushPoints(chains), b)
+      }
       // Clear synchronously: an animation-frame fade can stall in a throttled window (0.0.144).
       draw([], 0); path = []
     }

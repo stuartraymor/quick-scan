@@ -1,3 +1,8 @@
+## 0.0.147 — Local candidate; GitHub held
+
+- Edit Sketch (Select tool): Shift+drag over scan reference points fits a line or an arc immediately, without opening Fit Primitives, as observed in QUICKSURFACE. Straight strokes give an H/V-snapped line; a stroke whose points a line explains poorly (a rounded or brushed corner) gives one arc.
+- The Shift stroke is painted orange while dragging and cleared on release. A Shift click without movement still adds to the selection; Shift+drag no longer starts an additive box selection.
+
 ## 0.0.146 — Local candidate; GitHub held
 
 - Ctrl+drag now takes a sketch line wherever the brush crosses or passes it. 0.0.145 tested only a line's two ends and midpoint, so strokes across a line's interior (for example at crossing or overshooting lines) missed it.

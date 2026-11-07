@@ -2,6 +2,8 @@
 import type { Vec2 } from '../../../src/core/flat/types'
 import { classifyCornerGesture } from '../core/cornerGesture'
 import { buildCornerTrim } from '../core/sketchCornerTrim'
+import { chooseInstantFit, pointsUnderPath } from '../core/instantFit'
+import { sketchWithBrushFit, type BrushFitOptions, type BrushPoint } from '../core/sketchBrush'
 import { useReverse } from './reStore'
 
 /** Apply a Ctrl+drag over the sketch. Returns a short status message. */
@@ -22,4 +24,25 @@ export function applyCornerGesture(path: readonly Vec2[], radius: number, scan: 
   }
   r.setSketch(result.sketch, result.farAnchors)
   return `Fillet fitted to ${result.usedPoints ?? 0} scan points (R ${result.radiusMm?.toFixed(3)} mm).`
+}
+
+/** Apply a Shift+drag Instant Fit: line or arc fitted to the scan points under the brush. */
+export function applyInstantFit(path: readonly Vec2[], radius: number, scan: readonly BrushPoint[], options: BrushFitOptions): string {
+  const r = useReverse.getState(), d = r.sketchDraft
+  if (!d) return 'Open a sketch first.'
+  const selected = pointsUnderPath(scan, path, radius)
+  if (selected === null) return fail('Instant Fit takes at most 12,000 reference points. Brush a shorter section.')
+  if (selected.length < 2) return 'No reference points under the brush.'
+  const fit = chooseInstantFit(selected, options)
+  const sketch = fit.ok ? sketchWithBrushFit(d.sketch, fit) : null
+  if (!fit.ok || !sketch) return fail(fit.ok ? 'The primitive could not be fitted.' : fit.error)
+  // As in Fit Primitives: append without refitting satisfied existing geometry.
+  r.setSketch(sketch, undefined, true)
+  return `Fitted ${fit.kind ?? 'primitive'} to ${selected.length} points (maximum deviation ${fit.maxDeviation.toFixed(3)} mm).`
+}
+
+function fail(error: string): string {
+  const d = useReverse.getState().sketchDraft
+  if (d) useReverse.setState({ sketchDraft: { ...d, error } })
+  return error
 }
