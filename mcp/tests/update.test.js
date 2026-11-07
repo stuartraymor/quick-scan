@@ -252,14 +252,19 @@ test('a copy that fails to start, or stops at once with an error, falls back and
 })
 
 test('a checkout makes no request, and the status says updates are off there', async () => {
+  // A checkout of its own: this test must not depend on whether the source
+  // folder it runs from is one (audit 2026-11-07, T-07).
+  const repo = await tempDir()
+  mkdirSync(join(repo, '.git'))
+  const CHECKOUT = join(repo, 'mcp')
   let checked = 0
-  const u = startUpdates({ version: '0.4.0', env: {}, packageDir: MCP_DIR, dir: await tempDir(), check: async () => checked++ })
+  const u = startUpdates({ version: '0.4.0', env: {}, packageDir: CHECKOUT, dir: await tempDir(), check: async () => checked++ })
   await u.done
   assert.equal(checked, 0)
   assert.deepEqual(u.info(), { latest: null, updates: 'checkout' })
   const dir = await tempDir()
   saveState({ checked: new Date().toISOString(), latest: '0.4.1' }, dir)
-  const on = startUpdates({ version: '0.4.0', env: { [HANDED_OFF_ENV]: '0.3.9' }, packageDir: MCP_DIR, dir, log: () => {}, check: async () => ({ latest: '0.4.2' }) })
+  const on = startUpdates({ version: '0.4.0', env: { [HANDED_OFF_ENV]: '0.3.9' }, packageDir: CHECKOUT, dir, log: () => {}, check: async () => ({ latest: '0.4.2' }) })
   assert.deepEqual(on.info(), { latest: '0.4.1', handedOffFrom: '0.3.9' })
   await on.done
   assert.equal(on.info().latest, '0.4.2')

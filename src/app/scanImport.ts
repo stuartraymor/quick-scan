@@ -24,6 +24,7 @@ import type { SourceFiles } from './project'
 import { scanLoaded } from './scanEvents'
 import { forgetAllSurfaces } from './surfaces'
 import { usePrefs } from '../state/prefsStore'
+import { useDocument } from '../state/documentStore'
 import { lengthInputText, unitWord } from '../core/units'
 
 const LARGE_TRIANGLE_WARNING = 5_000_000
@@ -155,6 +156,7 @@ export function scanImport({ clientRef, sceneRef, sources, imports, maps, clearP
         // A scan opened in place of the session starts a new document, as in
         // QUICKSURFACE: Save must ask where, not overwrite the last project file.
         useStore.setState((s) => ({ scanOpened: s.scanOpened + 1 }))
+        useDocument.getState().startNew('scan')
         const mesh = prepared.mesh
         const creaseWord = mesh.crease.skipped === 'budget' ? ` ${creaseNote(mesh.crease, crease)}` : ''
         const unitsWord = read !== 'mm' ? `Read in ${unitsLabel(read).toLowerCase()} and converted to millimetres. ` : ''

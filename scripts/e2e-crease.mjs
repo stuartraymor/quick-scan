@@ -20,6 +20,7 @@ import {
   repoFile,
   shotPath,
   sleep,
+  startFit,
 } from './e2e-lib.mjs'
 
 const LOWPOLY = process.env.LOWPOLY ?? repoFile('e2e-out/lowpoly.stl')
@@ -99,7 +100,7 @@ check(back === onStatus, 'back at 30° the split is what it was')
 
 // Mark by hand on the split mesh: the brush lands on the scan's own
 // vertices, so the count is bounded by them, and the marked triangles tint.
-await click(page, '[data-test="fit-cylinder"]')
+await startFit(page, 'cylinder')
 await page.waitForSelector('[data-test="draft-select-mode"]')
 await page.select('[data-test="draft-select-mode"]', 'paint')
 await page.waitForSelector('[data-test="mark-gestures"]')

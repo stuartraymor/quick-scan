@@ -592,8 +592,7 @@ describe('session, report, files and history', () => {
     expect((await refused('export.stl')).code).toBe('unavailable')
     expect((await refused('export.cloud')).code).toBe('unavailable')
     expect((await refused('export.svg')).code).toBe('unavailable')
-    expect((await refused('project.save')).code).toBe('unavailable')
-    expect((await refused('project.load', { bytes: new Uint8Array(1) })).code).toBe('unavailable')
+    // project.save and project.load run headless since 0.0.153 (tests/commandsProject.test.ts).
     expect(undoLabels()).toEqual(['Agent: fit plane'])
   })
 

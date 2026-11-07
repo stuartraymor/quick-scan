@@ -385,10 +385,16 @@ try {
   check(counts.join() === `${after2.length},0,${after2.length}`, `each project opened brings its own notes — with, without, with: ${counts.join(', ')}`)
 
   // ---- the connection switched off --------------------------------------------------
-  await page.click('[data-test=open-settings]')
+  // Settings opens from the Settings tab's Options key since the ribbon
+  // redesign; the agent switch is on its AI & beta page.
+  await page.click('[data-test=ribbon-tab-settings]')
+  await page.click('[data-test=ribbon-options]')
+  await page.waitForSelector('[data-test=settings-page-agents]')
+  await page.click('[data-test=settings-page-agents]')
   await page.waitForSelector('[data-test=toggle-agent-link]')
   await page.click('[data-test=toggle-agent-link]')
   await page.click('[data-test=settings-close]')
+  await page.click('[data-test=workspace-reverse]')
   await sleep(300)
   const hidden = await re(() => ({ list: !!document.querySelector('[data-test=note-list]'), labels: [...document.querySelectorAll('[data-test=note-label]')].filter((e) => e.style.display !== 'none').length }))
   check(!hidden.list && hidden.labels === 0, `the connection off takes the list and the pins away: ${JSON.stringify(hidden)}`)

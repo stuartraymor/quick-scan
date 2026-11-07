@@ -321,7 +321,7 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
     <Group label="Cross sections">{cad('sketch', '2D Sketch', 'sketch')}{tool('Multiple sections', 'section', () => { useShell.setState({ workspace: 'elements' }); useShell.getState().setMultipleSectionsOpen(true) }, needsScan, 'Multiple sections: parallel cross sections through the scan at a spacing')}</Group>
     <Group label="Surfacing">{cad('surface', 'Fit Surface', 'surface', true)}{surfacingMenu}</Group>
     <Group label="Freeform">{tool('New Freeform', 'freeform', () => {}, true, 'Quad-based freeform surfacing is not implemented in Quick Scan yet')}{tool('Auto Freeform', 'scan', () => {}, true, 'Automatic freeform surfacing is not implemented in Quick Scan yet')}</Group>
-    <Group label="Part Design"><div className="ribbon-text-stack">{cadText('extrude', 'Extrude', 'extrude')}{cadText('revolve', 'Revolve', 'revolve')}{cadText('moveFace', 'Move face', 'moveFace')}</div>{cad('trim', 'Trim', 'trim', true)}<div className="ribbon-text-stack">{cadText('boolean', 'Combine', 'opJoin')}{cadText('boolean', 'Cut', 'opCut')}{cadText('boolean', 'Intersect', 'opIntersect')}</div>{patternMenu}{cad('fillet', 'Fillet / Chamfer', 'fillet')}</Group>
+    <Group label="Part Design"><div className="ribbon-text-stack">{cadText('extrude', 'Extrude', 'extrude')}{cadText('revolve', 'Revolve', 'revolve')}{cadText('moveFace', 'Move face', 'moveFace')}</div>{cad('trim', 'Trim', 'trim', true)}<div className="ribbon-text-stack">{cadText('booleanJoin', 'Combine', 'opJoin')}{cadText('booleanCut', 'Cut', 'opCut')}{cadText('booleanIntersect', 'Intersect', 'opIntersect')}</div>{patternMenu}{cad('fillet', 'Fillet / Chamfer', 'fillet')}</Group>
     {analysis}{exportGroup}
   </>
   // A command QUICKSURFACE has in this place that Quick Scan has not built yet:
@@ -368,7 +368,7 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
       </div>
     </Group>
     <Group label="Colors"><div className="ribbon-text-stack">{smallText('Auto colorize', 'scanColours', () => onAutoColorize?.(), needsScan || !onAutoColorize, 'Give each mesh a colour of its own')}{smallText('Set Default Color', 'colourPlot', () => onDefaultColor?.(), needsScan || !onDefaultColor, 'Put the default scan colour back')}</div></Group>
-    <Group label="Export Visible">{tool('Export', 'mesh', () => onExportVisible?.(), needsScan || !onExportVisible, 'Export the visible scan data as an STL mesh (hidden triangles are left out)')}</Group>
+    <Group label="Export Visible">{tool('Export', 'exportStep', () => onExportVisible?.(), needsScan || !onExportVisible, 'Export the visible scan data as an STL mesh (hidden triangles are left out)')}</Group>
     <Group label="Visibility">{tool('Hide Selected', 'eyeOff', onHideSelected, needsScan || marked === 0, 'Hide the selected triangles')}{tool('Isolate', 'model', onIsolate, needsScan || marked === 0, 'Leave the selected triangles and hide the rest')}</Group>
   </>
   // Freeform and Surfacing as seen live in QUICKSURFACE 8.0.128 (2026-11-02):
@@ -396,13 +396,13 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
     <Group label="Create">
       <div className="ribbon-text-stack">{cadText('extrude', 'Extrude', 'extrude')}{cadText('revolve', 'Revolve', 'revolve')}</div>
       {cad('trim', 'Trim', 'trim', true)}
-      <div className="ribbon-text-stack">{cadText('boolean', 'Combine', 'opJoin')}{cadText('boolean', 'Cut', 'opCut')}{cadText('boolean', 'Intersect', 'opIntersect')}</div>
+      <div className="ribbon-text-stack">{cadText('booleanJoin', 'Combine', 'opJoin')}{cadText('booleanCut', 'Cut', 'opCut')}{cadText('booleanIntersect', 'Intersect', 'opIntersect')}</div>
       <div className="ribbon-text-stack">{cadText('shell', 'Shell', 'shell')}{cadText('draft', 'Draft', 'draft')}{cadText('deleteFace', 'Delete faces', 'deleteSurface')}</div>
       <div className="ribbon-text-stack">{cadText('moveBody', 'Move body', 'navigate')}{cadText('moveFace', 'Move face', 'moveFace')}{soonText('Separate bodies', 'islands')}</div>
       <div className="ribbon-text-stack">{cadText('scaleBody', 'Scale body', 'dimLength')}{cadText('split', 'Split solid', 'split')}</div>
     </Group>
     <Group label="Edges">{cad('fillet', 'Fillet / Chamfer', 'fillet')}</Group>
-    <Group label="Patterns"><div className="ribbon-text-stack">{cadText('pattern', 'Circular pattern', 'rotateCcw')}{cadText('pattern', 'Linear pattern', 'pattern')}{cadText('mirror', 'Mirror', 'mirror')}</div></Group>
+    <Group label="Patterns"><div className="ribbon-text-stack">{cadText('patternCircular', 'Circular pattern', 'rotateCcw')}{cadText('patternLinear', 'Linear pattern', 'pattern')}{cadText('mirror', 'Mirror', 'mirror')}</div></Group>
     {exportGroup}</>
   const settingsTab = <>
     <Group label="Display Units">{tool('Millimetres', 'dimLength', () => usePrefs.getState().setUnits('mm'), units === 'mm', 'Show and type lengths in millimetres')}{tool('Inches', 'dimLength', () => usePrefs.getState().setUnits('in'), units === 'in', 'Show and type lengths in inches')}{tool('Metres', 'dimLength', () => usePrefs.getState().setUnits('m'), units === 'm', 'Show and type lengths in metres')}</Group>

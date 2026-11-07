@@ -5,7 +5,11 @@
 // let go with the scan, and a reference made from the session's own work
 // leaving the search distance as it was set. On a 40 mm box, in the
 // in-process worker — see commandKit.ts.
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+
+// Each case opens scans and projects on the in-process worker; under the
+// full suite's parallel load one ran past the 20 s default (audit T-05).
+vi.setConfig({ testTimeout: 60_000 })
 import { referenceSpacing } from '../src/commands/state'
 import { watchUnsaved } from '../src/app/project'
 import { useDeviation } from '../src/state/deviationStore'

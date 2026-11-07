@@ -192,6 +192,24 @@ export async function click(page, sel, { timeout = 10_000 } = {}) {
   await page.click(sel)
 }
 
+/** Take an element kind in hand (plane, cylinder, sphere, cone) the way a
+ *  person does since the ribbon redesign: the Construct tab's key. The side
+ *  panel's `fit-<kind>` keys share the handler but are not on screen in the
+ *  desktop layout, so a click on them is refused as not clickable. */
+export async function startFit(page, kind) {
+  await click(page, '[data-test="ribbon-tab-construct"]')
+  await click(page, `[data-test="ribbon-${kind}"]`)
+}
+
+/** Choose the display units (mm or in) in the Settings tab, and come back to
+ *  Main. Settings → Display Units replaced the units keys of the settings
+ *  modal in the ribbon redesign. */
+export async function setUnits(page, units) {
+  await click(page, '[data-test="ribbon-tab-settings"]')
+  await click(page, `[data-test="ribbon-${units === 'in' ? 'inches' : 'millimetres'}"]`)
+  await click(page, '[data-test="workspace-elements"]')
+}
+
 /** A switch in the menu over a part's key on the view bar (ui/PartKey), by
  *  the key's and the switch's data-test names: the menu opened from the
  *  key's caret, the switch pressed, and the menu let close with the pointer
@@ -247,18 +265,33 @@ export async function selectByLabel(page, sel, label) {
 
 /** The settings dialog: open it, do something in it, close it again — so the
  *  stage underneath is free for whatever the script does next. */
-export async function withSettings(page, fn) {
-  await click(page, '[data-test=open-settings]')
+export async function withSettings(page, fn, { page: settingsPage } = {}) {
+  // Since the ribbon redesign the Settings modal opens from the Settings
+  // tab's Options key (the app menu's open-settings item is in a closed
+  // menu); the tab that was showing is put back afterwards.
+  const was = await page.$eval('.desktop-workspaces [role=tab][aria-selected=true]', (e) => e.dataset.test).catch(() => null)
+  await click(page, '[data-test=ribbon-tab-settings]')
+  await click(page, '[data-test=ribbon-options]')
   await page.waitForSelector('[data-test=settings-modal]')
+  if (settingsPage) await settingsPageOf(page, settingsPage)
   const out = await fn()
   await click(page, '[data-test=settings-close]')
   await page.waitForSelector('[data-test=settings-modal]', { hidden: true })
+  if (was && was !== 'ribbon-tab-settings') await click(page, `[data-test=${was}]`)
   return out
 }
 
-/** Pick the viewport colour scheme (Settings → Colour mode) by id. */
+/** Show one page of the Settings modal (navigation, display, other,
+ *  workspace, agents): a control on another page has no box, and a click on
+ *  it is refused as not clickable. */
+export async function settingsPageOf(page, id) {
+  await click(page, `[data-test=settings-page-${id}]`)
+  await sleep(100)
+}
+
+/** Pick the viewport colour scheme (Settings → Display → Colour mode) by id. */
 export const setViewTheme = (page, id) =>
-  withSettings(page, () => page.select('[data-test=view-theme]', id))
+  withSettings(page, () => page.select('[data-test=view-theme]', id), { page: 'display' })
 
 /** The ids of every colour scheme on offer, in the dialog's order. */
 export const viewThemeIds = (page) =>

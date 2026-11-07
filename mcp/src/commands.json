@@ -1,6 +1,6 @@
 {
-  "app": "0.0.152",
-  "saved": "2026-11-05T02:47:45.463Z",
+  "app": "0.0.153",
+  "saved": "2026-11-07T06:23:26.637Z",
   "commands": [
     {
       "name": "align.auto",
@@ -2808,7 +2808,7 @@
     {
       "name": "project.load",
       "title": "Open a project",
-      "description": "Open a .scanruler project in place of the session — its models, then every measurement in it, remeasured, each fit as it was saved. Refuses while the session holds measurements unless discard is true. Needs the browser. Returns the session. Not undoable: an opened project starts a new history.",
+      "description": "Open a .scanruler project in place of the session — its models, then every measurement in it, remeasured, each fit as it was saved. Refuses while the session holds measurements unless discard is true. Returns the session. Not undoable: an opened project starts a new history.",
       "input": {
         "type": "object",
         "properties": {
@@ -2860,7 +2860,7 @@
     {
       "name": "project.save",
       "title": "Save the project",
-      "description": "The session as a .scanruler project file, as Save Project downloads it: the scan, the reference, the image and every measurement, each rebuilt when it is opened. Needs the browser. Returns the file’s bytes and its name, holds (what is in it, counted — read it before calling the file a revision: a page reset holds no model), aligned (whether the scan stands in an aligned frame) and says (what a workspace wants said of the work saved).",
+      "description": "The session as a .scanruler project file, as Save Project downloads it: the scan, the reference, the image and every measurement, each rebuilt when it is opened. Returns the file’s bytes and its name, holds (what is in it, counted — read it before calling the file a revision: a page reset holds no model), aligned (whether the scan stands in an aligned frame) and says (what a workspace wants said of the work saved).",
       "input": {
         "type": "object",
         "properties": {},

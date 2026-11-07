@@ -1,3 +1,12 @@
+## 0.0.153 — Local candidate; GitHub held
+
+- One owner for which file Save writes to (the document store): a project opened or saved is written back; a scan, example or image opened since, a new project or a restored checkpoint make a new document, and Save asks where. Regression tests for the 0.0.150 overwrite (D-01) now run headless with a fake desktop writer.
+- Open, Save and New Project are one piece of code shared by the app and headless sessions, so `project.save` and `project.load` work through MCP and in tests without a browser (a project holding a 2D-sheet image still needs the browser to open). A save → load → save round trip is tested.
+- Export Visible keeps the icon it had before 0.0.152. No other interface change.
+- Part Design / CAD: Combine, Cut and Intersect open the boolean editor on that operation (all three opened it on its default before); Circular pattern and Linear pattern open the pattern editor in that mode (Linear opened circular). Same keys, icons and places.
+- Tests: `npm test` also runs the three node:test files (updater, recents, example library — 16 tests that never ran); the session-holds command tests get the 60 s budget the other worker-backed files have (one timed out under the full suite's load); the MCP checkout test makes its own checkout instead of depending on the folder it runs from.
+- Browser checks: the CI scenarios follow the ribbon redesign (element kind from the Construct tab, units from the Settings tab, Settings from its Options key and page, the scan export from the app menu, 2D Measure from the Analysis tab). Three assertions that are about behaviour, not selectors, remain open and are listed in the release notes.
+
 ## 0.0.152 — Local candidate; GitHub held
 
 - Scan Data → Export Visible → Export saves the scan as shown as an STL mesh, leaving out triangles hidden with Hide Selected or Isolate. It ran the elements STEP export before (audit 2026-11-07, W-01). With the whole scan hidden it saves nothing and says so.

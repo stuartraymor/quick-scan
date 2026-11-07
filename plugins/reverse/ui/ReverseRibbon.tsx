@@ -143,7 +143,14 @@ export function useReverseRibbonActions(onExport: () => void): NonNullable<Plugi
     sheet: action(() => state.startFeature('sheet'), sketches > 0, 'Create a sketch first.'),
     thicken: action(() => state.startFeature('thicken'), state.bodies.some(b => b.surface), 'Create a surface body first.'),
     boolean: action(() => state.startFeature('boolean'), state.bodies.length >= 2, 'Create or import at least two bodies first.'),
+    // Combine, Cut and Intersect are three keys in QUICKSURFACE: the same
+    // editor, opened on that operation (audit 2026-11-07, W-02).
+    booleanJoin: action(() => state.startFeature('boolean', { op: 'join' }), state.bodies.length >= 2, 'Create or import at least two bodies first.'),
+    booleanCut: action(() => state.startFeature('boolean', { op: 'cut' }), state.bodies.length >= 2, 'Create or import at least two bodies first.'),
+    booleanIntersect: action(() => state.startFeature('boolean', { op: 'intersect' }), state.bodies.length >= 2, 'Create or import at least two bodies first.'),
     pattern: action(() => state.startFeature('pattern'), state.bodies.length > 0, 'Create or import a body first.'),
+    patternCircular: action(() => state.startFeature('pattern', { mode: 'circular' }), state.bodies.length > 0, 'Create or import a body first.'),
+    patternLinear: action(() => state.startFeature('pattern', { mode: 'linear' }), state.bodies.length > 0, 'Create or import a body first.'),
     mirror: action(() => state.startFeature('mirror'), state.bodies.length > 0, 'Create or import a body first.'),
     shell: action(() => state.startFeature('shell'), state.bodies.length > 0, 'Create or import a body first.'),
     draft: action(() => state.startFeature('draft'), state.bodies.length > 0, 'Create or import a body first.'),

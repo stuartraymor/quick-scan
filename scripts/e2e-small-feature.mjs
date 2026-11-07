@@ -115,8 +115,25 @@ try {
   await page.screenshot({ path: shotPath(`${prefix}-0-bore.png`) })
 
   // ---- a cylinder being made, its grips on the stage -------------------------------
-  const onWall = [rect.x + rect.w * 0.5 + rect.h * 0.19, rect.y + rect.h * 0.5]
-  await click(page, '[data-test="fit-cylinder"]')
+  // The kind in hand through the side panel's key (the ribbon's Construct key
+  // shares the handler but also opens the Objects panel, which narrows the
+  // canvas this scenario has measured the bore in). The key has no box in
+  // the desktop layout, so it is clicked in the DOM.
+  await page.$eval('[data-test="fit-cylinder"]', (b) => b.click())
+  // A point of the bore wall the camera sees — the far side of the bore,
+  // half way down — projected through the viewport's camera, rather than a
+  // fixed offset from the canvas centre, which the framing no longer puts on
+  // the wall.
+  const onWall = await page.evaluate(([r, depth]) => {
+    const s = window.__scanruler.scene()
+    const cam = s.viewport.camera
+    const c = s.viewport.renderer.domElement.getBoundingClientRect()
+    const away = cam.position.clone()
+    away.z = 0
+    const far = away.length() > 1e-6 ? away.normalize().multiplyScalar(-r) : away.set(r, 0, 0)
+    const v = far.clone().set(far.x, far.y, -depth / 2).project(cam)
+    return [c.left + ((v.x + 1) / 2) * c.width, c.top + ((1 - v.y) / 2) * c.height]
+  }, [R, DEPTH])
   await page.mouse.move(onWall[0], onWall[1])
   await sleep(100)
   await page.mouse.click(onWall[0], onWall[1])

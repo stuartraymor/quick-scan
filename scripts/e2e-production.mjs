@@ -84,7 +84,9 @@ try {
   check(step.includes('ISO-10303-21;') && step.includes('Export point'), 'on-demand STEP writer exports the picked point')
   const cloud = await downloadText('[data-test="export-cloud"]')
   check(cloud.startsWith('ply\n') && cloud.includes('element vertex 3'), 'on-demand point-cloud writer exports all three vertices')
-  await page.click('[data-test="workspace-flat"]')
+  // 2D Measure lives in the Analysis tab's Inspection group since the ribbon redesign.
+  await page.click('[data-test="workspace-deviation"]')
+  await page.click('[data-test="ribbon-2d-measure"]')
   await page.waitForFunction(() => document.querySelector('[data-test="flat-export-svg"]')?.disabled === false)
   const svg = await downloadText('[data-test="flat-export-svg"]')
   check(svg.includes('<svg') && svg.includes('Sheet point'), 'on-demand SVG writer exports the sheet')

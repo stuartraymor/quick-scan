@@ -118,13 +118,13 @@ const save: Command = {
   name: 'save',
   title: 'Save the project',
   description:
-    'The session as a .scanruler project file, as Save Project downloads it: the scan, the reference, the image and every measurement, each rebuilt when it is opened. Needs the browser. Returns the file’s bytes and its name, holds (what is in it, counted — read it before calling the file a revision: a page reset holds no model), aligned (whether the scan stands in an aligned frame) and says (what a workspace wants said of the work saved).',
+    'The session as a .scanruler project file, as Save Project downloads it: the scan, the reference, the image and every measurement, each rebuilt when it is opened. Returns the file’s bytes and its name, holds (what is in it, counted — read it before calling the file a revision: a page reset holds no model), aligned (whether the scan stands in an aligned frame) and says (what a workspace wants said of the work saved).',
   input: obj({}),
   readOnly: true,
   returnsFile: true,
   run: async () => {
     const project = commandHost().project
-    if (!project) throw new CommandError('unavailable', 'Saving a project needs the browser.')
+    if (!project) throw new CommandError('unavailable', 'This session has no project verbs.')
     const packed = await project.save()
     if ('error' in packed) throw new CommandError('failed', packed.error)
     const says = projectSections().flatMap((p) => p.saveSays?.() ?? [])
@@ -142,13 +142,13 @@ const load: Command<{ bytes: Uint8Array; name?: string; discard?: boolean }> = {
   name: 'load',
   title: 'Open a project',
   description:
-    'Open a .scanruler project in place of the session — its models, then every measurement in it, remeasured, each fit as it was saved. Refuses while the session holds measurements unless discard is true. Needs the browser. Returns the session. Not undoable: an opened project starts a new history.',
+    'Open a .scanruler project in place of the session — its models, then every measurement in it, remeasured, each fit as it was saved. Refuses while the session holds measurements unless discard is true. Returns the session. Not undoable: an opened project starts a new history.',
   input: obj({ bytes: bytes('The project file’s contents.'), name: str('Its name, for the status line.', { minLength: 1 }), discard: discardSchema }, ['bytes']),
   history: false,
   discards: ({ discard }) => discard === true,
   run: async ({ bytes: data, name, discard }) => {
     const project = commandHost().project
-    if (!project) throw new CommandError('unavailable', 'Opening a project needs the browser.')
+    if (!project) throw new CommandError('unavailable', 'This session has no project verbs.')
     requireDiscardable(discard, 'opening a project')
     await project.open(fileOf(data, name ?? 'project.scanruler'), true)
     if (useStore.getState().errorText) throw new CommandError('failed', lastError('The project could not be opened.'))

@@ -10,6 +10,7 @@ import { vi } from 'vitest'
 import { createSession, type AppSession } from '../src/app/session'
 import { registerCoreCommands } from '../src/commands/core'
 import { installCommandHost, type CommandHost } from '../src/commands/host'
+import { headlessProjectHost } from '../src/app/headlessProject'
 import { runCommand } from '../src/commands/registry'
 import { CommandError } from '../src/commands/types'
 import { buildBinaryStl } from '../src/core/exportStl'
@@ -80,7 +81,8 @@ export async function startHeadless(extra: Omit<CommandHost, 'session'> = {}): P
   const clientRef = { current: new MeshWorkerClient() }
   const session = createSession({ clientRef, sceneRef: { current: null } })
   const unwatch = session.watch()
-  const uninstall = installCommandHost({ session, ...extra })
+  // project.save / project.load run headless on the archive functions, as the app's do on the worker.
+  const uninstall = installCommandHost({ session, project: headlessProjectHost(session), ...extra })
   registerCoreCommands()
   return {
     session,

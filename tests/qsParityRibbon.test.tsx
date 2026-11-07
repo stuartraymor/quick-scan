@@ -68,6 +68,23 @@ describe('QUICKSURFACE ribbon parity', () => {
     expect(key).toMatch(/title="Export the visible scan data as an STL mesh/)
   })
 
+  it('Combine, Cut, Intersect and the two pattern keys each take their own action (audit W-02)', () => {
+    const on = { run() {}, disabled: false }
+    const only = (ids: string[]) => Object.fromEntries(ids.map((id) => [id, on]))
+    const keyOf = (html: string, label: string) => html.match(new RegExp(`<button class="ribbon-text-key with-icon"([^>]*)>(?:<[^>]+>)*?<span>${label}</span>`))?.[1] ?? 'missing'
+    useShell.setState({ ribbonTab: 'cad' })
+    // With only the old shared id, none of the keys is live.
+    const shared = renderToStaticMarkup(<DesktopRibbon {...props} cadActions={only(['boolean', 'pattern'])} />)
+    for (const label of ['Combine', 'Cut', 'Intersect', 'Circular pattern', 'Linear pattern']) expect(keyOf(shared, label)).toContain('disabled')
+    // Each key is live on its own action, and only on it.
+    const cut = renderToStaticMarkup(<DesktopRibbon {...props} cadActions={only(['booleanCut', 'patternLinear'])} />)
+    expect(keyOf(cut, 'Cut')).not.toContain('disabled')
+    expect(keyOf(cut, 'Linear pattern')).not.toContain('disabled')
+    for (const label of ['Combine', 'Intersect', 'Circular pattern']) expect(keyOf(cut, label)).toContain('disabled')
+    const rest = renderToStaticMarkup(<DesktopRibbon {...props} cadActions={only(['booleanJoin', 'booleanIntersect', 'patternCircular'])} />)
+    for (const label of ['Combine', 'Intersect', 'Circular pattern']) expect(keyOf(rest, label)).not.toContain('disabled')
+  })
+
   it('the former Wall Thickness and 2D Measure tabs show Analysis', () => {
     expect(groups(render('thickness'))).toEqual(groups(render('analysis')))
     expect(groups(render('flat'))).toEqual(groups(render('analysis')))

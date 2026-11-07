@@ -1,58 +1,27 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Saving the session as a project and opening one: the data half is in
-// ./project, the archive in core/project. What is left here is the order
-// things have to happen in on load — scan, its alignment, reference, image,
-// then the stores, then everything that is measured rather than stored.
+// The app's project verbs: projectIo (the one copy of open, save and new,
+// shared with headless sessions) on the project worker, with the recovery
+// checkpoint watching for unsaved work and the desktop's native writer when
+// there is one.
 
-import { meshUnitsOf } from '../core/meshUnits'
-import { useEffect, useRef, type RefObject } from 'react'
+import { useEffect, useRef, useState, type RefObject } from 'react'
 import type { ElementKind } from '../core/types'
 import type { MeshWorkerClient } from '../core/workerClient'
 import type { SceneManager } from '../viewer/SceneManager'
-import { captureProjectView, readProjectView } from '../viewer/projectView'
-import { useStore } from '../state/store'
-import { creaseSetting } from '../core/geometry/crease'
-import { useDeviation } from '../state/deviationStore'
-import { useThickness } from '../state/thicknessStore'
-import { useFlat } from '../state/flatStore'
-import { forgetKeptParts, keepUnownedParts, projectSections } from './projectSections'
 import { ProjectClient } from '../core/project/projectClient'
-import { PROJECT_EXTENSION, projectStem, rigidFromJson } from '../core/project/manifest'
-import { desktopProjectWriter, recentProjectTargets } from './projectWriter'
-import { saveFile } from './exports'
-import {
-  blankManifest,
-  prepareProjectState,
-  collectProject,
-  projectHasContent,
-  readAs,
-  sessionIsDirty,
-  type SourceFiles,
-} from './project'
-import { APP_VERSION } from '../version'
+import { useStore } from '../state/store'
+import { PROJECT_EXTENSION } from '../core/project/manifest'
+import { desktopProjectWriter } from './projectWriter'
+import { type SourceFiles } from './project'
 import { useRecovery } from './useRecovery'
-import type { PackedProject } from '../commands/host'
 import type { ImportQueue } from './importQueue'
-import { prepareScan, prepareNominal, prepareImage, runImport, type PreparedScan, type PreparedNominal, type PreparedImage } from './imports'
-import { bundleFiles } from './scanFiles'
+import type { PreparedScan, PreparedNominal, PreparedImage } from './imports'
+import { createProjectIo, type ProjectIo, type SavedWatch } from './projectIo'
 
 export const isProjectFile = (name: string) =>
   name.toLowerCase().endsWith(`.${PROJECT_EXTENSION}`)
 
-export function useProject({
-  sources,
-  clientRef,
-  sceneRef,
-  elementScope,
-  imports,
-  commitScan,
-  commitNominal,
-  commitImage,
-  runEdgeDetect,
-  runFit,
-  runDeviation,
-  runThickness,
-}: {
+export function useProject(deps: {
   sources: RefObject<SourceFiles>
   clientRef: RefObject<MeshWorkerClient | null>
   sceneRef: RefObject<SceneManager | null>
@@ -68,185 +37,28 @@ export function useProject({
 }) {
   const projectClient = useRef<ProjectClient | null>(null)
   const client = () => (projectClient.current ??= new ProjectClient())
-  const capture = () => {
-    const snapshot = collectProject(sources.current, elementScope.current, APP_VERSION)
-    if (sceneRef.current) snapshot.manifest.viewport = captureProjectView(sceneRef.current.viewLink())
-    return snapshot
+  // The recovery hook needs capture, which the io owns, and the io needs the
+  // recovery's marks: the marks go through a ref filled in once both exist.
+  const recoveryRef = useRef<ReturnType<typeof useRecovery> | null>(null)
+  const saved: SavedWatch = {
+    markSaved: (s) => recoveryRef.current?.markSaved(s),
+    restored: () => recoveryRef.current?.restored(),
+    dirty: () => recoveryRef.current?.dirty ?? false,
   }
-  const recovery = useRecovery(capture, () => imports.busy || useStore.getState().busy, (file) => openProject(file, true))
+  const [io] = useState<ProjectIo>(() => createProjectIo({
+    ...deps,
+    archive: {
+      pack: (manifest, members) => client().pack(manifest, members),
+      unpack: (bytes) => client().unpack(bytes),
+      failed: () => { if (projectClient.current?.dead) projectClient.current = null },
+    },
+    saved,
+    writer: desktopProjectWriter,
+    confirm: (message) => window.confirm(message),
+  }))
+  const recovery = useRecovery(io.capture, () => deps.imports.busy || useStore.getState().busy, (file) => io.openProject(file, true))
+  recoveryRef.current = recovery
+  useEffect(() => () => projectClient.current?.dispose(), [])
 
-  /** The session as a project file, and the session marked saved — what
-   *  Save Project downloads and project.save hands back. */
-  const target = useRef<{ file: File | null; token: string | null }>({ file: null, token: null })
-  // A scan opened in place of the session is a new document: forget the file
-  // the last project was saved to, so Save asks instead of overwriting it
-  // (0.0.150 wrote an opened example over the previously opened project).
-  useEffect(() => useStore.subscribe((s, prev) => { if (s.scanOpened !== prev.scanOpened) target.current = { file: null, token: null } }), [])
-  // project.save returns bytes to the AI host. Desktop UI saves also wait for
-  // the native write, keeping the captured snapshot dirty on cancellation.
-  const pack = (destination: 'host' | 'save' | 'saveAs') => imports.run(async (): Promise<PackedProject> => {
-    const store = useStore.getState()
-    if (!projectHasContent(sources.current)) return { error: 'There is nothing to save yet — no scan, image or work.' }
-    store.setError(null)
-    useStore.setState({ busy: true, statusText: 'Saving project…' })
-    try {
-      const snapshot = capture()
-      const { manifest, members } = snapshot
-      const bytes = await client().pack(manifest, members)
-      const stem = projectStem(store.projectName, store.fileName, useFlat.getState().imageName)
-      const name = `${stem}.${PROJECT_EXTENSION}`
-      if (destination !== 'host') {
-        const writer = desktopProjectWriter()
-        if (writer?.saveProject) {
-          const result = await writer.saveProject(name, bytes, destination === 'saveAs', target.current.token, target.current.file)
-          if (result.canceled) {
-            useStore.setState({ busy: false, statusText: 'Save canceled.' })
-            return { error: 'Save canceled.' }
-          }
-          target.current = { file: null, token: result.token }
-        } else {
-          saveFile(name, new Blob([bytes as BlobPart], { type: 'application/zip' }))
-        }
-      }
-      recovery.markSaved(snapshot)
-      useStore.setState({
-        busy: false,
-        statusText: `Project saved — ${(bytes.byteLength / 1e6).toFixed(1)} MB.`,
-      })
-      return { name, bytes }
-    } catch (e) {
-      if (projectClient.current?.dead) projectClient.current = null
-      useStore.setState({ busy: false, statusText: '' })
-      const error = `The project could not be saved — ${e instanceof Error ? e.message : String(e)}`
-      store.setError(error)
-      return { error }
-    }
-  })
-
-  const packProject = () => pack('host')
-  const saveProject = () => pack('save')
-  const saveProjectAs = () => pack('saveAs')
-
-  /** Open a project in place of the session — after asking, when there is
-   *  work to lose, unless the caller has settled that (`settled`). */
-  const openProject = (file: File, recovered = false, settled = false) => runImport(imports, 'Reading project…', async () => {
-    const meshClient = clientRef.current!
-    let scan: PreparedScan | null = null
-    let nominal: PreparedNominal | null = null
-    let image: PreparedImage | null = null
-    let committed = false
-    try {
-      const { manifest, members } = await client().unpack(new Uint8Array(await file.arrayBuffer()))
-      const applyState = prepareProjectState(manifest, members)
-      const memberFile = (member: string, name: string) => {
-        const bytes = members.get(member)
-        if (!bytes) throw new Error(`Project is missing ${member}.`)
-        return new File([bytes as BlobPart], name)
-      }
-      // Check every referenced member before allocating candidate geometry.
-      const scanFile = manifest.scan && memberFile(manifest.scan.member, readAs(manifest.scan.fileName, manifest.scan.member))
-      // The files that came with it, under the names they came under.
-      const companions = (manifest.scan?.companions ?? []).map((c) => memberFile(c.member, c.fileName))
-      const ref = manifest.deviation.reference
-      const nominalFile = ref && memberFile(ref.member, ref.fileName)
-      const img = manifest.flat.image
-      const imageFile = img && memberFile(img.member, img.fileName)
-      const alignment = manifest.scan?.appliedAlignment ? rigidFromJson(manifest.scan.appliedAlignment) : null
-      if (alignment && (alignment.r.length !== 9 || alignment.t.length !== 3 || ![...alignment.r, ...alignment.t].every(Number.isFinite))) {
-        throw new Error('Malformed project: scan alignment.')
-      }
-      const scope = manifest.deviation.scope ? Uint32Array.from(manifest.deviation.scope) : null
-      // Preparation never changes stores, original bytes, the viewport, or
-      // the worker's current scan/reference. Any member may still fail here.
-      // A member saved in other units is read in millimetres from them again,
-      // the way it was when it came in; the manifest checked the value.
-      if (scanFile) scan = await prepareScan(meshClient, sceneRef.current!, bundleFiles([scanFile, ...companions])!, creaseSetting(useStore.getState()), alignment ?? undefined, meshUnitsOf(manifest.scan?.units) ?? 'mm') // units-ok: the file's own units, an id
-      if (nominalFile) nominal = await prepareNominal(meshClient, sceneRef.current!, nominalFile, meshUnitsOf(ref?.units) ?? 'mm') // units-ok: the file's own units, an id
-      if (imageFile) image = await prepareImage(imageFile)
-
-      await meshClient.commitImport({ scan: scan?.id ?? null, nominal: nominal?.id ?? null })
-      commitScan(scan)
-      commitNominal(nominal)
-      commitImage(image)
-      committed = true
-      target.current = { file: null, token: null }
-      // The scan keeps the name it was opened under, whatever the file it
-      // is now kept as.
-      useStore.setState({ appliedAlignment: alignment, ...(manifest.scan ? { fileName: manifest.scan.fileName } : {}) })
-      elementScope.current = scope
-      applyState()
-      useDeviation.setState((s) => ({ scopeVersion: s.scopeVersion + 1 }))
-      // What of the project no section here owns is kept, to be written back.
-      const unowned = keepUnownedParts(manifest, members)
-      void runEdgeDetect()
-
-      // What the sections keep in the archive's own files, back in place —
-      // before anything is measured, which may be measured on it.
-      const present = projectSections().filter((s) => manifest[s.key] !== undefined)
-      for (const section of present) await section.restore?.(manifest[section.key], { manifest, members })
-
-      // ---- everything measured rather than stored ----
-      const jobs: Promise<void>[] = []
-      for (const el of useStore.getState().elements) {
-        if (el.source.type !== 'fitted') continue
-        // The fit as saved stands: only the surface it was measured on is
-        // read again. Fitted anew it can land elsewhere, and what was built
-        // on it moves with no edit (one without a saved fit is fitted).
-        jobs.push(runFit(el.id, el.kind, el.source.seeds, el.source.selection, true))
-      }
-      await Promise.all(jobs)
-      if (manifest.scan && manifest.deviation.align && useDeviation.getState().nominalName) {
-        await runDeviation()
-      }
-      if (manifest.scan && manifest.thickness.measured) await runThickness()
-      for (const section of present) await section.remeasure?.(manifest[section.key], { manifest, members })
-      useThickness.setState({ probes: manifest.thickness.probes })
-      useDeviation.setState({ probes: manifest.deviation.probes })
-
-      // Establish navigation bounds first; old files share the import pose.
-      sceneRef.current?.frameAll('iso')
-      const view = readProjectView(manifest.viewport)
-      if (view) sceneRef.current?.restoreProjectView(view)
-      useStore.setState({
-        busy: false,
-        statusText: `Project opened — ${file.name}.${unowned.length > 0 ? ' It also holds work this build has no workspace for; that is kept, and saved with the project.' : ''}`,
-      })
-      target.current = recovered ? { file: null, token: null } : { file, token: recentProjectTargets.get(file) ?? null }
-      if (recovered) recovery.restored()
-      else recovery.markSaved(capture())
-    } catch (e) {
-      if (projectClient.current?.dead) projectClient.current = null
-      throw e
-    } finally {
-      scan?.view.dispose()
-      nominal?.view.dispose()
-      if (!committed) image?.bitmap.close()
-      await meshClient.discardImport([scan?.id, nominal?.id].filter((id): id is number => id !== undefined))
-    }
-  }, () => settled || !sessionIsDirty() || window.confirm('Opening a project replaces the measurements in this session. Continue?'))
-
-  /** Start a new project in place of the session: the scan, the reference
-   *  and the image closed, every measurement and every workspace's work let
-   *  go, the settings back to the app's own and the name taken off — what
-   *  opening an empty project does, in the workspace on screen. After
-   *  asking, when there are changes not saved, unless the caller has
-   *  settled that (`settled`). */
-  const newProject = (settled = false) => runImport(imports, 'Starting a new project…', async () => {
-    const applyState = prepareProjectState(blankManifest(APP_VERSION))
-    await clientRef.current!.commitImport({ scan: null, nominal: null })
-    commitScan(null)
-    commitNominal(null)
-    commitImage(null)
-    useStore.setState({ appliedAlignment: null })
-    elementScope.current = null
-    applyState()
-    useDeviation.setState((s) => ({ scopeVersion: s.scopeVersion + 1 }))
-    target.current = { file: null, token: null }
-    forgetKeptParts()
-    sceneRef.current?.frameAll()
-    useStore.setState({ busy: false, statusText: 'New project.' })
-    recovery.markSaved(capture())
-  }, () => settled || !recovery.dirty || window.confirm('Start a new project? The changes in this one that are not saved are lost.'))
-
-  return { saveProject, saveProjectAs, packProject, openProject, newProject, recovery }
+  return { saveProject: io.saveProject, saveProjectAs: io.saveProjectAs, packProject: io.packProject, openProject: io.openProject, newProject: io.newProject, recovery }
 }

@@ -10,7 +10,7 @@
 // dependencies (npm --prefix mcp ci).
 //   node scripts/e2e-agent-warning.mjs
 // Env: APP_URL, CHROME.
-import { check, click, finish, launchAgent, launchApp, sleep } from './e2e-lib.mjs'
+import { check, click, finish, launchAgent, launchApp, sleep, settingsPageOf } from './e2e-lib.mjs'
 
 const { startAgent } = await import('../mcp/tests/client.js')
 const { agent } = await launchAgent(startAgent)
@@ -46,6 +46,7 @@ check((await stored('scanruler.agentdataok')) === null, 'and nothing is remember
 
 // ---- the switch in Settings -------------------------------------------------
 await page.evaluate(() => document.querySelector('[data-test=open-settings]')?.click())
+await settingsPageOf(page, 'agents')
 await click(page, '[data-test=toggle-agent-link]')
 await page.waitForSelector(WARNING, { timeout: 3000 })
 check(await page.$eval('[data-test=toggle-agent-link]', (e) => !e.checked), 'the switch asks first, and stays off meanwhile')

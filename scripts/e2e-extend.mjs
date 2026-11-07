@@ -25,6 +25,7 @@ import {
   repoFile,
   shotPath,
   sleep,
+  startFit,
 } from './e2e-lib.mjs'
 
 const STL = process.env.STL ?? repoFile('block-marius.stl')
@@ -105,7 +106,7 @@ async function fitPlane() {
     [0.62, 0.42],
   ]
   for (const [fx, fy] of spots) {
-    await click(page, '[data-test="fit-plane"]')
+    await startFit(page, 'plane')
     await page.mouse.click(rect.x + rect.w * fx, rect.y + rect.h * fy)
     await sleep(350)
     if (await saveEnabled(4_000)) return [rect.x + rect.w * fx, rect.y + rect.h * fy]
@@ -267,7 +268,7 @@ await sleep(300)
 async function fitCylinder() {
   for (const fy of [0.5, 0.46, 0.54, 0.42, 0.58]) {
     for (const fx of [0.5, 0.42, 0.58, 0.35, 0.65]) {
-      await click(page, '[data-test="fit-cylinder"]')
+      await startFit(page, 'cylinder')
       await page.mouse.click(rect.x + rect.w * fx, rect.y + rect.h * fy)
       await sleep(350)
       if (await saveEnabled(5_000)) return [rect.x + rect.w * fx, rect.y + rect.h * fy]

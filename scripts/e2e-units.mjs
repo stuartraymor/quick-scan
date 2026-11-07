@@ -28,6 +28,8 @@ import {
   shotPath,
   sleep,
   withSettings,
+  startFit,
+  setUnits,
 } from './e2e-lib.mjs'
 
 const R = 20
@@ -98,7 +100,7 @@ const setText = async (sel, value) => {
 }
 
 // ---- inches, chosen in Settings -----------------------------------------------
-await withSettings(page, () => click(page, '[data-test="units-in"]'))
+await setUnits(page, 'in')
 check(
   await page.evaluate(() => localStorage.getItem('scanruler.units') === 'in'),
   'the choice is remembered in this browser',
@@ -110,7 +112,7 @@ const rect = await canvasRect(page)
 // ---- a cylinder fitted: its row reads in inches ---------------------------------
 let fitted = null
 for (const [fx, fy] of [[0.5, 0.5], [0.5, 0.62], [0.5, 0.38], [0.62, 0.5], [0.38, 0.5]]) {
-  await click(page, '[data-test="fit-cylinder"]')
+  await startFit(page, 'cylinder')
   await page.mouse.click(rect.x + rect.w * fx, rect.y + rect.h * fy)
   await sleep(350)
   const ready = await page
@@ -132,7 +134,8 @@ if (!fitted) {
   await finish(browser, consoleErrors)
   process.exit(1)
 }
-const name = fitted.match(/^(Cylinder \d+)/)?.[1]
+// Rows name elements QUICKSURFACE's way, "Cylinder(1)".
+const name = fitted.match(/^(Cylinder\s?\(?\d+\)?)/)?.[1]
 const rowDia = figure(fitted.match(/Ø\s*([\d.]+)/)?.[0])
 console.log('row:', fitted)
 check(Math.abs(rowDia - (2 * R) / IN) < 0.002, `the row reads the diameter in inches (${rowDia} for ${((2 * R) / IN).toFixed(4)})`)
@@ -174,8 +177,10 @@ await page.screenshot({ path: shotPath('e2e-units-inches.png') })
 // ---- the scan as an STL in inches ------------------------------------------------
 const downloads = mkdtempSync(join(tmpdir(), 'scanruler-units-stl-'))
 await downloadsTo(page, downloads)
-await click(page, '[data-test="export-mesh"]')
-await click(page, '[data-test="export-mesh-stl-in"]')
+// The scan export is in the app menu since the ribbon redesign.
+await click(page, '[data-test="app-menu-button"]')
+await click(page, '[data-test="menu-export-scan"]')
+await click(page, '[data-test="menu-export-scan-stl-in"]')
 const file = await awaitDownload(downloads, '.stl')
 if (!file) fail('the STL in inches did not download')
 else {
@@ -197,7 +202,7 @@ else {
 }
 
 // ---- back on millimetres: the same dimension, as it was ------------------------
-await withSettings(page, () => click(page, '[data-test="units-mm"]'))
+await setUnits(page, 'mm')
 await sleep(300)
 const row = (await texts('[data-test="dimension-row"]'))[0] ?? ''
 console.log('dimension row in mm:', row)
