@@ -176,7 +176,9 @@ try {
   })
   console.log('after a stroke of the brush', JSON.stringify(brushing))
   check(brushing.armed && (!brushing.shown || brushing.grips === 0), 'with the brush in hand the grips stand in the way of nothing')
-  check(brushing.ghost === null || brushing.ghost <= 0.1, `and the ghost of the fit stands back: opacity ${brushing.ghost}`)
+  // As QUICKSURFACE draws the primitive being built — solid, brush in hand or
+  // not (GHOST_BRUSHING_OPACITY, src/viewer/overlays.ts, since 0.0.62).
+  check(brushing.ghost === null || brushing.ghost >= 0.9, `and the ghost of the fit keeps its solid shade under the brush: opacity ${brushing.ghost}`)
   const rimPx = await page.evaluate(() => {
     const s = window.__scanruler.scene()
     const rims = s.overlays.previewEnds.children

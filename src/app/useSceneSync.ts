@@ -66,6 +66,14 @@ import type { PluginRuntime } from '../plugins/api'
  *  its motion is worked out again — see the effect at the end. */
 const DEFLECTION_SETTLE_MS = 150
 
+/** Whether the viewport's own rule sets element picking: it does unless the
+ *  plugin whose workspace is on screen takes the element clicks itself
+ *  (PluginRuntime.elementPick) — that plugin then owns the switch, and the
+ *  two never write it in turn. */
+export function coreSetsElementPicks(plugin: Pick<PluginRuntime, 'elementPick'> | null): boolean {
+  return !plugin?.elementPick
+}
+
 export function useSceneSync({
   sceneRef,
   deviation,
@@ -720,9 +728,16 @@ export function useSceneSync({
         (alignDraft !== null && alignDraft.pickSlot === null)) &&
         draft === null) ||
         (draft !== null && creationMethod(draft.kind, draft.method).mode === 'construct')))
+  // A plugin that takes the element clicks in its workspace (elementPick)
+  // sets the viewport's element picking itself — on while nothing of its own
+  // is open, off and on again as its editors ask (useReverseWorkspace). The
+  // viewport's own rule stands aside there: written after the plugin's, on
+  // the same change of workspace, it switched the picking off under it, and
+  // a click on a plane element drawn over a body took the body's face.
+  const coreSetsPicks = coreSetsElementPicks(plugin)
   useEffect(() => {
-    sceneRef.current?.setElementPickEnabled(wantsElementPicks)
-  }, [wantsElementPicks])
+    if (coreSetsPicks) sceneRef.current?.setElementPickEnabled(wantsElementPicks)
+  }, [wantsElementPicks, coreSetsPicks])
   // A section being made lights the element under the cursor, as it lights
   // the coordinate planes on offer: either is what a click would cut along.
   const sectionLights = elementsWorkspace && draft === null && !extractSession

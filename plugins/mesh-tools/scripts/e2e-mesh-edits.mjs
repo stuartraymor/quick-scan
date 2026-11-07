@@ -41,9 +41,12 @@ const editsReach = async (n) => {
   await page.waitForFunction(() => !document.querySelector('.busyoverlay'), { timeout: 300_000 })
   await sleep(500)
 }
+/** The part on the canvas, without the view bar along its foot — the
+ *  Deviation key's icon there is orange too — or the navigation cube at its
+ *  right. */
 const stage = async () => {
   const r = await canvasRect(page, '.viewslot canvas')
-  return page.screenshot({ clip: { x: r.x, y: r.y, width: r.w - 190, height: r.h }, encoding: 'base64' })
+  return page.screenshot({ clip: { x: r.x, y: r.y, width: r.w - 190, height: r.h - 90 }, encoding: 'base64' })
 }
 const orangePixels = async () =>
   page.evaluate(async (b64) => {

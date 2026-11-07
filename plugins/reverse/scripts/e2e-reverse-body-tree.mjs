@@ -9,9 +9,9 @@
 // Show all and Hide; a right click's menu taking a part out of its
 // component, and Ctrl+Z putting it back. Then several rows picked — Ctrl+click,
 // Shift+click — lit in the viewport, dragged into a component together, and
-// moved together: the Move opened from the keys under the list, a row
-// clicked putting a body in and taking it out, a part clicked in the
-// viewport putting it in.
+// moved together: the Move opened from the keys under the list, the box's
+// Add list putting a body in and its Clear taking them out, a part clicked
+// in the viewport putting it in.
 //
 // Prereqs: dev server running (npm run dev), Chrome installed.
 //   node plugins/reverse/scripts/e2e-reverse-body-tree.mjs
@@ -247,21 +247,24 @@ await page.waitForSelector('[data-test=move-body-editor]')
 let draft = await re(() => window.__re.store.getState().featureDraft)
 check(JSON.stringify([...draft.bodies].sort()) === JSON.stringify([id.Base, id.Cap].sort()), `Move opens on both picked bodies (${draft.bodies})`)
 check((await page.$eval('[data-test=move-body-bodies]', (e) => e.textContent)).includes('Base, Cap'), 'and the box names them')
-await page.click(rowName(id.Shaft))
+// While the Move is open its box stands alone in the tool window, as
+// QUICKSURFACE's floating dialog does, the body list behind it: a body goes
+// in by the box's Add list, and Clear lets every one go.
+await page.select('[data-test=move-body-add]', String(id.Shaft))
 await sleep(100)
 draft = await re(() => window.__re.store.getState().featureDraft)
-check(draft.bodies.includes(id.Shaft) && draft.bodies.length === 3, 'a click on a row puts its body into the Move')
-await page.click(rowName(id.Shaft))
+check(draft.bodies.includes(id.Shaft) && draft.bodies.length === 3, "the box's Add list puts a body into the Move")
+await click(page, '[data-test=move-body-clear-picks]')
 await sleep(100)
 draft = await re(() => window.__re.store.getState().featureDraft)
-check(!draft.bodies.includes(id.Shaft) && draft.bodies.length === 2, 'and a second click takes it out')
+check(draft.bodies.length === 0, 'and Clear takes every body out')
 await page.screenshot({ path: shotPath('reverse-body-tree-move.png') })
-// Cap's row clicked takes Cap out: the gizmo goes to Base's middle, clear
-// of Shaft. Then, on the part, a click on Shaft puts it in.
-await page.click(rowName(id.Cap))
+// Base alone: the gizmo goes to Base's middle, clear of Shaft. Then, on the
+// part, a click on Shaft puts it in.
+await page.select('[data-test=move-body-add]', String(id.Base))
 await sleep(200)
 draft = await re(() => window.__re.store.getState().featureDraft)
-check(JSON.stringify(draft.bodies) === JSON.stringify([id.Base]), `a click on a row of the Move takes it out (${draft.bodies})`)
+check(JSON.stringify(draft.bodies) === JSON.stringify([id.Base]), `Base chosen from the list stands alone in the Move (${draft.bodies})`)
 const shaftAt = await topOf('Shaft')
 await page.mouse.move(shaftAt[0] - 4, shaftAt[1] - 4)
 await sleep(60)

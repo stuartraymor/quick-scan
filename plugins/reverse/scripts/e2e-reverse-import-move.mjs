@@ -202,6 +202,9 @@ await click(page, '[data-test=import-create]')
 await waitBuilt(1)
 await click(page, '[data-test=feature-move-body]')
 await page.waitForSelector('[data-test=move-body-editor]')
+// The live map is read only with the box's Analysis ticked — off until asked
+// for, as QUICKSURFACE's Analysis box starts unticked (rePrefs, since 0.0.104).
+if (!(await page.$eval('[data-test=re-analysis-on]', (el) => el.checked))) await page.click('[data-test=re-analysis-on]')
 const mapRead = () => page.waitForFunction(() => {
   const s = window.__re.store.getState()
   return s.preview.status === 'ok' && s.mapReport?.source === 'ghost' ? s.mapReport : null

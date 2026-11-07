@@ -1,3 +1,8 @@
+## 0.0.154 — Local candidate; GitHub held
+
+- CAD: a click on a plane element drawn over a body takes the element again. The viewport's own rule for element picking and the CAD workspace's both wrote the same switch on a change of workspace, and the viewport's write, coming last, switched picking off under the CAD workspace; the viewport now leaves the switch to a workspace whose plugin takes the element clicks (`coreSetsElementPicks`, `tests/elementPicksOwner.test.ts`; `e2e-reverse-notes` is the browser check that failed). No interface change.
+- Browser checks: the five remaining CI scenarios pass. Import/Move ticks the Move box's Analysis for its live-map readings (off by default since 0.0.104, as in QUICKSURFACE); the body-tree check adds bodies to an open Move through the box's Add list and Clear, the body list standing behind the floating box; small-feature expects the fit's ghost to stay solid under the brush (as drawn since 0.0.62); mesh-edits reads its marking pixels off the part alone, leaving out the view bar (the Deviation key's icon is orange).
+
 ## 0.0.153 — Local candidate; GitHub held
 
 - One owner for which file Save writes to (the document store): a project opened or saved is written back; a scan, example or image opened since, a new project or a restored checkpoint make a new document, and Save asks where. Regression tests for the 0.0.150 overwrite (D-01) now run headless with a fake desktop writer.
