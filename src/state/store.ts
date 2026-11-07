@@ -211,6 +211,9 @@ interface AppState {
   setStatus: (text: string) => void
   setError: (text: string | null) => void
   setWorking: (label: string | null) => void
+  /** Counts scans opened in place of the session (not restored from a
+   *  project): the project file it was saved to no longer holds this work. */
+  scanOpened: number
   beginLoad: (name: string) => void
   finishLoad: (
     vertexCount: number,
@@ -598,6 +601,7 @@ export const useStore = create<AppState>()((set, get) => ({
   setError: (errorText) => set({ errorText }),
   setWorking: (working) => set({ working }),
 
+  scanOpened: 0,
   beginLoad: (name) =>
     set({
       busy: true,

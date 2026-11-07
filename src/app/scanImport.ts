@@ -152,6 +152,9 @@ export function scanImport({ clientRef, sceneRef, sources, imports, maps, clearP
         // A reference made from the session's work goes with the scan.
         await client.commitImport({ scan: prepared.id, ...(useDeviation.getState().nominalFromSession ? { nominal: null } : {}) })
         commitScan(prepared)
+        // A scan opened in place of the session starts a new document, as in
+        // QUICKSURFACE: Save must ask where, not overwrite the last project file.
+        useStore.setState((s) => ({ scanOpened: s.scanOpened + 1 }))
         const mesh = prepared.mesh
         const creaseWord = mesh.crease.skipped === 'budget' ? ` ${creaseNote(mesh.crease, crease)}` : ''
         const unitsWord = read !== 'mm' ? `Read in ${unitsLabel(read).toLowerCase()} and converted to millimetres. ` : ''

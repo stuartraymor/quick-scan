@@ -245,10 +245,28 @@ export function computeDatumAlignment(
   }
   zeroAt(c1, datumCoords(primary))
   if (secondary) zeroAt(secondary.fit.center, datumCoords(secondary))
-  if (origin) zeroAt(origin.center, [0, 1, 2])
+  if (origin) zeroAt(originAnchor(rigid, origin, primary), [0, 1, 2])
   if (centerOf) zeroAt(datum?.origin ?? centerOf, [0, 1, 2])
 
   return rigid
+}
+
+/** Where a zero-point feature fixes the open coordinates. An axis (cylinder,
+ *  cone, line) as the tertiary feature gives the point where it crosses the
+ *  primary plane, as QUICKSURFACE does (basic_part, primary Plane/Top, tertiary
+ *  Cylinder/X Axis: x = 0 where the axis meets z = 0). Its fitted centre lies at
+ *  mid-length, and a slightly tilted axis put the part 0.06 mm off (0.0.150).
+ *  Anything else, or an axis along the plane, uses its centre. */
+function originAnchor(rigid: Rigid, origin: FitData, primary: DatumSpec): Vec3 {
+  const dir = origin.kind === 'cylinder' || origin.kind === 'cone' ? origin.axis : origin.kind === 'line' ? origin.dir : null
+  if (!dir || primary.fit.kind !== 'plane') return origin.center
+  const k = axisIndex(primary.axis)
+  const p = new Float64Array(3), q = new Float64Array(3)
+  rigidApply(rigid, origin.center[0], origin.center[1], origin.center[2], p)
+  rigidRotate(rigid, dir[0], dir[1], dir[2], q)
+  if (!(Math.abs(q[k]) > 1e-6)) return origin.center
+  const t = -p[k] / q[k]
+  return [origin.center[0] + t * dir[0], origin.center[1] + t * dir[1], origin.center[2] + t * dir[2]]
 }
 
 /** How far either side of a levelling plane another face counts as near it,

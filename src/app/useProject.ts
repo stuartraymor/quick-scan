@@ -5,7 +5,7 @@
 // then the stores, then everything that is measured rather than stored.
 
 import { meshUnitsOf } from '../core/meshUnits'
-import { useRef, type RefObject } from 'react'
+import { useEffect, useRef, type RefObject } from 'react'
 import type { ElementKind } from '../core/types'
 import type { MeshWorkerClient } from '../core/workerClient'
 import type { SceneManager } from '../viewer/SceneManager'
@@ -78,6 +78,10 @@ export function useProject({
   /** The session as a project file, and the session marked saved — what
    *  Save Project downloads and project.save hands back. */
   const target = useRef<{ file: File | null; token: string | null }>({ file: null, token: null })
+  // A scan opened in place of the session is a new document: forget the file
+  // the last project was saved to, so Save asks instead of overwriting it
+  // (0.0.150 wrote an opened example over the previously opened project).
+  useEffect(() => useStore.subscribe((s, prev) => { if (s.scanOpened !== prev.scanOpened) target.current = { file: null, token: null } }), [])
   // project.save returns bytes to the AI host. Desktop UI saves also wait for
   // the native write, keeping the captured snapshot dirty on cancellation.
   const pack = (destination: 'host' | 'save' | 'saveAs') => imports.run(async (): Promise<PackedProject> => {

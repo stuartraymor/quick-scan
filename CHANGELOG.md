@@ -1,3 +1,8 @@
+## 0.0.151 — Local candidate; GitHub held
+
+- Align by Coordinate System: a cylinder, cone or line as the tertiary (zero point) feature fixes the open coordinate where its axis crosses the primary plane, as QUICKSURFACE does. Its fitted mid-length centre was used before, and on basic_part the slightly tilted axis left the aligned part 0.06 mm off in X.
+- Opening a scan (including Help → Examples) starts a new document: Save asks where to save instead of overwriting the project file opened before it.
+
 ## 0.0.150 — Local candidate; GitHub held
 
 - Auto Constrain for a cylinder or line uses only the relations QUICKSURFACE lists for it: an axis is never held lying in a plane or across another axis (0.0.149 chose "Parallel to Plane(2)" on basic_part where QUICKSURFACE chose "Parallel to Z Axis").
