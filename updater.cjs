@@ -38,6 +38,24 @@ async function checkForUpdate({ fetch, current, repo = REPO }) {
   return { status: 'available', version, notes: String(release.body ?? '').slice(0, 4000), url: release.html_url, release };
 }
 
+/** Rename errors worth another try: Windows reports EBUSY or EPERM while a
+ *  virus scanner or the indexer still holds the file just written. */
+const RETRIABLE = new Set(['EBUSY', 'EPERM', 'EACCES']);
+const RENAME_DELAYS_MS = [50, 100, 200, 400, 800];
+
+/** Move the finished download into place, waiting out a transient lock with
+ *  a short back-off (≈1.5 s in all) before giving up; any other failure, or a
+ *  lock that outlasts the retries, is thrown as it is. */
+async function renameWithRetry(from, to, { rename = fs.promises.rename, sleep = ms => new Promise(r => setTimeout(r, ms)), delays = RENAME_DELAYS_MS } = {}) {
+  for (let attempt = 0; ; attempt++) {
+    try { return await rename(from, to); }
+    catch (error) {
+      if (!RETRIABLE.has(error?.code) || attempt >= delays.length) throw error;
+      await sleep(delays[attempt]);
+    }
+  }
+}
+
 async function downloadUpdate({ fetch, release, dir, onProgress = () => {} }) {
   const picked = pickAssets(release);
   if (!picked) throw new Error('No verified Windows installer in this release.');
@@ -64,8 +82,8 @@ async function downloadUpdate({ fetch, release, dir, onProgress = () => {} }) {
     }
   } finally { await new Promise(r => out.end(r)); }
   if (hash.digest('hex') !== expected) { await fs.promises.rm(partial, { force: true }); throw new Error('The download did not match its published SHA-256 and was discarded.'); }
-  await fs.promises.rename(partial, target);
+  await renameWithRetry(partial, target);
   return target;
 }
 
-module.exports = { REPO, parse, isNewer, pickAssets, checkForUpdate, downloadUpdate };
+module.exports = { REPO, RENAME_DELAYS_MS, parse, isNewer, pickAssets, checkForUpdate, downloadUpdate, renameWithRetry };

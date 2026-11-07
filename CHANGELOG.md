@@ -1,3 +1,8 @@
+## 0.0.155 — Local candidate; GitHub held
+
+- Updater: moving the verified download into place waits out a transient file lock (EBUSY / EPERM, as a virus scanner holds a file just written) with a short back-off before giving up (`renameWithRetry`, four tests). Other errors are reported at once, as before.
+- Tests: real-scan fixtures can live outside the repository — `QUICKSCAN_FIXTURES` names a directory (a CI cache or a folder of licensed example scans) that `tests/fixtures.ts` looks in before the repository root. First such test: the Magic Wand on QUICKSURFACE's basic_part outer wall (`tests/wandRealScan.test.ts`): the same patch from any seed, ≥ 97 % of the wall by area, under 1 % leak, and the fitted cylinder within 0.01 mm / 0.02° of the one QUICKSURFACE fitted. The "stripes" the wand leaves on that wall are axial grooves, not a wand fault (audit G-03 closed; nothing in the wand changed). No interface change.
+
 ## 0.0.154 — Local candidate; GitHub held
 
 - CAD: a click on a plane element drawn over a body takes the element again. The viewport's own rule for element picking and the CAD workspace's both wrote the same switch on a change of workspace, and the viewport's write, coming last, switched picking off under the CAD workspace; the viewport now leaves the switch to a workspace whose plugin takes the element clicks (`coreSetsElementPicks`, `tests/elementPicksOwner.test.ts`; `e2e-reverse-notes` is the browser check that failed). No interface change.
