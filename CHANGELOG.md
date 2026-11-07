@@ -1,3 +1,9 @@
+## 0.0.144 — Local candidate; GitHub held
+
+- Edit Sketch (Select tool): Ctrl+drag over a corner joins the two pieces under the brush, using the existing Auto Join that preserves fitted geometry.
+- Ctrl+drag over an already joined line corner creates an Auto Fillet whose radius is fitted to the scan reference points under the brush, with a radius dimension.
+- The Ctrl brush stroke is painted blue while dragging and fades on release. Behaviour is derived from the QUICKSURFACE manual; native Ctrl+drag has not yet been reproduced, so this is not a parity claim.
+
 ## 0.0.143 — Local candidate; GitHub held
 
 - Include joint cubic fitting and section-topology fixes below, retaining one isolated-sample weight for coordinates represented only by zero-length runs. Prevent rejection of valid separated clusters of repeated vertices.
