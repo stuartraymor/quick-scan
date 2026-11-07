@@ -25,7 +25,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { importStep, writeBinarySTL } from 'meshstep'
 import { cubeStep } from '../../../tests/stepFixtures.ts'
-import { check, click, enterTyper, fail, finish, launchApp, loadScan, pickOption, previewReady, selectByLabel, shotPath, sleep, viewOption } from '../../../scripts/e2e-lib.mjs'
+import { check, click, enterTyper, fail, finish, launchApp, loadScan, pickOption, previewReady, selectByLabel, shotPath, sleep, startFit, viewOption } from '../../../scripts/e2e-lib.mjs'
 
 const SIZE = 20
 
@@ -63,7 +63,8 @@ check((await page.$('[data-test=reverse-ready-chip]')) !== null, 'the stage says
 // away.
 await page.click('[data-test=workspace-elements]')
 await sleep(400)
-await click(page, '[data-test=fit-plane]')
+// The kind comes from the Construct tab since the ribbon redesign (0.0.153).
+await startFit(page, 'plane')
 const rect3d = await page.$eval('.viewslot canvas', (el) => {
   const r = el.getBoundingClientRect()
   return { x: r.x + r.width / 2, y: r.y + r.height / 2 }

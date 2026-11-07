@@ -124,7 +124,7 @@ const detailIn = enumOf(['none', 'brief'], 'none: id, status, line, the curvesâ€
  *  frame the bodies are built in â€” kept while the scan is the same. */
 let paths: { key: unknown[]; paths: ScanPaths } | null = null
 
-function scanPaths(s: ReverseSession): ScanPaths {
+export function scanPaths(s: ReverseSession): ScanPaths {
   const st = useStore.getState()
   if (!st.fileName) throw new CommandError('no_scan', 'A patch network is drawn on the scan, and none is open.')
   const scene = s.sceneRef.current
