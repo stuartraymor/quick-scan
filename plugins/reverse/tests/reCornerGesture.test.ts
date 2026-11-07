@@ -21,6 +21,14 @@ describe('Ctrl-drag corner gesture', () => {
     expect(piecesNearPath(s, brush, 1.5).sort()).toEqual([a, b].sort())
     expect(piecesNearPath(s, brush, 0)).toEqual([])
   })
+  it('takes a long line when the brush crosses its middle, far from its ends (0.0.145 regression)', () => {
+    const s = emptySketch()
+    const long = addEntity(s, { kind: 'line', a: [-150, 0], b: [150, 0] })
+    // A short stroke straight across the middle, and one passing 1 mm beside it.
+    expect(piecesNearPath(s, [[37, -5], [37, 5]], 0.5)).toEqual([long])
+    expect(piecesNearPath(s, [[37, 1], [60, 1]], 1.5)).toEqual([long])
+    expect(piecesNearPath(s, [[37, 3], [60, 3]], 1.5)).toEqual([])
+  })
   it('joins an open corner, fillets a joined one with the scan points, and ignores empty space', () => {
     expect(classifyCornerGesture(corner(false).s, brush, 1.5, []).kind).toBe('join')
     const j = corner(true)

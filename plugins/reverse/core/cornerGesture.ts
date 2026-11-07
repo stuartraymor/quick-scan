@@ -22,22 +22,38 @@ export function pathDistance(p: Vec2, path: readonly Vec2[]): number {
   return best
 }
 
+function segmentsCross(a: Vec2, b: Vec2, c: Vec2, d: Vec2): boolean {
+  const o = (p: Vec2, q: Vec2, r: Vec2) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+  const d1 = o(c, d, a), d2 = o(c, d, b), d3 = o(a, b, c), d4 = o(a, b, d)
+  return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))
+}
+
+/** Exact distance between segment ab and segment cd. */
+function segmentSegmentDistance(a: Vec2, b: Vec2, c: Vec2, d: Vec2): number {
+  if (segmentsCross(a, b, c, d)) return 0
+  return Math.min(segmentDistance(a, c, d), segmentDistance(b, c, d), segmentDistance(c, a, b), segmentDistance(d, a, b))
+}
+
+/** Exact distance from segment ab to a brush path (a single point allowed). */
+function segmentPathDistance(a: Vec2, b: Vec2, path: readonly Vec2[]): number {
+  if (path.length === 1) return segmentDistance(path[0], a, b)
+  let best = Infinity
+  for (let i = 1; i < path.length; i++) best = Math.min(best, segmentSegmentDistance(a, b, path[i - 1], path[i]))
+  return best
+}
+
 /** Editable profile pieces whose outline passes within `radius` of the brush path. */
 export function piecesNearPath(sketch: Sketch, path: readonly Vec2[], radius: number): number[] {
-  if (!(radius > 0) || !Number.isFinite(radius)) return []
+  if (!(radius > 0) || !Number.isFinite(radius) || path.length === 0) return []
   const out: number[] = []
   for (const e of sketch.entities) {
     if (e.construction || e.fixed || e.projected) continue
+    // Exact segment-to-path distance: a brush crossing the middle of a long
+    // line must take it (0.0.145 sampled only segment ends and midpoints).
     const outline = entityPolyline(e, 96)
     let hit = false
-    for (let i = 0; i < outline.length && !hit; i++) {
-      const a = outline[i], b = outline[Math.min(i + 1, outline.length - 1)]
-      // Sample the outline segment against the brush path.
-      for (const t of [0, 0.5, 1]) {
-        const p: Vec2 = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]
-        if (pathDistance(p, path) <= radius) { hit = true; break }
-      }
-    }
+    if (outline.length === 1) hit = pathDistance(outline[0], path) <= radius
+    for (let i = 1; i < outline.length && !hit; i++) hit = segmentPathDistance(outline[i - 1], outline[i], path) <= radius
     if (hit) out.push(e.id)
   }
   return out

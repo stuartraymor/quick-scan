@@ -1,4 +1,9 @@
-## 0.0.145 — Local candidate; GitHub held
+## 0.0.146 — Local candidate; GitHub held
+
+- Ctrl+drag now takes a sketch line wherever the brush crosses or passes it. 0.0.145 tested only a line's two ends and midpoint, so strokes across a line's interior (for example at crossing or overshooting lines) missed it.
+- Includes the 0.0.145 paint fix and the 0.0.144 Ctrl+drag corner join and scan-fitted fillet below.
+
+## 0.0.145 — Installed; superseded
 
 - Clear the blue Ctrl-drag paint immediately on release. 0.0.144 relied on an animation-frame fade that stalled in the installed window and left the stroke on screen.
 - Includes the 0.0.144 Ctrl+drag corner join and scan-fitted fillet below.
