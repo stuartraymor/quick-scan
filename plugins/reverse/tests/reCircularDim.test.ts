@@ -26,14 +26,3 @@ describe('Circular dimensioning', () => {
     expect(dimensionFor(sketch, { kind: 'piece', id: 2 }, null)).toMatchObject({ kind: 'radius', value: 3 })
   })
 })
-
-import { scanReach } from '../state/scanReach'
-
-describe('Extrude default depth', () => {
-  it('reaches the far side of the scan along the sketch normal, as QUICKSURFACE opens it', () => {
-    const p = new Float32Array([0, 0, -13, 0, 0, 17.559, 5, 5, 2])
-    expect(scanReach([0, 0, -5], [0, 0, 1], p)).toBeCloseTo(22.559, 3)
-    expect(scanReach([0, 0, 30], [0, 0, 1], p)).toBeNull()
-    expect(scanReach([0, 0, 0], [0, 0, 1], null)).toBeNull()
-  })
-})

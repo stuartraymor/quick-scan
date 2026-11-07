@@ -5,7 +5,6 @@
 // on elements, on sketches and on bodies, the manipulators' drags, and what
 // the workspace puts on the stage — see src/plugins/api.ts.
 
-import { setScanPositions } from '../state/scanReach'
 import { setCircularDimensioning } from '../core/draw'
 import { sectionLinePlane, useSectionLine } from '../state/sectionLineStore'
 import { reSceneOf } from '../viewer/reScene'
@@ -97,8 +96,6 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
   const circular = usePrefs((s) => s.circularDimensioning)
   useEffect(() => setCircularDimensioning(circular), [circular])
   const { sceneRef, clientRef } = host
-  // An extrude opens on the scan's full depth past its sketch.
-  useEffect(() => { setScanPositions(() => sceneRef.current?.scanPositions() ?? null); return () => setScanPositions(null) }, [sceneRef])
 
   // The CAD kernel's worker, the feature build, the bodies on the part — and
   // the 2D sheet borrowed for a sketch.

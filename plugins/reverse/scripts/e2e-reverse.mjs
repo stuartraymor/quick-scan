@@ -184,14 +184,17 @@ check(/1 of 1 picked/.test(await profiles()), 'the sketch’s one region is pick
 const previewText = () => page.$eval('[data-test=extrude-preview]', (el) => el.textContent)
 await page.waitForFunction(() => /Preview:/.test(document.querySelector('[data-test=extrude-preview]')?.textContent ?? ''), { timeout: 30_000 }).catch(() => {})
 console.log('preview:', await previewText())
-check(/Preview: 4000\.0 mm³/.test(await previewText()), 'the default 10 mm extrude previews at 4000 mm³ before it is created')
+// The box opens on 0.3 of the profile's longest side, as QUICKSURFACE's does
+// (0.0.156): 6 mm on the 20 mm square.
+check(Number(await page.$eval('[data-test=extrude-to]', (el) => el.value)) === 6, 'the extrude opens on 0.3 of the 20 mm square: To 6 mm')
+check(/Preview: 2400\.0 mm³/.test(await previewText()), 'the opening 6 mm extrude previews at 2400 mm³ before it is created')
 // Reverse direction turns the extrude over: the numbers change sign and
 // the body is the same size behind the plane.
 await click(page, '[data-test=extrude-flip]')
 await sleep(150)
-check(Number(await page.$eval('[data-test=extrude-to]', (el) => el.value)) === -10, 'Reverse direction turns the extrude the other way (To −10)')
-await page.waitForFunction(() => /Preview: 4000\.0/.test(document.querySelector('[data-test=extrude-preview]')?.textContent ?? ''), { timeout: 30_000 }).catch(() => {})
-check(/Preview: 4000\.0 mm³/.test(await previewText()), 'and the body behind the plane is the same size')
+check(Number(await page.$eval('[data-test=extrude-to]', (el) => el.value)) === -6, 'Reverse direction turns the extrude the other way (To −6)')
+await page.waitForFunction(() => /Preview: 2400\.0/.test(document.querySelector('[data-test=extrude-preview]')?.textContent ?? ''), { timeout: 30_000 }).catch(() => {})
+check(/Preview: 2400\.0 mm³/.test(await previewText()), 'and the body behind the plane is the same size')
 // Tab walks from one number to the next, not to the ⓘ between them.
 // To stands above From in the box.
 await page.focus('[data-test=extrude-to]')

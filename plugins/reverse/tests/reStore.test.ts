@@ -945,7 +945,9 @@ describe('the taper grip', () => {
   it('leans the sides out as it is pulled out, read and typed as a taper', () => {
     const sketch = finishSquare()
     s().startExtrude(sketch)
-    // To 10 mm: a pull of 10 mm out puts the far edge at 45°.
+    // To 10 mm (the box opens on 3, 0.3 of the 10 mm square): a pull of
+    // 10 mm out puts the far edge at 45°.
+    s().setExtrude({ extent: { kind: 'distance', from: 0, to: 10 } })
     s().gripDrag('taper', 0, 'start')
     s().gripDrag('taper', 10, 'move')
     s().gripDrag('taper', 10, 'end')

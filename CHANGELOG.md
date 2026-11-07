@@ -1,3 +1,7 @@
+## 0.0.156 — Local candidate; GitHub held
+
+- Extrude: the box opens on 0.3 of the profile's longest side, as QUICKSURFACE's does — measured on four profiles (a 32.906 × 72.293 mm rectangle opened at 21.687829 mm, exactly 0.3 of the longer side, well past the scan's own depth; `analysis/quick-scan-v0.0.155/native-extrude-default.json`). It opened on the scan's depth past the sketch plane before (a single live reading on the sample bracket), or 10 mm. The regions picked are measured, the whole sketch when none is; a sketch with no extent still opens on 10. No interface change (`core/extrudeDepth.ts`, `tests/reExtrudeOpening.test.ts`).
+
 ## 0.0.155 — Local candidate; GitHub held
 
 - Updater: moving the verified download into place waits out a transient file lock (EBUSY / EPERM, as a virus scanner holds a file just written) with a short back-off before giving up (`renameWithRetry`, four tests). Other errors are reported at once, as before.
