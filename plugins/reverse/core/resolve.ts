@@ -439,6 +439,11 @@ export function resolveFeatures(
       else steps.push({ kind: 'network', id: f.id, name: f.name, nodes: f.nodes, curves: f.curves, cells: f.cells, spans: f.spans, fit: f.fit })
       continue
     }
+    if (f.kind === 'freeform') {
+      if (f.faces.length === 0) failed(f, 'The cage has no faces: add one (reverse.freeform.edit add_face or add_rectangle).')
+      else steps.push({ kind: 'freeform', id: f.id, name: f.name, positions: f.positions, faces: f.faces, creases: f.creases, steps: f.steps, snap: f.snap, ...(f.ask ? { ask: f.ask } : {}) })
+      continue
+    }
     if (f.kind === 'split') {
       if (f.tools.length === 0) failed(f, 'Pick a sheet or a body to split with.')
       else if (f.tools.includes(f.body)) failed(f, 'A body cannot split itself.')

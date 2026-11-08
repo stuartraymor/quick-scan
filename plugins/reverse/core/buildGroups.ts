@@ -95,6 +95,10 @@ function touches(step: BuildStep, sketchOf: (id: number) => Sketch | undefined):
       makes = true
       scan = true
       break
+    case 'freeform':
+      makes = true
+      scan = step.snap
+      break
     case 'trim':
       reads.push(...step.bodies)
       makes = true

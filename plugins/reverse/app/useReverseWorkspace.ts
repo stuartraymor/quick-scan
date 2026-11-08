@@ -266,6 +266,8 @@ export function useReverseWorkspace({
     const moved = (f: Feature): Feature =>
       f.kind === 'network'
         ? movedNetwork(f)
+        : f.kind === 'freeform'
+        ? { ...f, positions: Array.from({ length: f.positions.length / 3 }, (_, i) => moveAt([f.positions[i * 3], f.positions[i * 3 + 1], f.positions[i * 3 + 2]])).flat() }
         : f.kind === 'sketch'
         ? { ...f, frame: transformFrame(f.frame, delta), plane: movePlane(f.plane), sketch: moveSources(f.sketch) }
         : f.kind === 'cutPlane'

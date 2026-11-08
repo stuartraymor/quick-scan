@@ -7,7 +7,7 @@ import type { Extension } from '../../../src/core/elements/extend'
 import type { SectionFrame } from '../../../src/core/section/frame'
 import type { FitData, Vec3 } from '../../../src/core/types'
 import type { ConstrainMode, ConstrainRef } from './autoConstrain'
-import type { BodyOp, BooleanOp, ChamferMode, RegionPick, EdgeRef, ExtrudeUntil, FaceProfile, FaceRef, NetworkFeature, Primitive, SplitKeep, SurfaceFitParams, SurfaceShape, ThickenSide, TrimPrimitive, VariableEdge } from './features'
+import type { BodyOp, BooleanOp, ChamferMode, RegionPick, EdgeRef, ExtrudeUntil, FaceProfile, FaceRef, FreeformFeature, NetworkFeature, Primitive, SplitKeep, SurfaceFitParams, SurfaceShape, ThickenSide, TrimPrimitive, VariableEdge } from './features'
 import type { LoopPiece, Profile } from './kernel'
 import type { ShadowSource } from './shadowPieces'
 import type { SweepRoute } from './sweepRoute'
@@ -146,6 +146,8 @@ export type BuildStep =
    *  is fitted: the step carries the network as drawn — its nodes, curves
    *  and cells by position — and the worker traces and fits it there. */
   | ({ kind: 'network'; id: number; name: string } & Pick<NetworkFeature, 'nodes' | 'curves' | 'cells' | 'spans' | 'fit'>)
+  /** A freeform cage is made a body where the kernel is; with `snap` it is taken onto the scan there. */
+  | ({ kind: 'freeform'; id: number; name: string } & Pick<FreeformFeature, 'positions' | 'faces' | 'creases' | 'steps' | 'snap' | 'ask'>)
   | { kind: 'trim'; id: number; name: string; bodies: number[]; primitives: TrimPrimitive[]; tolerance: number; overlap: number }
   /** A sketch placed on the part before the features on it are built: its
    *  face found again and its projected pieces taken again from what they

@@ -12,6 +12,7 @@ import type { BuildStep, TrimPrimitive } from './features'
 import type { KernelMesh, ReadBackEdge, ReKernel, Shape, StepCheck, StepMend } from './kernel'
 import type { MeshFault } from './kernelMesh'
 import type { NetworkReport } from './networkBody'
+import type { FreeformReport } from './freeform/make'
 import type { OddEdge, OddKind, ShortEdge } from './kernelEdges'
 import type { CopyMark } from './patternCopies'
 import type { Region } from './regions'
@@ -88,6 +89,8 @@ export interface FeatureResult {
   offScan?: OffScanReport[]
   /** What a patch network reports: its cells, patches and curves. */
   network?: NetworkReport
+  /** What a freeform cage came to: the faces made of it, what was done to them, the refinement they needed. */
+  freeform?: FreeformReport
   /** A sketch lying on a body's face: the frame the face was found in
    *  this build, for the sketch to be kept at. */
   sketchFrame?: { sketchId: number; frame: SectionFrame }

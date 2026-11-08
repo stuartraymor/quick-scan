@@ -16,7 +16,7 @@ import type { EdgeInfo, FaceInfo, FeatureResult } from '../core/build'
 import type { TangentEdges } from '../core/edgeLines'
 import { type FitOptions } from '../core/fitOptions'
 import { type SnapContext } from '../core/snap'
-import { dependentsOf, movedList, stepFileKey, type AxisRef, type Feature, type ResolveContext, type PlaneRef, type StepFileRef } from '../core/features'
+import { dependentsOf, movedList, stepFileKey, type AxisRef, type Feature, type FreeformData, type ResolveContext, type PlaneRef, type StepFileRef } from '../core/features'
 import { moveInto, nextFolderId, nextFolderName, NO_PICK, withoutFolder, type BodyFolder, type FolderMove, type ListPick } from '../core/bodyFolders'
 import { itemKey, type PickedItem } from '../core/selectionInfo'
 import { type FeatureGripSide } from '../core/preview'
@@ -515,6 +515,11 @@ export interface ReState {
    *  to the next (state/reNetworkDraft.ts). Nothing while no network is
    *  open. */
   editNetwork: (change: (d: Extract<FeatureDraft, { kind: 'network' }>) => Extract<FeatureDraft, { kind: 'network' }>) => void
+  /** A freeform cage added to the list (one undo step); its id. The cage is edited through the editor's tools
+   *  (core/freeform/edit.ts), not through a box. */
+  addFreeform: (data: FreeformData, name?: string) => number
+  /** A freeform feature's cage or options replaced (one undo step); false where there is no such feature. */
+  updateFreeform: (id: number, data: Partial<FreeformData> & { name?: string }) => boolean
 
   /** A click on a sketch's region in the viewport, for whichever of the
    *  two editors is open: picked or let go — and a region of another

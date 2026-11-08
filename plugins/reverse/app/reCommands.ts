@@ -28,6 +28,7 @@ import { threadRead } from './reThreadCommand'
 import { parameterAdd, parameterList, parameterRemove, parameterRename, parameterSet } from './reParameterCommands'
 import { noteAdd, noteList, noteResolve, notesNudge } from './reNoteCommands'
 import { cageConvert, cageOffset, cageRead, cageThicken, cageWrite } from './reFreeformCommands'
+import { freeformConvert, freeformCreate, freeformEdit, freeformMovePoints, freeformRead, freeformRefine, freeformSnap } from './reFreeformEditCommands'
 import { networkCreate, networkEdit, networkRead, networkSuggestCreases } from './reNetworkCommands'
 import { planReplace, planSet, planTick, planUpdate, withPlanGate } from './rePlan'
 
@@ -152,6 +153,13 @@ export const reverseCommands: Command<never>[] = ([
   { ...cageConvert, name: 'freeform.cage_convert' },
   { ...cageThicken, name: 'freeform.cage_thicken' },
   { ...cageOffset, name: 'freeform.cage_offset' },
+  { ...freeformCreate, name: 'freeform.create' },
+  { ...freeformRead, name: 'freeform.read' },
+  { ...freeformEdit, name: 'freeform.edit' },
+  { ...freeformMovePoints, name: 'freeform.move_points' },
+  { ...freeformRefine, name: 'freeform.refine' },
+  { ...freeformSnap, name: 'freeform.snap' },
+  { ...freeformConvert, name: 'freeform.convert' },
   { ...planSet, name: 'plan.set' },
   { ...planUpdate, name: 'plan.update' },
   { ...planTick, name: 'plan.tick' },

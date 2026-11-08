@@ -1019,6 +1019,34 @@ export interface NetworkFeature extends FeatureFlags {
   visible: boolean
 }
 
+/** What a freeform feature does with the body its cage makes: thickens it
+ *  or offsets it (core/freeform/shell.ts). */
+export type FreeformAsk = { kind: 'thicken'; thickness: number; side: 'in' | 'out' | 'both'; direction: 'auto' | 'x' | 'y' | 'z' } | { kind: 'offset'; distance: number }
+
+/** A freeform cage: the control polygon of a subdivision surface, snapped
+ *  to the scan when `snap`, made a CAD body of B-spline faces
+ *  (core/freeform/convert.ts) — a solid where the cage is closed, else a
+ *  sheet — and with `ask` thickened or offset. The cage is what the
+ *  editor's tools change (core/freeform/edit.ts): vertices flat in
+ *  `positions`, faces as vertex lists, creases as vertex pairs. */
+export interface FreeformFeature extends FeatureFlags {
+  id: number
+  kind: 'freeform'
+  name: string
+  positions: number[]
+  faces: number[][]
+  creases: [number, number][]
+  /** How many times the cage is refined before the faces are made (1–4). */
+  steps: number
+  /** The refined surface is taken onto the scan first. */
+  snap: boolean
+  ask?: FreeformAsk
+  visible: boolean
+}
+
+/** What a freeform feature holds besides its name. */
+export type FreeformData = Pick<FreeformFeature, 'positions' | 'faces' | 'creases' | 'steps' | 'snap' | 'ask'>
+
 /** A fitted surface's kind: the freeform B-spline, or a plane or a cylinder
  *  — exact faces, held square and parallel to what the part already has
  *  (core/re/autoConstrain), and cutting a trim as the whole plane or
@@ -1073,7 +1101,7 @@ export interface TrimFeature extends FeatureFlags {
 export type TrimPrimitive = { kind: 'plane'; origin: Vec3; normal: Vec3; basisU: Vec3; basisV: Vec3 } | Exclude<Primitive, { kind: 'slab' | 'prism' }>
 
 export type BodyFeature = ShellFeature | FilletFeature | ChamferFeature | HoleFeature | ThreadFeature | CutPlaneFeature | MirrorFeature | BooleanFeature | SplitFeature | PatternFeature | DraftFeature | MoveFaceFeature | DeleteFaceFeature | OffsetBodyFeature
-export type Feature = SketchFeature | ExtrudeFeature | RevolveFeature | ExtractFeature | SheetFeature | LoftFeature | SweepFeature | ThickenFeature | SurfaceFeature | NetworkFeature | TrimFeature | ImportFeature | MoveBodyFeature | BodyFeature
+export type Feature = SketchFeature | ExtrudeFeature | RevolveFeature | ExtractFeature | SheetFeature | LoftFeature | SweepFeature | ThickenFeature | SurfaceFeature | NetworkFeature | FreeformFeature | TrimFeature | ImportFeature | MoveBodyFeature | BodyFeature
 
 /** The solid an extracted element or shadow becomes, resolved to plain
  *  geometry. */
@@ -1174,6 +1202,7 @@ export function referencesOf(f: Feature): number[] {
     case 'thicken':
       return f.target === undefined ? [f.sheet] : [f.sheet, f.target]
     case 'import':
+    case 'freeform':
       return []
     case 'moveBody':
       return [...f.bodies]

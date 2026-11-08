@@ -956,7 +956,7 @@ export const step: Command<{ bodies?: Ref[]; verify?: boolean }> = {
     // any other sheet it leaves out; each odd edge's faces by index on its
     // body, with their makers.
     const features = check ? allFeatures() : []
-    const networks = new Set(allFeatures().filter((f) => f.kind === 'network').map((f) => f.id))
+    const networks = new Set(allFeatures().filter((f) => f.kind === 'network' || f.kind === 'freeform').map((f) => f.id))
     const solids = picked.filter((b) => !b.surface || networks.has(bodyMaker(b.id)))
     const namers = solids.map((b) => faceNamer(s.topologies.get(b.id), features))
     const problems = check ? check.problems.map((line) => check.bodies.reduce((l, body, i) => (l.startsWith(body.name ?? `Part ${i + 1}`) ? (problemsNamed([l], body, namers[i])[0] ?? l) : l), line)) : []

@@ -58,6 +58,7 @@ import { HAIR_MM, JOINING, stepsOfJoin, type StepBetween } from './stepsBetween'
 import { cutElsewhereWords, cutsElsewhere } from './cutElsewhere'
 import { ScanPaths } from '../../../src/core/geometry/scanPath'
 import { type NetworkBodies, type NetworkReading, readNetwork } from './network'
+import { type FreeformMade, freeformBody } from './freeform/make'
 import { emptyReport, networkBody, networkGhost, type NetworkReport } from './networkBody'
 export { type BodyBrief, type BodyCheck, type BodyStep, type BuildResult, type BuildSteps, type BuiltBody, type Diagnosis, type EdgeBrief, type EdgeInfo, type FaceInfo, type FeatureResult, type FilletTries, type FilletTry, type Overlap, type PreviewResult, type PreviewStep, type SketchStep, type SolidStep, stepKeys, type SurfaceReport, type TrimReport } from './buildTypes'
 
@@ -616,6 +617,19 @@ export class Builder {
       if (isTrap(e)) throw e
       return { message: e instanceof Error ? e.message : String(e), report: emptyReport(reading) }
     }
+  }
+
+  /** A freeform cage made a body (core/freeform/make.ts): its surface taken onto the scan first where the step says so. */
+  private freeformOf(step: Extract<BuildStep, { kind: 'freeform' }>): FreeformMade {
+    const cage = { positions: Float64Array.from(step.positions), faces: step.faces, creases: step.creases }
+    let closest: ((p: Vec3) => Vec3 | null) | undefined
+    if (step.snap) {
+      if (!this.scan || !this.scanPositions) throw new Error('The cage is to be taken onto the scan, and the scan is not here.')
+      if (!this.paths) this.paths = new ScanPaths(this.scanPositions, this.scan.index)
+      const paths = this.paths
+      closest = (p) => paths.closest(p)?.point ?? null
+    }
+    return freeformBody(this.kernel, cage, { steps: step.steps, snap: step.snap, ...(closest ? { closest } : {}), ...(step.ask ? { ask: step.ask } : {}) })
   }
 
   /** A surface fitted through the step's region of the scan, as a face,
@@ -2012,6 +2026,7 @@ export class Builder {
     if (step.kind === 'import') return this.importPreview(step)
     if (step.kind === 'moveBody') return this.movePreview(step)
     if (step.kind === 'network') return this.networkPreview(step)
+    if (step.kind === 'freeform') throw new Error('A freeform cage is built, not previewed: its faces are made when the list is built.')
     const began = performance.now()
     const solid =
       step.kind === 'extrude' || step.kind === 'revolve'
@@ -3684,6 +3699,12 @@ export class Builder {
         this.bodies.set(step.id, { name: step.name, shape: made.shape, origins: new Map(k.faceHashes(made.shape).map((h) => [h, step.id])), surface: !made.report.closed, patches: made.patches })
         const refused = made.report.cells.filter((c) => 'refused' in c)
         results.push({ id: step.id, status: 'ok', network: made.report, ...(refused.length > 0 ? { note: `${refused.length} cell${refused.length === 1 ? '' : 's'} not filled: ${refused.map((c) => ('refused' in c ? c.refused : '')).join('; ')}.` } : {}) })
+        return
+      }
+      if (step.kind === 'freeform') {
+        const made = this.freeformOf(step)
+        this.bodies.set(step.id, { name: step.name, shape: made.shape, origins: new Map(k.faceHashes(made.shape).map((h) => [h, step.id])), surface: !(made.shell ? made.shell.solid : made.report.solid) })
+        results.push({ id: step.id, status: 'ok', freeform: { convert: made.report, ...(made.shell ? { shell: made.shell } : {}), steps: made.steps, ...(made.missed ? { missed: made.missed } : {}) } })
         return
       }
       if (step.kind === 'surface') {

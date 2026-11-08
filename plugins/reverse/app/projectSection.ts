@@ -167,6 +167,35 @@ export function validateFeatureJson(e: Record<string, unknown>): void {
     fields(fit, 'smoothness', 'number', 'network.fit')
     if (fit.tolerance !== undefined) fields(fit, 'tolerance', 'number', 'network.fit')
   }
+  // A freeform cage: points flat, faces and creases by vertex index, held to
+  // the cage's own bounds so that nothing read can reach past it.
+  if (e.kind === 'freeform') {
+    const positions = array(e.positions, 'freeform.positions')
+    if (positions.length % 3 !== 0 || positions.length > 3_000_000 || !positions.every((v) => typeof v === 'number' && Number.isFinite(v))) invalid('freeform.positions')
+    const n = positions.length / 3
+    const faces = array(e.faces, 'freeform.faces')
+    if (faces.length > 500_000) invalid('freeform.faces exceeds the supported face count')
+    for (const f of faces) {
+      indices(f, 'freeform.face')
+      const face = f as number[]
+      if (face.length < 3 || face.length > 64 || face.some((v) => v >= n)) invalid('freeform.face')
+    }
+    for (const c of array(e.creases, 'freeform.creases')) {
+      indices(c, 'freeform.crease')
+      if ((c as number[]).length !== 2 || (c as number[]).some((v) => v >= n)) invalid('freeform.crease')
+    }
+    fields(e, 'steps', 'number', 'freeform')
+    if (!Number.isInteger(e.steps) || (e.steps as number) < 1 || (e.steps as number) > 4) invalid('freeform.steps')
+    fields(e, 'snap', 'boolean', 'freeform')
+    if (e.ask !== undefined) {
+      const ask = object(e.ask, 'freeform.ask')
+      if (ask.kind === 'offset') fields(ask, 'distance', 'number', 'freeform.ask')
+      else if (ask.kind === 'thicken') {
+        fields(ask, 'thickness', 'number', 'freeform.ask')
+        if (!['in', 'out', 'both'].includes(ask.side as string) || !['auto', 'x', 'y', 'z'].includes(ask.direction as string)) invalid('freeform.ask')
+      } else invalid('freeform.ask.kind')
+    }
+  }
 }
 
 /** Check a part as read from a file. */
