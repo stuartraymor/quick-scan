@@ -1271,6 +1271,69 @@ export class ReKernel {
     })
   }
 
+  /** A sheet offset by `distance` along its faces' normals (negative
+   *  against them): the faces moved, no walls made — a sheet again. The
+   *  kernel's own words where it refuses or answers nothing; the sheet
+   *  stays the caller's. A face that curves tighter than the distance
+   *  towards the side it moves to folds without a word (faceOffsetLimits
+   *  looks for that). */
+  offsetSheet(sheet: Shape, distance: number, tolerance = 1e-3): Shape {
+    return run('Offsetting the sheet', () => {
+      if (!(Math.abs(distance) > 1e-9)) throw new KernelError('the offset needs a distance.')
+      const o = this.occt
+      // units-ok: build message, also the agent's answer
+      const what = `the kernel's offset of the sheet ${distance > 0 ? 'along' : 'against'} its normal by ${Math.abs(distance)} mm`
+      let made: number
+      try {
+        made = o.offset(sheet, distance, tolerance)
+      } catch (e) {
+        if (isTrap(e)) throw e
+        throw new KernelError(`${what} failed (${rawRefusal(e)}).`)
+      }
+      if (o.isNull(made) || o.subShapeCount(made, 'face') === 0) {
+        if (!o.isNull(made)) o.release(made)
+        throw new KernelError(`${what} came out empty.`)
+      }
+      return made as Shape
+    })
+  }
+
+  /** How far the faces of `made` lie from the faces of `source`: the
+   *  distance from points spread over `made`'s mesh to `source`'s faces
+   *  (not its inside) — what an offset by d is checked by (every point at
+   *  |d|). At most `samples` points, spread evenly over the mesh vertices. */
+  skinDeviation(source: Shape, made: Shape, samples = 400): { points: number; min: number; max: number; rms: number } | null {
+    return run('Measuring the offset', () => {
+      const o = this.occt
+      const faces = o.getSubShapes(source, 'face')
+      if (faces.length === 0) return null
+      const skin = o.makeCompound(faces)
+      try {
+        const diagonal = Math.hypot(...(([a, b]) => [b[0] - a[0], b[1] - a[1], b[2] - a[2]])(((bb) => [bb.min, bb.max])(this.bounds(made))))
+        const m = this.mesh(made, Math.max(diagonal / 400, 1e-3))
+        const n = m.positions.length / 3
+        if (n === 0) return null
+        const stride = Math.max(1, Math.floor(n / samples))
+        let min = Infinity, max = 0, sum = 0, points = 0
+        for (let i = 0; i < n; i += stride) {
+          const v = o.makeVertex(m.positions[i * 3], m.positions[i * 3 + 1], m.positions[i * 3 + 2])
+          try {
+            const d = o.distanceBetween(v, skin)
+            min = Math.min(min, d)
+            max = Math.max(max, d)
+            sum += d * d
+            points++
+          } finally {
+            o.release(v)
+          }
+        }
+        return points > 0 ? { points, min, max, rms: Math.sqrt(sum / points) } : null
+      } finally {
+        o.release(skin)
+      }
+    })
+  }
+
   /** Each curved face of a solid offset alone by `distance` (negative
    *  inward): the largest distance it takes, where it curves tighter than
    *  that, and what the kernel said if it refused — for a failed offset or

@@ -18,6 +18,7 @@ import type { BuildStep } from './features'
 import type { ScanSide, SparseField } from './liveMap'
 import { isKernelEvent, type ReWorkerEvent } from './reEvents'
 import type { ConvertReport, PatchSet } from './freeform/convert'
+import type { FreeformOp, ShellReport } from './freeform/shell'
 import type { ReWorkerRequest, ReWorkerResponse } from './reService'
 import type { Sketch } from './sketch'
 
@@ -339,10 +340,10 @@ export class ReClient {
 
   /** A freeform cage's patches made a body, and with `step` written as
    *  STEP and read back, nothing kept (freeform/convert.ts). */
-  async freeformConvert(patches: PatchSet, name: string, step: boolean): Promise<{ report: ConvertReport; step?: string; check?: StepCheck }> {
+  async freeformConvert(patches: PatchSet, name: string, step: boolean, op?: FreeformOp): Promise<{ report: ConvertReport; shell?: ShellReport; step?: string; check?: StepCheck }> {
     const requestId = this.nextId++
-    const res = await this.request<Extract<ReWorkerResponse, { type: 'freeform-convert-ok' }>>({ type: 'freeform-convert', requestId, patches, name, step }, [], HEAVY_MS)
-    return { report: res.report, ...(res.step !== undefined ? { step: res.step } : {}), ...(res.check ? { check: res.check } : {}) }
+    const res = await this.request<Extract<ReWorkerResponse, { type: 'freeform-convert-ok' }>>({ type: 'freeform-convert', requestId, patches, name, step, ...(op ? { op } : {}) }, [], HEAVY_MS)
+    return { report: res.report, ...(res.shell ? { shell: res.shell } : {}), ...(res.step !== undefined ? { step: res.step } : {}), ...(res.check ? { check: res.check } : {}) }
   }
 
   /** How two bodies stand to each other: the gap between them, or the

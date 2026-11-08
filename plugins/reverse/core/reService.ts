@@ -22,6 +22,7 @@ import { DEFAULT_FACING_DEG, liveMap, liveMapReach, sheetTriangles, surfaceOfMes
 import { kernelTeller, type ReWorkerEvent } from './reEvents'
 import { createParallel, type HelperPool } from './reParallel'
 import { patchesBody, type ConvertReport, type PatchSet } from './freeform/convert'
+import { freeformShell, type FreeformOp, type ShellReport } from './freeform/shell'
 import type { Sketch } from './sketch'
 
 export type ReWorkerRequest =
@@ -78,7 +79,7 @@ export type ReWorkerRequest =
   | { type: 'reference'; requestId: number; bodyIds: number[]; chord: number; sheets?: boolean }
   /** A freeform cage's patches made a body and written as STEP, nothing
    *  kept — see freeform/convert.ts. */
-  | { type: 'freeform-convert'; requestId: number; patches: PatchSet; name: string; step: boolean }
+  | { type: 'freeform-convert'; requestId: number; patches: PatchSet; name: string; step: boolean; op?: FreeformOp }
 
 export type ReWorkerResponse =
   | { type: 'init-ok'; requestId: number; version: string }
@@ -102,7 +103,7 @@ export type ReWorkerResponse =
   | { type: 'check-ok'; requestId: number; check: BodyCheck | null }
   | { type: 'fillet-try-ok'; requestId: number; tried: FilletTries }
   | { type: 'reference-ok'; requestId: number; meshes: KernelMesh[] }
-  | { type: 'freeform-convert-ok'; requestId: number; report: ConvertReport; step?: string; check?: StepCheck }
+  | { type: 'freeform-convert-ok'; requestId: number; report: ConvertReport; shell?: ShellReport; step?: string; check?: StepCheck }
   /** A build or a preview overtaken by another of its kind before it was
    *  played (reQueue.ts). */
   | { type: 'skipped'; requestId: number }
@@ -385,13 +386,23 @@ export function createReService(loadKernel: () => Promise<ReKernel>, loadManifol
       }
       if (msg.type === 'freeform-convert') {
         const k = kernel!
-        const { shape, report } = patchesBody(k, msg.patches)
+        const made = patchesBody(k, msg.patches)
+        const report = made.report
+        let shape = made.shape
         try {
-          if (!msg.step) return answer({ type: 'freeform-convert-ok', requestId: msg.requestId, report })
-          const sheets = [!report.solid]
+          // Thickened or offset (freeform/shell.ts): the body made, then the result of the operation in its place.
+          let shell: ShellReport | undefined
+          if (msg.op) {
+            const r = freeformShell(k, shape, report.solid, msg.op)
+            k.release(shape)
+            shape = r.shape
+            shell = r.report
+          }
+          if (!msg.step) return answer({ type: 'freeform-convert-ok', requestId: msg.requestId, report, ...(shell ? { shell } : {}) })
+          const sheets = [!(shell ? shell.solid : report.solid)]
           const out = k.exportStepMended([shape], [{ name: msg.name }], sheets)
           const check = out.check ?? k.verifyStep(out.text, [shape], { sheets })
-          return answer({ type: 'freeform-convert-ok', requestId: msg.requestId, report, step: out.text, check })
+          return answer({ type: 'freeform-convert-ok', requestId: msg.requestId, report, ...(shell ? { shell } : {}), step: out.text, check })
         } finally {
           k.release(shape)
         }

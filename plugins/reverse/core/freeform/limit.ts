@@ -71,7 +71,8 @@ export function limitPositions(c: Cage): Float64Array {
   return out
 }
 
-function vertexNormals(positions: Float64Array, faces: number[][]): Float64Array {
+/** The unit normal at each vertex of a mesh: its faces' Newell normals added up. */
+export function vertexNormals(positions: Float64Array, faces: number[][]): Float64Array {
   const n = positions.length / 3
   const out = new Float64Array(n * 3)
   for (const f of faces) {
@@ -89,6 +90,17 @@ function vertexNormals(positions: Float64Array, faces: number[][]): Float64Array
     const l = Math.hypot(out[v * 3], out[v * 3 + 1], out[v * 3 + 2])
     if (l > 0) { out[v * 3] /= l; out[v * 3 + 1] /= l; out[v * 3 + 2] /= l }
   }
+  return out
+}
+
+/** The mesh's vertices moved `distance` along their normals (negative
+ *  against): a surface offset, sampled where the mesh is. The normal of a
+ *  vertex off the surface by its tilt only moves the offset along the
+ *  surface, not off the distance. */
+export function displacedAlongNormals(positions: Float64Array, faces: number[][], distance: number): Float64Array {
+  const n = vertexNormals(positions, faces)
+  const out = new Float64Array(positions.length)
+  for (let i = 0; i < positions.length; i++) out[i] = positions[i] + n[i] * distance
   return out
 }
 

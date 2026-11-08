@@ -143,6 +143,62 @@ describe('reverse.freeform.cage_convert', () => {
   })
 })
 
+interface Shelled extends Converted {
+  from: { faces: number; solid: boolean; area: number; volume: number | null }
+  side?: string
+  wall?: number
+  deviation?: { points: number; min: number; max: number; rms: number }
+}
+
+/** The cube cage without its top: an open box of five faces. */
+const boxObj = cubeObj.split('\n').map((l) => (l === 'f 5 6 7 8' ? '' : l)).filter(Boolean).join('\n') + '\n'
+
+describe('reverse.freeform.cage_offset', () => {
+  it('offsets the closed cube’s solid as a copy and measures the offset’s points against the original', async () => {
+    const r = await run<Shelled>('reverse.freeform.cage_offset', { obj: cubeObj, distance: -1, steps: 3, step: true })
+    expect(r).toMatchObject({ closed: true, solid: true, valid: true })
+    expect(r.from).toMatchObject({ solid: true, faces: 6 })
+    expect(r.volume!).toBeLessThan(r.from.volume!)
+    expect(Math.abs(r.deviation!.rms - 1)).toBeLessThan(5e-3)
+    expect(r.deviation!.points).toBeGreaterThan(300)
+    expect(r.stepCheck).toMatchObject({ ok: true, closed: true, valid: true, openEdges: 0 })
+  })
+  it('offsets an open box into a sheet that grows with a positive distance', async () => {
+    const r = await run<Shelled>('reverse.freeform.cage_offset', { obj: boxObj, distance: 1, steps: 3 })
+    expect(r).toMatchObject({ closed: false, solid: false, valid: true, volume: null })
+    expect(r.area).toBeGreaterThan(r.from.area)
+    expect(Math.abs(r.deviation!.rms - 1)).toBeLessThan(5e-3)
+  })
+  it('refuses a distance the surface bends too tight for, and none', async () => {
+    expect((await refused('reverse.freeform.cage_offset', { obj: boxObj, distance: 40, steps: 3 })).message).toMatch(/does not offset by 40 mm/)
+    expect((await refused('reverse.freeform.cage_offset', { obj: boxObj, distance: 0 })).message).toMatch(/needs a distance/)
+  })
+})
+
+describe('reverse.freeform.cage_thicken', () => {
+  it('thickens an open box into a solid and says the side and the wall along its edge', async () => {
+    const r = await run<Shelled>('reverse.freeform.cage_thicken', { obj: boxObj, thickness: 1, steps: 3 })
+    expect(r).toMatchObject({ solid: true, valid: true, side: 'out', closed: false })
+    expect(r.from).toMatchObject({ solid: false })
+    expect(r.wall!).toBeGreaterThan(0.99)
+    expect(r.volume! / r.from.area).toBeGreaterThan(0.8)
+  })
+  it('grows the side z leans to: the box’s floor faces down, so the wall goes in', async () => {
+    const r = await run<Shelled>('reverse.freeform.cage_thicken', { obj: boxObj, thickness: 1, steps: 3, direction: 'z' })
+    expect(r.side).toBe('in')
+  })
+  it('makes a closed cube a hollow wall, written as STEP that reads back closed', async () => {
+    const r = await run<Shelled>('reverse.freeform.cage_thicken', { obj: cubeObj, thickness: 1, side: 'in', steps: 3, step: true })
+    expect(r).toMatchObject({ closed: true, solid: true, valid: true })
+    expect(r.volume!).toBeLessThan(r.from.volume!)
+    expect(r.volume!).toBeGreaterThan(0.2 * r.from.volume!)
+    expect(r.stepCheck).toMatchObject({ ok: true, closed: true, valid: true, openEdges: 0 })
+  })
+  it('refuses a thickness the surface bends too tight for', async () => {
+    expect((await refused('reverse.freeform.cage_thicken', { obj: boxObj, thickness: 40, steps: 3 })).message).toMatch(/does not thicken by 40 mm/)
+  })
+})
+
 describe('reverse.freeform.cage_write', () => {
   it('writes a cage back, refined where asked, that reads as the same cage', async () => {
     const same = await run<{ vertices: number; faces: number; obj: string }>('reverse.freeform.cage_write', { obj: box })
@@ -158,7 +214,7 @@ describe('reverse.freeform.cage_write', () => {
     expect(again.faces).toHaveLength(64)
   })
   it('keeps every command’s schema within the budget', () => {
-    for (const name of ['reverse.freeform.cage_read', 'reverse.freeform.cage_write', 'reverse.freeform.cage_convert']) {
+    for (const name of ['reverse.freeform.cage_read', 'reverse.freeform.cage_write', 'reverse.freeform.cage_convert', 'reverse.freeform.cage_thicken', 'reverse.freeform.cage_offset']) {
       const c = listCommands().find((x) => x.name === name)
       expect(c, name).toBeDefined()
       const w = schemaWeight(c!.input)
