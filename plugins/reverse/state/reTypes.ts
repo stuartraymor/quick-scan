@@ -436,6 +436,9 @@ export type FeatureDraft = { exprs?: ExprMap } & (
   /** Faces taken off a body and healed over; `tangent`: a click on a round
    *  takes the rounds that run on from it too (faceGroup.ts). */
   | { kind: 'deleteFace'; featureId?: number; name?: string; body: number | null; faces: DraftFace[]; tangent: boolean }
+  /** Copies of faces of a body sewn into a sheet body of its own — added
+   *  through the commands; no panel box opens one. */
+  | { kind: 'duplicateFace'; featureId?: number; name?: string; body: number | null; faces: DraftFace[] }
   /** A body grown or shrunk all round; `keep` leaves the body as it was
    *  and makes the offset a body of its own. */
   | { kind: 'offsetBody'; featureId?: number; name?: string; body: number | null; distance: number; keep: boolean }

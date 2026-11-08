@@ -1010,7 +1010,7 @@ export function useReverseWorkspace({
           const fd = useReverse.getState().featureDraft
           // A face being moved keeps its ghost see-through: the scan under
           // it is what is being clicked.
-          const replaces = !fd || !('body' in fd) || fd.body === null || fd.kind === 'moveFace' || (fd.kind === 'mirror' && !fd.join) || (fd.kind === 'offsetBody' && fd.keep) ? [] : fd.kind === 'boolean' && fd.tool !== null && !fd.keep ? [fd.body, fd.tool] : [fd.body]
+          const replaces = !fd || !('body' in fd) || fd.body === null || fd.kind === 'moveFace' || fd.kind === 'duplicateFace' || (fd.kind === 'mirror' && !fd.join) || (fd.kind === 'offsetBody' && fd.keep) ? [] : fd.kind === 'boolean' && fd.tool !== null && !fd.keep ? [fd.body, fd.tool] : [fd.body]
           const cutting = (draft?.op ?? (fd && 'op' in fd ? fd.op : null)) === 'cut'
           // A Move draws its own ghost; the answer is the map's.
           if (fd?.kind !== 'moveBody') reScene()?.setBodyPreview(answer.mesh, ghostColor(), { replaces, through: replaces.length === 0 && cutting, edges: answer.edges })

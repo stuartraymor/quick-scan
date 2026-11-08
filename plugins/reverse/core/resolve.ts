@@ -359,6 +359,11 @@ export function resolveFeatures(
       else steps.push({ kind: 'deleteFace', id: f.id, name: f.name, body: f.body, faces: f.faces, ...queriesOf(f) })
       continue
     }
+    if (f.kind === 'duplicateFace') {
+      if (f.faces.length === 0) failed(f, 'Pick the faces to duplicate.')
+      else steps.push({ kind: 'duplicateFace', id: f.id, name: f.name, body: f.body, faces: f.faces, ...queriesOf(f) })
+      continue
+    }
     if (f.kind === 'import') {
       steps.push({ kind: 'import', id: f.id, name: f.name, file: f.file.key })
       continue

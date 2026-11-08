@@ -67,6 +67,8 @@ export const FEATURE_ICONS: Record<Feature['kind'], KeyIconName> = {
   draft: 'draft',
   moveFace: 'moveFace',
   deleteFace: 'deleteFace',
+  // A copy of faces kept as a sheet of its own: the sheet's picture.
+  duplicateFace: 'sheet',
   // A body grown all round: the wall of a shell is the nearest picture.
   offsetBody: 'shell',
   import: 'importStep',
@@ -146,6 +148,8 @@ export function bodyFeatureReading(f: Exclude<Feature, { kind: 'sketch' | 'extru
     }
     case 'deleteFace':
       return { text: `${f.faces.length} face${f.faces.length === 1 ? '' : 's'}`, title: `${f.faces.length} face${f.faces.length === 1 ? '' : 's'} taken off ${names(f.body)}, the faces round them run on over the gap: ${f.faces.map(faceText).join('; ')}` }
+    case 'duplicateFace':
+      return { text: `${f.faces.length} face${f.faces.length === 1 ? '' : 's'} · new sheet`, title: `${f.faces.length} face${f.faces.length === 1 ? '' : 's'} of ${names(f.body)} copied and sewn into a sheet body of its own, ${names(f.body)} unchanged: ${f.faces.map(faceText).join('; ')}` }
     case 'pattern':
       return f.mode === 'linear' && f.axis2 && (f.count2 ?? 1) > 1
         ? { text: `${f.count} × ${f.count2} · ${len(f.step)} × ${len(f.step2 ?? 0)}`, title: `${names(f.body)} in a grid: ${f.count} along its first direction every ${len(f.step)}, ${f.count2} rows every ${len(f.step2 ?? 0)}` }

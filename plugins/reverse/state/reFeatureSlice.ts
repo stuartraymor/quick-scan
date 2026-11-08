@@ -116,6 +116,9 @@ export const featureSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'featu
         case 'deleteFace':
           draft = { kind, body, faces: [], tangent: true }
           break
+        case 'duplicateFace':
+          draft = { kind, body, faces: [] }
+          break
         case 'offsetBody':
           // A keep-out a millimetre round the body, the body left as it is.
           draft = { kind, body, distance: 1, keep: true }
@@ -214,6 +217,9 @@ export const featureSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'featu
           break
         case 'deleteFace':
           draft = { kind: 'deleteFace', ...head, body: f.body, faces: f.faces.map((fp) => ({ hash: -1, fingerprint: fp })), tangent: true }
+          break
+        case 'duplicateFace':
+          draft = { kind: 'duplicateFace', ...head, body: f.body, faces: f.faces.map((fp) => ({ hash: -1, fingerprint: fp })) }
           break
         case 'offsetBody':
           draft = { kind: 'offsetBody', ...head, body: f.body, distance: f.distance, keep: f.keep }

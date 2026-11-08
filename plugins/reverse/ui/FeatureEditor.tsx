@@ -54,7 +54,7 @@ export function FeatureEditor() {
   const describeEdge = describeEdgeIn(len.units)
   const set = (patch: Partial<FeatureDraft>) => re.getState().setFeatureDraft(patch)
   const ready = featureDraftReady(d)
-  const title: Record<FeatureDraftKind, string> = { network: 'Patch network', import: 'Import STEP', moveBody: 'Move body', offsetBody: 'Offset body', draft: 'Draft', moveFace: 'Move face', deleteFace: 'Delete face', shell: 'Shell', fillet: 'Fillet', chamfer: 'Chamfer', hole: 'Hole', thread: 'Thread', extract: 'Extract', cutPlane: 'Cut by plane', mirror: 'Mirror', boolean: 'Combine bodies', sheet: 'Sheet', split: 'Split', loft: 'Loft', sweep: 'Sweep', thicken: 'Thicken', pattern: 'Pattern', surface: 'Fit surface', trim: 'Trim' }
+  const title: Record<FeatureDraftKind, string> = { network: 'Patch network', import: 'Import STEP', moveBody: 'Move body', offsetBody: 'Offset body', draft: 'Draft', moveFace: 'Move face', deleteFace: 'Delete face', duplicateFace: 'Duplicate face', shell: 'Shell', fillet: 'Fillet', chamfer: 'Chamfer', hole: 'Hole', thread: 'Thread', extract: 'Extract', cutPlane: 'Cut by plane', mirror: 'Mirror', boolean: 'Combine bodies', sheet: 'Sheet', split: 'Split', loft: 'Loft', sweep: 'Sweep', thicken: 'Thicken', pattern: 'Pattern', surface: 'Fit surface', trim: 'Trim' }
   const sketches = features.filter((f): f is SketchFeature => f.kind === 'sketch')
   const testKind = d.kind === 'cutPlane' ? 'cut-plane' : d.kind === 'moveFace' ? 'move-face' : d.kind === 'deleteFace' ? 'delete-face' : d.kind === 'offsetBody' ? 'offset-body' : d.kind === 'moveBody' ? 'move-body' : d.kind
   const bodySelect = (value: number | null, onChange: (id: number | null) => void, label = 'Body', testId = `${testKind}-body`) => (
@@ -980,6 +980,15 @@ export function FeatureEditor() {
       )
       break
     }
+    case 'duplicateFace':
+      // Added and edited through the commands (reverse.feature.add,
+      // reverse.feature.update): the box only reads it out.
+      fields = (
+        <p className="hint" data-test="duplicate-face-faces">
+          {d.faces.length} face{d.faces.length === 1 ? '' : 's'} copied into a sheet body of its own, the source body unchanged.
+        </p>
+      )
+      break
     case 'offsetBody':
       fields = (
         <>

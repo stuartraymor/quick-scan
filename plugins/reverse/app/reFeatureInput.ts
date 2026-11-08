@@ -315,6 +315,15 @@ function boxFields(s: ReverseSession, kind: FeatureDraftKind, input: Json, box: 
         out.faces = all.filter((f, i) => all.findIndex((x) => x.hash === f.hash) === i)
       }
       break
+    case 'duplicateFace':
+      if (has('faces')) {
+        const body = bodyOf()
+        const given = facesPicked(s, body, input.faces as FacePickIn[])
+        // Each face with what a click on it takes, as delete face's whole does; each face once.
+        const all = input.whole === true ? given.flatMap((f) => s.deleteFacesAt(body.id, f.hash, true)) : given
+        out.faces = all.filter((f, i) => all.findIndex((x) => x.hash === f.hash) === i)
+      }
+      break
     case 'moveFace':
       if (has('faces')) out.faces = facesPicked(s, bodyOf(), input.faces as FacePickIn[])
       if (has('offset')) out.offset = input.offset
@@ -538,6 +547,7 @@ const KEPT_QUERIES: Partial<Record<FeatureDraftKind, { field: 'edges' | 'faces';
   draft: { field: 'faces', kept: 'facesWhere' },
   moveFace: { field: 'faces', kept: 'facesWhere' },
   deleteFace: { field: 'faces', kept: 'facesWhere' },
+  duplicateFace: { field: 'faces', kept: 'facesWhere' },
 }
 
 /** The queries (where) a feature's faces or edges were given by, kept on
@@ -551,7 +561,7 @@ function keepQueries(s: ReverseSession, id: number, kind: FeatureDraftKind, inpu
   const f = re().features.find((x) => x.id === id)
   if (!f || !('body' in f) || typeof f.body !== 'number') return
   const given = (input[kept.field] as unknown[]).filter((p) => !(typeof p === 'object' && p !== null && 'edge' in p && Array.isArray((p as { radius?: unknown }).radius)))
-  const picks = kind === 'deleteFace' && input.whole === true ? undefined : storedPicks(s, bodyAt(f.body), given, kept.field === 'edges' ? 'edge' : 'face')
+  const picks = (kind === 'deleteFace' || kind === 'duplicateFace') && input.whole === true ? undefined : storedPicks(s, bodyAt(f.body), given, kept.field === 'edges' ? 'edge' : 'face')
   useReverse.setState((st) => ({
     features: st.features.map((x) => {
       if (x.id !== id) return x

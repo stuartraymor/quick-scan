@@ -246,6 +246,7 @@ export const KIND_LABELS: Record<Feature['kind'] | 'coil', string> = {
   draft: 'Draft',
   moveFace: 'Move face',
   deleteFace: 'Delete face',
+  duplicateFace: 'Duplicate face',
   surface: 'Surface',
   network: 'Patch network',
   freeform: 'Freeform',

@@ -280,8 +280,9 @@ function bodyByRef(ref: Ref, family: boolean): BodyInfo {
         // a cut or a split — is taken for that body: its id is the one the
         // builder takes the original and every copy or piece by (build.ts
         // familyOf). The copies' own ids are the feature's, so going by
-        // the maker alone took one copy.
-        if ('body' in f && typeof f.body === 'number') {
+        // the maker alone took one copy. A duplicate face works on its
+        // source but is the sheet it makes: its own body, below.
+        if ('body' in f && typeof f.body === 'number' && f.kind !== 'duplicateFace') {
           const worked = f.body
           const pieces = bodies.filter((x) => Math.abs(x.id - worked) < 1e-9 || bodyMaker(x.id) === f.id)
           const original = pieces.find((x) => Math.abs(x.id - worked) < 1e-9)
@@ -319,7 +320,7 @@ export function solidsNamed(ref: Ref): { feature: Feature; solids: BodyInfo[] } 
   const named = typeof ref === 'string' ? re().features.filter((f) => f.name.toLowerCase() === ref.trim().toLowerCase()) : []
   const f = named.length === 1 ? named[0] : id !== null && Number.isInteger(id) ? re().features.find((x) => x.id === id) : undefined
   if (!f) return null
-  const worked = 'body' in f && typeof f.body === 'number' ? f.body : null
+  const worked = 'body' in f && typeof f.body === 'number' && f.kind !== 'duplicateFace' ? f.body : null
   const solids = bodies.filter((x) => bodyMaker(x.id) === f.id || (worked !== null && Math.abs(x.id - worked) < 1e-9))
   return solids.length > 1 ? { feature: f, solids } : null
 }
@@ -347,6 +348,8 @@ function heldBodyOf(f: Feature): BodyInfo | null {
   const target = (f as { target?: number }).target
   let id: number | null = null
   if (f.kind === 'offsetBody') id = f.keep === false ? f.body : f.id
+  // Copies of faces are a sheet of their own, under the feature's id.
+  else if (f.kind === 'duplicateFace') id = f.id
   else if ('body' in f && typeof f.body === 'number') id = f.body
   else if (target !== undefined && (op === 'join' || op === 'cut')) id = target
   else if (op === 'new' || OWN_BODY.includes(f.kind)) id = f.id

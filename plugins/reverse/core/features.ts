@@ -645,6 +645,22 @@ export interface DeleteFaceFeature extends FeatureFlags {
   visible: boolean
 }
 
+/** Copies of faces of a body made a surface body of its own — CAD's
+ *  duplicate face: the picked faces of a solid or a sheet, each copied
+ *  whole and sewn to the others where they meet edge to edge. The source
+ *  body is left as it was; the sheet is a cutter or a skin to thicken. */
+export interface DuplicateFaceFeature extends FeatureFlags {
+  id: number
+  kind: 'duplicateFace'
+  name: string
+  body: number
+  faces: FaceRef[]
+  /** As a shell's — for faces picked alone, not each with what a click on
+   *  it takes (whole). */
+  facesWhere?: StoredPick<FaceRef>[]
+  visible: boolean
+}
+
 /** A body grown all round by a distance — its convex edges rounded over,
  *  as an offset rounds them — or shrunk by a negative one: the keep-out
  *  round a bought-in part, the pocket it sits in with its clearance. Kept,
@@ -1121,7 +1137,7 @@ export interface TrimFeature extends FeatureFlags {
  *  to reach past the part. */
 export type TrimPrimitive = { kind: 'plane'; origin: Vec3; normal: Vec3; basisU: Vec3; basisV: Vec3 } | Exclude<Primitive, { kind: 'slab' | 'prism' }>
 
-export type BodyFeature = ShellFeature | FilletFeature | ChamferFeature | HoleFeature | ThreadFeature | CutPlaneFeature | MirrorFeature | BooleanFeature | SplitFeature | PatternFeature | DraftFeature | MoveFaceFeature | DeleteFaceFeature | OffsetBodyFeature
+export type BodyFeature = ShellFeature | FilletFeature | ChamferFeature | HoleFeature | ThreadFeature | CutPlaneFeature | MirrorFeature | BooleanFeature | SplitFeature | PatternFeature | DraftFeature | MoveFaceFeature | DeleteFaceFeature | DuplicateFaceFeature | OffsetBodyFeature
 export type Feature = SketchFeature | ExtrudeFeature | RevolveFeature | ExtractFeature | SheetFeature | LoftFeature | SweepFeature | ThickenFeature | SurfaceFeature | NetworkFeature | FreeformFeature | TrimFeature | ImportFeature | MoveBodyFeature | BodyFeature
 
 /** The solid an extracted element or shadow becomes, resolved to plain

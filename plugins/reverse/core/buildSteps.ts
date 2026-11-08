@@ -116,6 +116,9 @@ export type BuildStep =
   | { kind: 'draft'; id: number; name: string; body: number; neutral: PlaneGeometry | { face: FaceRef }; faces: FaceRef[]; facesWhere?: StoredPick<FaceRef>[]; angleRad: number; groups?: { faces: FaceRef[]; angleRad: number }[] }
   | { kind: 'moveFace'; id: number; name: string; body: number; faces: FaceRef[]; facesWhere?: StoredPick<FaceRef>[]; offset: number }
   | { kind: 'deleteFace'; id: number; name: string; body: number; faces: FaceRef[]; facesWhere?: StoredPick<FaceRef>[] }
+  /** Copies of the picked faces, sewn into a sheet body of its own; the
+   *  source body stays as it was. */
+  | { kind: 'duplicateFace'; id: number; name: string; body: number; faces: FaceRef[]; facesWhere?: StoredPick<FaceRef>[] }
   | { kind: 'offsetBody'; id: number; name: string; body: number; distance: number; keep: boolean }
   /** A STEP file's bodies, by the key its text was handed to the builder
    *  under (Builder.addStepFiles). */

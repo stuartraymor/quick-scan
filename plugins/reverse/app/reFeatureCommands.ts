@@ -476,6 +476,10 @@ function setTarget(id: number, target: number | undefined): void {
 function besideOut(id: number): Json {
   const f = allFeatures().find((x) => x.id === id)
   const r = re().results[id]
+  if (f?.kind === 'duplicateFace' && r?.status === 'ok' && r.bodies?.length) {
+    const source = bodyAt(f.body)
+    return { note: `new sheet body ${r.bodies.map((b) => `${b} (${bodyAt(b).name})`).join(', ')} beside ${source.name} (${source.id}); ${source.name} unchanged` }
+  }
   if (f?.kind !== 'offsetBody' || f.keep === false || r?.status !== 'ok' || !r.bodies?.length) return {}
   const source = bodyAt(f.body)
   const made = r.bodies.map((b) => `${b} (${bodyAt(b).name})`).join(', ')

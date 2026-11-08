@@ -92,6 +92,8 @@ export function featureDraftReady(d: FeatureDraft): boolean {
       return d.body !== null && d.faces.length > 0 && Math.abs(d.offset) > 1e-6
     case 'deleteFace':
       return d.body !== null && d.faces.length > 0
+    case 'duplicateFace':
+      return d.body !== null && d.faces.length > 0
     case 'offsetBody':
       return d.body !== null && Math.abs(d.distance) > 1e-6
     case 'import':
@@ -245,6 +247,8 @@ export function featureOfDraft(d: FeatureDraft, id: number, name: string): Featu
       return { id, kind: 'moveFace', name, body: d.body!, faces: d.faces.map((f) => f.fingerprint), offset: d.offset, visible: true }
     case 'deleteFace':
       return { id, kind: 'deleteFace', name, body: d.body!, faces: d.faces.map((f) => f.fingerprint), visible: true }
+    case 'duplicateFace':
+      return { id, kind: 'duplicateFace', name, body: d.body!, faces: d.faces.map((f) => f.fingerprint), visible: true }
     case 'offsetBody':
       return { id, kind: 'offsetBody', name, body: d.body!, distance: d.distance, keep: d.keep, visible: true }
     case 'import':

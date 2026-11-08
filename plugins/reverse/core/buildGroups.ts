@@ -114,6 +114,11 @@ function touches(step: BuildStep, sketchOf: (id: number) => Sketch | undefined):
       if (step.keep) makes = true
       else changes.push(step.body)
       break
+    case 'duplicateFace':
+      // Copies of faces: the source is read and stands as it was.
+      reads.push(step.body)
+      makes = true
+      break
     case 'mirror':
       reads.push(step.body)
       if (step.join) changes.push(step.body)

@@ -884,6 +884,17 @@ export const FEATURE_IN: Record<string, JsonSchema> = {
     ['kind', 'body', 'faces'],
     'Delete faces of a body, the faces round them run on to close the gap — a fillet, a chamfer, a hole or a boss taken out of a part.',
   ),
+  duplicateFace: obj(
+    {
+      kind: kind('duplicateFace'),
+      name: nameIn,
+      body: bodyRef,
+      faces: arr(facePick, 'The faces copied, of a solid or of a sheet. A query is kept and run again at every rebuild, unless whole.', { minItems: 1 }),
+      whole: bool('Copy each face given with the rest of what it is part of, as delete face’s whole does: the faces on its own surface, a round’s chain run on smoothly from a round face, and the faces those close in (default false).'),
+    },
+    ['kind', 'body', 'faces'],
+    'Copy faces of a body into a sheet body of its own, sewn where they meet edge to edge; the body stands as it was. Faces that do not all meet come out as pieces apart (the result warns how many). A sheet to split a body with, to trim, or to thicken into a solid.',
+  ),
   moveFace: obj({ kind: kind('moveFace'), name: nameIn, body: bodyRef, faces: arr(facePick, 'Flat or cylindrical faces. A query is kept and run again at every rebuild.', { minItems: 1 }), offset: num('mm along a flat face’s outward normal, or added to a cylinder’s radius.'), exprs: exprsIn('offset') }, ['kind', 'body', 'faces', 'offset'], 'Move faces of a body.'),
   moveBody: obj(
     {

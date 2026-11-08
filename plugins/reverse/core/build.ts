@@ -2043,6 +2043,8 @@ export class Builder {
                 ? this.sweepOf(step)
               : step.kind === 'thicken'
                 ? this.thickenPreview(step)
+              : step.kind === 'duplicateFace'
+                ? this.duplicateFacesOf(step).shape
               : step.kind === 'surface'
                 ? this.surfaceOf(step)
                 : step.kind === 'trim'
@@ -2054,7 +2056,7 @@ export class Builder {
       const mesh = k.mesh(shape, (typeof solid !== 'number' && 'fit' in solid && solid.fit ? surfaceMeshDeflection : meshDeflection)(diagonalOf(this.kernel, shape)))
       if (typeof solid !== 'number' && 'face' in solid) return { mesh, volume: 0, closed: false, surface: solid.report }
       if (typeof solid !== 'number') return { mesh, volume: solid.surface ? 0 : k.volume(shape), closed: solid.report.closed, trim: solid.report }
-      const onBody = step.kind !== 'extrude' && step.kind !== 'revolve' && step.kind !== 'extract' && step.kind !== 'sheet' && step.kind !== 'loft' && step.kind !== 'sweep' && step.kind !== 'thicken'
+      const onBody = step.kind !== 'extrude' && step.kind !== 'revolve' && step.kind !== 'extract' && step.kind !== 'sheet' && step.kind !== 'loft' && step.kind !== 'sweep' && step.kind !== 'thicken' && step.kind !== 'duplicateFace'
       // A pattern of a sheet is a sheet: faces to count, no volume to read.
       if (onBody && k.isSurface(shape)) return { mesh, volume: 0, closed: false, sheetFaces: k.faceCount(shape) }
       const closed = k.isClosedSolid(shape)
@@ -3085,6 +3087,43 @@ export class Builder {
     return { shape: sewn.shape, ...this.sheetHistory([body], sewn.shape), ...(body.fit ? { fit: body.fit } : {}) }
   }
 
+  /** A duplicate face's sheet: each picked face of the body, as it stands
+   *  before the step, copied whole and the copies sewn where they meet
+   *  edge to edge. Each face of the sheet keeps the maker of the face it
+   *  copies. `pieces` is how many sheets apart the copies came to: more
+   *  than one where the picks do not touch (the caller says so). The body
+   *  is not touched; a face gone, or a sheet the kernel will not sew,
+   *  throws. */
+  private duplicateFacesOf(step: Extract<BuildStep, { kind: 'duplicateFace' }>): { shape: Shape; pieces: number; origins: Map<number, number> } {
+    const k = this.kernel
+    const body = this.bodyBefore(step.id, step.body)
+    if (!body) throw new Error('The body this feature copies faces of is gone, or failed to build.')
+    const found = this.findFaces(step.body, step.faces, step.id, { asked: step.facesWhere })
+    if ('lost' in found) throw new Error(`A face this feature duplicates is gone (was: ${found.lost}).`)
+    if (found.hashes.length === 0) throw new Error('No face is picked to duplicate.')
+    const copies: Shape[] = []
+    const copyMakers = new Map<number, number>()
+    let sewn: { shape: Shape; pieces: number } | null = null
+    try {
+      for (const hash of found.hashes) {
+        const copy = k.faceCopy(body.shape, hash)
+        copies.push(copy)
+        const maker = body.origins.get(hash) ?? step.id
+        for (const h of k.faceHashes(copy)) copyMakers.set(h, maker)
+      }
+      sewn = k.sewSheet(copies, SHEET_SEW_MM)
+      if (!k.isSurface(sewn.shape)) throw new Error('The copied faces did not come out as a sheet.')
+      const history = k.tracedHistory(copies, sewn.shape)
+      const origins = this.propagate(sewn.shape, copyMakers, history, step.id)
+      return { shape: sewn.shape, pieces: sewn.pieces, origins }
+    } catch (e) {
+      if (sewn) k.release(sewn.shape)
+      throw e
+    } finally {
+      k.release(...copies)
+    }
+  }
+
   /** A sheet trimmed or sewn: its faces traced to the faces of the sheets
    *  they are pieces of, and a patch network's faces each given the patch
    *  of the face it came from. */
@@ -3796,6 +3835,15 @@ export class Builder {
           }
         }
         results.push({ id: step.id, status: 'ok', bodies: made })
+        return
+      }
+      // Copies of faces are a sheet body of their own beside their source,
+      // which stands as it was.
+      if (step.kind === 'duplicateFace') {
+        const made = this.duplicateFacesOf(step)
+        const bodies = this.settle(this.freshId(step.id), step.name, made.shape, made.origins, step.id, true)
+        if (made.pieces > 1) this.stepWarnings.push(`${step.name} came out as ${made.pieces} pieces apart — the faces picked do not all meet edge to edge. Pick the faces between them to join the pieces, or duplicate each piece in a feature of its own; a Thicken takes one piece.`)
+        results.push({ id: step.id, status: 'ok', bodies })
         return
       }
       // An offset that keeps its body is a body of its own beside it.
