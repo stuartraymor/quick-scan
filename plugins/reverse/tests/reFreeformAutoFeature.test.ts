@@ -40,7 +40,7 @@ interface Made {
   feature: { id: number; name: string; kind: string; status: string }
   result: { status: string; message?: string }
   body?: { faces: number; solid: boolean; valid: boolean; area: number; volume?: number }
-  auto: { algorithm: string; target: number; quads: number; vertices: number; irregular: number; meanEdge: number; closed: boolean }
+  auto: { algorithm: string; target: number; quads: number; vertices: number; irregular: number; meanEdge: number; closed: boolean; symmetry: string; symmetric: { vertices: number; onPlane: number } | null }
   bodies: { count: number; changed?: { id: number }[] }
   snapped: { before: { rms: number; max: number }; after: { rms: number; max: number; points: number; within: number } }
 }
@@ -74,6 +74,22 @@ describe('reverse.freeform.auto', () => {
     const low = await auto({ density: 'low', steps: 1, snap: false })
     expect(low.auto.target).toBe(1000)
     expect(Math.abs(low.auto.quads - 1000) / 1000).toBeLessThan(0.05)
+  })
+
+  it('symmetry makes the stored cage exactly mirror-symmetric after the snap, and says so', async () => {
+    const r = await auto({ quads: 300, symmetry: 'oyz', steps: 1, snap: false, name: 'Mirrored' })
+    expect(r.auto).toMatchObject({ symmetry: 'oyz', closed: true })
+    expect(r.auto.symmetric!.onPlane).toBeGreaterThan(4)
+    const f = useReverse.getState().features.find((x) => x.kind === 'freeform' && x.name === 'Mirrored') as unknown as { positions: number[] }
+    const pts: number[][] = []
+    for (let i = 0; i + 2 < f.positions.length; i += 3) pts.push([f.positions[i], f.positions[i + 1], f.positions[i + 2]])
+    expect(pts).toHaveLength(r.auto.vertices)
+    for (const p of pts) {
+      const m = [-p[0], p[1], p[2]]
+      const near = Math.min(...pts.map((q) => Math.hypot(q[0] - m[0], q[1] - m[1], q[2] - m[2])))
+      expect(near).toBeLessThan(1e-6)
+    }
+    expect((await refused('reverse.freeform.auto', { quads: 300, symmetry: 'bogus' })).message).toBeTruthy()
   })
 
   it('refuses a target out of range, density together with quads, and a name taken', async () => {

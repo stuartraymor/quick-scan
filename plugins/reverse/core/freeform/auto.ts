@@ -44,6 +44,23 @@ const GOOD_ENOUGH = 0.01
 /** Passes of filling pinches before the grid is given up as not manifold. */
 const FIX_PASSES = 40
 
+/**
+ * Symmetry, as QUICKSURFACE's: none, or the global plane the cage is made
+ * mirror-symmetric about — OXY (z = 0), OYZ (x = 0) or OXZ (y = 0). Measured
+ * on 8.0.128 with OYZ on basic_part: every vertex of the cage has a partner at
+ * its mirror position to 0.0001 mm, and 121 of 4283 lie on the plane.
+ */
+export type AutoSymmetry = 'none' | 'oxy' | 'oyz' | 'oxz'
+export const AUTO_SYMMETRIES: readonly AutoSymmetry[] = ['none', 'oxy', 'oyz', 'oxz']
+const PLANE_AXIS: Record<Exclude<AutoSymmetry, 'none'>, number> = { oyz: 0, oxz: 1, oxy: 2 }
+
+/** The plane a cage is mirrored about: `axis` is the coordinate that is negated, at 0. */
+export interface MirrorPlane {
+  axis: number
+  /** For each vertex, its mirror partner (itself on the plane); -1 where there is none. */
+  partner: Int32Array
+}
+
 export class AutoError extends Error {
   constructor(message: string) {
     super(message)
@@ -66,6 +83,8 @@ export interface AutoResult {
   closed: boolean
   /** Cubes tried. */
   tries: number
+  /** Set when a symmetry was asked: the cage is mirror-symmetric about it. */
+  mirror?: MirrorPlane
 }
 
 interface Grid {
@@ -74,6 +93,8 @@ interface Grid {
   nz: number
   h: number
   origin: Vec3
+  /** Set for a symmetric grid: the axis, and the cell count each side of the plane (the plane is the lattice plane `half`). */
+  sym?: { axis: number; half: number }
 }
 
 /** The scan's surface as points no further apart than `spacing`: its vertices, and the inside of any triangle longer than that. */
@@ -114,9 +135,36 @@ function bounds(p: ArrayLike<number>): { min: Vec3; max: Vec3 } {
   return { min, max }
 }
 
-function gridFor(min: Vec3, max: Vec3, h: number, shift: number): Grid {
+function gridFor(min: Vec3, max: Vec3, h: number, shift: number, axis = -1): Grid {
   const origin: Vec3 = [min[0] - (PAD + shift) * h, min[1] - (PAD + shift * 0.61) * h, min[2] - (PAD + shift * 0.37) * h]
-  return { nx: Math.ceil((max[0] - origin[0]) / h) + PAD, ny: Math.ceil((max[1] - origin[1]) / h) + PAD, nz: Math.ceil((max[2] - origin[2]) / h) + PAD, h, origin }
+  const n = [Math.ceil((max[0] - origin[0]) / h) + PAD, Math.ceil((max[1] - origin[1]) / h) + PAD, Math.ceil((max[2] - origin[2]) / h) + PAD]
+  let sym: Grid['sym']
+  if (axis >= 0) {
+    // The plane (coordinate 0) is a lattice plane in the middle of the grid, which reaches as far each side as the part does.
+    const half = Math.max(Math.ceil(-min[axis] / h), Math.ceil(max[axis] / h), 1) + PAD
+    origin[axis] = -half * h
+    n[axis] = 2 * half
+    sym = { axis, half }
+  }
+  return { nx: n[0], ny: n[1], nz: n[2], h, origin, sym }
+}
+
+/** Each cell the scan marks also marks its mirror cell. */
+function mirrorCells(cells: Uint8Array, g: Grid): void {
+  if (!g.sym) return
+  const { axis, half } = g.sym
+  const dims = [g.nx, g.ny, g.nz]
+  const stride = [1, g.nx, g.nx * g.ny]
+  const total = cells.length
+  for (let c = 0; c < total; c++) {
+    const at = Math.floor(c / stride[axis]) % dims[axis]
+    if (at >= half) continue
+    const d = c + (dims[axis] - 1 - 2 * at) * stride[axis]
+    if (cells[c] || cells[d]) {
+      cells[c] = 1
+      cells[d] = 1
+    }
+  }
 }
 
 /** 1 for each cell the scan's points fall in, else 0. */
@@ -283,16 +331,60 @@ function manifold(solid: Uint8Array, g: Grid): Voxels | null {
       around(a)
       around(b)
     }
+    mirrorCells(solid, g)
   }
   return null
 }
 
 /** The surface for a cube of side h, its grid shifted by `shift` of a cube; null where the surface will not be made a manifold. */
-function voxelSurface(points: Float32Array, min: Vec3, max: Vec3, h: number, shift: number): { m: Voxels; g: Grid } | null {
-  const g = gridFor(min, max, h, shift)
-  const solid = solidOf(mark(points, g), g)
+function voxelSurface(points: Float32Array, min: Vec3, max: Vec3, h: number, shift: number, axis = -1): { m: Voxels; g: Grid } | null {
+  const g = gridFor(min, max, h, shift, axis)
+  const surface = mark(points, g)
+  mirrorCells(surface, g)
+  const solid = solidOf(surface, g)
   const m = manifold(solid, g)
   return m ? { m, g } : null
+}
+
+/** For each lattice vertex of a symmetric grid, its mirror partner (itself on the plane); -1 for none. */
+function partnersOf(m: Voxels, g: Grid): Int32Array {
+  const nv = m.lattice.length / 3
+  const partner = new Int32Array(nv).fill(-1)
+  if (!g.sym) return partner
+  const { axis, half } = g.sym
+  const sx = g.nx + 1
+  const sy = g.ny + 1
+  const ids = new Map<number, number>()
+  const at = (i: number, j: number, k: number) => i + sx * (j + sy * k)
+  for (let v = 0; v < nv; v++) ids.set(at(m.lattice[v * 3], m.lattice[v * 3 + 1], m.lattice[v * 3 + 2]), v)
+  for (let v = 0; v < nv; v++) {
+    const l = [m.lattice[v * 3], m.lattice[v * 3 + 1], m.lattice[v * 3 + 2]]
+    l[axis] = 2 * half - l[axis]
+    partner[v] = ids.get(at(l[0], l[1], l[2])) ?? -1
+  }
+  return partner
+}
+
+/** The positions made mirror-symmetric: each vertex and its partner's mirror image meet at their middle, a vertex on the plane is put on it. */
+export function mirrorPositions(positions: Float64Array, mirror: MirrorPlane): Float64Array {
+  const out = Float64Array.from(positions)
+  const a = mirror.axis
+  for (let v = 0; v < mirror.partner.length; v++) {
+    const w = mirror.partner[v]
+    if (w < 0 || w < v) continue
+    if (w === v) {
+      out[v * 3 + a] = 0
+      continue
+    }
+    for (let k = 0; k < 3; k++) {
+      const pv = positions[v * 3 + k]
+      const pw = positions[w * 3 + k] * (k === a ? -1 : 1)
+      const mid = (pv + pw) / 2
+      out[v * 3 + k] = mid
+      out[w * 3 + k] = k === a ? -mid : mid
+    }
+  }
+  return out
 }
 
 function neighboursOf(nv: number, faces: number[][]): number[][] {
@@ -352,16 +444,19 @@ function surfaceArea(scan: ScanPaths): number {
 }
 
 /** The closed quad cage of a scan at about `target` quads: see the head of the file. */
-export function autoCage(scan: ScanPaths, target: number, relax = 2, weight = 0.5): AutoResult {
+export function autoCage(scan: ScanPaths, target: number, relax = 2, weight = 0.5, symmetry: AutoSymmetry = 'none'): AutoResult {
   if (!Number.isFinite(target) || target < AUTO_QUADS_MIN || target > AUTO_QUADS_MAX) throw new AutoError(`Target quads: from ${AUTO_QUADS_MIN} to ${AUTO_QUADS_MAX}.`)
   if (scan.triangleCount === 0) throw new AutoError('There is no scan to make a freeform from.')
   const { min, max } = bounds(scan.positions)
+  const axis = symmetry === 'none' ? -1 : (PLANE_AXIS[symmetry] ?? -1)
+  if (symmetry !== 'none' && axis < 0) throw new AutoError(`Symmetry: none, oxy, oyz or oxz.`)
+  if (axis >= 0 && !(min[axis] < 0 && max[axis] > 0)) throw new AutoError(`The scan does not cross the ${symmetry.toUpperCase()} plane (${'xyz'[axis]} = 0), so it cannot be made symmetric about it.`)
   const area = surfaceArea(scan)
   if (!(area > 0)) throw new AutoError('The scan has no surface to make a freeform from.')
   // The cube for a surface of random aim: a face of it is 1.5 of a cube's face, about.
   const guess = Math.sqrt((1.5 * area) / target)
   let hLow = guess / 3
-  const span = Math.max(max[0] - min[0], max[1] - min[1], max[2] - min[2])
+  const span = Math.max(max[0] - min[0], max[1] - min[1], max[2] - min[2], axis >= 0 ? 2 * Math.max(-min[axis], max[axis]) : 0)
   while (((span / hLow + 2 * PAD) ** 3) > MAX_CELLS) hLow *= 1.25
   // The points are no further apart than half the smallest cube tried, so that no cube the surface runs through is missed.
   const points = surfacePoints(scan, hLow / 2)
@@ -372,7 +467,7 @@ export function autoCage(scan: ScanPaths, target: number, relax = 2, weight = 0.
     tries++
     // After the first tries the grid is shifted a little, for a different count at the same cube.
     const shift = t < 4 ? 0 : ((t * 0.37) % 1)
-    const s = voxelSurface(points, min, max, h, shift)
+    const s = voxelSurface(points, min, max, h, shift, axis)
     if (!s) {
       h *= 1.07
       continue
@@ -388,7 +483,12 @@ export function autoCage(scan: ScanPaths, target: number, relax = 2, weight = 0.
   const nv = m.lattice.length / 3
   const lattice = new Float64Array(nv * 3)
   for (let v = 0; v < nv; v++) for (let k = 0; k < 3; k++) lattice[v * 3 + k] = g.origin[k] + m.lattice[v * 3 + k] * g.h
-  const positions = relaxOnto(lattice, m.faces, scan, relax, weight)
+  let positions = relaxOnto(lattice, m.faces, scan, relax, weight)
+  let mirror: MirrorPlane | undefined
+  if (g.sym) {
+    mirror = { axis: g.sym.axis, partner: partnersOf(m, g) }
+    positions = mirrorPositions(positions, mirror)
+  }
   const cage: Cage = { positions, faces: m.faces, creases: [] }
   const nb = neighboursOf(nv, m.faces)
   const irregular = nb.filter((n) => n.length !== 4).length
@@ -401,5 +501,5 @@ export function autoCage(scan: ScanPaths, target: number, relax = 2, weight = 0.
       edgeCount++
     }
   })
-  return { cage, quads: m.faces.length, target, cell: g.h, irregular, edge: edgeCount > 0 ? edgeSum / edgeCount : 0, closed: true, tries }
+  return { cage, quads: m.faces.length, target, cell: g.h, irregular, edge: edgeCount > 0 ? edgeSum / edgeCount : 0, closed: true, tries, mirror }
 }
