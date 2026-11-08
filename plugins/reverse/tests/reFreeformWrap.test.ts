@@ -9,7 +9,7 @@ import type { Vec3 } from '../../../src/core/types'
 import { topology } from '../core/freeform/cage'
 import { boundaryLoops, type Closest, deviation, snapCage } from '../core/freeform/edit'
 import { cylinderClosest } from '../core/freeform/snap'
-import { fitWrap, MAX_WRAP_QUADS, regionClosest, regionSnap, scanVertexNormals, snapRegionOf, snapWeight, WRAP_AROUND, WrapError, wrapCage } from '../core/freeform/wrap'
+import { fitWrap, MAX_WRAP_QUADS, regionClosest, regionSnap, scanVertexNormals, settleWrap, snapRegionOf, snapWeight, WRAP_AROUND, WrapError, wrapCage } from '../core/freeform/wrap'
 
 const R = 25
 const LENGTH = 40
@@ -78,7 +78,7 @@ describe('wrap fit', () => {
     expect(Math.abs(fit.axis.ay)).toBeCloseTo(1, 9)
   })
 
-  it('closes a 170° wall with a chord as QUICKSURFACE does: N round on the full-turn grid, the arc and its two ends on the wall, the chord held in the snap', () => {
+  it('closes a 170° wall with a chord as QUICKSURFACE does: N round, the arc on the wall with its two ends creased, the chord held in the snap', () => {
     const s = cylinderPoints([0, 0, 1], [0, 0, 0], (170 * Math.PI) / 180, { offsetAngle: (95 * Math.PI) / 180, length: 150, rows: 40, cols: 200, radius: 100 })
     const f = fitWrap(s.positions, s.idx, s.normals)
     expect(f.closed).toBe(false)
@@ -88,38 +88,42 @@ describe('wrap fit', () => {
       expect([w.around, w.along]).toEqual(counts[d])
       expect(w.closure).toBe('chord')
       expect(boundaryLoops(w.cage)).toHaveLength(2)
+      // The corners where the chord leaves the wall: an edge down each end of the arc, per row of quads.
+      expect(w.cage.creases).toHaveLength(2 * counts[d][1])
     }
     const w = wrapCage(f, 'fine')
-    // The arc's own vertices stand at the grid's multiples of 22.5° inside the arc, and at the arc's two ends.
     const angle = (i: number) => {
       const q = [0, 1, 2].map((m) => w.cage.positions[i * 3 + m] - [f.axis.px, f.axis.py, f.axis.pz][m])
       const th = Math.atan2(q[0] * f.v[0] + q[1] * f.v[1] + q[2] * f.v[2], q[0] * f.u[0] + q[1] * f.u[1] + q[2] * f.u[2])
       return (((th * 180) / Math.PI) + 360) % 360
     }
-    const ring = w.onRegion.filter((i) => i < 16).map(angle)
-    expect(ring.length).toBeGreaterThanOrEqual(9)
-    const inner = ring.slice(1, -1)
-    for (const a of inner) expect(Math.abs(a / 22.5 - Math.round(a / 22.5))).toBeLessThan(0.02)
-    expect(Math.abs(ring[0] - ((((f.start * 180) / Math.PI) % 360) + 360) % 360)).toBeLessThan(0.5)
+    const radius = (i: number) => Math.hypot(w.cage.positions[i * 3] - f.axis.px, w.cage.positions[i * 3 + 1] - f.axis.py)
+    const arc = w.onRegion.filter((i) => i < 16)
+    expect(arc.length).toBeGreaterThanOrEqual(8)
+    // The arc is an open strip from one end of the region to the other, evenly stepped, its ends on the wall (they are creases: the limit passes through them).
+    const degs = arc.map(angle)
+    expect(Math.abs(degs[0] - ((((f.start * 180) / Math.PI) % 360) + 360) % 360)).toBeLessThan(0.5)
+    const steps = degs.slice(1).map((a1, i) => a1 - degs[i])
+    for (const st of steps) expect(Math.abs(st - steps[0])).toBeLessThan(0.05)
+    expect(Math.abs(radius(arc[0]) - 100)).toBeLessThan(0.02)
+    expect(Math.abs(radius(arc[arc.length - 1]) - 100)).toBeLessThan(0.02)
     // The chord runs straight between the ends, on the axis' side of the wall.
-    const chordFirst = w.cage.positions.slice(w.onRegion.filter((i) => i < 16).length * 3, w.onRegion.filter((i) => i < 16).length * 3 + 3)
+    const chordFirst = w.cage.positions.slice(arc.length * 3, arc.length * 3 + 3)
     expect(Math.hypot(chordFirst[0], chordFirst[1])).toBeLessThan(100)
-    // The snap moves the arc onto the wall and leaves the chord alone.
+    // Settled, the cage's limit lies on the wall over the region; the chord is left alone.
     const exactWall = closestOf([f.axis.px, f.axis.py, f.axis.pz], [0, 0, 1], 100)
     const before = Float64Array.from(w.cage.positions)
-    const { cage } = snapCage(w.cage, regionClosest(f, 'fine', exactWall), 12, 0.001)
-    // The chord's middle: out of the region's reach, so the snap leaves it where it was laid.
+    const cage = settleWrap(w, 'fine')
     const held = Array.from({ length: before.length / 3 }, (_, i) => i).filter((i) => !w.onRegion.includes(i) && Math.hypot(before[i * 3] - f.axis.px, before[i * 3 + 1] - f.axis.py) < 60)
     expect(held.length).toBeGreaterThan(0)
     for (const i of held) for (let k = 0; k < 3; k++) expect(cage.positions[i * 3 + k]).toBe(before[i * 3 + k])
-    // Away from the ends, where the chord's vertices do not reach, the cage's own limit lies near the wall; at the ends the snapped refined surface (the build's) takes over.
     const seg = (2 * Math.PI) / 16
     const interior = regionClosest({ ...f, start: f.start + 1.5 * seg, sweep: f.sweep - 3 * seg }, 'fine', exactWall)
     const dev = deviation(cage, (p) => interior(p), 0.05)
     expect(dev.points).toBeGreaterThan(100)
-    // Uneven steps beside the ends leave the cage limit up to a quarter millimetre off between its vertices; the build's snap of the refined surface closes that.
-    expect(dev.rms).toBeLessThan(0.12)
-    expect(dev.max).toBeLessThan(0.3)
+    // Between its vertices (21° apart) the cage's surface lies a few hundredths of a millimetre inside the wall; the build's snap of the refined surface closes that.
+    expect(dev.rms).toBeLessThan(0.1)
+    expect(dev.max).toBeLessThan(0.2)
   })
 
   it('refuses what is not a curved wall: a plane, too few points, a zero axis, no normals', () => {
@@ -250,7 +254,7 @@ describe('the snap region a wrap leaves with its feature', () => {
   it('weighs 1 over the arc at the wall and 0 across the part and far off the wall', () => {
     const z = (f.t0 + f.t1) / 2
     expect(snapWeight(region, at(mid, 100, z))).toBe(1)
-    expect(snapWeight(region, at(mid, 95, z))).toBe(1)
+    expect(snapWeight(region, at(mid, 96, z))).toBe(1)
     expect(snapWeight(region, at(mid, 60, z))).toBe(0)
     expect(snapWeight(region, at(mid + Math.PI, 100, z))).toBe(0)
     expect(snapWeight(region, at(mid, 100, f.t1 + 20))).toBe(0)
@@ -270,15 +274,29 @@ describe('the snap region a wrap leaves with its feature', () => {
 
   it('moves a point by the weight toward the scan point, and leaves the rest', () => {
     const z = (f.t0 + f.t1) / 2
-    const near = regionSnap(region, (p) => [p[0] + 1, p[1], p[2]])
+    // A scan point 0.3 mm off the wall: the relief the snap is to follow.
+    const near = regionSnap(region, (p) => [p[0] + 0.3, p[1], p[2]])
     const p = at(mid, 100, z)
-    expect(near(p)).toEqual([p[0] + 1, p[1], p[2]])
+    expect(near(p)![0] - p[0]).toBeCloseTo(0.3, 6)
     expect(near(at(mid + Math.PI, 100, z))).toBeNull()
     const edge = at(f.start + f.sweep + region.margin * 0.5, 100, z)
     const w = snapWeight(region, edge)
     expect(w).toBeGreaterThan(0)
     expect(w).toBeLessThan(1)
-    expect(near(edge)![0] - edge[0]).toBeCloseTo(w, 12)
+    expect(near(edge)![0] - edge[0]).toBeCloseTo(0.3 * w, 6)
+  })
+
+  it('draws a point that stands off the wall onto the cylinder first: a coarse cage’s sag is brought back', () => {
+    const z = (f.t0 + f.t1) / 2
+    const low = snapRegionOf(f, 'low')!
+    // 8 mm inside the wall, as a Low cage’s surface stands between its control points; the scan has the wall at the cylinder.
+    const wall = (p: Vec3): Vec3 => cylinderClosest([f.axis.px, f.axis.py, f.axis.pz], [f.axis.ax, f.axis.ay, f.axis.az], 100)(p, [0, 0, 0]) as Vec3
+    const snapped = regionSnap(low, wall)(at(mid, 92, z))!
+    expect(Math.hypot(snapped[0] - f.axis.px, snapped[1] - f.axis.py)).toBeCloseTo(100, 6)
+    // A scan point 8 mm from the cylinder is not the wall (a hole, the far side of a thin wall): the surface stays on the cylinder.
+    const far = regionSnap(low, (p) => [p[0] + 8, p[1], p[2]])(at(mid, 100, z))!
+    const home = at(mid, 100, z)
+    expect(Math.hypot(far[0] - home[0], far[1] - home[1], far[2] - home[2])).toBeLessThan(1e-6)
   })
 })
 

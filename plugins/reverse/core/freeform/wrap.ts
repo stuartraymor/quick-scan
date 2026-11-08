@@ -15,6 +15,8 @@ import { cross, orthoBasis } from '../../../../src/core/fit/linalg'
 import type { Cylinder, Vec3 } from '../../../../src/core/types'
 import type { FreeformSnapRegion } from '../features'
 import type { Cage } from './cage'
+import { snapCage } from './edit'
+import { cylinderClosest } from './snap'
 
 export type WrapDensity = 'low' | 'medium' | 'fine'
 /** Quads round a full turn, by density. */
@@ -186,14 +188,14 @@ export function wrapCage(fit: WrapFit, density: WrapDensity, closure: WrapClosur
     onRegion = ring.length
     kind = 'none'
   } else {
-    const a0 = fit.start, a1 = fit.start + fit.sweep
-    const arc: number[] = [a0]
-    const first = Math.ceil((a0 + 0.25 * seg) / seg)
-    for (let k = first; k * seg < a1 - 0.25 * seg; k++) arc.push(k * seg)
-    arc.push(a1)
-    onRegion = arc.length
-    const chord = Math.max(0, full - arc.length)
-    for (const th of arc) ring.push([rc * Math.cos(th), rc * Math.sin(th)])
+    // The arc as an open strip whose ends are on the wall (they are creases: the limit passes through them), and the
+    // chord's vertices along the straight line closing it, so the ring has as many vertices as a full turn would.
+    const arcQuads = Math.max(1, Math.ceil(fit.sweep / seg - 1e-9))
+    const step = fit.sweep / arcQuads
+    const radii = stripRadii(axis.r, step, arcQuads)
+    for (let j = 0; j <= arcQuads; j++) ring.push([radii[j] * Math.cos(fit.start + step * j), radii[j] * Math.sin(fit.start + step * j)])
+    onRegion = ring.length
+    const chord = Math.max(0, full - ring.length)
     const [bx, by] = ring[ring.length - 1], [ax0, ay0] = ring[0]
     for (let k = 1; k <= chord; k++) ring.push([bx + ((ax0 - bx) * k) / (chord + 1), by + ((ay0 - by) * k) / (chord + 1)])
     kind = 'chord'
@@ -222,7 +224,11 @@ export function wrapCage(fit: WrapFit, density: WrapDensity, closure: WrapClosur
   if (n[0] * radial[0] + n[1] * radial[1] + n[2] * radial[2] < 0) for (const f of faces) f.reverse()
   const on: number[] = []
   for (let k = 0; k <= along; k++) for (let j = 0; j < onRegion; j++) on.push(k * cols + j)
-  return { cage: { positions, faces, creases: [] }, around: quadsAround, along, fit, closure: kind, onRegion: on }
+  // Where the chord leaves the wall the surface turns a corner (QUICKSURFACE doubles the vertices there): the two
+  // edges down the arc's ends are creases, so the limit has the corner and the blocks are made apart at it.
+  const creases: [number, number][] = []
+  if (kind === 'chord') for (let k = 0; k < along; k++) for (const j of [0, onRegion - 1]) creases.push([at(k, j), at(k + 1, j)])
+  return { cage: { positions, faces, creases }, around: quadsAround, along, fit, closure: kind, onRegion: on }
 }
 
 /** Where a wrap's snap reaches, as a feature keeps it; null for a region that goes all the way round (the whole wall is the region's). */
@@ -232,30 +238,41 @@ export function snapRegionOf(fit: WrapFit, density: WrapDensity): FreeformSnapRe
   return { point: [axis.px, axis.py, axis.pz], dir: [axis.ax, axis.ay, axis.az], radius: axis.r, u: fit.u, v: fit.v, t0: fit.t0, t1: fit.t1, start: fit.start, sweep: fit.sweep, margin: Math.PI / WRAP_AROUND[density] }
 }
 
-/** `closest` restricted to a snap region: null outside the arc it covers (a margin of half a grid step
- *  either side), along it, and a quarter of the radius from the wall — so a snap holds the chord, which
- *  runs through the part, and whatever else the ring reaches off the region. */
-export function regionClosestIn<T>(region: FreeformSnapRegion, closest: (p: Vec3) => T | null): (p: Vec3) => T | null {
-  const { point, dir, u, v, radius } = region
-  const lo = region.start - region.margin, span = region.sweep + 2 * region.margin
-  const slack = (region.t1 - region.t0) * 0.02 + 1e-6
+/** `closest` restricted to a snap region: null wherever the region has no say (snapWeight 0) — so a snap holds the
+ *  chord, which runs through the part, and whatever else the ring reaches off the region. */
+export function regionClosestIn<T extends { distance: number }>(region: FreeformSnapRegion, closest: (p: Vec3) => T | null): (p: Vec3) => T | null {
   return (p) => {
-    const q: Vec3 = [p[0] - point[0], p[1] - point[1], p[2] - point[2]]
-    const t = q[0] * dir[0] + q[1] * dir[1] + q[2] * dir[2]
-    if (t < region.t0 - slack || t > region.t1 + slack) return null
-    const rho = Math.hypot(q[0] - t * dir[0], q[1] - t * dir[1], q[2] - t * dir[2])
-    if (Math.abs(rho - radius) > 0.25 * radius) return null
-    let th = Math.atan2(q[0] * v[0] + q[1] * v[1] + q[2] * v[2], q[0] * u[0] + q[1] * u[1] + q[2] * u[2]) - lo
-    th = ((th % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)
-    return th <= span ? closest(p) : null
+    if (!(snapWeight(region, p) > 0)) return null
+    const c = closest(p)
+    return c && c.distance <= REACH_NONE * region.radius ? c : null
   }
+}
+
+/** How far the scan's nearest point may be from the surface, as a fraction of the radius, for the snap to have all of
+ *  its say, and none. A wall has relief of a few tenths of a millimetre to a couple of millimetres; a nearest point
+ *  further than that is not the wall — a hole in the scan, the far side of a thin wall, a neighbouring face — and
+ *  taking the surface there tears it. */
+const REACH_FULL = 0.005
+const REACH_NONE = 0.02
+
+/** How far off the wall, as a fraction of the radius, the snap still has all of its say, and none. A wall's grooves are
+ *  a few hundredths of the radius deep; past a tenth the nearest scan is a neighbouring face or the far side. */
+const RADIAL_FULL = 0.04
+const RADIAL_FADE = 0.06
+
+/** The band's two edges for a region, as fractions of the radius: a coarse cage's surface stands off the wall by up to
+ *  its sag between control points — about half of 1 − cos(π/N), which the margin (π/N) carries — and the snap is to
+ *  bring all of it back, so the band is whole out to that and fades over a further 6 %. */
+const radialBand = (region: FreeformSnapRegion): [number, number] => {
+  const full = Math.max(RADIAL_FULL, 0.55 * (1 - Math.cos(region.margin)))
+  return [full, full + RADIAL_FADE]
 }
 
 const smooth = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x))
 
 /** How far a point is the snap region's to move, 0–1: 1 over the arc and near the wall, falling smoothly to 0 across
- *  the margin either side of the arc and from a tenth to a quarter of the radius off the wall. A surface taken onto
- *  the scan by this weight has no tear where the region ends. */
+ *  the margin either side of the arc and from 4 % to 10 % of the radius off the wall. A surface taken onto the scan
+ *  by this weight has no tear where the region ends. */
 export function snapWeight(region: FreeformSnapRegion, p: Vec3): number {
   const { point, dir, u, v, radius } = region
   const q: Vec3 = [p[0] - point[0], p[1] - point[1], p[2] - point[2]]
@@ -263,7 +280,8 @@ export function snapWeight(region: FreeformSnapRegion, p: Vec3): number {
   const slack = (region.t1 - region.t0) * 0.02 + 1e-6
   if (t < region.t0 - slack || t > region.t1 + slack) return 0
   const rho = Math.hypot(q[0] - t * dir[0], q[1] - t * dir[1], q[2] - t * dir[2])
-  const wr = smooth((0.25 - Math.abs(rho - radius) / radius) / 0.15)
+  const [full, none] = radialBand(region)
+  const wr = smooth((none - Math.abs(rho - radius) / radius) / (none - full))
   if (wr === 0) return 0
   let th = Math.atan2(q[0] * v[0] + q[1] * v[1] + q[2] * v[2], q[0] * u[0] + q[1] * u[1] + q[2] * u[2]) - (region.start - region.margin)
   th = ((th % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)
@@ -273,20 +291,57 @@ export function snapWeight(region: FreeformSnapRegion, p: Vec3): number {
   return wr * wa
 }
 
+/** The point of the region's cylinder nearest p. */
+function onCylinder(region: FreeformSnapRegion, p: Vec3): Vec3 {
+  const { point, dir, radius } = region
+  const q: Vec3 = [p[0] - point[0], p[1] - point[1], p[2] - point[2]]
+  const t = q[0] * dir[0] + q[1] * dir[1] + q[2] * dir[2]
+  const r: Vec3 = [q[0] - t * dir[0], q[1] - t * dir[1], q[2] - t * dir[2]]
+  const len = Math.hypot(r[0], r[1], r[2])
+  if (!(len > 1e-12)) return p
+  const s = radius / len
+  return [point[0] + dir[0] * t + r[0] * s, point[1] + dir[1] * t + r[1] * s, point[2] + dir[2] * t + r[2] * s]
+}
+
 /** The scan's nearest point drawn to the surface by the region's weight: the surface point itself where the region
  *  has no say, the scan's point where it has all of it. */
 export function regionSnap(region: FreeformSnapRegion, closest: (p: Vec3) => Vec3 | null): (p: Vec3) => Vec3 | null {
   return (p) => {
     const w = snapWeight(region, p)
     if (!(w > 0)) return null
-    const c = closest(p)
-    if (!c) return null
-    return w >= 1 ? c : [p[0] + (c[0] - p[0]) * w, p[1] + (c[1] - p[1]) * w, p[2] + (c[2] - p[2]) * w]
+    // The wall first: the point drawn radially onto the fitted cylinder, which is where a coarse cage's surface
+    // would be were it fine; then the scan's relief about that, where the scan is near.
+    const on = onCylinder(region, p)
+    let target: Vec3 = on
+    const c = closest(on)
+    if (c) {
+      const reach = Math.hypot(c[0] - on[0], c[1] - on[1], c[2] - on[2]) / region.radius
+      const k = smooth((REACH_NONE - reach) / (REACH_NONE - REACH_FULL))
+      if (k > 0) target = [on[0] + (c[0] - on[0]) * k, on[1] + (c[1] - on[1]) * k, on[2] + (c[2] - on[2]) * k]
+    }
+    return w >= 1 ? target : [p[0] + (target[0] - p[0]) * w, p[1] + (target[1] - p[1]) * w, p[2] + (target[2] - p[2]) * w]
   }
 }
 
 /** `closest` restricted to the region the fit found; a whole-turn region reaches everywhere. */
-export function regionClosest<T>(fit: WrapFit, density: WrapDensity, closest: (p: Vec3) => T | null): (p: Vec3) => T | null {
+export function regionClosest<T extends { distance: number }>(fit: WrapFit, density: WrapDensity, closest: (p: Vec3) => T | null): (p: Vec3) => T | null {
   const region = snapRegionOf(fit, density)
   return region ? regionClosestIn(region, closest) : closest
+}
+
+/** The cage with its control points moved so its limit surface lies on the fitted cylinder over the region — the
+ *  snap's start. A ring of quads laid out for a full turn (rc above) has its limit on the wall only where the ring
+ *  is regular: at the ends of a part-turn arc, where the chord pulls on it, and at the open ends of a tube, the limit
+ *  falls several millimetres inside, and the scan's nearest point from there may be the wall's far side. Settled
+ *  first, the scan snap moves each point by the wall's own relief (tenths of a millimetre) and nearest is unambiguous. */
+export function settleWrap(w: WrapCage, density: WrapDensity): Cage {
+  const { axis } = w.fit
+  const cyl = cylinderClosest([axis.px, axis.py, axis.pz], [axis.ax, axis.ay, axis.az], axis.r)
+  const region = snapRegionOf(w.fit, density)
+  const closest = (p: Vec3): { point: Vec3; distance: number } | null => {
+    if (region && !(snapWeight(region, p) > 0)) return null
+    const q = cyl(p, [0, 0, 0])
+    return q ? { point: q, distance: Math.hypot(q[0] - p[0], q[1] - p[1], q[2] - p[2]) } : null
+  }
+  return snapCage(w.cage, closest, 40, 1e-4).cage
 }

@@ -13,7 +13,7 @@ import { type Command, CommandError } from '../../../src/plugins/api'
 import { type FreeformFeature, SURFACE_MIN_REGION } from '../core/features'
 import { deviation, snapCage } from '../core/freeform/edit'
 import { MAX_STEPS } from '../core/freeform/make'
-import { fitWrap, regionClosest, scanVertexNormals, snapRegionOf, WrapError, type WrapClosure, type WrapDensity, wrapCage } from '../core/freeform/wrap'
+import { fitWrap, regionClosest, scanVertexNormals, settleWrap, snapRegionOf, WrapError, type WrapClosure, type WrapDensity, wrapCage } from '../core/freeform/wrap'
 import { bodiesChanged, bodyRows } from './reCommandAnswers'
 import { madeOut } from './reFreeformEditCommands'
 import { change, featureNamed, type Json, re, ready, session } from './reCommandCore'
@@ -111,8 +111,9 @@ export const freeformWrap: Command<{
         return c ? { point: c.point, distance: c.distance } : null
       }
     })())
-    const was = deviation(wrap.cage, closest, TOLERANCE_MM)
-    let cage = wrap.cage
+    // Settled on the fitted cylinder first (the ring's limit falls inside it at the arc's ends), then taken onto the scan.
+    let cage = settleWrap(wrap, density)
+    const was = deviation(cage, closest, TOLERANCE_MM)
     let snapped: Json | null = null
     if (was.points > 0) {
       const r = snapCage(cage, closest, iterations, 0.01)
