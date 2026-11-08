@@ -449,6 +449,11 @@ export function resolveFeatures(
       else steps.push({ kind: 'freeform', id: f.id, name: f.name, positions: f.positions, faces: f.faces, creases: f.creases, steps: f.steps, snap: f.snap, ...(f.ask ? { ask: f.ask } : {}), ...(f.snapRegion ? { snapRegion: f.snapRegion } : {}) })
       continue
     }
+    if (f.kind === 'fill') {
+      if (!Number.isInteger(f.rows) || !Number.isInteger(f.cols) || f.rows < 4 || f.cols < 4 || f.points.length !== f.rows * f.cols * 3 || f.points.some((x) => !Number.isFinite(x))) failed(f, 'The fill holds no grid of points to make a surface through (reverse.freeform.fill makes one).')
+      else steps.push({ kind: 'fill', id: f.id, name: f.name, points: f.points, rows: f.rows, cols: f.cols })
+      continue
+    }
     if (f.kind === 'split') {
       if (f.tools.length === 0) failed(f, 'Pick a sheet or a body to split with.')
       else if (f.tools.includes(f.body)) failed(f, 'A body cannot split itself.')

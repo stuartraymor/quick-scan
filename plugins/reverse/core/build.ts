@@ -620,6 +620,20 @@ export class Builder {
     }
   }
 
+  /** A Fill Surface's face: the kernel's surface through the grid it holds, checked against the grid's area as a fitted surface is (GRID_AREA_SLACK). */
+  private fillOf(step: Extract<BuildStep, { kind: 'fill' }>): Shape {
+    const k = this.kernel
+    const grid = { points: Float64Array.from(step.points), rows: step.rows, cols: step.cols }
+    const face = k.surfaceThrough(grid.points, grid.rows, grid.cols)
+    const off = k.surfaceArea(face) / gridArea(grid)
+    if (!(off <= GRID_AREA_SLACK)) {
+      k.release(face)
+      // units-ok: build message, also the agent's answer
+      throw new Error(`The kernel's surface through the fill's grid does not follow it: ${off > 100 ? `${Math.round(off)} times` : `${Math.round((off - 1) * 100)} % more than`} the grid's area.`)
+    }
+    return face
+  }
+
   /** A freeform cage made a body (core/freeform/make.ts): its surface taken onto the scan first where the step says so. */
   private freeformOf(step: Extract<BuildStep, { kind: 'freeform' }>): FreeformMade {
     const cage = { positions: Float64Array.from(step.positions), faces: step.faces, creases: step.creases }
@@ -2029,6 +2043,7 @@ export class Builder {
     if (step.kind === 'moveBody') return this.movePreview(step)
     if (step.kind === 'network') return this.networkPreview(step)
     if (step.kind === 'freeform') throw new Error('A freeform cage is built, not previewed: its faces are made when the list is built.')
+    if (step.kind === 'fill') throw new Error('A Fill Surface is built, not previewed: its face is made when the list is built.')
     const began = performance.now()
     const solid =
       step.kind === 'extrude' || step.kind === 'revolve'
@@ -3740,6 +3755,12 @@ export class Builder {
         this.bodies.set(step.id, { name: step.name, shape: made.shape, origins: new Map(k.faceHashes(made.shape).map((h) => [h, step.id])), surface: !made.report.closed, patches: made.patches })
         const refused = made.report.cells.filter((c) => 'refused' in c)
         results.push({ id: step.id, status: 'ok', network: made.report, ...(refused.length > 0 ? { note: `${refused.length} cell${refused.length === 1 ? '' : 's'} not filled: ${refused.map((c) => ('refused' in c ? c.refused : '')).join('; ')}.` } : {}) })
+        return
+      }
+      if (step.kind === 'fill') {
+        const face = this.fillOf(step)
+        this.bodies.set(step.id, { name: step.name, shape: face, origins: new Map(k.faceHashes(face).map((h) => [h, step.id])), surface: true })
+        results.push({ id: step.id, status: 'ok' })
         return
       }
       if (step.kind === 'freeform') {

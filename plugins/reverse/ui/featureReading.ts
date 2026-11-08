@@ -77,6 +77,7 @@ export const FEATURE_ICONS: Record<Feature['kind'], KeyIconName> = {
   // Patches fitted to the scan: a fitted surface's picture.
   network: 'surface',
   freeform: 'surface',
+  fill: 'surface',
   trim: 'trim',
 }
 
@@ -162,6 +163,8 @@ export function bodyFeatureReading(f: Exclude<Feature, { kind: 'sketch' | 'extru
       return { text: f.file.name, title: `${f.file.name} imported — ${fileSize(f.file.size)}: a body for every solid in it, named as the file names its parts` }
     case 'moveBody':
       return moveReading(f, names, units)
+    case 'fill':
+      return { text: `Fill · ${f.rows} × ${f.cols}`, title: `A Fill Surface: a surface through a ${f.rows} × ${f.cols} grid of points, the blend of its four boundary curves. A sheet body of its own, not taken onto the scan` }
     case 'freeform': {
       const faces = f.faces.length
       return { text: `${faces} face${faces === 1 ? '' : 's'} cage${f.ask ? ` · ${f.ask.kind === 'offset' ? `offset ${f.ask.distance}` : `thicken ${f.ask.thickness}`}` : ''}`, title: `A freeform cage of ${faces} face${faces === 1 ? '' : 's'} and ${f.positions.length / 3} points, refined ${f.steps}× and made B-spline faces${f.snap ? ', taken onto the scan first' : ''}. A solid where the cage closes, else a sheet` }

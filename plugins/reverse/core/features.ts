@@ -1084,6 +1084,21 @@ export interface FreeformFeature extends FeatureFlags {
 /** What a freeform feature holds besides its name. */
 export type FreeformData = Pick<FreeformFeature, 'positions' | 'faces' | 'creases' | 'steps' | 'snap' | 'ask' | 'snapRegion' | 'fromSketch'>
 
+/** A Fill Surface: a surface through a grid of points (core/fill.ts), QUICKSURFACE's Fill Surface of a four-sided loop with every edge Contact. The grid is kept, so the surface is rebuilt without the scan or the sketch it was made from. A sheet body of its own. */
+export interface FillFeature extends FeatureFlags {
+  id: number
+  kind: 'fill'
+  name: string
+  /** The grid's points, x y z each, row-major: `rows` rows of `cols`. */
+  points: number[]
+  rows: number
+  cols: number
+  visible: boolean
+}
+
+/** What a fill feature holds besides its name. */
+export type FillData = Pick<FillFeature, 'points' | 'rows' | 'cols'>
+
 /** A fitted surface's kind: the freeform B-spline, or a plane or a cylinder
  *  — exact faces, held square and parallel to what the part already has
  *  (core/re/autoConstrain), and cutting a trim as the whole plane or
@@ -1138,7 +1153,7 @@ export interface TrimFeature extends FeatureFlags {
 export type TrimPrimitive = { kind: 'plane'; origin: Vec3; normal: Vec3; basisU: Vec3; basisV: Vec3 } | Exclude<Primitive, { kind: 'slab' | 'prism' }>
 
 export type BodyFeature = ShellFeature | FilletFeature | ChamferFeature | HoleFeature | ThreadFeature | CutPlaneFeature | MirrorFeature | BooleanFeature | SplitFeature | PatternFeature | DraftFeature | MoveFaceFeature | DeleteFaceFeature | DuplicateFaceFeature | OffsetBodyFeature
-export type Feature = SketchFeature | ExtrudeFeature | RevolveFeature | ExtractFeature | SheetFeature | LoftFeature | SweepFeature | ThickenFeature | SurfaceFeature | NetworkFeature | FreeformFeature | TrimFeature | ImportFeature | MoveBodyFeature | BodyFeature
+export type Feature = SketchFeature | ExtrudeFeature | RevolveFeature | ExtractFeature | SheetFeature | LoftFeature | SweepFeature | ThickenFeature | SurfaceFeature | NetworkFeature | FreeformFeature | FillFeature | TrimFeature | ImportFeature | MoveBodyFeature | BodyFeature
 
 /** The solid an extracted element or shadow becomes, resolved to plain
  *  geometry. */
@@ -1239,6 +1254,8 @@ export function referencesOf(f: Feature): number[] {
     case 'thicken':
       return f.target === undefined ? [f.sheet] : [f.sheet, f.target]
     case 'import':
+      return []
+    case 'fill':
       return []
     case 'freeform':
       // Made from a sketch: the network whose curves it is made anew from.

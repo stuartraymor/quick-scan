@@ -167,6 +167,15 @@ export function validateFeatureJson(e: Record<string, unknown>): void {
     fields(fit, 'smoothness', 'number', 'network.fit')
     if (fit.tolerance !== undefined) fields(fit, 'tolerance', 'number', 'network.fit')
   }
+  // A Fill Surface: its grid of points, rows × cols of x y z.
+  if (e.kind === 'fill') {
+    const points = array(e.points, 'fill.points')
+    fields(e, 'rows', 'number', 'fill')
+    fields(e, 'cols', 'number', 'fill')
+    const { rows, cols } = e as { rows: number; cols: number }
+    if (!Number.isInteger(rows) || !Number.isInteger(cols) || rows < 4 || cols < 4 || rows > 257 || cols > 257) invalid('fill.rows')
+    if (points.length !== rows * cols * 3 || !points.every((v) => typeof v === 'number' && Number.isFinite(v))) invalid('fill.points')
+  }
   // A freeform cage: points flat, faces and creases by vertex index, held to
   // the cage's own bounds so that nothing read can reach past it.
   if (e.kind === 'freeform') {

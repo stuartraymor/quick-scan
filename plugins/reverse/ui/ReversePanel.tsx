@@ -467,7 +467,7 @@ export function ReversePanel({ onOpenScan, onExportStep, onCompare, chainsOf }: 
                 ? null
                 : f.kind === 'extrude' || f.kind === 'revolve' || f.kind === 'extract' || f.kind === 'loft' || f.kind === 'sweep' || f.kind === 'thicken'
                   ? (r?.bodies?.[0] ?? f.target ?? f.id)
-                  : f.kind === 'sheet' || f.kind === 'surface' || f.kind === 'network' || f.kind === 'freeform' || f.kind === 'trim'
+                  : f.kind === 'sheet' || f.kind === 'surface' || f.kind === 'network' || f.kind === 'freeform' || f.kind === 'fill' || f.kind === 'trim'
                     ? f.id
                     : f.kind === 'import' || f.kind === 'moveBody'
                       ? (r?.bodies?.[0] ?? (f.kind === 'moveBody' ? (f.bodies[0] ?? f.id) : f.id))
