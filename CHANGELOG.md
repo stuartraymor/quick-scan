@@ -1,4 +1,4 @@
-## 0.0.161 — Local candidate; GitHub held
+## 0.0.162 — Local candidate; GitHub held
 
 - Freeform, fifth piece (F4 of `audit-2026-11-07/FREEFORM_ROADMAP.md`): Wrap Surface, as the MCP command `reverse.freeform.wrap` {region (vertices, marked, or a box), density low/medium/fine, closure chord/none, axis, steps, snap, iterations, name}. The region — the wall the Magic Wand takes — is read as a cylinder (axis from the vertex normals, radius from a circle fit across it, extent along and round the axis) and a ring of quads is laid over it: 4, 8 or 16 quads round a full turn at Low, Medium or Fine and as many along as keep them square. A whole turn gives a tube with two open ends; part of a turn gives a ring closed with a chord across the part, as QUICKSURFACE's is (its two ends on the wall and creased, so the corner where the chord leaves the wall is sharp), or, with closure none, an open strip. The cage is settled on the fitted cylinder, snapped to the scan over the region, and added as a `freeform` feature (one undo step), snapped to the scan where it is built.
 - Checked against QUICKSURFACE 8.0.128's own Wrap on the basic_part outer wall (Low, Medium and Fine, exported as quad OBJ, `analysis/freeform-2026-11-07/native-wrap-densities-quads.obj`): the same cylinder from a Magic Wand patch of the wall (radius +0.010 mm off its 100.0845, axis 0.015°; the wand's patch is 155° round where the native pick was 170°), the same quads (4 × 1, 8 × 2, 16 × 4), the same open end loops, the same wall extent along the axis to 0.4 mm at one end and 2.2 mm at the other (the native chord vertices, snapped onto interior scan, excluded). Not the same: the native chord's vertices lie wherever the nearest interior scan is, and its arc vertices sit on the full-turn grid where ours are evenly stepped between the ends; ours put the chord straight and hold it. `tests/reFreeformWrapNative.test.ts` records these.
@@ -6,6 +6,10 @@
 - A feature made by a wrap keeps where its snap reaches (`snapRegion`, saved with the project): the region's cylinder, arc and extent. Within it the refined surface is drawn onto the fitted cylinder and then onto the scan's relief about it where the scan is within 2 % of the radius (a hole in the scan, the far side of a thin wall and a neighbouring face are not the wall, and taking the surface there tore it); outside it, and across the part where the chord runs, the surface is held, falling smoothly to that.
 - Measured on a noisy R = 50 mm cylinder scan (0.01 mm noise): a whole turn builds to a valid sheet whose area is within 2 % of the cylinder's, the cage's limit points within 0.05 mm rms of the scan after the snap, and an open strip and a chord-closed part-turn build valid too (`tests/reFreeformWrapFeature.test.ts`).
 - No visible change; the interface is as in 0.0.160.
+
+## 0.0.161 — Local candidate; GitHub held; superseded by 0.0.162
+
+- First cut of Wrap Surface (`reverse.freeform.wrap`). Its cage was laid and snapped to the scan by nearest point alone; checked on QUICKSURFACE's basic_part wall it built only at Fine (and 0.6 mm off the wall), and the kernel refused Medium and Low. Fixed in 0.0.162, which carries the whole of the work; nothing in 0.0.161 should be relied on.
 
 ## 0.0.160 — Local candidate; GitHub held
 
