@@ -76,7 +76,7 @@ function cageOut(c: Cage): Json {
 }
 
 /** What the build made of the cage: the result with its report. */
-function madeOut(f: FreeformFeature): Json {
+export function madeOut(f: FreeformFeature): Json {
   const r = re().results[f.id]
   const out: Json = { feature: featureBrief(f, false), result: resultOut(r) }
   const fr = r?.freeform

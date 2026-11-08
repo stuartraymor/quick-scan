@@ -29,6 +29,7 @@ import { parameterAdd, parameterList, parameterRemove, parameterRename, paramete
 import { noteAdd, noteList, noteResolve, notesNudge } from './reNoteCommands'
 import { cageConvert, cageOffset, cageRead, cageThicken, cageWrite } from './reFreeformCommands'
 import { freeformConvert, freeformCreate, freeformEdit, freeformMovePoints, freeformRead, freeformRefine, freeformSnap } from './reFreeformEditCommands'
+import { freeformWrap } from './reFreeformWrapCommand'
 import { networkCreate, networkEdit, networkRead, networkSuggestCreases } from './reNetworkCommands'
 import { planReplace, planSet, planTick, planUpdate, withPlanGate } from './rePlan'
 
@@ -160,6 +161,7 @@ export const reverseCommands: Command<never>[] = ([
   { ...freeformRefine, name: 'freeform.refine' },
   { ...freeformSnap, name: 'freeform.snap' },
   { ...freeformConvert, name: 'freeform.convert' },
+  { ...freeformWrap, name: 'freeform.wrap' },
   { ...planSet, name: 'plan.set' },
   { ...planUpdate, name: 'plan.update' },
   { ...planTick, name: 'plan.tick' },

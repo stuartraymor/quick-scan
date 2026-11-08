@@ -1029,6 +1029,23 @@ export type FreeformAsk = { kind: 'thicken'; thickness: number; side: 'in' | 'ou
  *  sheet — and with `ask` thickened or offset. The cage is what the
  *  editor's tools change (core/freeform/edit.ts): vertices flat in
  *  `positions`, faces as vertex lists, creases as vertex pairs. */
+/** Where a freeform cage's snap reaches: the part of a cylinder a wrap was laid over (core/freeform/wrap.ts).
+ *  A surface point outside it, or far from the wall, is held where the cage puts it — the chord a wrap closes
+ *  its ring with runs through the part and is not the scan's. */
+export interface FreeformSnapRegion {
+  point: Vec3
+  dir: Vec3
+  radius: number
+  u: Vec3
+  v: Vec3
+  t0: number
+  t1: number
+  start: number
+  sweep: number
+  /** Radians either side of the arc the snap still reaches. */
+  margin: number
+}
+
 export interface FreeformFeature extends FeatureFlags {
   id: number
   kind: 'freeform'
@@ -1041,11 +1058,13 @@ export interface FreeformFeature extends FeatureFlags {
   /** The refined surface is taken onto the scan first. */
   snap: boolean
   ask?: FreeformAsk
+  /** Where the snap reaches, where a wrap set it; the whole scan otherwise. */
+  snapRegion?: FreeformSnapRegion
   visible: boolean
 }
 
 /** What a freeform feature holds besides its name. */
-export type FreeformData = Pick<FreeformFeature, 'positions' | 'faces' | 'creases' | 'steps' | 'snap' | 'ask'>
+export type FreeformData = Pick<FreeformFeature, 'positions' | 'faces' | 'creases' | 'steps' | 'snap' | 'ask' | 'snapRegion'>
 
 /** A fitted surface's kind: the freeform B-spline, or a plane or a cylinder
  *  — exact faces, held square and parallel to what the part already has

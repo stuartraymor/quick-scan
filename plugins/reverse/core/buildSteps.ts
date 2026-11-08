@@ -147,7 +147,7 @@ export type BuildStep =
    *  and cells by position — and the worker traces and fits it there. */
   | ({ kind: 'network'; id: number; name: string } & Pick<NetworkFeature, 'nodes' | 'curves' | 'cells' | 'spans' | 'fit'>)
   /** A freeform cage is made a body where the kernel is; with `snap` it is taken onto the scan there. */
-  | ({ kind: 'freeform'; id: number; name: string } & Pick<FreeformFeature, 'positions' | 'faces' | 'creases' | 'steps' | 'snap' | 'ask'>)
+  | ({ kind: 'freeform'; id: number; name: string } & Pick<FreeformFeature, 'positions' | 'faces' | 'creases' | 'steps' | 'snap' | 'ask' | 'snapRegion'>)
   | { kind: 'trim'; id: number; name: string; bodies: number[]; primitives: TrimPrimitive[]; tolerance: number; overlap: number }
   /** A sketch placed on the part before the features on it are built: its
    *  face found again and its projected pieces taken again from what they

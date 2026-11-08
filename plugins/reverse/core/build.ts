@@ -59,6 +59,7 @@ import { cutElsewhereWords, cutsElsewhere } from './cutElsewhere'
 import { ScanPaths } from '../../../src/core/geometry/scanPath'
 import { type NetworkBodies, type NetworkReading, readNetwork } from './network'
 import { type FreeformMade, freeformBody } from './freeform/make'
+import { regionSnap } from './freeform/wrap'
 import { emptyReport, networkBody, networkGhost, type NetworkReport } from './networkBody'
 export { type BodyBrief, type BodyCheck, type BodyStep, type BuildResult, type BuildSteps, type BuiltBody, type Diagnosis, type EdgeBrief, type EdgeInfo, type FaceInfo, type FeatureResult, type FilletTries, type FilletTry, type Overlap, type PreviewResult, type PreviewStep, type SketchStep, type SolidStep, stepKeys, type SurfaceReport, type TrimReport } from './buildTypes'
 
@@ -627,7 +628,8 @@ export class Builder {
       if (!this.scan || !this.scanPositions) throw new Error('The cage is to be taken onto the scan, and the scan is not here.')
       if (!this.paths) this.paths = new ScanPaths(this.scanPositions, this.scan.index)
       const paths = this.paths
-      closest = (p) => paths.closest(p)?.point ?? null
+      const whole = (p: Vec3) => paths.closest(p)?.point ?? null
+      closest = step.snapRegion ? regionSnap(step.snapRegion, whole) : whole
     }
     return freeformBody(this.kernel, cage, { steps: step.steps, snap: step.snap, ...(closest ? { closest } : {}), ...(step.ask ? { ask: step.ask } : {}) })
   }

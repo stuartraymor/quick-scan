@@ -187,6 +187,14 @@ export function validateFeatureJson(e: Record<string, unknown>): void {
     fields(e, 'steps', 'number', 'freeform')
     if (!Number.isInteger(e.steps) || (e.steps as number) < 1 || (e.steps as number) > 4) invalid('freeform.steps')
     fields(e, 'snap', 'boolean', 'freeform')
+    if (e.snapRegion !== undefined) {
+      const r = object(e.snapRegion, 'freeform.snapRegion')
+      for (const k of ['point', 'dir', 'u', 'v']) {
+        const p = array(r[k], `freeform.snapRegion.${k}`)
+        if (p.length !== 3 || !p.every((x) => typeof x === 'number' && Number.isFinite(x))) invalid(`freeform.snapRegion.${k}`)
+      }
+      for (const k of ['radius', 't0', 't1', 'start', 'sweep', 'margin']) fields(r, k, 'number', 'freeform.snapRegion')
+    }
     if (e.ask !== undefined) {
       const ask = object(e.ask, 'freeform.ask')
       if (ask.kind === 'offset') fields(ask, 'distance', 'number', 'freeform.ask')

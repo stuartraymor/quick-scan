@@ -441,7 +441,7 @@ export function resolveFeatures(
     }
     if (f.kind === 'freeform') {
       if (f.faces.length === 0) failed(f, 'The cage has no faces: add one (reverse.freeform.edit add_face or add_rectangle).')
-      else steps.push({ kind: 'freeform', id: f.id, name: f.name, positions: f.positions, faces: f.faces, creases: f.creases, steps: f.steps, snap: f.snap, ...(f.ask ? { ask: f.ask } : {}) })
+      else steps.push({ kind: 'freeform', id: f.id, name: f.name, positions: f.positions, faces: f.faces, creases: f.creases, steps: f.steps, snap: f.snap, ...(f.ask ? { ask: f.ask } : {}), ...(f.snapRegion ? { snapRegion: f.snapRegion } : {}) })
       continue
     }
     if (f.kind === 'split') {
