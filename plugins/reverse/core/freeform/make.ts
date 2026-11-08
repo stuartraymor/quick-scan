@@ -13,7 +13,7 @@ import type { ReKernel, Shape } from '../kernel'
 import type { Cage } from './cage'
 import { type ConvertReport, type PatchSet, patchesBody } from './convert'
 import { displacedAlongNormals } from './limit'
-import { type CagePatches, cagePatches } from './patches'
+import { type CagePatches, cagePatches, MAX_BLOCK_SIDE } from './patches'
 import { type FreeformOp, reach, type ShellReport, freeformShell } from './shell'
 import { snapMesh } from './snap'
 
@@ -50,7 +50,7 @@ export function freeformBody(k: ReKernel, cage: Cage, opts: { steps: number; sna
   const { snap, closest, ask } = opts
   if (snap && !closest) throw new Error('The surface is to be taken onto the scan, and the scan is not here.')
   let missed: number | undefined
-  const patchesAt = (n: number, shift = 0): CagePatches =>
+  const patchesAt = (n: number, shift = 0, maxSide = MAX_BLOCK_SIDE): CagePatches =>
     cagePatches(cage, n, (fine, limit) => {
       let positions = limit
       if (snap && closest) {
@@ -59,14 +59,24 @@ export function freeformBody(k: ReKernel, cage: Cage, opts: { steps: number; sna
         positions = r.positions
       }
       return shift === 0 ? positions : displacedAlongNormals(positions, fine.faces, shift)
-    })
+    }, maxSide)
   let used = Math.max(1, Math.min(MAX_STEPS, Math.round(opts.steps)))
   for (;;) {
     if (cage.faces.length * 4 ** used > MAX_SAMPLED_QUADS) throw new Error(`The cage has ${cage.faces.length} faces; refined ${used} times it is more than ${MAX_SAMPLED_QUADS} quads to sample.`)
     let made: ReturnType<typeof patchesBody> | undefined
     try {
-      const patches = patchesAt(used)
+      let patches = patchesAt(used)
       made = patchesBody(k, patchSet(patches))
+      // A closed cage that would not sew shut in blocks: each quad its own face, the neighbours meeting edge to edge, none side to side.
+      if (patches.closed && !made.report.solid) {
+        const each = patchesAt(used, 0, 1)
+        const again = patchesBody(k, patchSet(each))
+        if (again.report.solid) {
+          k.release(made.shape)
+          patches = each
+          made = again
+        } else k.release(again.shape)
+      }
       const closed = patches.closed
       const base = { report: made.report, steps: used, closed, ...(missed !== undefined ? { missed } : {}) }
       if (!ask) return { shape: made.shape, ...base }

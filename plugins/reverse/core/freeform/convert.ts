@@ -22,6 +22,8 @@ export interface PatchSet {
 /** The sewing tolerance, mm: the faces share their edge samples exactly,
  *  so only the kernel's micron lies between two of them. */
 const SEW_TOLERANCE = 1e-3
+/** The looser tolerances a closed cage is sewn at, in turn, if it will not close at the first: the faces of neighbouring blocks, each a surface through its own samples, lie apart by more than a micron where the cage curves or its blocks meet side to side (the cage of QUICKSURFACE's Auto Freeform, Medium, sews at 0.05 mm and not before). */
+const SEW_LOOSER = [1e-2, 5e-2] as const
 
 export interface ConvertReport {
   /** Faces in the body: one a block of the cage. */
@@ -96,7 +98,16 @@ export function patchesBody(k: ReKernel, patches: PatchSet): { shape: Shape; rep
     let shape = faces.length === 1 ? k.copy(faces[0]) : k.sewPatches(faces, SEW_TOLERANCE, patches.closed)
     if (patches.closed && faces.length > 1 && !k.isClosedSolid(shape)) {
       k.release(shape)
-      shape = k.sewPatches(faces, SEW_TOLERANCE, false)
+      let closed: Shape | null = null
+      for (const tolerance of SEW_LOOSER) {
+        const tried = k.sewPatches(faces, tolerance, true)
+        if (k.isClosedSolid(tried)) {
+          closed = tried
+          break
+        }
+        k.release(tried)
+      }
+      shape = closed ?? k.sewPatches(faces, SEW_TOLERANCE, false)
     }
     const solid = patches.closed && k.isClosedSolid(shape)
     const largest = patches.blocks.reduce((m, b) => (b.faces.length > m.rows * m.cols ? { rows: b.rows - 1, cols: b.cols - 1 } : m), { rows: 0, cols: 0 })

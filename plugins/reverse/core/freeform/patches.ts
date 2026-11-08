@@ -215,11 +215,11 @@ export function asQuadCage(c: Cage): Cage {
 /** The cage's patches: its blocks, each sampled on the limit surface after
  *  `steps` refinements (the positions of the refined cage's vertices may be
  *  swapped for others — `positions` — a snapped surface's). */
-export function cagePatches(cage: Cage, steps: number, positions?: (fine: Cage, limit: Float64Array) => Float64Array): CagePatches {
+export function cagePatches(cage: Cage, steps: number, positions?: (fine: Cage, limit: Float64Array) => Float64Array, maxSide = MAX_BLOCK_SIDE): CagePatches {
   if (!(steps >= 1 && steps <= 5)) throw new Error('Steps run from 1 to 5.')
   const quad = asQuadCage(cage)
   const t0 = topology(quad)
-  const blocks = findBlocks(quad, t0)
+  const blocks = findBlocks(quad, t0, maxSide)
   // The cages at every level, the topology of each but the last.
   const levels: Cage[] = [quad]
   for (let s = 0; s < steps; s++) levels.push(subdivide(levels[s]))
