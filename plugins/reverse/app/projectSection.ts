@@ -195,6 +195,12 @@ export function validateFeatureJson(e: Record<string, unknown>): void {
       }
       for (const k of ['radius', 't0', 't1', 'start', 'sweep', 'margin']) fields(r, k, 'number', 'freeform.snapRegion')
     }
+    if (e.fromSketch !== undefined) {
+      const from = object(e.fromSketch, 'freeform.fromSketch')
+      fields(from, 'network', 'number', 'freeform.fromSketch')
+      fields(from, 'resolution', 'number', 'freeform.fromSketch')
+      if (!Number.isInteger(from.resolution) || (from.resolution as number) < 1 || (from.resolution as number) > 4) invalid('freeform.fromSketch.resolution')
+    }
     if (e.ask !== undefined) {
       const ask = object(e.ask, 'freeform.ask')
       if (ask.kind === 'offset') fields(ask, 'distance', 'number', 'freeform.ask')

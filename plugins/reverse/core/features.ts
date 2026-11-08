@@ -1060,11 +1060,13 @@ export interface FreeformFeature extends FeatureFlags {
   ask?: FreeformAsk
   /** Where the snap reaches, where a wrap set it; the whole scan otherwise. */
   snapRegion?: FreeformSnapRegion
+  /** Made from a patch network's curves (reverse.freeform.from_sketch): which, and at what Resolution, to make the cage anew from. */
+  fromSketch?: { network: number; resolution: number }
   visible: boolean
 }
 
 /** What a freeform feature holds besides its name. */
-export type FreeformData = Pick<FreeformFeature, 'positions' | 'faces' | 'creases' | 'steps' | 'snap' | 'ask' | 'snapRegion'>
+export type FreeformData = Pick<FreeformFeature, 'positions' | 'faces' | 'creases' | 'steps' | 'snap' | 'ask' | 'snapRegion' | 'fromSketch'>
 
 /** A fitted surface's kind: the freeform B-spline, or a plane or a cylinder
  *  — exact faces, held square and parallel to what the part already has
@@ -1221,8 +1223,10 @@ export function referencesOf(f: Feature): number[] {
     case 'thicken':
       return f.target === undefined ? [f.sheet] : [f.sheet, f.target]
     case 'import':
-    case 'freeform':
       return []
+    case 'freeform':
+      // Made from a sketch: the network whose curves it is made anew from.
+      return f.fromSketch ? [f.fromSketch.network] : []
     case 'moveBody':
       return [...f.bodies]
     default:

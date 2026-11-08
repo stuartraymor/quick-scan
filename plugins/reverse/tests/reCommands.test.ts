@@ -383,6 +383,7 @@ describe('the commands hold to the panel’s rules', () => {
       'reverse.freeform.convert',
       'reverse.freeform.create',
       'reverse.freeform.edit',
+      'reverse.freeform.from_sketch',
       'reverse.freeform.move_points',
       'reverse.freeform.read',
       'reverse.freeform.refine',
