@@ -59,6 +59,13 @@ const MESH_SURPLUS = 3
  *  of 0.01 moves a 30 mm cylinder fitted through 2,400 points by microns
  *  and still holds a 20 × 20 net over 121 noisy points to a fair plane. */
 const SMOOTHNESS_SCALE = 1e-2
+/** Points per net unknown up to which the slider's weight holds in full; past it the weight falls off (fitSurface). */
+const DENSE_POINTS = 4
+/** How far the margin of the fit with the weight let off may stand from the fit with all of it, mm plus this share of the region's longer side, before the weight is kept (fitSurface). */
+const DENSE_MARGIN = 0.05
+const DENSE_MARGIN_SHARE = 0.02
+/** The grid the margins are compared on, per side. */
+const DENSE_CHECK = 24
 /** The net of Auto's pilot fit, per side. */
 const PILOT_NET = 6
 /** The pull toward the region's plane in the cells with no points within
@@ -242,6 +249,8 @@ export function fitSurface(xyz: Float32Array | Float64Array, params: SurfaceFitP
   // (p + 1)² basis products each point touches.
   const m = nu * nv
   const ata = new Float64Array(m * m)
+  /** The same with the whole of the slider's weight, kept for when the weight is let off and the margin runs away. */
+  const ataFull = new Float64Array(m * m)
   const atb = new Float64Array(m)
   const bu = new Float64Array(p + 1)
   const bv = new Float64Array(p + 1)
@@ -284,13 +293,43 @@ export function fitSurface(xyz: Float32Array | Float64Array, params: SurfaceFitP
   // points are still faired. The energy has the units of 1/length², so
   // the weight is the slider times the region's area squared: a slider of
   // 0.01 means the same on a 10 mm boss and a 200 mm panel.
+  // Where the points far outnumber the net's unknowns the data fixes the
+  // surface and the fairing is only bias — a clean 100 × 80 mm height field
+  // fitted with the default slider came out 0.048 mm off its truth (audit
+  // G-04), 0.00013 with none. So above DENSE_POINTS points per unknown the
+  // weight falls off as the cube of how many times denser the data is: 0.003
+  // mm off at 20 points per unknown, the slider unchanged. It is let off only
+  // where the points cover their box (a disc in its square, a boss with its
+  // middle out, leaves corners that only the fairing carries on) and only
+  // while the margin, which the data does not hold, stays where the full
+  // weight puts it (a steep half cylinder's ran off 25 mm): else the fit
+  // keeps all of it, as the sparse fits — a net finer than its points — do.
+  const perUnknown = n / (nu * nv)
+  let covered = 0
+  {
+    const seen = new Uint8Array(nu * nv)
+    for (let i = 0; i < n; i++) {
+      const bi = Math.min(nu - 1, Math.floor(((u[i] - uMin) / extentU) * nu))
+      const bj = Math.min(nv - 1, Math.floor(((v[i] - vMin) / extentV) * nv))
+      if (!seen[bi * nv + bj]) {
+        seen[bi * nv + bj] = 1
+        covered++
+      }
+    }
+  }
+  const dense = perUnknown > DENSE_POINTS && covered >= 0.95 * nu * nv ? (DENSE_POINTS / perUnknown) ** 3 : 1
   const lambda = Math.max(0, params.smoothness) * (extentU * extentV) ** 2 * SMOOTHNESS_SCALE
+  if (dense < 1) ataFull.set(ata)
   const xu = greville(knotsU, nu, p)
   const xv = greville(knotsV, nv, p)
   const area = ((uRange[1] - uRange[0]) / Math.max(1, nu - 1)) * ((vRange[1] - vRange[0]) / Math.max(1, nv - 1))
   const addStencil = (idx: number[], w: number[], scale: number) => {
     for (let a = 0; a < idx.length; a++) {
-      for (let b = 0; b < idx.length; b++) ata[idx[a] * m + idx[b]] += lambda * scale * w[a] * w[b]
+      for (let b = 0; b < idx.length; b++) {
+        const t = lambda * scale * w[a] * w[b]
+        ata[idx[a] * m + idx[b]] += t * dense
+        if (dense < 1) ataFull[idx[a] * m + idx[b]] += t
+      }
     }
   }
   const at = (i: number, j: number) => i * nv + j
@@ -321,15 +360,42 @@ export function fitSurface(xyz: Float32Array | Float64Array, params: SurfaceFitP
   let diag = 0
   for (let i = 0; i < m; i++) diag += ata[i * m + i]
   for (let i = 0; i < m; i++) ata[i * m + i] += 1e-12 * Math.max(diag / m, 1e-12)
+  if (dense < 1) for (let i = 0; i < m; i++) ataFull[i * m + i] += 1e-12 * Math.max(diag / m, 1e-12)
+  let system = ata
   /** The heights with `extra` added to the system `weight` times. The
    *  solvers work on a copy: the system is solved again with the pull. */
   const solve = (extra: Float64Array | null, weight: number) => {
-    const a = Float64Array.from(ata)
+    const a = Float64Array.from(system)
     if (extra) for (let i = 0; i < m * m; i++) a[i] += weight * extra[i]
     return choleskySolve(m, a, atb) ?? solveLinear(m, a, atb)
   }
   let heights = solve(null, 0)
+  if (!heights && dense < 1) {
+    system = ataFull
+    heights = solve(null, 0)
+  }
   if (!heights) throw new Error('The surface fit is singular — the region is too thin for this net.')
+  if (dense < 1) {
+    // The weight let off: the margin must stay where the full weight puts it.
+    const full = (() => {
+      const a = Float64Array.from(ataFull)
+      return choleskySolve(m, a, atb) ?? solveLinear(m, a, atb)
+    })()
+    let off = full ? 0 : Infinity
+    if (full) {
+      for (let a = 0; a < DENSE_CHECK && off < Infinity; a++) {
+        for (let b = 0; b < DENSE_CHECK; b++) {
+          const uu = uRange[0] + ((uRange[1] - uRange[0]) * a) / (DENSE_CHECK - 1)
+          const vv = vRange[0] + ((vRange[1] - vRange[0]) * b) / (DENSE_CHECK - 1)
+          off = Math.max(off, Math.abs(evalHeight(knotsU, knotsV, nu, nv, p, heights, uu, vv, bu, bv) - evalHeight(knotsU, knotsV, nu, nv, p, full, uu, vv, bu, bv)))
+        }
+      }
+    }
+    if (!(off <= DENSE_MARGIN + DENSE_MARGIN_SHARE * Math.max(extentU, extentV))) {
+      system = ataFull
+      heights = full ?? heights
+    }
+  }
 
   // The pull. The fairness term leaves every quadratic free, so a cell
   // with no points near it goes on as whatever the last points' edge
