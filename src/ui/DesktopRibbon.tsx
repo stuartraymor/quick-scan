@@ -321,7 +321,7 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
     <Group label="Align">{alignMenu}</Group>
     <Group label="Cross sections">{cad('sketch', '2D Sketch', 'sketch')}{tool('Multiple sections', 'section', () => { useShell.setState({ workspace: 'elements' }); useShell.getState().setMultipleSectionsOpen(true) }, needsScan, 'Multiple sections: parallel cross sections through the scan at a spacing')}</Group>
     <Group label="Surfacing">{cad('surface', 'Fit Surface', 'surface', true)}{surfacingMenu}</Group>
-    <Group label="Freeform">{tool('New Freeform', 'freeform', () => {}, true, 'Quad-based freeform surfacing is not implemented in Quick Scan yet')}{tool('Auto Freeform', 'scan', () => {}, true, 'Automatic freeform surfacing is not implemented in Quick Scan yet')}</Group>
+    <Group label="Freeform">{tool('New Freeform', 'freeform', () => {}, true, 'Quad-based freeform surfacing is not implemented in Quick Scan yet')}{cad('autoFreeform', 'Auto Freeform', 'scan', true)}</Group>
     <Group label="Part Design"><div className="ribbon-text-stack">{cadText('extrude', 'Extrude', 'extrude')}{cadText('revolve', 'Revolve', 'revolve')}{cadText('moveFace', 'Move face', 'moveFace')}</div>{cad('trim', 'Trim', 'trim', true)}<div className="ribbon-text-stack">{cadText('booleanJoin', 'Combine', 'opJoin')}{cadText('booleanCut', 'Cut', 'opCut')}{cadText('booleanIntersect', 'Intersect', 'opIntersect')}</div>{patternMenu}{cad('fillet', 'Fillet / Chamfer', 'fillet')}</Group>
     {analysis}{exportGroup}
   </>
@@ -375,7 +375,7 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
   // Freeform and Surfacing as seen live in QUICKSURFACE 8.0.128 (2026-11-02):
   // large keys first, then columns of small labelled keys; no File or Export.
   const freeformTab = <>
-    <Group label="Create New Freeform">{tool('New Freeform', 'freeform', () => {}, true, 'Quad-based freeform surfacing is not implemented in Quick Scan yet')}{tool('Auto Freeform', 'scan', () => {}, true, 'Automatic freeform surfacing is not implemented in Quick Scan yet')}
+    <Group label="Create New Freeform">{tool('New Freeform', 'freeform', () => {}, true, 'Quad-based freeform surfacing is not implemented in Quick Scan yet')}{cad('autoFreeform', 'Auto Freeform', 'scan', true)}
       <div className="ribbon-text-stack">{soonText('Wrap Surface', 'elCylinder')}{soonText('From 3D Sketch', 'sketch3')}{cadText('freeformObj', 'From quad OBJ ...', 'load')}</div></Group>
     <Group label="Tools"><div className="ribbon-text-stack">{cadText('thicken', 'Thicken', 'shell', false, 'Freeform:Thicken')}{cadText('offsetBody', 'Offset', 'sheet', false, 'Freeform:Offset')}{soonText('Convert to CAD body', 'exportStep')}</div></Group>
   </>

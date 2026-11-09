@@ -14,6 +14,7 @@ import { usePrefs } from '../../../src/state/prefsStore'
 import { throughPart } from './PlaceSketch'
 import { usePipeDialog } from './PipeDialog'
 import { chooseFreeformObj } from './FreeformImport'
+import { useAutoFreeformDialog } from './AutoFreeformDialog'
 
 /** Shared workflow buttons still call plugin-owned verbs and prerequisites. */
 export function useReverseRibbonActions(onExport: () => void): NonNullable<PluginRuntime['ribbonActions']> {
@@ -127,6 +128,7 @@ export function useReverseRibbonActions(onExport: () => void): NonNullable<Plugi
       }
     }),
     freeformObj: action(chooseFreeformObj),
+    autoFreeform: action(() => useAutoFreeformDialog.getState().setOpen(true), !!fileName, 'Import a scan first.'),
     surface: action(() => state.startFeature('surface', { fit: { ...DEFAULT_SURFACE_FIT, smoothingLevel: 1 } }), !!fileName, 'Import a scan first.'),
     network: action(() => state.startFeature('network'), !!fileName, 'Import a scan first.'),
     extrude: action(() => state.startExtrude(), sketches > 0, 'Create a sketch first.'),
