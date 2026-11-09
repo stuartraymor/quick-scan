@@ -38,6 +38,8 @@ try {
   assert.equal(await features(), 0)
   assert.ok(await page.evaluate(() => window.__re.reScene().bodyPreview?.geometry.attributes.position.count > 0))
   assert.equal(await page.evaluate(() => document.querySelector('[data-test=undo]')?.getAttribute('title')), undoBefore)
+  assert.equal(await page.$eval(dialog, e => getComputedStyle(e).backgroundColor), 'rgba(0, 0, 0, 0)')
+  assert.ok(await page.$eval(dialog + ' form', e => e.getBoundingClientRect().right < innerWidth / 2))
   await page.screenshot({ path: shotPath('auto-freeform-preview.png') })
   await page.click('[data-test=auto-freeform-clear]')
   assert.equal(await page.evaluate(() => window.__re.reScene().bodyPreview), null)

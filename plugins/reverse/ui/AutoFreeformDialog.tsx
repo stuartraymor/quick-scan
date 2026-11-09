@@ -83,7 +83,7 @@ export function AutoFreeformDialog({ onClose }: { onClose: () => void }) {
       setError(e instanceof Error ? e.message : String(e))
     } finally { setWorking(false) }
   }
-  return <div className="modalback" data-test="auto-freeform-dialog" onKeyDown={e => {
+  return <div className="modalback" style={{ background: 'transparent', alignItems: 'flex-start', justifyContent: 'flex-start', paddingTop: 176, paddingLeft: 'min(244px, max(12px, calc(100vw - 350px)))' }} data-test="auto-freeform-dialog" onKeyDown={e => {
     e.stopPropagation()
     if (e.key === 'Escape') { e.preventDefault(); close() }
   }}>
