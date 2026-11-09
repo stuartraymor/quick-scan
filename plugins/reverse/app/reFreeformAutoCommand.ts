@@ -13,7 +13,7 @@ import { deviation, snapCage } from '../core/freeform/edit'
 import { MAX_STEPS } from '../core/freeform/make'
 import { bodiesChanged, bodyRows } from './reCommandAnswers'
 import type { FreeformFeature } from '../core/features'
-import { change, featureNamed, re, ready, session } from './reCommandCore'
+import { change, featureNamed, re, ready } from './reCommandCore'
 import { madeOut } from './reFreeformEditCommands'
 import { requireFreeName } from './reFeatureCommands'
 import { scanPaths } from './reNetworkCommands'
@@ -52,25 +52,7 @@ export const freeformAuto: Command<{
     requireFreeName(name)
     if (density !== undefined && quads !== undefined) invalid('Give `density` or `quads`, not both.')
     const target = quads ?? AUTO_TARGETS[density ?? 'medium']
-    await s.syncScan()
-    const paths = scanPaths(session())
-    let made
-    try {
-      made = autoCage(paths, target, 2, 0.5, symmetry)
-    } catch (e) {
-      if (e instanceof AutoError) return invalid(`Auto Freeform: ${e.message}`)
-      throw e
-    }
-    const closest = (p: [number, number, number]) => {
-      const c = paths.closest(p)
-      return c ? { point: c.point, distance: c.distance } : null
-    }
-    let cage = made.cage
-    const was = deviation(cage, closest, TOLERANCE_MM)
-    const r = snapCage(cage, closest, Math.min(100, Math.max(1, Math.round(iterations))), 0.01)
-    cage = r.cage
-    if (made.mirror) cage = { ...cage, positions: mirrorPositions(cage.positions as Float64Array, made.mirror) }
-    const now = deviation(cage, closest, TOLERANCE_MM)
+    const { made, cage, was, now, r } = await prepareAutoCage(s, target, symmetry, iterations)
     const show = (d: typeof was) => ({ points: d.points, missed: d.missed, rms: round3(d.rms), max: round3(d.max), within: d.within, fraction: d.points > 0 ? round3(d.within / d.points) : 0 })
     const before = bodyRows(s)
     const id = await change(() => re().addFreeform({ positions: Array.from(cage.positions), faces: cage.faces, creases: cage.creases, steps, snap }, name))
@@ -93,4 +75,28 @@ export const freeformAuto: Command<{
       bodies: bodiesChanged(s, before),
     }
   },
+}
+
+/** Shared by the command and the temporary UI preview; never changes history. */
+export async function prepareAutoCage(s: Awaited<ReturnType<typeof ready>>, target: number, symmetry: AutoSymmetry, iterations = 8) {
+  await s.syncScan()
+  const paths = scanPaths(s)
+  let made
+  try {
+    made = autoCage(paths, target, 2, 0.5, symmetry)
+  } catch (e) {
+    if (e instanceof AutoError) return invalid(`Auto Freeform: ${e.message}`)
+    throw e
+  }
+  const closest = (p: [number, number, number]) => {
+    const c = paths.closest(p)
+    return c ? { point: c.point, distance: c.distance } : null
+  }
+  let cage = made.cage
+  const was = deviation(cage, closest, TOLERANCE_MM)
+  const r = snapCage(cage, closest, Math.min(100, Math.max(1, Math.round(iterations))), 0.01)
+  cage = r.cage
+  if (made.mirror) cage = { ...cage, positions: mirrorPositions(cage.positions as Float64Array, made.mirror) }
+  const now = deviation(cage, closest, TOLERANCE_MM)
+  return { made, cage, was, now, r }
 }
