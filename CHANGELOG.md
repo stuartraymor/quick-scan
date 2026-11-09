@@ -1,3 +1,7 @@
+## 0.0.178
+
+Fit Surface keeps the displayed degree unchanged during pending control-net edits, updates it on Apply, and resets to cubic when Max degree is disabled, matching observed native transitions.
+
 ## 0.0.177 (candidate)
 
 Fit Surface: Degree and Max degree share a stable row; Expand by omits the visible percent suffix, matching observed native controls. Internal values and MCP fields remain unchanged. Validation pending.

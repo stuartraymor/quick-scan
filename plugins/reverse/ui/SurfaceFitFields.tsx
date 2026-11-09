@@ -62,12 +62,14 @@ export function SurfaceFitFields({ d, set }: { d: SurfaceDraft; set: (patch: Par
   const preview = useReverse((s) => s.preview)
   const controlNetOn = useControlNet((s) => s.on)
   const [pending, setPending] = useState<SurfaceFitParams | null>(null)
+  const [degreeDisplay, setDegreeDisplay] = useState<number | null>(null)
   const [locked, setLocked] = useState(true)
   const [autoOpen, setAutoOpen] = useState(false)
   const [tolerance, setTolerance] = useState(AUTO_TOLERANCE_MM)
   // Another feature in the box starts from its own numbers.
   useEffect(() => {
     setPending(null)
+    setDegreeDisplay(null)
     setAutoOpen(false)
   }, [d.featureId])
 
@@ -76,11 +78,17 @@ export function SurfaceFitFields({ d, set }: { d: SurfaceDraft; set: (patch: Par
   const changed = pending !== null && JSON.stringify(pending) !== JSON.stringify(d.fit)
   const fitted = preview.status === 'ok' ? preview.surface?.net : undefined
   const net = fit.net ?? fitted ?? { u: 5, v: 5 }
-  const degree = fit.maxDegree ? Math.max(1, Math.min(MAX_DEGREE, Math.min(net.u, net.v) - 1)) : Math.round(fit.degree)
+  // Native holds the last displayed degree while net edits wait for Apply.
+  // Turning Max degree off explicitly selects cubic; turning it on keeps
+  // that manual display until the new surface has been requested.
+  const appliedNet = d.fit.net ?? fitted ?? { u: 5, v: 5 }
+  const appliedDegree = d.fit.maxDegree ? Math.max(1, Math.min(MAX_DEGREE, Math.min(appliedNet.u, appliedNet.v) - 1)) : Math.round(d.fit.degree)
+  const degree = degreeDisplay ?? appliedDegree
   const setNet = (u: number, v: number) => edit({ net: { u: Math.max(NET_MIN, Math.min(NET_MAX, u)), v: Math.max(NET_MIN, Math.min(NET_MAX, v)) }, tolerance: undefined })
   const apply = (next: SurfaceFitParams) => {
     set({ fit: next })
     setPending(null)
+    setDegreeDisplay(null)
   }
 
   return (
@@ -141,10 +149,10 @@ export function SurfaceFitFields({ d, set }: { d: SurfaceDraft; set: (patch: Par
             <span className="unitfield"><input data-test="surface-degree" value={degree} disabled readOnly /></span>
           </label>
         ) : (
-          <Num label="Degree" unit="" testId="surface-degree" value={degree} onCommit={(v) => edit({ degree: Math.max(1, Math.min(MAX_DEGREE, Math.round(Math.abs(v)))) })} />
+          <Num label="Degree" unit="" testId="surface-degree" value={degree} onCommit={(v) => { const next = Math.max(1, Math.min(MAX_DEGREE, Math.round(Math.abs(v)))); setDegreeDisplay(next); edit({ degree: next }) }} />
         )}
         <label className="checkrow">
-          <input type="checkbox" data-test="surface-max-degree" checked={fit.maxDegree === true} onChange={(e) => edit({ maxDegree: e.target.checked })} />
+          <input type="checkbox" data-test="surface-max-degree" checked={fit.maxDegree === true} onChange={(e) => { if (e.target.checked) edit({ maxDegree: true }); else { setDegreeDisplay(3); edit({ maxDegree: false, degree: 3 }) } }} />
           <span>Max degree</span>
         </label>
       </div>
