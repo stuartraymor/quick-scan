@@ -21,7 +21,7 @@ import { polylinePath, regionScan, SKETCH_REFUSAL, SKETCH_RESOLUTION_MAX, Sketch
 import { traceNetwork } from '../core/network'
 import { readCells } from '../core/networkCells'
 import { bodiesChanged, bodyRows } from './reCommandAnswers'
-import { change, featureNamed, type Json, re, ready, type Ref, session } from './reCommandCore'
+import { change, featureNamed, type Json, re, ready, type Ref } from './reCommandCore'
 import { madeOut } from './reFreeformEditCommands'
 import { requireFreeName } from './reFeatureCommands'
 import { scanPaths } from './reNetworkCommands'
@@ -81,60 +81,7 @@ export const freeformFromSketch: Command<{
     const level = resolution ?? old?.fromSketch?.resolution ?? 1
     if (!Number.isInteger(level) || level < 1 || level > SKETCH_RESOLUTION_MAX) invalid(`resolution: from 1 to ${SKETCH_RESOLUTION_MAX}.`)
 
-    await s.syncScan()
-    const paths = scanPaths(session())
-    // The network read as the build reads it; the regions filled, and then every other the curves close.
-    const traced = traceNetwork(paths, net.nodes, net.curves)
-    const seeds = net.cells.map((c) => c.seed)
-    const cornersOf = net.cells.map((c) => (c.corners && c.corners.length >= 3 ? new Set(c.corners) : undefined))
-    const first = readCells(paths, traced.nodes, traced.curves, seeds, cornersOf)
-    const cells = first.unfilled.length > 0 ? readCells(paths, traced.nodes, traced.curves, [...seeds, ...first.unfilled.map((u) => u.seed)], [...cornersOf, ...first.unfilled.map(() => undefined)]) : first
-    const curves = new Map(traced.curves.map((c) => [c.id, c]))
-    const regions: SketchCell[] = []
-    const covered: { triangles: Uint32Array }[] = []
-    const refused: { message: string; at?: Vec3 }[] = []
-    for (const c of cells.cells) {
-      if (c.status === 'refused') {
-        refused.push({ message: c.message, ...(c.at ? { at: c.at } : {}) })
-        continue
-      }
-      try {
-        regions.push({ sides: c.sides.map((side) => polylinePath(sidePoints(side, curves))) })
-        covered.push(c)
-      } catch (e) {
-        if (e instanceof SketchError) refused.push({ message: e.message })
-        else throw e
-      }
-    }
-    if (traced.lost.length > 0) refused.push({ message: `curve${traced.lost.length === 1 ? '' : 's'} ${traced.lost.join(', ')} found no path along the scan` })
-    if (regions.length === 0) {
-      const why = refused.slice(0, REFUSED_SHOWN).map((r) => r.message)
-      return invalid(`${SKETCH_REFUSAL}${why.length > 0 ? ` — ${[...new Set(why)].join('; ')}` : ''}.`)
-    }
-
-    let cage
-    try {
-      cage = sketchCage(regions, level)
-    } catch (e) {
-      if (e instanceof SketchError) return invalid(`From 3D Sketch: ${e.message}`)
-      throw e
-    }
-
-    // The cage's vertices taken onto the scan as far as the regions reach — not onto another wall of the part that a cage bulging past its curves lies nearer to.
-    const reach = regionScan(paths, covered)
-    const closest = (p: Vec3) => {
-      const c = reach.closest(p)
-      return c ? { point: c.point, distance: c.distance } : null
-    }
-    const was = deviation(cage, closest, TOLERANCE_MM)
-    let snapped: Json | null = null
-    if (was.points > 0) {
-      const r = snapCage(cage, closest, Math.min(100, Math.max(1, Math.round(iterations))), 0.01)
-      cage = r.cage
-      const now = deviation(cage, closest, TOLERANCE_MM)
-      const show = (d: typeof was) => ({ points: d.points, missed: d.missed, rms: round3(d.rms), max: round3(d.max), within: d.within, fraction: d.points > 0 ? round3(d.within / d.points) : 0 })
-      snapped = { iterations: r.stats.iterations, tolerance: TOLERANCE_MM, before: show(was), after: show(now) }
-    }
+    const { cage, regions, refused, snapped } = await prepareSketchCage(s, net, level, iterations)
 
     const before = bodyRows(s)
     const data = { positions: Array.from(cage.positions), faces: cage.faces, creases: cage.creases, fromSketch: { network: net.id, resolution: level } }
@@ -164,4 +111,64 @@ export const freeformFromSketch: Command<{
       bodies: bodiesChanged(s, before),
     }
   },
+}
+
+/** Shared geometry preparation; leaves the network and document unchanged. */
+export async function prepareSketchCage(s: Awaited<ReturnType<typeof ready>>, net: NetworkFeature, level: number, iterations = 8) {
+  await s.syncScan()
+  const paths = scanPaths(s)
+  // The network read as the build reads it; the regions filled, and then every other the curves close.
+  const traced = traceNetwork(paths, net.nodes, net.curves)
+  const seeds = net.cells.map((c) => c.seed)
+  const cornersOf = net.cells.map((c) => (c.corners && c.corners.length >= 3 ? new Set(c.corners) : undefined))
+  const first = readCells(paths, traced.nodes, traced.curves, seeds, cornersOf)
+  const cells = first.unfilled.length > 0 ? readCells(paths, traced.nodes, traced.curves, [...seeds, ...first.unfilled.map((u) => u.seed)], [...cornersOf, ...first.unfilled.map(() => undefined)]) : first
+  const curves = new Map(traced.curves.map((c) => [c.id, c]))
+  const regions: SketchCell[] = []
+  const covered: { triangles: Uint32Array }[] = []
+  const refused: { message: string; at?: Vec3 }[] = []
+  for (const c of cells.cells) {
+    if (c.status === 'refused') {
+      refused.push({ message: c.message, ...(c.at ? { at: c.at } : {}) })
+      continue
+    }
+    try {
+      regions.push({ sides: c.sides.map((side) => polylinePath(sidePoints(side, curves))) })
+      covered.push(c)
+    } catch (e) {
+      if (e instanceof SketchError) refused.push({ message: e.message })
+      else throw e
+    }
+  }
+  if (traced.lost.length > 0) refused.push({ message: `curve${traced.lost.length === 1 ? '' : 's'} ${traced.lost.join(', ')} found no path along the scan` })
+  if (regions.length === 0) {
+    const why = refused.slice(0, REFUSED_SHOWN).map((r) => r.message)
+    return invalid(`${SKETCH_REFUSAL}${why.length > 0 ? ` — ${[...new Set(why)].join('; ')}` : ''}.`)
+  }
+
+  let cage
+  try {
+    cage = sketchCage(regions, level)
+  } catch (e) {
+    if (e instanceof SketchError) return invalid(`From 3D Sketch: ${e.message}`)
+    throw e
+  }
+
+  // The cage's vertices taken onto the scan as far as the regions reach — not onto another wall of the part that a cage bulging past its curves lies nearer to.
+  const reach = regionScan(paths, covered)
+  const closest = (p: Vec3) => {
+    const c = reach.closest(p)
+    return c ? { point: c.point, distance: c.distance } : null
+  }
+  const was = deviation(cage, closest, TOLERANCE_MM)
+  let snapped: Json | null = null
+  if (was.points > 0) {
+    const r = snapCage(cage, closest, Math.min(100, Math.max(1, Math.round(iterations))), 0.01)
+    cage = r.cage
+    const now = deviation(cage, closest, TOLERANCE_MM)
+    const show = (d: typeof was) => ({ points: d.points, missed: d.missed, rms: round3(d.rms), max: round3(d.max), within: d.within, fraction: d.points > 0 ? round3(d.within / d.points) : 0 })
+    snapped = { iterations: r.stats.iterations, tolerance: TOLERANCE_MM, before: show(was), after: show(now) }
+  }
+
+  return { cage, regions, refused, snapped }
 }
