@@ -59,6 +59,10 @@ try {
   const undoBefore = await page.$eval('[data-test=undo]', e => e.title)
   await page.click('[data-test=wrap-surface-preview]')
   await page.waitForSelector('[data-test=wrap-surface-preview-ready]', { timeout: 120000 })
+  await page.$eval('[data-test=freeform-surface-display]', e => Array.from(e.querySelectorAll('button')).find(b => b.textContent === 'Deviation').click())
+  await page.waitForSelector('[data-test=freeform-deviation-legend]', { timeout: 120000 })
+  assert.ok(await page.evaluate(() => window.__re.reScene().bodyPreview.material.vertexColors))
+
   assert.equal(await page.evaluate(() => window.__re.store.getState().features.length), 0)
   assert.ok(await page.evaluate(() => window.__re.reScene().bodyPreview?.geometry.attributes.position.count > 0))
   assert.ok(await page.evaluate(() => window.__re.reScene().cagePreview?.geometry.attributes.position.count > 0))

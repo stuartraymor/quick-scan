@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useEffect, useRef, useState } from 'react'
 import { create } from 'zustand'
+import { FreeformSurfaceDisplay } from './FreeformSurfaceDisplay'
 import { useFreeformNavigation } from './useFreeformNavigation'
 import { runCommand } from '../../../src/commands/registry'
 import { useStore } from '../../../src/state/store'
@@ -30,7 +31,9 @@ export function FreeformSketchDialog() {
   const alive = useRef(true)
   const form = useRef<HTMLFormElement>(null)
   const source = features.find(f => f.kind === 'network' && String(f.id) === network)
+  const [displayPositions, setDisplayPositions] = useState<Float32Array | null>(null)
   const clearMesh = () => {
+    setDisplayPositions(null)
     const scene = reverseSession()?.sceneRef.current
     if (scene) reSceneOf(scene).setBodyPreview(null, '#ffffff')
   }
@@ -53,6 +56,7 @@ export function FreeformSketchDialog() {
       const scene = session.sceneRef.current
       if (!scene) throw new Error('The viewport is unavailable.')
       reSceneOf(scene).setBodyPreview(result.mesh, '#5da9d6', { cage })
+      setDisplayPositions(result.mesh.positions)
       setPreviewReady(true)
     } catch (e) { if (alive.current) setError(e instanceof Error ? e.message : String(e)) }
     finally { if (alive.current) setWorking(false) }
@@ -87,6 +91,7 @@ export function FreeformSketchDialog() {
       <label>Resolution <input aria-label="Resolution" type="number" min="1" max={SKETCH_RESOLUTION_MAX} step="1" disabled={working} value={resolution} onChange={e => setResolution(e.target.value)} /></label>
       <button type="button" data-test="freeform-sketch-preview" disabled={!valid || working} onClick={() => void preview()}>Preview</button>
       {previewReady && <small data-test="freeform-sketch-preview-ready">Preview ready</small>}
+      {displayPositions && <FreeformSurfaceDisplay positions={displayPositions} />}
       {error && <small role="alert">{error}</small>}
       {working && <small role="status">Creating freeform surface…</small>}
       <footer style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>

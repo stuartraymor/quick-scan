@@ -679,7 +679,7 @@ export class ReScene {
       geometry.setIndex(new THREE.BufferAttribute(mesh.indices, 1))
       geometry.computeBoundingBox()
       geometry.computeBoundingSphere()
-      const solid = replaces.length > 0
+      const solid = replaces.length > 0 || Boolean(options.cage)
       const material = kept ? (kept.material as THREE.MeshStandardMaterial) : new THREE.MeshStandardMaterial({
         side: THREE.DoubleSide,
         // Behind its own edges, as the bodies are.
@@ -687,6 +687,7 @@ export class ReScene {
         polygonOffsetFactor: 1,
         polygonOffsetUnits: 1,
       })
+      if (material.vertexColors) { material.vertexColors = false; material.needsUpdate = true }
       material.color.set(color)
       // Solid or see-through is another program: asked for again.
       if (material.transparent === solid) {
@@ -704,6 +705,20 @@ export class ReScene {
       this.bodyPreview = ghost
     }
     this.recap()
+    this.host.invalidate()
+  }
+
+  /** Colour the current preview itself; never recolour the reference scan. */
+  setPreviewColours(colours: Float32Array | null, shadedColour = '#5da9d6'): void {
+    const preview = this.bodyPreview
+    if (!preview) return
+    if (colours && colours.length !== preview.geometry.getAttribute('position').count * 3) throw new Error('Preview colours must match the surface vertices.')
+    if (colours) preview.geometry.setAttribute('color', new THREE.BufferAttribute(colours, 3))
+    else preview.geometry.deleteAttribute('color')
+    const material = preview.material as THREE.MeshStandardMaterial
+    material.vertexColors = colours !== null
+    material.color.set(colours ? '#ffffff' : shadedColour)
+    material.needsUpdate = true
     this.host.invalidate()
   }
 

@@ -294,6 +294,15 @@ export class ReClient {
     await this.request<Extract<ReWorkerResponse, { type: 'scan-ok' }>>({ type: 'scan', requestId, positions, indices, ...(normals ? { normals } : {}), transform }, transfer, HEAVY_MS)
   }
 
+  /** Signed distances from surface vertices to the reference scan. */
+  async previewSurfaceDeviation(positions: Float32Array): Promise<Float32Array> {
+    const requestId = this.nextId++
+    // Transfer a copy: the viewport still owns the original mesh vertices.
+    const copy = positions.slice()
+    const result = await this.request<Extract<ReWorkerResponse, { type: 'preview-deviation-ok' }>>({ type: 'preview-deviation', requestId, positions: copy }, [copy.buffer], HEAVY_MS)
+    return result.values
+  }
+
   /** The live map against the last preview's solid or against bodies of
    *  the last build. Null when a newer map has been asked for since. */
   async map(source: 'preview' | 'bodies', bodyIds: number[], range: number): Promise<SparseField | null> {

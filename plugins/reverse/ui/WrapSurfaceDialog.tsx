@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useEffect, useRef, useState } from 'react'
 import { create } from 'zustand'
+import { FreeformSurfaceDisplay } from './FreeformSurfaceDisplay'
 import { useFreeformNavigation } from './useFreeformNavigation'
 import { runCommand } from '../../../src/commands/registry'
 import { commandHost } from '../../../src/commands/host'
@@ -37,7 +38,9 @@ export function WrapSurfaceDialog() {
   const [previewReady, setPreviewReady] = useState(false)
   const alive = useRef(true)
   const form = useRef<HTMLFormElement>(null)
+  const [displayPositions, setDisplayPositions] = useState<Float32Array | null>(null)
   const clearMesh = () => {
+    setDisplayPositions(null)
     const scene = reverseSession()?.sceneRef.current
     if (scene) reSceneOf(scene).setBodyPreview(null, '#ffffff')
   }
@@ -60,6 +63,7 @@ export function WrapSurfaceDialog() {
       const scene = session.sceneRef.current
       if (!scene) throw new Error('The viewport is unavailable.')
       reSceneOf(scene).setBodyPreview(result.mesh, '#5da9d6', { cage })
+      setDisplayPositions(result.mesh.positions)
       setPreviewReady(true)
     } catch (e) { if (alive.current) setError(e instanceof Error ? e.message : String(e)) }
     finally { if (alive.current) setWorking(false) }
@@ -96,6 +100,7 @@ export function WrapSurfaceDialog() {
       </select></label>
       <button type="button" data-test="wrap-surface-preview" disabled={working} onClick={() => void preview()}>Preview</button>
       {previewReady && <small data-test="wrap-surface-preview-ready">Preview ready</small>}
+      {displayPositions && <FreeformSurfaceDisplay positions={displayPositions} />}
       {error && <small role="alert">{error}</small>}
       {working && <small role="status">Creating wrap surface…</small>}
       <footer style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>

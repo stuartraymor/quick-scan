@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useEffect, useRef, useState } from 'react'
 import { create } from 'zustand'
+import { FreeformSurfaceDisplay } from './FreeformSurfaceDisplay'
 import { useFreeformNavigation } from './useFreeformNavigation'
 import { runCommand } from '../../../src/commands/registry'
 import { useStore } from '../../../src/state/store'
@@ -27,7 +28,9 @@ export function AutoFreeformDialog({ onClose }: { onClose: () => void }) {
   const previewVersion = useRef<number | null>(null)
   const alive = useRef(true)
   const form = useRef<HTMLFormElement>(null)
+  const [displayPositions, setDisplayPositions] = useState<Float32Array | null>(null)
   const clearMesh = () => {
+    setDisplayPositions(null)
     const scene = reverseSession()?.sceneRef.current
     if (scene) reSceneOf(scene).setBodyPreview(null, '#ffffff')
     previewVersion.current = null
@@ -60,6 +63,7 @@ export function AutoFreeformDialog({ onClose }: { onClose: () => void }) {
       const scene = session.sceneRef.current
       if (!scene) throw new Error('The viewport is unavailable.')
       reSceneOf(scene).setBodyPreview(result.mesh, '#5da9d6', { cage })
+      setDisplayPositions(result.mesh.positions)
       previewVersion.current = version
       setPreviewQuads(made.quads)
     } catch (e) { if (alive.current) setError(e instanceof Error ? e.message : String(e)) }
@@ -108,6 +112,7 @@ export function AutoFreeformDialog({ onClose }: { onClose: () => void }) {
         <button type="button" data-test="auto-freeform-clear" disabled={working || previewQuads === null} onClick={clearPreview}>Clear Result</button>
       </div>
       {previewQuads !== null && <small data-test="auto-freeform-quads">Actual number of quads: {previewQuads.toLocaleString()}</small>}
+      {displayPositions && <FreeformSurfaceDisplay positions={displayPositions} />}
       {error && <small role="alert">{error}</small>}
       {working && <small role="status">Creating freeform surface…</small>}
       <footer style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>

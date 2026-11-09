@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { previewDeviation } from './freeform/previewDeviation'
 // Running the feature list through the kernel. A build plays the steps in
 // order — an extrude or a revolve makes faces of the profiles it picked, a
 // solid of the faces, and joins it to every body it meets, cuts it out of
@@ -294,6 +295,11 @@ export class Builder {
   /** The scan prepared for paths along it, for a patch network: made the
    *  first time a network is built on this scan. */
   private paths: ScanPaths | null = null
+
+  previewSurfaceDeviation(positions: Float32Array): Float32Array {
+    if (!this.scan) throw new Error('A reference scan in the model frame is required for surface deviation.')
+    return previewDeviation(positions, this.scan)
+  }
 
   setScan(surface: NominalSurface | null, positions: Float32Array | null = null): void {
     this.scan = surface

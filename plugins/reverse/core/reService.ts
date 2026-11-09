@@ -62,6 +62,7 @@ export type ReWorkerRequest =
   /** The live map: the scan's signed distance to the last preview's solid,
    *  or to the given bodies of the last build, for the vertices within
    *  reach of it — see liveMap.ts. */
+  | { type: 'preview-deviation'; requestId: number; positions: Float32Array }
   | { type: 'map'; requestId: number; source: 'preview' | 'bodies'; bodyIds: number[]; range: number }
   /** The scan against the given bodies in detail: the field, each face's
    *  reading, the worst spots — see compareDetail.ts — the scan read by
@@ -98,6 +99,7 @@ export type ReWorkerResponse =
   | { type: 'clearance-ok'; requestId: number; gap: number; overlap: number }
   | { type: 'overlaps-ok'; requestId: number; overlaps: Overlap[]; done: boolean }
   | { type: 'scan-ok'; requestId: number }
+  | { type: 'preview-deviation-ok'; requestId: number; values: Float32Array }
   | { type: 'map-ok'; requestId: number; field: SparseField }
   | { type: 'compare-ok'; requestId: number; detail: CompareDetail }
   | { type: 'check-ok'; requestId: number; check: BodyCheck | null }
@@ -323,6 +325,10 @@ export function createReService(loadKernel: () => Promise<ReKernel>, loadManifol
         // distance is read, never the sign.
         b.setScan(scan && scan.indices && !scan.transform ? surfaceOfMeshes([{ positions: scan.positions, normals: new Float32Array(0), indices: scan.indices }]) : null, scan && !scan.transform ? scan.positions : null)
         return answer({ type: 'scan-ok', requestId: msg.requestId })
+      }
+      if (msg.type === 'preview-deviation') {
+        const values = b.previewSurfaceDeviation(msg.positions)
+        return answer({ type: 'preview-deviation-ok', requestId: msg.requestId, values }, [values.buffer])
       }
       if (msg.type === 'map') {
         // The same bodies at the same range on the same scan: the last reading
