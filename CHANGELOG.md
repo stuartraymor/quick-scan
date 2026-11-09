@@ -1,6 +1,6 @@
-## 0.0.177
+## 0.0.177 (candidate)
 
-Fit Surface: Degree and Max degree share a stable row; Expand by omits the visible percent suffix, matching observed native controls. Internal values and MCP fields remain unchanged. Verified in browser and installed app at two sizes with dark theme, stable degree-toggle layout and expression entry. Full unit, E2E, build and packaged smoke checks passed.
+Fit Surface: Degree and Max degree share a stable row; Expand by omits the visible percent suffix, matching observed native controls. Internal values and MCP fields remain unchanged. Validation pending.
 
 ## 0.0.176 — Local candidate; GitHub held
 
