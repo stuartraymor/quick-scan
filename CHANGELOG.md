@@ -1,3 +1,7 @@
+## 0.0.182
+
+Fit Surface supports persistent XYZ control-point editing with live preview, selection highlighting, Screen/World/Local axes, plane handles and strength control. Exact poles and knots survive undo/redo, project reopen and STEP export. MCP exposes the exact net and a pole-move command using the shared edit history. Cancel/reopen retains control-net preferences. Native measurements verify the recorded axis and plane gestures; broader smoothing and application parity remain unfinished. The dark theme and AI/MCP features are retained.
+
 ## 0.0.181
 
 CAD ribbon Export now accepts visible fitted sheets, matching panel and MCP export. Fit Surface supports degree 9, verified against a native 10x10 degree-9 IGES export and exact-kernel roundtrip tests. Interactive pole editing and smoothing equivalence remain unfinished.

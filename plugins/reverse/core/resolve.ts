@@ -435,7 +435,7 @@ export function resolveFeatures(
         // the ones after it are held to it.
         const before = features.slice(0, features.indexOf(f))
         const refSurfaces = before.filter((o): o is SurfaceFeature => o.kind === 'surface' && (o.shape ?? 'freeform') !== 'freeform').map((o) => ({ id: o.id, name: o.name }))
-        steps.push({ kind: 'surface', id: f.id, name: f.name, region: f.region, fit: f.fit, shape: f.shape ?? 'freeform', constrain: f.constrain ?? { mode: 'auto' }, refs: constrainRefs(ctx.elements), refSurfaces, ...(f.regionBox?.normal ? { facing: f.regionBox.normal } : {}) })
+        steps.push({ kind: 'surface', id: f.id, name: f.name, region: f.region, fit: f.fit, ...(f.controlSurface ? { controlSurface: structuredClone(f.controlSurface) } : {}), shape: f.shape ?? 'freeform', constrain: f.constrain ?? { mode: 'auto' }, refs: constrainRefs(ctx.elements), refSurfaces, ...(f.regionBox?.normal ? { facing: f.regionBox.normal } : {}) })
       }
       continue
     }

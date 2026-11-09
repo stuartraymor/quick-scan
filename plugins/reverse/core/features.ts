@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import type { PolynomialSurface } from './surfaceStep'
 // The features of the Reverse engineer workspace, as they are stored, and
 // how they are resolved into what the kernel builds. A feature list is
 // linear: a sketch on a plane, then extrusions and revolutions that each
@@ -963,6 +964,8 @@ export interface SurfaceFeature extends FeatureFlags {
   name: string
   region: Uint32Array
   fit: SurfaceFitParams
+  /** Explicit XYZ poles after manual editing; absent means refit the scan. */
+  controlSurface?: PolynomialSurface
   /** What is fitted through the region. Absent is `freeform`, what every
    *  surface saved before there was a choice is. */
   shape?: SurfaceShape

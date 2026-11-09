@@ -61,6 +61,8 @@ function NetBox({ testId, title, value, disabled, onCommit }: { testId: string; 
 export function SurfaceFitFields({ d, set }: { d: SurfaceDraft; set: (patch: Partial<FeatureDraft>) => void }) {
   const preview = useReverse((s) => s.preview)
   const controlNetOn = useControlNet((s) => s.on)
+  const strength = useControlNet((s) => s.strength)
+  const frame = useControlNet((s) => s.frame)
   const [pending, setPending] = useState<SurfaceFitParams | null>(null)
   const [degreeDisplay, setDegreeDisplay] = useState<number | null>(null)
   const [locked, setLocked] = useState(true)
@@ -171,10 +173,25 @@ export function SurfaceFitFields({ d, set }: { d: SurfaceDraft; set: (patch: Par
       <button className="block" data-test="surface-fit-apply" disabled={!changed} onClick={() => pending && apply(pending)}>
         Fit with the new parameters
       </button>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
       <label className="checkrow" title="Draw the surface's control net over the part: its poles joined row by row and column by column. The surface is the B-spline of these poles.">
         <input type="checkbox" data-test="surface-control-net" checked={controlNetOn} onChange={(e) => useControlNet.getState().set(e.target.checked)} />
         <span>Control Net</span>
       </label>
+      {controlNetOn && <select style={{ width: 165 }} data-test="surface-pole-frame" aria-label="Control pole frame" value={frame} onChange={e => {
+          const value=e.target.value
+          if(value==='World' || value==='Screen' || value==='Local') useControlNet.getState().setFrame(value)
+        }}>
+          <option>World</option><option>Screen</option><option>Local</option>
+        </select>}
+      </div>
+      {controlNetOn && <label className="field">
+        <span>Strength</span>
+        <span className="unitfield">
+          <input type="range" data-test="surface-pole-strength" aria-label="Control pole strength" min={0} max={100} value={strength} onChange={e => useControlNet.getState().setStrength(Number(e.target.value))} />
+          <output>{strength}%</output>
+        </span>
+      </label>}
     </>
   )
 }

@@ -3,7 +3,7 @@ import { expect, it } from 'vitest'
 import { OcctKernel } from 'occt-wasm'
 import { ReKernel } from '../core/kernel'
 import { controlNetOf, DEFAULT_SURFACE_FIT, evalSurface, fitSurface } from '../core/surfaceFit'
-import { surfaceAxis, writeSurfaceStep } from '../core/surfaceStep'
+import { moveSurfacePole, surfaceAxis, writeSurfaceStep } from '../core/surfaceStep'
 
 it('exports the fitted degree and net and preserves its surface after the temporary shell is released', async () => {
   const k = await ReKernel.load()
@@ -45,4 +45,32 @@ it('rejects malformed or unsupported exact nets instead of silently refitting', 
   expect(()=>writeSurfaceStep({...s,u:{...axis,mults:[1,2]}})).toThrow()
   expect(()=>writeSurfaceStep({...s,v:{...axis,knots:[3,-2]}})).toThrow()
   expect(()=>writeSurfaceStep({...s,weights:[1,1,1,1]} as never)).toThrow()
+})
+
+it('moves one XYZ pole at half strength, preserving the source and exact spline influence', async () => {
+  const axis={degree:4,count:5,knots:[0,1],mults:[5,5]}
+  const source={u:structuredClone(axis),v:structuredClone(axis),poles:Array.from({length:25},(_,i)=>{const u=Math.floor(i/5),v=i%5;return [u*10,v*10,0.2*u*v]})}
+  const snapshot=structuredClone(source)
+  const delta=[15.594033185,15.594033867,0]
+  const moved=moveSurfacePole(source,1,1,delta,50)
+  expect(source).toEqual(snapshot)
+  expect(moved.u).toEqual(source.u);expect(moved.v).toEqual(source.v)
+  for(let i=0;i<25;i++)if(i!==6)expect(moved.poles[i]).toEqual(source.poles[i])
+  expect(moved.poles[6]).toEqual(source.poles[6].map((x,i)=>x+delta[i]/2))
+  const restored=moveSurfacePole(moved,1,1,delta.map(x=>-x),50)
+  restored.poles.forEach((p,i)=>p.forEach((x,j)=>expect(x).toBeCloseTo(source.poles[i][j],12)))
+  // Independent CAD evaluation: the (1,1) quartic pole's basis is 1/16
+  // at the center and zero at every corner; tangential motion is retained.
+  const raw=await OcctKernel.init()
+  const shapes=[raw.importStep(writeSurfaceStep(source)),raw.importStep(writeSurfaceStep(moved))]
+  const faces=shapes.map(s=>raw.getSubShapes(s,'face'))
+  try {
+    for(const [u,v,weight] of [[0,0,0],[1,0,0],[0,1,0],[1,1,0],[0.5,0.5,1/16]]){
+      const a=raw.pointOnSurface(faces[0][0],u,v),b=raw.pointOnSurface(faces[1][0],u,v)
+      expect(Math.hypot(b.x-a.x-delta[0]*weight/2,b.y-a.y-delta[1]*weight/2,b.z-a.z)).toBeLessThan(1e-10)
+    }
+    expect(()=>moveSurfacePole(source,5,0,delta)).toThrow()
+    expect(()=>moveSurfacePole(source,0,0,[Infinity,0,0])).toThrow()
+    expect(()=>moveSurfacePole(source,0,0,delta,101)).toThrow()
+  } finally {faces.flat().forEach(f=>raw.release(f));shapes.forEach(s=>raw.release(s));raw[Symbol.dispose]()}
 })

@@ -250,6 +250,19 @@ export class BodyPicks {
   private openMaterial: LineMaterial | null = null
   private netLines: { line: LineSegments2; geo: LineSegmentsGeometry; mat: LineMaterial } | null = null
   private netPoints: { points: THREE.Points; geo: THREE.BufferGeometry; mat: THREE.PointsMaterial } | null = null
+  private selectedControlPole: number | null = null
+
+  selectControlPole(index: number | null): void {
+    this.selectedControlPole = index
+    const net = this.netPoints
+    if (!net) return
+    const count = net.geo.getAttribute('position').count
+    const colors = new Float32Array(count * 3)
+    const blue = new THREE.Color(NET_POINT_COLOR), yellow = new THREE.Color('#ffff00')
+    for (let i = 0; i < count; i++) (i === index ? yellow : blue).toArray(colors, i * 3)
+    net.geo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+    this.ctx.invalidate()
+  }
   private edgeLights: { key: string; line: LineSegments2; geo: LineSegmentsGeometry; mat: LineMaterial }[] = []
   /** Whole bodies lit, by id — see setLit — and what draws them. */
   private litBodies: readonly number[] = []
@@ -407,12 +420,13 @@ export class BodyPicks {
     for (let i = 0; i < positions.length; i++) positions[i] = net.points[i]
     const geo = new THREE.BufferGeometry()
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-    const mat = new THREE.PointsMaterial({ color: new THREE.Color(NET_POINT_COLOR).getHex(), size: 12 * this.lineScale, sizeAttenuation: false, depthTest: false, depthWrite: false })
+    const mat = new THREE.PointsMaterial({ color: 0xffffff, vertexColors: true, size: 12 * this.lineScale, sizeAttenuation: false, depthTest: false, depthWrite: false })
     const points = new THREE.Points(geo, mat)
     points.renderOrder = 9
     points.frustumCulled = false
     this.group.add(points)
     this.netPoints = { points, geo, mat }
+    this.selectControlPole(this.selectedControlPole)
     this.ctx.invalidate()
   }
 

@@ -15,7 +15,7 @@
 // tests. Owns the kernel handles: a build's shapes are released once no
 // kept build holds them.
 
-import { surfaceAxis } from './surfaceStep'
+import { buildEditedSurface, polynomialOfFit } from './editedSurface'
 import type { NominalSurface } from '../../../src/core/deviation/surface'
 import { emptyHit } from '../../../src/core/deviation/surface'
 import type { Vec3 } from '../../../src/core/types'
@@ -709,11 +709,15 @@ export class Builder {
       xyz[i * 3 + 1] = scan[v * 3 + 1]
       xyz[i * 3 + 2] = scan[v * 3 + 2]
     }
+    if (step.controlSurface) {
+      if (step.shape !== 'freeform') throw Error('Control-pole edits require a freeform surface.')
+      return buildEditedSurface(this.kernel, step.controlSurface, xyz)
+    }
     if (step.shape === 'plane' || step.shape === 'cylinder') return this.primitiveSurface(step, xyz)
     const { fit, worst, dropped, strays } = fitSurfaceReported(xyz, step.fit, step.facing)
     const face = this.faceThrough(fit)
     const past = this.pastRegionOf(fit)
-    return { face, report: { rms: fit.rms, max: fit.max, net: fit.net, points: region.length, controlNet: controlNetOf(fit), worst, ...(step.fit.robust ? { dropped } : {}), ...(strays ? { strays } : {}), ...(past ? { pastRegion: past } : {}) }, fit }
+    return { face, report: { rms: fit.rms, max: fit.max, net: fit.net, points: region.length, controlNet: controlNetOf(fit), controlSurface: polynomialOfFit(fit), worst, ...(step.fit.robust ? { dropped } : {}), ...(strays ? { strays } : {}), ...(past ? { pastRegion: past } : {}) }, fit }
   }
 
   /** The scan's nearest point to a point within `reach`, or null — for
@@ -756,12 +760,7 @@ export class Builder {
       // units-ok: build message, also the agent's answer
       throw new Error(`The surface would mesh to about ${Math.round(triangles / 1000)} k triangles at its ${chord} mm chord, more than ${SURFACE_TRIANGLES / 1000} k — it bends too often for its size. Fit a coarser net, or smooth it more.`)
     }
-    const net = controlNetOf(fit)
-    return this.kernel.surfaceFromControlNet({
-      u: surfaceAxis(fit.knotsU, fit.degree, fit.nu),
-      v: surfaceAxis(fit.knotsV, fit.degree, fit.nv),
-      poles: Array.from({ length: fit.nu * fit.nv }, (_,i) => Array.from(net.points.slice(i * 3, i * 3 + 3))),
-    })
+    return this.kernel.surfaceFromControlNet(polynomialOfFit(fit))
   }
 
   /** A plane or a cylinder through the region, held to the references

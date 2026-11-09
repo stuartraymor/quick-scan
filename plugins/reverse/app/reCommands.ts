@@ -31,7 +31,7 @@ import { cageConvert, cageOffset, cageRead, cageThicken, cageWrite } from './reF
 import { freeformConvert, freeformCreate, freeformEdit, freeformMovePoints, freeformRead, freeformRefine, freeformSnap } from './reFreeformEditCommands'
 import { freeformAuto } from './reFreeformAutoCommand'
 import { freeformExtend } from './reFreeformExtendCommand'
-import { surfaceNet } from './reSurfaceNetCommand'
+import { surfaceNet, surfaceMovePole } from './reSurfaceNetCommand'
 import { freeformFill } from './reFreeformFillCommand'
 import { freeformFromSketch } from './reFreeformSketchCommand'
 import { freeformWrap } from './reFreeformWrapCommand'
@@ -172,6 +172,7 @@ export const reverseCommands: Command<never>[] = ([
   { ...freeformFill, name: 'freeform.fill' },
   { ...freeformExtend, name: 'freeform.extend' },
   { ...surfaceNet, name: 'surface.net' },
+  { ...surfaceMovePole, name: 'surface.move_pole' },
   { ...planSet, name: 'plan.set' },
   { ...planUpdate, name: 'plan.update' },
   { ...planTick, name: 'plan.tick' },

@@ -416,6 +416,7 @@ describe('the commands hold to the panel’s rules', () => {
       'reverse.section.stack',
       'reverse.sketch.candidates',
       'reverse.sketch.edit',
+      'reverse.surface.move_pole',
       'reverse.surface.net',
       'reverse.thread.read',
     ])

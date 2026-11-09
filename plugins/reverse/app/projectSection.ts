@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { validate as validateControlSurface, type PolynomialSurface } from '../core/surfaceStep'
 // The Reverse engineer workspace's part of a project file, under the key
 // `reverse`: the feature list by reference — the sketches with their pieces
 // and relations, every pick as a fingerprint, every plane and axis by the id
@@ -114,7 +115,14 @@ export function validateFeatureJson(e: Record<string, unknown>): void {
     object(e.plane, 'sketch.plane')
     object(e.frame, 'sketch.frame')
   }
-  if (e.kind === 'surface') indices(e.region, 'surface.region')
+  if (e.kind === 'surface') {
+    indices(e.region, 'surface.region')
+    if (e.controlSurface !== undefined) {
+      try { validateControlSurface(e.controlSurface as PolynomialSurface) }
+      catch { invalid('surface.controlSurface') }
+      if (e.shape !== undefined && e.shape !== 'freeform') invalid('surface.controlSurface requires freeform')
+    }
+  }
   // The queries a feature's picks were given by, each with what it found,
   // and how an extrude's or a revolve's regions were asked for.
   for (const key of ['edgesWhere', 'facesWhere'])

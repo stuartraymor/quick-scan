@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import type { PolynomialSurface } from './surfaceStep'
 // The features resolved for the build: each a BuildStep with its sketches
 // lifted into the part and its planes and axes found, and what resolving
 // reads beside the feature list (ResolveContext).
@@ -144,7 +145,7 @@ export type BuildStep =
    *  holds the scan's vertices for the live map — so the step carries the
    *  region and the parameters, not points — and, for a region read facing
    *  a way, that way, which a refusal says bounds the region's normals. */
-  | { kind: 'surface'; id: number; name: string; region: Uint32Array; fit: SurfaceFitParams; shape: SurfaceShape; constrain: ConstrainMode; refs: ConstrainRef[]; refSurfaces: { id: number; name: string }[]; facing?: { dir: Vec3; withinDeg?: number } }
+  | { kind: 'surface'; id: number; name: string; region: Uint32Array; fit: SurfaceFitParams; controlSurface?: PolynomialSurface; shape: SurfaceShape; constrain: ConstrainMode; refs: ConstrainRef[]; refSurfaces: { id: number; name: string }[]; facing?: { dir: Vec3; withinDeg?: number } }
   /** A patch network is read off the scan where the scan is, as a surface
    *  is fitted: the step carries the network as drawn — its nodes, curves
    *  and cells by position — and the worker traces and fits it there. */

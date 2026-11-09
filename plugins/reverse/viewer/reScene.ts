@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import type { PoleFrame } from './poleFrameGizmo'
 // The Reverse engineer workspace in the 3D viewport: the sketches drawn on
 // the part and their regions and lines as click targets, the bodies built on
 // the scan and their faces, edges and corners as picks, a selection window
@@ -9,6 +10,9 @@
 // at the origin, last.
 
 import { SliceArrow } from './sliceArrow'
+import { SurfacePoleDrag } from './surfacePoleDrag'
+import { surfacePolePreview } from './surfacePolePreview'
+import type { PolynomialSurface } from '../core/surfaceStep'
 import * as THREE from 'three'
 import type { SectionFrame, WorldAxis } from '../../../src/core/section/frame'
 import type { Vec3 } from '../../../src/core/types'
@@ -39,6 +43,8 @@ const OVERLAP_COLOR = 0xe0564f
 
 export class ReScene {
   private host: SceneLayerHost
+  private poleDrag: SurfacePoleDrag
+  private polePreview: THREE.Mesh | null = null
   /** The bodies built, in the scan's frame — they were modelled on the scan
    *  where it stands, so they ride in its group and move with it under a
    *  best fit. Translucent over the scan by default; solid once the scan is
@@ -153,6 +159,11 @@ export class ReScene {
       modelRadius: () => host.modelRadius(),
       invalidate: () => host.invalidate(),
     })
+    this.poleDrag = new SurfacePoleDrag(host, (surface, dragging) => {
+      this.bodyPicks.setControlNet({ rows: surface.u.count, cols: surface.v.count, points: Float64Array.from(surface.poles.flat()) })
+      this.showPolePreview(dragging ? surface : null)
+    }, index => this.bodyPicks.selectControlPole(index))
+    this.removeLayers.push(scene.addLayer(this.poleDrag.layer()))
     this.sliceArrow = new SliceArrow(host)
     this.removeLayers.push(scene.addLayer(this.sliceArrow.layer()), scene.addLayer(this.sketchLayer()), scene.addLayer(this.bodyLayer()), scene.addLayer(this.planesLayer()))
   }
@@ -996,6 +1007,31 @@ export class ReScene {
 
   /** A Fit Surface's control net, drawn over the part while the Control Net
    *  tick is on; null takes it off. See BodyPicks.setControlNet. */
+  setControlPoleEditing(surface: PolynomialSurface | null, commit: ((surface: PolynomialSurface) => void) | null, strength = 100, frame: PoleFrame = 'Screen'): void {
+    this.poleDrag.set(surface, commit, strength, frame)
+  }
+
+  clearControlPoleSelection(): void { this.poleDrag.clearSelection(); this.bodyPicks.selectControlPole(null) }
+
+  private showPolePreview(surface: PolynomialSurface | null): void {
+    if (this.polePreview) {
+      this.bodyGroup.remove(this.polePreview)
+      this.polePreview.geometry.dispose()
+      ;(this.polePreview.material as THREE.Material).dispose()
+      this.polePreview = null
+    }
+    if (this.bodyPreview) {
+      this.bodyPreview.visible = !surface
+      if (surface) {
+        const mesh = new THREE.Mesh(surfacePolePreview(surface), (this.bodyPreview.material as THREE.Material).clone())
+        mesh.renderOrder = this.bodyPreview.renderOrder
+        this.bodyGroup.add(mesh)
+        this.polePreview = mesh
+      }
+    }
+    this.host.invalidate()
+  }
+
   setControlNet(net: { rows: number; cols: number; points: Float64Array } | null): void {
     this.bodyPicks.setControlNet(net)
     this.host.invalidate()

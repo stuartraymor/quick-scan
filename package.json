@@ -1,7 +1,7 @@
 {
   "name": "quick-scan",
   "private": true,
-  "version": "0.0.181",
+  "version": "0.0.182",
   "type": "module",
   "license": "AGPL-3.0-only",
   "author": "Stefan Hermann (CNC Kitchen) <stefan@cnckitchen.com>",

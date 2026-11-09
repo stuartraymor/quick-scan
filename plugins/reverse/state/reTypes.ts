@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import type { PolynomialSurface } from '../core/surfaceStep'
 // The workspace's state as types: the kernel's status, the bodies and how
 // they are shown, a selection, the drafts the sketch, extrude, revolve and
 // feature boxes hold, the preview and the live map's report. reStore holds
@@ -451,7 +452,7 @@ export type FeatureDraft = { exprs?: ExprMap } & (
   /** A surface fitted through a region of the scan: the region gathered
    *  by clicks that flood by normal angle, or with the marking tools while
    *  `paint` is on; the fit's parameters as the feature holds them. */
-  | { kind: 'surface'; featureId?: number; name?: string; region: Uint32Array; floodDeg: number; paint: boolean; fit: SurfaceFitParams; shape: SurfaceShape; constrain: ConstrainMode; regionBox?: RegionBox; regionStale?: true | string }
+  | { kind: 'surface'; featureId?: number; name?: string; region: Uint32Array; floodDeg: number; paint: boolean; fit: SurfaceFitParams; controlSurface?: PolynomialSurface; shape: SurfaceShape; constrain: ConstrainMode; regionBox?: RegionBox; regionStale?: true | string }
   /** The automatic trim: the surfaces and elements to close into a solid,
    *  the tolerance read off the surfaces' own fits until typed. */
   | { kind: 'trim'; featureId?: number; name?: string; tools: TrimTool[]; tolerance: number; toleranceTyped: boolean; overlap: number }

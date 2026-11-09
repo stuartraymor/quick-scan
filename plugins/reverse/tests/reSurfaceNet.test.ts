@@ -9,6 +9,8 @@
 // fit's; the surface is exactly the B-spline of these poles, which is what
 // is held below, with the corners on the surface.
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { moveSurfacePole, type PolynomialSurface } from '../core/surfaceStep'
+import type { SurfaceFeature } from '../core/features'
 import type { Vec3 } from '../../../src/core/types'
 import type { SceneManager } from '../../../src/viewer/SceneManager'
 import { refused, run, soupOf, startHeadless, stlBytes, type Headless } from '../../../tests/commandKit'
@@ -130,6 +132,7 @@ describe('reverse.surface.net', () => {
     cols: number
     degree: number
     poles: number[][][]
+    exact?: PolynomialSurface
   }
 
   it('reads the net of a fitted surface: its size, its degree and its poles', async () => {
@@ -158,6 +161,40 @@ describe('reverse.surface.net', () => {
     expect(Number(spline![1])).toBe(r.degree)
     expect(Number(spline![2])).toBe(r.degree)
     expect(spline![3].match(/#\d+/g)?.length).toBe(r.rows * r.cols)
+  })
+
+  it('keeps edited poles through MCP rename, exposes exact geometry and clears it on explicit refit', async () => {
+    await run('reverse.feature.add', { feature: { kind: 'surface', name: 'Editable', region: { box: { min: [5,5,-20], max: [95,75,20] } }, fit: { net: { u:5,v:5 }, degree:4 } } })
+    const initial=await run<Net>('reverse.surface.net',{surface:'Editable'})
+    expect(initial.exact).toBeDefined()
+    const edited=moveSurfacePole(initial.exact!,1,2,[1.23456789,-.987654321,.456789123])
+    const state=useReverse.getState();state.editFeature(initial.surface.id)
+    useReverse.getState().setFeatureDraft({controlSurface:edited})
+    useReverse.getState().commitFeature()
+    await session.settled()
+    await run('reverse.feature.update',{feature:initial.surface.id,set:{name:'Renamed'}})
+    const renamed=await run<Net>('reverse.surface.net',{surface:'Renamed'})
+    expect(renamed.exact).toEqual(edited)
+    expect((useReverse.getState().features[0] as SurfaceFeature).controlSurface).toEqual(edited)
+    await run('reverse.feature.update',{feature:initial.surface.id,set:{fit:{net:{u:5,v:5},degree:4}}})
+    expect((useReverse.getState().features[0] as SurfaceFeature).controlSurface).toBeUndefined()
+    const refitted=await run<Net>('reverse.surface.net',{surface:'Renamed'})
+    expect(refitted.exact).not.toEqual(edited)
+    expect(refitted.exact).toEqual(initial.exact)
+  })
+
+  it('moves one pole through MCP, refuses invalid indices and supports undo/redo', async()=>{
+    await run('reverse.feature.add',{feature:{kind:'surface',name:'Moveable',region:{box:{min:[5,5,-20],max:[95,75,20]}},fit:{net:{u:5,v:5},degree:4}}})
+    const initial=await run<Net>('reverse.surface.net',{surface:'Moveable'})
+    const expected=moveSurfacePole(initial.exact!,2,1,[2,-1,.5],50)
+    await run('reverse.surface.move_pole',{surface:'Moveable',u:2,v:1,by:[2,-1,.5],strength:50})
+    expect((await run<Net>('reverse.surface.net',{surface:'Moveable'})).exact).toEqual(expected)
+    expect((await refused('reverse.surface.move_pole',{surface:'Moveable',u:5,v:1,by:[1,0,0]})).message).toMatch(/outside/)
+    expect((await run<Net>('reverse.surface.net',{surface:'Moveable'})).exact).toEqual(expected)
+    await run('history.undo');await session.settled()
+    expect((await run<Net>('reverse.surface.net',{surface:'Moveable'})).exact).toEqual(initial.exact)
+    await run('history.redo');await session.settled()
+    expect((await run<Net>('reverse.surface.net',{surface:'Moveable'})).exact).toEqual(expected)
   })
 
   it('refuses what has no net', async () => {

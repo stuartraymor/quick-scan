@@ -3,6 +3,22 @@
 // Boundary curves use the outer pole rows/columns; no sampling or refitting.
 export interface SurfaceAxis { degree: number; count: number; knots: number[]; mults: number[] }
 export interface PolynomialSurface { u: SurfaceAxis; v: SurfaceAxis; poles: number[][]; weights?: never; periodicU?: false; periodicV?: false }
+/** Move one pole in world coordinates without modifying the source net.
+ * Screen-frame observations at strength 50/100 scale only that pole's
+ * displacement. The caller converts its gesture to a world displacement. */
+export function moveSurfacePole(surface: PolynomialSurface, row: number, column: number, delta: readonly number[], strength = 100): PolynomialSurface {
+  validate(surface);
+  if (!Number.isInteger(row) || row < 0 || row >= surface.u.count || !Number.isInteger(column) || column < 0 || column >= surface.v.count) throw Error('Control pole is outside the net');
+  if (delta.length !== 3 || !delta.every(Number.isFinite) || !Number.isFinite(strength) || strength < 0 || strength > 100) throw Error('Invalid control-pole displacement or strength');
+  const index = row * surface.v.count + column;
+  const result: PolynomialSurface = {
+    u: { ...surface.u, knots: [...surface.u.knots], mults: [...surface.u.mults] },
+    v: { ...surface.v, knots: [...surface.v.knots], mults: [...surface.v.mults] },
+    poles: surface.poles.map((pole, i) => pole.map((x, axis) => i === index ? x + delta[axis] * strength / 100 : x)),
+  };
+  validate(result);
+  return result;
+}
 export function surfaceAxis(full: ArrayLike<number>, degree: number, count: number): SurfaceAxis {
   const knots: number[] = [], mults: number[] = [];
   for (let i = 0; i < full.length; i++) {

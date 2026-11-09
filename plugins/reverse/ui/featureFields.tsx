@@ -176,7 +176,7 @@ export function PreviewLine({ preview, testPrefix }: { preview: PreviewInfo; tes
             : '. Held to nothing.'}
         </span>
       )}
-      {preview.status === 'ok' && preview.surface && !preview.surface.shape && `Fitted: σ ${len.fmt(preview.surface.rms, 3)}, the worst point ${len.fmt(preview.surface.max, 3)} off, a ${preview.surface.net.u} × ${preview.surface.net.v} net over ${preview.surface.points.toLocaleString('en-US')} points.`}
+      {preview.status === 'ok' && preview.surface && !preview.surface.shape && `${preview.surface.metric === 'closest-surface' ? 'Edited: closest-surface RMS' : 'Fitted: σ'} ${len.fmt(preview.surface.rms, 3)}, the worst point ${len.fmt(preview.surface.max, 3)} off, a ${preview.surface.net.u} × ${preview.surface.net.v} net over ${preview.surface.points.toLocaleString('en-US')} points.`}
       {preview.status === 'ok' && preview.sheetFaces !== undefined && `A sheet of ${preview.sheetFaces} face${preview.sheetFaces === 1 ? '' : 's'} — a cutter to split a body with, or a skin to thicken.`}
       {preview.status === 'ok' && preview.network && (preview.failure ? `⚠ ${preview.failure.message}` : preview.network.closed ? `A solid of ${vol}: the network closes.` : 'A sheet: the network is open — Trim, Thicken or Split take it as they take a fitted surface.')}
       {preview.status === 'ok' && !preview.surface && !preview.trim && !preview.network && preview.sheetFaces === undefined && (testPrefix === 'import' ? `The file holds ${vol} of solid${preview.closed ? '' : ', and faces without an inside — a surface body'}.` : `Preview: ${vol}${preview.closed ? '' : ` · ⚠ not a closed solid${preview.failure ? `. ${preview.failure.message}` : ''}`} — drag the grips in the viewport, or type below.`)}

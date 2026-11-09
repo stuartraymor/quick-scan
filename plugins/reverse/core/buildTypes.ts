@@ -251,6 +251,10 @@ export interface TrimReport {
 /** A Fit Surface's reading of itself: the residuals along the normal and
  *  the net that was used, Auto's choice included. */
 export interface SurfaceReport {
+  /** Absent: original fit metric. Edited nets use unsigned closest-face distance. */
+  metric?: 'closest-surface'
+  /** Exact editable net, including both degrees and knot vectors. */
+  controlSurface?: import('./surfaceStep').PolynomialSurface
   rms: number
   max: number
   net: { u: number; v: number }

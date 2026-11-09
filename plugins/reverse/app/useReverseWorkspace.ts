@@ -1176,16 +1176,24 @@ export function useReverseWorkspace({
   // and its Control Net tick is on — the preview's net, so it follows the
   // numbers as they are typed. The tick goes with the box.
   const netOn = useControlNet((s) => s.on)
+  const poleStrength = useControlNet((s) => s.strength)
+  const poleFrame = useControlNet((s) => s.frame)
   const netDraftShape = useReverse((s) => (s.featureDraft?.kind === 'surface' ? s.featureDraft.shape : null))
   const previewNet = useReverse((s) => (s.preview.status === 'ok' ? s.preview.surface?.controlNet : undefined))
+  const editNet = useReverse((s) => s.featureDraft?.kind === 'surface' ? s.featureDraft.controlSurface ?? (s.preview.status === 'ok' ? s.preview.surface?.controlSurface : undefined) : undefined)
   useEffect(() => {
     const scene = sceneRef.current
     if (!scene) return
     const wanted = onReverse && netOn && netDraftShape === 'freeform'
-    reSceneOf(scene).setControlNet(wanted && previewNet ? previewNet : null)
-  }, [onReverse, netOn, netDraftShape, previewNet, sceneRef])
+    const re = reSceneOf(scene)
+    re.setControlNet(wanted && previewNet ? previewNet : null)
+    re.setControlPoleEditing(wanted && editNet ? editNet : null, wanted ? surface => {
+      if (useReverse.getState().featureDraft?.kind === 'surface') useReverse.getState().setFeatureDraft({ controlSurface: surface })
+    } : null, poleStrength, poleFrame)
+    return () => re.setControlPoleEditing(null, null)
+  }, [onReverse, netOn, netDraftShape, previewNet, editNet, poleStrength, poleFrame, sceneRef])
   useEffect(() => {
-    if (netDraftShape === null && useControlNet.getState().on) useControlNet.getState().set(false)
+    if (netDraftShape === null && sceneRef.current) reSceneOf(sceneRef.current).clearControlPoleSelection()
   }, [netDraftShape])
 
   // A surface's region is shown on the scan as a marking while its box is

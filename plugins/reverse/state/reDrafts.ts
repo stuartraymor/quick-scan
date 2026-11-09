@@ -238,7 +238,7 @@ export function featureOfDraft(d: FeatureDraft, id: number, name: string): Featu
     case 'pattern':
       return { id, kind: 'pattern', name, body: d.body!, mode: d.mode, axis: d.axis!, count: d.count, step: d.step, ...(d.mode === 'linear' && d.axis2 && d.count2 >= 2 ? { axis2: d.axis2, count2: d.count2, step2: d.step2 } : {}), visible: true }
     case 'surface':
-      return { id, kind: 'surface', name, region: d.region, fit: { ...d.fit, net: d.fit.net ? { ...d.fit.net } : null }, shape: d.shape, constrain: { ...d.constrain }, ...(d.regionBox ? { regionBox: d.regionBox } : {}), ...(d.regionStale ? { regionStale: d.regionStale } : {}), visible: true }
+      return { id, kind: 'surface', name, region: d.region, fit: { ...d.fit, net: d.fit.net ? { ...d.fit.net } : null }, ...(d.controlSurface ? { controlSurface: structuredClone(d.controlSurface) } : {}), shape: d.shape, constrain: { ...d.constrain }, ...(d.regionBox ? { regionBox: d.regionBox } : {}), ...(d.regionStale ? { regionStale: d.regionStale } : {}), visible: true }
     case 'trim':
       return { id, kind: 'trim', name, tools: d.tools.map((t) => ({ ...t })), tolerance: d.tolerance, overlap: d.overlap, visible: true }
     case 'draft':

@@ -49,7 +49,16 @@ const netInScene = () =>
     const out = { segments: 0, points: 0 }
     window.__re.scene().partGroup.traverse((o) => {
       if (o.isLineSegments2 && o.material?.depthTest === false && o.material.color.getHex() === 0xdfe6ee) out.segments += o.geometry.attributes.instanceStart.count
-      if (o.isPoints && o.material?.color?.getHex() === 0x3b82f6) out.points += o.geometry.attributes.position.count
+      if (o.isPoints && o.material?.vertexColors && o.material.depthTest === false) {
+        // Unselected poles are blue through their vertex colors; the material
+        // stays white so selecting one pole can turn only that point yellow.
+        const colors = o.geometry.getAttribute('color')
+        const linear = value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+        const blue = [0x3b, 0x82, 0xf6].map(value => linear(value / 255))
+        if (colors) for (let i = 0; i < colors.count; i++) {
+          if (blue.every((value, axis) => Math.abs(colors.array[i * 3 + axis] - value) < 1e-6)) out.points++
+        }
+      }
     })
     return out
   })

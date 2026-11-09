@@ -40,6 +40,29 @@ const lines = (g: THREE.Group) => g.children.filter((o): o is LineSegments2 => o
 const dots = (g: THREE.Group) => g.children.filter((o): o is THREE.Points => o instanceof THREE.Points)
 
 describe('the control net drawn over the part', () => {
+  it('marks only the selected pole yellow and retains selection when geometry is refreshed', () => {
+    const { bp, group } = picks()
+    const net = netOf(3, 4)
+    bp.setControlNet(net)
+    bp.selectControlPole(5)
+    const check = () => {
+      const colors = dots(group)[0].geometry.getAttribute('color')
+      const blue = new THREE.Color('#3b82f6'), yellow = new THREE.Color('#ffff00')
+      for (let i = 0; i < 12; i++) {
+        const c = i === 5 ? yellow : blue
+        expect(colors.getX(i)).toBeCloseTo(c.r, 6)
+        expect(colors.getY(i)).toBeCloseTo(c.g, 6)
+        expect(colors.getZ(i)).toBeCloseTo(c.b, 6)
+      }
+    }
+    check()
+    net.points[15] += 3
+    bp.setControlNet(net)
+    check()
+    bp.selectControlPole(null)
+    expect(dots(group)[0].geometry.getAttribute('color').getZ(5)).toBeGreaterThan(0.5)
+    bp.dispose()
+  })
   it('joins the poles row by row and column by column and marks each pole', () => {
     const { bp, group } = picks()
     bp.setControlNet(netOf(3, 4))

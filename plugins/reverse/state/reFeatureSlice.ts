@@ -17,6 +17,7 @@ import { DEFAULT_FLOOD_DEG, type FeatureDraft } from './reTypes'
 /** A surface's box let go, with the expressions on its numbers: the region
  *  painted by hand is not the box's any more. */
 function unboxed(d: Extract<FeatureDraft, { kind: 'surface' }>): Extract<FeatureDraft, { kind: 'surface' }> {
+  d = { ...d, controlSurface: undefined }
   if (!d.regionBox && !d.regionStale) return d
   const { regionBox: _box, regionStale: _stale, exprs, ...rest } = d
   void _box
@@ -231,7 +232,7 @@ export const featureSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'featu
           draft = { kind: 'moveBody', ...head, bodies: [...f.bodies], pivot: [...f.pivot], translate: [...f.translate], rotate: [...f.rotate], ...(f.scale !== undefined ? { scale: f.scale } : {}), copy: f.copy }
           break
         case 'surface':
-          draft = { kind: 'surface', ...head, region: f.region, floodDeg: DEFAULT_FLOOD_DEG, paint: false, fit: { ...f.fit, net: f.fit.net ? { ...f.fit.net } : null }, shape: f.shape ?? 'freeform', constrain: f.constrain ? { ...f.constrain } : { mode: 'auto' }, ...(f.regionBox ? { regionBox: f.regionBox } : {}), ...(f.regionStale ? { regionStale: f.regionStale } : {}) }
+          draft = { kind: 'surface', ...head, region: f.region, floodDeg: DEFAULT_FLOOD_DEG, paint: false, fit: { ...f.fit, net: f.fit.net ? { ...f.fit.net } : null }, ...(f.controlSurface ? { controlSurface: structuredClone(f.controlSurface) } : {}), shape: f.shape ?? 'freeform', constrain: f.constrain ? { ...f.constrain } : { mode: 'auto' }, ...(f.regionBox ? { regionBox: f.regionBox } : {}), ...(f.regionStale ? { regionStale: f.regionStale } : {}) }
           break
         case 'trim':
           draft = { kind: 'trim', ...head, tools: f.tools.map((t) => ({ ...t })), tolerance: f.tolerance, toleranceTyped: true, overlap: f.overlap }
@@ -243,7 +244,12 @@ export const featureSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'featu
       return { ...CLOSE_OTHERS, featureDraft: draft, buildVersion: s.buildVersion + 1 }
     }),
   setFeatureDraft: (patch) =>
-    set((s) => (s.featureDraft ? { featureDraft: { ...s.featureDraft, ...(patch as object) } as FeatureDraft } : {})),
+    set((s) => {
+      const d = s.featureDraft
+      if (!d) return {}
+      const changedFit = d.kind === 'surface' && ('fit' in patch || 'region' in patch || ('shape' in patch && patch.shape !== d.shape))
+      return { featureDraft: { ...d, ...(changedFit ? { controlSurface: undefined } : {}), ...(patch as object) } as FeatureDraft }
+    }),
   cancelFeature: () => set((s) => ({ featureDraft: null, preview: { status: 'idle' }, gripField: null, bodyPick: null, hint: null, ...(s.featureDraft?.featureId !== undefined ? { buildVersion: s.buildVersion + 1 } : {}) })),
   commitFeature: () => {
     const s = get()
