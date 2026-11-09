@@ -376,7 +376,7 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
   // large keys first, then columns of small labelled keys; no File or Export.
   const freeformTab = <>
     <Group label="Create New Freeform">{tool('New Freeform', 'freeform', () => {}, true, 'Quad-based freeform surfacing is not implemented in Quick Scan yet')}{tool('Auto Freeform', 'scan', () => {}, true, 'Automatic freeform surfacing is not implemented in Quick Scan yet')}
-      <div className="ribbon-text-stack">{soonText('Wrap Surface', 'elCylinder')}{soonText('From 3D Sketch', 'sketch3')}{soonText('From quad OBJ ...', 'load')}</div></Group>
+      <div className="ribbon-text-stack">{soonText('Wrap Surface', 'elCylinder')}{soonText('From 3D Sketch', 'sketch3')}{cadText('freeformObj', 'From quad OBJ ...', 'load')}</div></Group>
     <Group label="Tools"><div className="ribbon-text-stack">{cadText('thicken', 'Thicken', 'shell', false, 'Freeform:Thicken')}{cadText('offsetBody', 'Offset', 'sheet', false, 'Freeform:Offset')}{soonText('Convert to CAD body', 'exportStep')}</div></Group>
   </>
   const surfacingTab = <>

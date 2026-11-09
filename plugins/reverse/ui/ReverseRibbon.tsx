@@ -13,6 +13,7 @@ import { useNotes } from '../state/noteStore'
 import { usePrefs } from '../../../src/state/prefsStore'
 import { throughPart } from './PlaceSketch'
 import { usePipeDialog } from './PipeDialog'
+import { chooseFreeformObj } from './FreeformImport'
 
 /** Shared workflow buttons still call plugin-owned verbs and prerequisites. */
 export function useReverseRibbonActions(onExport: () => void): NonNullable<PluginRuntime['ribbonActions']> {
@@ -125,6 +126,7 @@ export function useReverseRibbonActions(onExport: () => void): NonNullable<Plugi
         useStore.getState().setStatus('Create Sketch: pick the plane, drag the yellow arrow through the part, then Create.')
       }
     }),
+    freeformObj: action(chooseFreeformObj),
     surface: action(() => state.startFeature('surface', { fit: { ...DEFAULT_SURFACE_FIT, smoothingLevel: 1 } }), !!fileName, 'Import a scan first.'),
     network: action(() => state.startFeature('network'), !!fileName, 'Import a scan first.'),
     extrude: action(() => state.startExtrude(), sketches > 0, 'Create a sketch first.'),
