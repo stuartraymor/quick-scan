@@ -106,6 +106,8 @@ export function SettingsModal() {
   const setColormap = usePrefs((s) => s.setColormap)
   const sectionLines = usePrefs((s) => s.sectionLines)
   const reverseZoom = usePrefs((s) => s.reverseZoom)
+  const wheelSensitivity = usePrefs((s) => s.wheelSensitivity)
+  const navigationCube = usePrefs((s) => s.navigationCube)
   const saveWarn = usePrefs((s) => s.saveWarn)
   const primitivesTransparent = usePrefs((s) => s.primitivesTransparent)
   const onScreenHelp = usePrefs((s) => s.onScreenHelp)
@@ -353,6 +355,18 @@ export function SettingsModal() {
         <label className="checkrow settings-check">
           <input type="checkbox" data-test="reverse-zoom" checked={reverseZoom} onChange={(e) => usePrefs.getState().setReverseZoom(e.target.checked)} />
           <span>Reverse zoom direction on mouse wheel</span>
+        </label>
+        <div className="setting">
+          <label htmlFor="wheelsens">Mouse wheel sensitivity</label>
+          <div className="range">
+            <small>Min</small>
+            <input id="wheelsens" data-test="wheel-sensitivity" type="range" min={0.1} max={1} step={0.05} value={wheelSensitivity} onChange={(e) => usePrefs.getState().setWheelSensitivity(Number(e.target.value))} />
+            <small>Max</small>
+          </div>
+        </div>
+        <label className="checkrow settings-check">
+          <input type="checkbox" data-test="navigation-cube" checked={navigationCube} onChange={(e) => usePrefs.getState().setNavigationCube(e.target.checked)} />
+          <span>Use navigation cube for setting standard views</span>
         </label>
         <div className="settings-line">
           <label htmlFor="arrowrotate">When pressing CTRL + arrow key rotate by</label>

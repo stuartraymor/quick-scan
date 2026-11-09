@@ -58,6 +58,8 @@ const AGENT_TOKEN_KEY = 'scanruler.agenttoken'
 const SPACE_MOUSE_SPEED_KEY = 'scanruler.spacemouse.speed'
 const SPACE_MOUSE_REVERSE_KEY = 'scanruler.spacemouse.reverse'
 const REVERSE_ZOOM_KEY = 'scanruler.nav.reverseZoom'
+const WHEEL_SENS_KEY = 'scanruler.nav.wheelSensitivity'
+const NAV_CUBE_KEY = 'scanruler.nav.cube'
 const SAVE_WARN_KEY = 'scanruler.saveWarn'
 const CIRCULAR_DIM_KEY = 'scanruler.circularDimensioning'
 const ON_SCREEN_HELP_KEY = 'scanruler.onScreenHelp'
@@ -147,6 +149,12 @@ interface PrefsState {
   arrowRotateDeg: number
   arrowRollDeg: number
   setReverseZoom: (on: boolean) => void
+  /** Navigation: how far one wheel notch zooms, 0.1 (Min) to 1 (Max, the start). */
+  wheelSensitivity: number
+  setWheelSensitivity: (v: number) => void
+  /** Navigation: the orientation cube in the corner of the view (on to start). */
+  navigationCube: boolean
+  setNavigationCube: (on: boolean) => void
   setArrowRotateDeg: (deg: number) => void
   setArrowRollDeg: (deg: number) => void
   /** Fitted curves over a flatbed scan in 2D Measure, in pixels. */
@@ -236,6 +244,10 @@ export const usePrefs = create<PrefsState>()((set) => {
     colormap: colormapById(read(COLORMAP_KEY)).id,
     sectionLines: clampLineWidth(read(SECTION_LINES_KEY), SECTION_LINE_DEFAULT),
     reverseZoom: read(REVERSE_ZOOM_KEY) === '1',
+    wheelSensitivity: (() => { const n = Number(read(WHEEL_SENS_KEY)); return Number.isFinite(n) && n >= 0.1 && n <= 1 ? n : 1 })(),
+    setWheelSensitivity: (v) => { const n = Math.min(1, Math.max(0.1, Number.isFinite(v) ? v : 1)); write(WHEEL_SENS_KEY, String(n)); set({ wheelSensitivity: n }) },
+    navigationCube: read(NAV_CUBE_KEY) !== '0',
+    setNavigationCube: (on) => { write(NAV_CUBE_KEY, on ? '1' : '0'); set({ navigationCube: on }) },
     saveWarn: read(SAVE_WARN_KEY) !== '0',
     circularDimensioning: read(CIRCULAR_DIM_KEY) === 'radius' ? 'radius' : 'diameter',
     setCircularDimensioning: (form) => { write(CIRCULAR_DIM_KEY, form); set({ circularDimensioning: form }) },
@@ -247,8 +259,9 @@ export const usePrefs = create<PrefsState>()((set) => {
     setSaveWarn: (on) => { write(SAVE_WARN_KEY, on ? '1' : '0'); set({ saveWarn: on }) },
     setSaveWarnMinutes: (min) => { const v = Math.min(240, Math.max(1, Math.round(min) || SAVE_WARN_DEFAULT_MIN)); write(SAVE_WARN_MINUTES_KEY, String(v)); set({ saveWarnMinutes: v }) },
     navigationDefaults: () => {
+      write(WHEEL_SENS_KEY, '1'); write(NAV_CUBE_KEY, '1')
       write(REVERSE_ZOOM_KEY, '0'); write(ARROW_ROTATE_KEY, String(ARROW_STEP_DEFAULT)); write(ARROW_ROLL_KEY, String(ARROW_STEP_DEFAULT))
-      set({ reverseZoom: false, arrowRotateDeg: ARROW_STEP_DEFAULT, arrowRollDeg: ARROW_STEP_DEFAULT })
+      set({ reverseZoom: false, wheelSensitivity: 1, navigationCube: true, arrowRotateDeg: ARROW_STEP_DEFAULT, arrowRollDeg: ARROW_STEP_DEFAULT })
     },
     arrowRotateDeg: stepOf(read(ARROW_ROTATE_KEY)),
     arrowRollDeg: stepOf(read(ARROW_ROLL_KEY)),

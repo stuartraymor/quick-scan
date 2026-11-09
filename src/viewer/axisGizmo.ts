@@ -85,6 +85,12 @@ export class AxisGizmo {
   /** Where the gizmo was last drawn, in canvas pixels from the top-left, so a
    *  pointer can be tested against it. Empty until the first frame. */
   private drawn = { x: 0, y: 0, size: 0 }
+  /** Settings → Navigation → Use navigation cube for setting standard views: off, nothing is drawn or hit. */
+  private shown = true
+  setShown(on: boolean): void {
+    this.shown = on
+    if (!on) this.drawn = { x: 0, y: 0, size: 0 }
+  }
   private tmp = new THREE.Vector3()
 
   constructor() {
@@ -189,6 +195,7 @@ export class AxisGizmo {
     w: number,
     h: number,
   ): number {
+    if (!this.shown) return 0
     const size = gizmoSize(w, h)
     const pad = GIZMO_PAD
     this.camera.position

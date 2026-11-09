@@ -2014,6 +2014,8 @@ export default function App() {
                 s.setViewTheme(sceneTheme(useStore.getState().viewTheme, usePrefs.getState().dark))
                 s.setSectionLineWidth(usePrefs.getState().sectionLines)
                 s.setReverseZoom(usePrefs.getState().reverseZoom)
+                s.setWheelSensitivity(usePrefs.getState().wheelSensitivity)
+                s.setNavigationCube(usePrefs.getState().navigationCube)
               }}
               onPick={handlePick}
               onHover={handleHover}

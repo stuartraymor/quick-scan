@@ -1001,6 +1001,16 @@ export function useSceneSync({
     sceneRef.current?.setReverseZoom(reverseZoom)
   }, [reverseZoom])
 
+  // Settings → Navigation → Mouse wheel sensitivity, and the navigation cube.
+  const wheelSensitivity = usePrefs((s) => s.wheelSensitivity)
+  useEffect(() => {
+    sceneRef.current?.setWheelSensitivity(wheelSensitivity)
+  }, [wheelSensitivity])
+  const navigationCube = usePrefs((s) => s.navigationCube)
+  useEffect(() => {
+    sceneRef.current?.setNavigationCube(navigationCube)
+  }, [navigationCube])
+
   // Pins belong to the map they were taken off, and only that map: a thickness
   // in millimetres and a deviation in millimetres look identical on the part,
   // so showing both at once would be a way to misread one of them. Each pin

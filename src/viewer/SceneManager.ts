@@ -2567,6 +2567,17 @@ export class SceneManager {
     this.invalidate()
   }
 
+  /** Settings → Navigation → Mouse wheel sensitivity. */
+  setWheelSensitivity(v: number): void {
+    this.viewport.nav.wheelSensitivity = v
+  }
+
+  /** Settings → Navigation → Use navigation cube for setting standard views. */
+  setNavigationCube(on: boolean): void {
+    this.gizmo.setShown(on)
+    this.invalidate()
+  }
+
   /** Reverse zoom direction on the mouse wheel (Settings → Navigation). */
   setReverseZoom(on: boolean): void {
     this.viewport.nav.reverseWheel = on

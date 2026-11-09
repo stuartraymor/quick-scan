@@ -73,6 +73,8 @@ export class OrthoNavigator {
   private zoomAnchor: { x: number; y: number } | null = null
   /** Reverse zoom direction on the mouse wheel. */
   reverseWheel = false
+  /** Settings → Navigation → Mouse wheel sensitivity, 0.1 (Min) to 1 (Max, QUICKSURFACE's default): the zoom of one wheel notch is 1 + 0.1 × this. */
+  wheelSensitivity = 1
   /** CATIA tick-zoom: when the second button of the chord went down. */
   private chordDown: { t: number; x: number; y: number } | null = null
   private catiaZoomLatch = false
@@ -673,7 +675,8 @@ export class OrthoNavigator {
     // SolidWorks/Autodesk/NX muscle memory: their schemes zoom OUT on scroll up.
     // Settings → Navigation → Reverse zoom direction turns it round again.
     const zoomIn = (this.scheme.wheelZoomsOut !== this.reverseWheel) ? e.deltaY > 0 : e.deltaY < 0
-    this.zoomAt(zoomIn ? 1.1 : 1 / 1.1, e.clientX, e.clientY)
+    const step = 1 + 0.1 * Math.min(1, Math.max(0.1, this.wheelSensitivity))
+    this.zoomAt(zoomIn ? step : 1 / step, e.clientX, e.clientY)
   }
 
   /** Cursor-centric zoom: scale the frustum, then shift the camera so the world

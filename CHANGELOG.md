@@ -1,3 +1,8 @@
+## 0.0.174 — Local candidate; GitHub held
+
+- Settings → Navigation gains two options QUICKSURFACE 8.0.128's Software options has (read from its Options dialog, `analysis/quicksurface-ui-2026-11-09/native-options-dialog.md`) and Quick Scan lacked: **Mouse wheel sensitivity** (a slider from Min to Max, Max to begin with, which is the notch Quick Scan has always had: 10 % a click; Min is 1 % a click) and **Use navigation cube for setting standard views** (on to begin with; off hides the corner axis cube and its clicks). Both are remembered, apply to the open view at once, and go back with Navigation's Defaults. Held by `navOptions.test.ts`.
+- Not done from that dialog: Top view +Z / +Y, Pivot point modes, Rotate in view modes, 3D mouse responsiveness, the 17-colour list and presets, Compare colours, mesh and point-cloud thresholds, Curves point size, tessellation, backup interval, Instant 3D handles, Dual features tree, and the welcome / internet / multiple-instances / product options. Native's mouse presets (15, Shining 3D, SOLIDWORKS …) are not the same list as Quick Scan's own.
+
 ## 0.0.173 — Local candidate; GitHub held
 
 - Fix to 0.0.172's tooltips: an unavailable ribbon button was meant to show its reason on a second line after native's description ("Create or import at least two bodies first."), but the pattern that spots a reason had stray characters in it and never matched, so the reason was lost. It matches now; `qsParityRibbon.test.tsx` holds it (reason kept while unavailable, dropped when available, and for the not-built-yet notes).
