@@ -30,7 +30,7 @@ import { datumTraces } from './datums'
 import { projectEdge, projectSketchEntity, retake, retakeMoved } from './project'
 import { findRegions, lostPicks, matchRegions, type Region, regionsByPick, samePick } from './regions'
 import { solveSketch } from './solver'
-import { carriedHeight, fitSurfaceReported, GRID_AREA_SLACK, GRID_RETRIES, gridArea, gridOf, meshTriangles, reachingGridOf, reachOver, StraysRefusal, type SurfaceFitResult } from './surfaceFit'
+import { carriedHeight, controlNetOf, fitSurfaceReported, GRID_AREA_SLACK, GRID_RETRIES, gridArea, gridOf, meshTriangles, reachingGridOf, reachOver, StraysRefusal, type SurfaceFitResult } from './surfaceFit'
 import { fieldAt, type NearScan, offPastRegion, PAST_REGION_MM, pastRegion, regionOutline } from './surfaceRegion'
 import { constrainCylinder, constrainPlane, cylinderPatch, planePatch, type ConstrainRef } from './autoConstrain'
 import { surfaceOfMeshes } from './liveMap'
@@ -712,7 +712,7 @@ export class Builder {
     const { fit, worst, dropped, strays } = fitSurfaceReported(xyz, step.fit, step.facing)
     const face = this.faceThrough(fit)
     const past = this.pastRegionOf(fit)
-    return { face, report: { rms: fit.rms, max: fit.max, net: fit.net, points: region.length, worst, ...(step.fit.robust ? { dropped } : {}), ...(strays ? { strays } : {}), ...(past ? { pastRegion: past } : {}) }, fit }
+    return { face, report: { rms: fit.rms, max: fit.max, net: fit.net, points: region.length, controlNet: controlNetOf(fit), worst, ...(step.fit.robust ? { dropped } : {}), ...(strays ? { strays } : {}), ...(past ? { pastRegion: past } : {}) }, fit }
   }
 
   /** The scan's nearest point to a point within `reach`, or null — for

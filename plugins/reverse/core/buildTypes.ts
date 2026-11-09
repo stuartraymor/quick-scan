@@ -274,6 +274,10 @@ export interface SurfaceReport {
    *  off the scan under it past its region, the most, and where
    *  (surfaceRegion.ts pastRegion) — absent with no scan under it. */
   pastRegion?: { off: number; at: Vec3 }
+  /** A freeform fit's control net in space, rows along u and columns along
+   *  v, x y z each: what Fit Surface's Control Net shows and
+   *  reverse.surface.net reads (surfaceFit.ts controlNetOf). */
+  controlNet?: { rows: number; cols: number; degree: number; points: Float64Array }
 }
 
 /** How much of a split's cut face lies off the scan past a fitted tool's

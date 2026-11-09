@@ -1165,6 +1165,26 @@ export function gridOf(fit: SurfaceFitResult, perSpan = GRID_PER_SPAN): { points
   return { points, rows, cols }
 }
 
+/** A fit's control net as points in space — what QUICKSURFACE draws with
+ *  Fit Surface's Control Net ticked (`rows` poles along u, `cols` along v,
+ *  row-major, x y z each). The net's u and v are the Greville abscissae of
+ *  the fit's knots and its height the pole's height over the base plane, so
+ *  the pole lies where the surface's own frame puts it; the surface is the
+ *  B-spline of these poles (the kernel's face is the one through a grid
+ *  sampled from it, which follows it within a thousandth of a millimetre). */
+export function controlNetOf(fit: Pick<SurfaceFitResult, 'origin' | 'axisU' | 'axisV' | 'normal' | 'knotsU' | 'knotsV' | 'nu' | 'nv' | 'degree' | 'heights'>): { points: Float64Array; rows: number; cols: number; degree: number } {
+  const gu = greville(fit.knotsU, fit.nu, fit.degree)
+  const gv = greville(fit.knotsV, fit.nv, fit.degree)
+  const points = new Float64Array(fit.nu * fit.nv * 3)
+  for (let r = 0; r < fit.nu; r++) {
+    for (let c = 0; c < fit.nv; c++) {
+      const h = fit.heights[r * fit.nv + c]
+      for (let k = 0; k < 3; k++) points[(r * fit.nv + c) * 3 + k] = fit.origin[k] + gu[r] * fit.axisU[k] + gv[c] * fit.axisV[k] + h * fit.normal[k]
+    }
+  }
+  return { points, rows: fit.nu, cols: fit.nv, degree: fit.degree }
+}
+
 /** The area of a grid's facets, two triangles a cell: what the kernel's
  *  surface through the grid should have, near enough. */
 export function gridArea(grid: { points: Float64Array; rows: number; cols: number }): number {
