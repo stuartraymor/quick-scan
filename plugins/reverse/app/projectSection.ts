@@ -176,6 +176,17 @@ export function validateFeatureJson(e: Record<string, unknown>): void {
     if (!Number.isInteger(rows) || !Number.isInteger(cols) || rows < 4 || cols < 4 || rows > 257 || cols > 257) invalid('fill.rows')
     if (points.length !== rows * cols * 3 || !points.every((v) => typeof v === 'number' && Number.isFinite(v))) invalid('fill.points')
   }
+  // An Extend Surface: the sheet it runs on, the offset, the type, the edges and the samples.
+  if (e.kind === 'extend') {
+    fields(e, 'sheet', 'number', 'extend')
+    fields(e, 'offset', 'number', 'extend')
+    fields(e, 'samples', 'number', 'extend')
+    const { sheet, offset, samples, type } = e as { sheet: number; offset: number; samples: number; type: unknown }
+    if (!Number.isInteger(sheet) || !(offset > 0) || !Number.isFinite(offset) || !Number.isInteger(samples) || samples < 8 || samples > 129) invalid('extend')
+    if (type !== 'natural' && type !== 'soft' && type !== 'linear') invalid('extend.type')
+    const sides = array(e.sides, 'extend.sides')
+    if (sides.length === 0 || sides.length > 4 || !sides.every((x) => x === 'u0' || x === 'u1' || x === 'v0' || x === 'v1') || new Set(sides).size !== sides.length) invalid('extend.sides')
+  }
   // A freeform cage: points flat, faces and creases by vertex index, held to
   // the cage's own bounds so that nothing read can reach past it.
   if (e.kind === 'freeform') {

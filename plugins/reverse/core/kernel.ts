@@ -1478,6 +1478,46 @@ export class ReKernel {
     })
   }
 
+  /** A sheet of one face read as a `rows` × `cols` grid of its surface over
+   *  the face's parameter box, the box's own edges included (row-major, u
+   *  along a row). `whole` says the face is the whole box: every sample on
+   *  its boundary lies in or on the face's edges, so it is not a trimmed
+   *  piece of a wider surface. `closedU` / `closedV` say a side comes back
+   *  on its opposite — a cylinder's seam — which has no edge to run on from.
+   *  Null for a shape that is not exactly one face. */
+  faceGrid(shape: Shape, rows: number, cols: number): { points: Float64Array; rows: number; cols: number; whole: boolean; closedU: boolean; closedV: boolean } | null {
+    return run('Reading the face', () => {
+      if (!Number.isInteger(rows) || !Number.isInteger(cols) || rows < 2 || cols < 2) throw new KernelError('the grid needs at least two points a side.')
+      const faces = this.occt.getSubShapes(shape, 'face')
+      try {
+        if (faces.length !== 1) return null
+        const f = faces[0]
+        const b = this.occt.uvBounds(f)
+        const points = new Float64Array(rows * cols * 3)
+        let whole = true
+        for (let j = 0; j < rows; j++) {
+          const v = b.vMin + ((b.vMax - b.vMin) * j) / (rows - 1)
+          for (let i = 0; i < cols; i++) {
+            const u = b.uMin + ((b.uMax - b.uMin) * i) / (cols - 1)
+            const p = this.occt.pointOnSurface(f, u, v)
+            points.set([p.x, p.y, p.z], (j * cols + i) * 3)
+            if (whole && (j === 0 || j === rows - 1 || i === 0 || i === cols - 1) && this.occt.classifyPointOnFace(f, u, v) === 'out') whole = false
+          }
+        }
+        let scale = 1
+        for (const x of points) scale = Math.max(scale, Math.abs(x))
+        const same = (a: number, c: number) => Math.hypot(points[a] - points[c], points[a + 1] - points[c + 1], points[a + 2] - points[c + 2]) < 1e-7 * scale
+        let closedU = true
+        for (let j = 0; j < rows && closedU; j++) closedU = same((j * cols) * 3, (j * cols + cols - 1) * 3)
+        let closedV = true
+        for (let i = 0; i < cols && closedV; i++) closedV = same(i * 3, ((rows - 1) * cols + i) * 3)
+        return { points, rows, cols, whole, closedU, closedV }
+      } finally {
+        for (const f of faces) this.occt.release(f)
+      }
+    })
+  }
+
   // ---- reading the topology --------------------------------------------------------
 
   /** The hashes of a shape's faces, in the kernel's order. */

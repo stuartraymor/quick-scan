@@ -251,6 +251,7 @@ export const KIND_LABELS: Record<Feature['kind'] | 'coil', string> = {
   network: 'Patch network',
   freeform: 'Freeform',
   fill: 'Fill surface',
+  extend: 'Extend surface',
   trim: 'Trim',
 }
 

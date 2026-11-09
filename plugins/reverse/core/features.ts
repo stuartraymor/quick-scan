@@ -1099,6 +1099,27 @@ export interface FillFeature extends FeatureFlags {
 /** What a fill feature holds besides its name. */
 export type FillData = Pick<FillFeature, 'points' | 'rows' | 'cols'>
 
+/** An Extend Surface: a sheet body (a whole patch of one face) run on past its edges by an offset (core/extend.ts) — QUICKSURFACE's Extend Surface of an edge chain, Natural, Soft or Linear. A sheet body of its own; the sheet it was made from is put out of view, as native replaces it, and stays a body. */
+export interface ExtendFeature extends FeatureFlags {
+  id: number
+  kind: 'extend'
+  name: string
+  /** The sheet body run on, by the id of the feature that made it. */
+  sheet: number
+  /** Millimetres past each edge named in `sides`. */
+  offset: number
+  /** How the edge is run on: along its curve (natural), along its tangent (linear), its curve fading to straight (soft). */
+  type: 'natural' | 'soft' | 'linear'
+  /** The edges of the patch's parameter box run on. */
+  sides: ('u0' | 'u1' | 'v0' | 'v1')[]
+  /** Points a side of the grid the sheet is read at. */
+  samples: number
+  visible: boolean
+}
+
+/** What an extend feature holds besides its name. */
+export type ExtendData = Pick<ExtendFeature, 'sheet' | 'offset' | 'type' | 'sides' | 'samples'>
+
 /** A fitted surface's kind: the freeform B-spline, or a plane or a cylinder
  *  — exact faces, held square and parallel to what the part already has
  *  (core/re/autoConstrain), and cutting a trim as the whole plane or
@@ -1153,7 +1174,7 @@ export interface TrimFeature extends FeatureFlags {
 export type TrimPrimitive = { kind: 'plane'; origin: Vec3; normal: Vec3; basisU: Vec3; basisV: Vec3 } | Exclude<Primitive, { kind: 'slab' | 'prism' }>
 
 export type BodyFeature = ShellFeature | FilletFeature | ChamferFeature | HoleFeature | ThreadFeature | CutPlaneFeature | MirrorFeature | BooleanFeature | SplitFeature | PatternFeature | DraftFeature | MoveFaceFeature | DeleteFaceFeature | DuplicateFaceFeature | OffsetBodyFeature
-export type Feature = SketchFeature | ExtrudeFeature | RevolveFeature | ExtractFeature | SheetFeature | LoftFeature | SweepFeature | ThickenFeature | SurfaceFeature | NetworkFeature | FreeformFeature | FillFeature | TrimFeature | ImportFeature | MoveBodyFeature | BodyFeature
+export type Feature = SketchFeature | ExtrudeFeature | RevolveFeature | ExtractFeature | SheetFeature | LoftFeature | SweepFeature | ThickenFeature | SurfaceFeature | NetworkFeature | FreeformFeature | FillFeature | ExtendFeature | TrimFeature | ImportFeature | MoveBodyFeature | BodyFeature
 
 /** The solid an extracted element or shadow becomes, resolved to plain
  *  geometry. */
@@ -1257,6 +1278,8 @@ export function referencesOf(f: Feature): number[] {
       return []
     case 'fill':
       return []
+    case 'extend':
+      return [f.sheet]
     case 'freeform':
       // Made from a sketch: the network whose curves it is made anew from.
       return f.fromSketch ? [f.fromSketch.network] : []

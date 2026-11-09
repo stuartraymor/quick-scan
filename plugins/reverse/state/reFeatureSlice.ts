@@ -35,7 +35,7 @@ function varyingRadii(d: Extract<FeatureDraft, { kind: 'fillet' }>, varying: rea
 type StoreSet = StoreApi<ReState>['setState']
 type StoreGet = StoreApi<ReState>['getState']
 
-export const featureSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'featureDraft' | 'startFeature' | 'editFeature' | 'setFeatureDraft' | 'cancelFeature' | 'commitFeature' | 'addToRegion' | 'setRegion' | 'toggleDraftFace' | 'addDraftEdges' | 'addDraftFaces' | 'toggleDraftEdge' | 'clearDraftPicks' | 'setMoveBodies' | 'editNetwork' | 'addFreeform' | 'updateFreeform' | 'addFill'> => ({
+export const featureSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'featureDraft' | 'startFeature' | 'editFeature' | 'setFeatureDraft' | 'cancelFeature' | 'commitFeature' | 'addToRegion' | 'setRegion' | 'toggleDraftFace' | 'addDraftEdges' | 'addDraftFaces' | 'toggleDraftEdge' | 'clearDraftPicks' | 'setMoveBodies' | 'editNetwork' | 'addFreeform' | 'updateFreeform' | 'addFill' | 'addExtend'> => ({
 
   featureDraft: null,
   startFeature: (kind, init) =>
@@ -154,7 +154,7 @@ export const featureSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'featu
   editFeature: (id) =>
     set((s) => {
       const f = s.features.find((x) => x.id === id)
-      if (!f || f.kind === 'sketch' || f.kind === 'extrude' || f.kind === 'revolve' || f.kind === 'freeform' || f.kind === 'fill') return {}
+      if (!f || f.kind === 'sketch' || f.kind === 'extrude' || f.kind === 'revolve' || f.kind === 'freeform' || f.kind === 'fill' || f.kind === 'extend') return {}
       const head = { featureId: f.id, name: f.name, ...('exprs' in f && f.exprs ? { exprs: f.exprs } : {}) }
       // The picks come back as fingerprints alone: the hashes of the last
       // build name faces of the body as it stands after this feature,
@@ -442,6 +442,16 @@ export const featureSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'featu
     const named = nameFor(s, 'fill')
     const next: Feature = { id, kind: 'fill', name: name?.trim() || named.name, ...data, visible: true }
     set({ ...remember(s), features: [...s.features, next], nextFeatureId: id + 1, nextOfKind: named.nextOfKind, buildVersion: s.buildVersion + 1 })
+    return id
+  },
+  addExtend: (data, name) => {
+    const s = get()
+    const id = s.nextFeatureId
+    const named = nameFor(s, 'extend')
+    const next: Feature = { id, kind: 'extend', name: name?.trim() || named.name, ...data, visible: true }
+    set({ ...remember(s), features: [...s.features, next], nextFeatureId: id + 1, nextOfKind: named.nextOfKind, buildVersion: s.buildVersion + 1 })
+    // The sheet run on is put out of view as native replaces it (and as a thickened sheet is): drawn together the two overlap, and a sheet in view goes into a STEP export. The body list's eye brings it back.
+    get().setBodiesVisible([data.sheet], false)
     return id
   },
   updateFreeform: (id, data) => {

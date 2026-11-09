@@ -78,6 +78,7 @@ export const FEATURE_ICONS: Record<Feature['kind'], KeyIconName> = {
   network: 'surface',
   freeform: 'surface',
   fill: 'surface',
+  extend: 'surface',
   trim: 'trim',
 }
 
@@ -165,6 +166,8 @@ export function bodyFeatureReading(f: Exclude<Feature, { kind: 'sketch' | 'extru
       return moveReading(f, names, units)
     case 'fill':
       return { text: `Fill · ${f.rows} × ${f.cols}`, title: `A Fill Surface: a surface through a ${f.rows} × ${f.cols} grid of points, the blend of its four boundary curves. A sheet body of its own, not taken onto the scan` }
+    case 'extend':
+      return { text: `Extend · ${len(f.offset)} ${f.type}`, title: `${names(f.sheet)} run on ${len(f.offset)} past ${f.sides.length === 4 ? 'all its edges' : `its edges ${f.sides.join(', ')}`}, ${f.type === 'linear' ? 'along each end’s tangent' : f.type === 'soft' ? 'each end’s curve fading to straight' : 'along each end’s curve'}. A sheet body of its own; the sheet it was made from stays as it was` }
     case 'freeform': {
       const faces = f.faces.length
       return { text: `${faces} face${faces === 1 ? '' : 's'} cage${f.ask ? ` · ${f.ask.kind === 'offset' ? `offset ${f.ask.distance}` : `thicken ${f.ask.thickness}`}` : ''}`, title: `A freeform cage of ${faces} face${faces === 1 ? '' : 's'} and ${f.positions.length / 3} points, refined ${f.steps}× and made B-spline faces${f.snap ? ', taken onto the scan first' : ''}. A solid where the cage closes, else a sheet` }

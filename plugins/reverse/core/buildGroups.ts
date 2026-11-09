@@ -98,6 +98,11 @@ function touches(step: BuildStep, sketchOf: (id: number) => Sketch | undefined):
     case 'fill':
       makes = true
       break
+    case 'extend':
+      // The sheet is read and stands as it was; the extension is a body of its own.
+      reads.push(step.sheet)
+      makes = true
+      break
     case 'freeform':
       makes = true
       scan = step.snap

@@ -454,6 +454,12 @@ export function resolveFeatures(
       else steps.push({ kind: 'fill', id: f.id, name: f.name, points: f.points, rows: f.rows, cols: f.cols })
       continue
     }
+    if (f.kind === 'extend') {
+      if (!(f.offset > 0) || !Number.isFinite(f.offset)) failed(f, 'The extension needs an offset greater than nothing.')
+      else if (f.sides.length === 0) failed(f, 'The extension needs at least one edge to run on.')
+      else steps.push({ kind: 'extend', id: f.id, name: f.name, sheet: f.sheet, offset: f.offset, type: f.type, sides: f.sides, samples: f.samples })
+      continue
+    }
     if (f.kind === 'split') {
       if (f.tools.length === 0) failed(f, 'Pick a sheet or a body to split with.')
       else if (f.tools.includes(f.body)) failed(f, 'A body cannot split itself.')

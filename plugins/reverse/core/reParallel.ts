@@ -47,7 +47,7 @@ const SHARE_COLD_MS = 3000
  *  — a boolean, a round, a coil — and the rest. */
 const HEAVY_MS = 1000
 const LIGHT_MS = 20
-const HEAVY = new Set<BuildStep['kind']>(['boolean', 'pattern', 'thread', 'fillet', 'chamfer', 'shell', 'split', 'trim', 'loft', 'sweep', 'import', 'draft', 'offsetBody', 'thicken', 'mirror', 'moveFace', 'deleteFace', 'duplicateFace', 'surface', 'fill'])
+const HEAVY = new Set<BuildStep['kind']>(['boolean', 'pattern', 'thread', 'fillet', 'chamfer', 'shell', 'split', 'trim', 'loft', 'sweep', 'import', 'draft', 'offsetBody', 'thicken', 'mirror', 'moveFace', 'deleteFace', 'duplicateFace', 'surface', 'fill', 'extend'])
 
 function estimate(step: BuildStep, known: number | undefined): number {
   if (known !== undefined) return known

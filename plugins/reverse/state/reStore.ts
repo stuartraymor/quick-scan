@@ -16,7 +16,7 @@ import type { EdgeInfo, FaceInfo, FeatureResult } from '../core/build'
 import type { TangentEdges } from '../core/edgeLines'
 import { type FitOptions } from '../core/fitOptions'
 import { type SnapContext } from '../core/snap'
-import { dependentsOf, movedList, stepFileKey, type AxisRef, type Feature, type FillData, type FreeformData, type ResolveContext, type PlaneRef, type StepFileRef } from '../core/features'
+import { dependentsOf, movedList, stepFileKey, type AxisRef, type ExtendData, type Feature, type FillData, type FreeformData, type ResolveContext, type PlaneRef, type StepFileRef } from '../core/features'
 import { moveInto, nextFolderId, nextFolderName, NO_PICK, withoutFolder, type BodyFolder, type FolderMove, type ListPick } from '../core/bodyFolders'
 import { itemKey, type PickedItem } from '../core/selectionInfo'
 import { type FeatureGripSide } from '../core/preview'
@@ -520,6 +520,8 @@ export interface ReState {
   addFreeform: (data: FreeformData, name?: string) => number
   /** A Fill Surface added to the list (one undo step); its id. */
   addFill: (data: FillData, name?: string) => number
+  /** An Extend Surface of a sheet body (core/extend.ts), a body of its own; the sheet is put out of view. The id of the feature. */
+  addExtend: (data: ExtendData, name?: string) => number
   /** A freeform feature's cage or options replaced (one undo step); false where there is no such feature. */
   updateFreeform: (id: number, data: Partial<FreeformData> & { name?: string }) => boolean
 

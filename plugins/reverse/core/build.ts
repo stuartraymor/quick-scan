@@ -58,6 +58,7 @@ import { HAIR_MM, JOINING, stepsOfJoin, type StepBetween } from './stepsBetween'
 import { cutElsewhereWords, cutsElsewhere } from './cutElsewhere'
 import { ScanPaths } from '../../../src/core/geometry/scanPath'
 import { type NetworkBodies, type NetworkReading, readNetwork } from './network'
+import { EXTEND_MAX_FRACTION, EXTEND_NOT_A_PATCH, type ExtendSide, extendGrid } from './extend'
 import { type FreeformMade, freeformBody } from './freeform/make'
 import { regionSnap } from './freeform/wrap'
 import { emptyReport, networkBody, networkGhost, type NetworkReport } from './networkBody'
@@ -630,6 +631,50 @@ export class Builder {
       k.release(face)
       // units-ok: build message, also the agent's answer
       throw new Error(`The kernel's surface through the fill's grid does not follow it: ${off > 100 ? `${Math.round(off)} times` : `${Math.round((off - 1) * 100)} % more than`} the grid's area.`)
+    }
+    return face
+  }
+
+  /** An Extend Surface's face: the sheet read as a grid over its parameter box, its edges run on (core/extend.ts), the kernel's surface through the longer grid — checked against the grid's area as a fill is. */
+  private extendOf(step: Extract<BuildStep, { kind: 'extend' }>): Shape {
+    const k = this.kernel
+    const sheet = this.bodyBefore(step.id, step.sheet)
+    if (!sheet) throw new Error('The sheet this extends is gone, or failed to build.')
+    if (!sheet.surface) throw new Error(`${sheet.name} is a solid, not a sheet — an extension runs on the edges of a sheet.`)
+    const read = k.faceGrid(sheet.shape, step.samples, step.samples)
+    if (!read || !read.whole) throw new Error(EXTEND_NOT_A_PATCH)
+    const was = k.surfaceArea(sheet.shape) / gridArea(read)
+    if (!(Math.abs(was - 1) < 0.05)) throw new Error(EXTEND_NOT_A_PATCH)
+    if ((step.sides.includes('u0') || step.sides.includes('u1')) && read.closedU) throw new Error(`${sheet.name} comes back on itself along u (a seam): it has no edge there to run on.`)
+    if ((step.sides.includes('v0') || step.sides.includes('v1')) && read.closedV) throw new Error(`${sheet.name} comes back on itself along v (a seam): it has no edge there to run on.`)
+    const offsets: Partial<Record<ExtendSide, number>> = {}
+    for (const side of step.sides) offsets[side] = step.offset
+    // A run-on much longer than the sheet is no longer the sheet's own continuation.
+    const span = (alongU: boolean): number => {
+      const r = alongU ? Math.floor(read.rows / 2) : 0
+      const c = alongU ? 0 : Math.floor(read.cols / 2)
+      let sum = 0
+      for (let n = 1; n < (alongU ? read.cols : read.rows); n++) {
+        const a = alongU ? (r * read.cols + n - 1) * 3 : ((n - 1) * read.cols + c) * 3
+        const b = alongU ? (r * read.cols + n) * 3 : (n * read.cols + c) * 3
+        sum += Math.hypot(read.points[b] - read.points[a], read.points[b + 1] - read.points[a + 1], read.points[b + 2] - read.points[a + 2])
+      }
+      return sum
+    }
+    for (const [side, along] of [['u0', true], ['u1', true], ['v0', false], ['v1', false]] as const) {
+      if (offsets[side] !== undefined && offsets[side]! > EXTEND_MAX_FRACTION * span(along)) {
+        // units-ok: build message, also the agent's answer
+        throw new Error(`The offset ${Math.round(step.offset * 100) / 100} mm is more than half the ${Math.round(span(along) * 10) / 10} mm the sheet measures there: run on that far, the edge's own curve is no longer the sheet's.`)
+      }
+    }
+    const grown = extendGrid(read, offsets, step.type)
+    if (grown.rows > 257 || grown.cols > 257) throw new Error('The extension would make a grid of more than 257 points a side: take fewer samples.')
+    const face = k.surfaceThrough(grown.points, grown.rows, grown.cols)
+    const off = k.surfaceArea(face) / gridArea(grown)
+    if (!(off <= GRID_AREA_SLACK)) {
+      k.release(face)
+      // units-ok: build message, also the agent's answer
+      throw new Error(`The kernel's surface through the extended grid does not follow it: ${off > 100 ? `${Math.round(off)} times` : `${Math.round((off - 1) * 100)} % more than`} the grid's area.`)
     }
     return face
   }
@@ -2044,6 +2089,7 @@ export class Builder {
     if (step.kind === 'network') return this.networkPreview(step)
     if (step.kind === 'freeform') throw new Error('A freeform cage is built, not previewed: its faces are made when the list is built.')
     if (step.kind === 'fill') throw new Error('A Fill Surface is built, not previewed: its face is made when the list is built.')
+    if (step.kind === 'extend') throw new Error('An Extend Surface is built, not previewed: its face is made when the list is built.')
     const began = performance.now()
     const solid =
       step.kind === 'extrude' || step.kind === 'revolve'
@@ -3759,6 +3805,12 @@ export class Builder {
       }
       if (step.kind === 'fill') {
         const face = this.fillOf(step)
+        this.bodies.set(step.id, { name: step.name, shape: face, origins: new Map(k.faceHashes(face).map((h) => [h, step.id])), surface: true })
+        results.push({ id: step.id, status: 'ok' })
+        return
+      }
+      if (step.kind === 'extend') {
+        const face = this.extendOf(step)
         this.bodies.set(step.id, { name: step.name, shape: face, origins: new Map(k.faceHashes(face).map((h) => [h, step.id])), surface: true })
         results.push({ id: step.id, status: 'ok' })
         return

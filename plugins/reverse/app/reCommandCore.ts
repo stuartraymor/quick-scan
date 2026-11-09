@@ -331,7 +331,7 @@ const notBuiltYet = (f: Feature): boolean => !f.suppressed && re().results[f.id]
 
 /** The kinds that make a body of their own, under their own id, whatever
  *  else stands. */
-const OWN_BODY = ['sheet', 'surface', 'network', 'freeform', 'fill', 'trim', 'import']
+const OWN_BODY = ['sheet', 'surface', 'network', 'freeform', 'fill', 'extend', 'trim', 'import']
 
 /**
  * The body a feature added in a held batch will make, for a later step of
