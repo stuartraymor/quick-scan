@@ -8,7 +8,6 @@ import { useStore } from '../../../src/state/store'
 import { useDeviation } from '../../../src/state/deviationStore'
 import { reEditorOpen, useReverse } from '../state/reStore'
 import type { PluginRuntime } from '../../../src/plugins/api'
-import { bodyMaker } from '../core/features'
 import { useNotes } from '../state/noteStore'
 import { usePrefs } from '../../../src/state/prefsStore'
 import { throughPart } from './PlaceSketch'
@@ -158,7 +157,7 @@ export function useReverseRibbonActions(onExport: () => void): NonNullable<Plugi
     scaleBody: action(() => { state.startFeature('moveBody', { bodies: state.bodies.filter((b) => b.visible).map((b) => b.id) }); useReverse.setState((s) => (s.featureDraft?.kind === 'moveBody' ? { featureDraft: { ...s.featureDraft, scale: 1 } } : {})); useStore.getState().setStatus('Scale body: type the factor in Scale — 2 doubles every size, 0.5 halves it — then Create.') }, state.bodies.length > 0, 'Create or import a body first.'),
     split: action(() => state.startFeature('split'), state.bodies.length > 0, 'Create or import a body first.'),
     offsetBody: action(() => state.startFeature('offsetBody'), state.bodies.length > 0, 'Create or import a body first.'),
-    export: action(onExport, state.bodies.some((b) => b.visible && (b.closed || (b.surface && state.features.some((f) => f.kind === 'network' && f.id === bodyMaker(b.id))))), 'Create a closed solid or a patch network first.'),
+    export: action(onExport, state.bodies.some((b) => b.visible && (b.closed || b.surface)), 'Create a visible solid or surface first.'),
   }
 }
 

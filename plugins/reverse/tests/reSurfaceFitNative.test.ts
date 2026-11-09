@@ -46,7 +46,7 @@ describe('Degree and Max degree', () => {
   const xyz = patch((x, y) => 0.02 * x * x + 0.01 * y, 60, 40, 1)
 
   it('takes a degree up to what the kernel carries', () => {
-    expect(MAX_DEGREE).toBe(8)
+    expect(MAX_DEGREE).toBe(9)
     expect(fitSurface(xyz, { ...net(10, 10), degree: 7 }, 0.01).degree).toBe(7)
     expect(fitSurface(xyz, { ...net(10, 10), degree: 40 }, 0.01).degree).toBe(MAX_DEGREE)
   })
@@ -54,7 +54,7 @@ describe('Degree and Max degree', () => {
   it('Max degree is one less than the net’s smaller side', () => {
     expect(fitSurface(xyz, { ...net(5, 5), maxDegree: true }, 0.01).degree).toBe(4)
     expect(fitSurface(xyz, { ...net(4, 9), maxDegree: true }, 0.01).degree).toBe(3)
-    expect(fitSurface(xyz, { ...net(10, 10), maxDegree: true }, 0.01).degree).toBe(8)
+    expect(fitSurface(xyz, { ...net(10, 10), maxDegree: true }, 0.01).degree).toBe(9)
   })
 
   it('Max degree sets the degree aside', () => {
@@ -144,7 +144,7 @@ describe('the kernel builds what the new controls fit', () => {
   }
   const xyz = patch((x, y) => 2 * Math.sin(x / 15) + 0.02 * y, 60, 40, 1)
 
-  it('Max degree at 10 × 10, degree 8, makes a face that stands where the points do', async () => {
+  it('Max degree at 10 × 10, degree 9, makes a face that stands where the points do', async () => {
     const { result, body } = await built(xyz, { net: { u: 10, v: 10 }, maxDegree: true })
     expect(result.status).toBe('ok')
     expect(body.box!.min[2]).toBeGreaterThan(-4)
@@ -163,12 +163,12 @@ describe('the kernel builds what the new controls fit', () => {
 describe('the command schema', () => {
   const surface = (fit: object) => ({ kind: 'surface', region: { box: { min: [0, 0, 0], max: [1, 1, 1] } }, fit })
   it('takes the new fit parameters', () => {
-    expect(validate(featureOf('surface'), surface({ method: 'simple', maxDegree: true, tolerance: 0.1, orientation: 'oyz', degree: 8 }), 'feature')).toEqual([])
+    expect(validate(featureOf('surface'), surface({ method: 'simple', maxDegree: true, tolerance: 0.1, orientation: 'oyz', degree: 9 }), 'feature')).toEqual([])
   })
   it('refuses a method, an orientation or a degree it does not have', () => {
     expect(validate(featureOf('surface'), surface({ method: 'fancy' }), 'feature')).not.toEqual([])
     expect(validate(featureOf('surface'), surface({ orientation: 'oxx' }), 'feature')).not.toEqual([])
-    expect(validate(featureOf('surface'), surface({ degree: 9 }), 'feature')).not.toEqual([])
+    expect(validate(featureOf('surface'), surface({ degree: 10 }), 'feature')).not.toEqual([])
     expect(validate(featureOf('surface'), surface({ tolerance: 0 }), 'feature')).not.toEqual([])
   })
 })

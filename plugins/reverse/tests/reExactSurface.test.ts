@@ -11,8 +11,9 @@ it('exports the fitted degree and net and preserves its surface after the tempor
   const points: number[] = []
   for (let x = -30; x <= 30; x += 3) for (let y = -20; y <= 20; y += 2.5) points.push(x,y,0.006*x*x+0.009*y*y+0.003*x*y)
   try {
-    for (const degree of [3,4]) {
-      const fit = fitSurface(Float32Array.from(points), {...DEFAULT_SURFACE_FIT, net: {u:6,v:5}, degree, expandPct:40, orientation:'oxy'})
+    for (const degree of [3,4,9]) {
+      const askedNet = degree === 9 ? {u:10,v:10} : {u:6,v:5}
+      const fit = fitSurface(Float32Array.from(points), {...DEFAULT_SURFACE_FIT, net: askedNet, degree, expandPct:40, orientation:'oxy'})
       const net = controlNetOf(fit)
       const surface = {u:surfaceAxis(fit.knotsU,fit.degree,fit.nu),v:surfaceAxis(fit.knotsV,fit.degree,fit.nv),poles:Array.from({length:fit.nu*fit.nv},(_,i)=>Array.from(net.points.slice(i*3,i*3+3)))}
       const face = k.surfaceFromControlNet(surface)
@@ -22,7 +23,7 @@ it('exports the fitted degree and net and preserves its surface after the tempor
         const entity = text.match(/B_SPLINE_SURFACE_WITH_KNOTS\s*\(\s*'[^']*'\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*\(([\s\S]*?)\)\s*,\s*\.UNSPECIFIED\./)
         expect(entity).not.toBeNull()
         expect(Number(entity![1])).toBe(degree); expect(Number(entity![2])).toBe(degree)
-        expect(entity![3].match(/#\d+/g)?.length).toBe(30)
+        expect(entity![3].match(/#\d+/g)?.length).toBe(askedNet.u * askedNet.v)
         const imported=raw.importStep(text),faces=raw.getSubShapes(imported,'face')
         try {
           expect(faces).toHaveLength(1);expect(raw.isValid(imported)).toBe(true)

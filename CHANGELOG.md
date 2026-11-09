@@ -1,3 +1,7 @@
+## 0.0.181
+
+CAD ribbon Export now accepts visible fitted sheets, matching panel and MCP export. Fit Surface supports degree 9, verified against a native 10x10 degree-9 IGES export and exact-kernel roundtrip tests. Interactive pole editing and smoothing equivalence remain unfinished.
+
 ## 0.0.180
 
 Includes exact fitted-surface construction and sheet STEP export from the uninstalled 0.0.179 candidate. Enables the export button for fitted sheets and refreshes the MCP command manifest. Native smoothing and interactive pole editing remain unfinished.

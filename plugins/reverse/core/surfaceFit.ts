@@ -175,9 +175,9 @@ export function autoNet(extentU: number, extentV: number, scatter: number): { u:
   return { u: per(extentU), v: per(extentV) }
 }
 
-/** The highest degree a fit carries: what the kernel's surface through the
- *  fitted grid goes up to (GRID_RETRIES). */
-export const MAX_DEGREE = 8
+/** Native 10x10 maximum-degree IGES exports are degree 9 in both axes.
+ *  Exact pole construction supports that degree without grid refitting. */
+export const MAX_DEGREE = 9
 
 /** The height direction QUICKSURFACE's Surface orientation names: undefined
  *  is the region's own principal normal (`Selection bounds`); `axis` the

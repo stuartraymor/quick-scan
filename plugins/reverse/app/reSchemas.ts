@@ -936,7 +936,7 @@ export const FEATURE_IN: Record<string, JsonSchema> = {
           net: nullable(obj({ u: int('', { minimum: NET_MIN }), v: int('', { minimum: NET_MIN }) }, ['u', 'v']), `The control net, ${NET_MAX} × ${NET_MAX} at most; null (the default) chooses it from the region’s size and noise.`),
           degree: int(`3 by default, ${MAX_DEGREE} at most.`, { minimum: 1, maximum: MAX_DEGREE }),
           method: enumOf(['simple', 'refined'], 'QUICKSURFACE’s Method: refined (the default) pulls the cells with no points near them back toward the region’s plane; simple is the plain least squares.'),
-          maxDegree: bool('QUICKSURFACE’s Max degree: the degree is one less than the smaller side of the net, up to 8; degree is then not used.'),
+          maxDegree: bool(`QUICKSURFACE’s Max degree: the degree is one less than the smaller side of the net, up to ${MAX_DEGREE}; degree is then not used.`),
           tolerance: num('With no net: Auto… — the smallest net whose worst point is within this many mm of the surface.', { exclusiveMinimum: 0 }),
           orientation: enumOf(['bounds', 'axis', 'oxy', 'oyz', 'oxz'], 'QUICKSURFACE’s Surface orientation: bounds (the default) is the region’s own principal normal; axis the world axis nearest it; oxy, oyz, oxz the normal of that coordinate plane. normal, where given, wins.'),
           expandPct: num('How far past the region the surface reaches, % of its extent; 35 by default.', { minimum: 0 }),
