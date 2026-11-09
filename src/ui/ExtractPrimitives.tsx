@@ -42,14 +42,17 @@ export function WandDegreesField() {
 }
 export const SELECTION_TOOLS: Tool[] = [
   { id: null, icon: 'navigate', title: 'Navigate — no selection tool; the mouse turns the view' },
-  { id: 'wand', icon: 'wand', title: 'Magic Wand — click a well-defined area; it spreads over neighbouring triangles within the degrees below' },
-  { id: 'brush', icon: 'brush', title: 'Free hand (filled) — brush; Alt-drag or right-drag removes' },
-  { id: 'lasso', icon: 'lasso', title: 'Free hand — draw an outline; everything inside is selected' },
-  { id: 'line', icon: 'line', title: 'Select by drawing a line — drag across the surface; a narrow band along the line is taken. Alt-drag removes' },
-  { id: 'window', icon: 'window', title: 'Select by drawing a rectangle — visible triangles only unless Select through is on' },
-  { id: 'circle', icon: 'circle', title: 'Select by drawing a circle — drag from the centre out; visible triangles only unless Select through is on' },
-  { id: 'through', icon: 'through', title: 'Select through — the tools also take triangles facing away' },
+  { id: 'wand', icon: 'wand', title: 'Magic wand (Curvature based selection)' },
+  { id: 'brush', icon: 'brush', title: 'Free Hand (Filled) Selection' },
+  { id: 'lasso', icon: 'lasso', title: 'Free Hand Selection' },
+  { id: 'line', icon: 'line', title: 'Select by drawing a line' },
+  { id: 'window', icon: 'window', title: 'Select by drawing a rectangle' },
+  { id: 'circle', icon: 'circle', title: 'Select by drawing a circle' },
+  { id: 'through', icon: 'through', title: 'Select through' },
 ]
+
+/** What QUICKSURFACE 8.0.128 shows over each type button (read live, 2026-11-09); "Line" is its reference line. */
+const fitTip = (t: { kind: ElementKind; label: string }): string => `Fit ${t.kind === 'line' ? 'reference line' : t.label.toLowerCase()} through the selected triangles`
 
 const TYPES: { kind: ElementKind; icon: IconName; label: string }[] = [
   { kind: 'plane', icon: 'plane', label: 'Plane' },
@@ -210,9 +213,9 @@ export function ExtractPrimitives({ onType, preview, onCreate, onClearPreview, o
         <button data-test="extract-enlarge" disabled={none} title="Enlarge currently selected area" onClick={() => m.resize(1)}><Icon name="enlarge" size={20} /></button>
         <button data-test="extract-shrink" disabled={none} title="Shrink currently selected area" onClick={() => m.resize(-1)}><Icon name="shrink" size={20} /></button>
         <button data-test="extract-isolate" disabled={none} title="Isolate (leave selected and hide others)" onClick={onIsolate}><Icon name="isolate" size={20} /></button>
-        <button data-test="extract-hide" disabled={none} title="Hide selected" onClick={onHide}><Icon name="hide" size={20} /></button>
-        <button data-test="extract-show-all" disabled={hidden === 0} title="Show all hidden triangles" onClick={onShowAll}><Icon name="show" size={20} /></button>
-        <button data-test="extract-deselect" disabled={none} title="Deselect all selected triangles" onClick={onClear}><Icon name="deselect" size={20} /></button>
+        <button data-test="extract-hide" disabled={none} title="Hide selected triangles" onClick={onHide}><Icon name="hide" size={20} /></button>
+        <button data-test="extract-show-all" disabled={hidden === 0} title="Shows all hidden triangles if any" onClick={onShowAll}><Icon name="show" size={20} /></button>
+        <button data-test="extract-deselect" disabled={none} title="Deselect all selected triangles (Ctrl + Q)" onClick={onClear}><Icon name="deselect" size={20} /></button>
         {/* QUICKSURFACE ends this row with Select all; inverting an empty selection selects everything. */}
         <button data-test="extract-select-all" title="Select all triangles" onClick={() => { onClear(); m.invert() }}><Icon name="all" size={20} /></button>
       </div>
@@ -221,7 +224,7 @@ export function ExtractPrimitives({ onType, preview, onCreate, onClearPreview, o
       <p className="qs-step">2. Select the type of the primitive</p>
       <div className="qs-typerow" role="toolbar" aria-label="Primitive type">
         {TYPES.map((t) => (
-          <button key={t.kind} data-test={`extract-type-${t.kind}`} className={preview?.kind === t.kind ? 'on' : undefined} aria-pressed={preview?.kind === t.kind} disabled={none || fitting} title={none ? `Select an area first, then click ${t.label}` : `Fit a ${t.label.toLowerCase()} to the selection and preview it`} onClick={() => onType(t.kind)}>
+          <button key={t.kind} data-test={`extract-type-${t.kind}`} className={preview?.kind === t.kind ? 'on' : undefined} aria-pressed={preview?.kind === t.kind} disabled={none || fitting} title={none ? `${fitTip(t)}\nSelect an area first.` : fitTip(t)} onClick={() => onType(t.kind)}>
             <Icon name={t.icon} size={26} />
           </button>
         ))}

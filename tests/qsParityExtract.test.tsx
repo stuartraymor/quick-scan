@@ -87,6 +87,40 @@ describe('Extract primitives — QUICKSURFACE parity', () => {
     expect(html).toMatch(/data-test="extract-analysis-apply"[^>]*disabled/)
   })
 
+  it('shows the tooltips QUICKSURFACE 8.0.128 shows over its tools, options and types (read live, 2026-11-09)', () => {
+    useMark.setState({ count: 0 })
+    const html = render()
+    const titleOf = (id: string) => html.match(new RegExp(`data-test="${id}"[^>]*?title="([^"]*)"|title="([^"]*)"[^>]*?data-test="${id}"`))?.slice(1).find(Boolean)?.replace(/&#x27;/g, "'")
+    const want: Record<string, string> = {
+      'extract-tool-wand': 'Magic wand (Curvature based selection)',
+      'extract-tool-brush': 'Free Hand (Filled) Selection',
+      'extract-tool-lasso': 'Free Hand Selection',
+      'extract-tool-line': 'Select by drawing a line',
+      'extract-tool-window': 'Select by drawing a rectangle',
+      'extract-tool-circle': 'Select by drawing a circle',
+      'extract-tool-through': 'Select through',
+      'extract-enlarge': 'Enlarge currently selected area',
+      'extract-shrink': 'Shrink currently selected area',
+      'extract-isolate': 'Isolate (leave selected and hide others)',
+      'extract-hide': 'Hide selected triangles',
+      'extract-show-all': 'Shows all hidden triangles if any',
+      'extract-deselect': 'Deselect all selected triangles (Ctrl + Q)',
+      'extract-select-all': 'Select all triangles',
+    }
+    for (const [id, text] of Object.entries(want)) expect(titleOf(id), id).toBe(text)
+    // With no area selected a type button is unavailable: native's text first, then why.
+    const NL = String.fromCharCode(10)
+    expect(titleOf('extract-type-plane')).toBe('Fit plane through the selected triangles' + NL + 'Select an area first.')
+    expect(titleOf('extract-type-line')).toBe('Fit reference line through the selected triangles' + NL + 'Select an area first.')
+    useMark.setState({ count: 120 })
+    const ready = render()
+    for (const [k, t] of [['plane', 'plane'], ['cylinder', 'cylinder'], ['line', 'reference line'], ['cone', 'cone'], ['sphere', 'sphere']]) {
+      expect(ready).toContain(`title="Fit ${t} through the selected triangles"`)
+      expect(ready).toMatch(new RegExp(`data-test="extract-type-${k}"`))
+    }
+    useMark.setState({ count: 0 })
+  })
+
   it('reveals constraint and analysis controls only while a fitted preview exists', () => {
     const controls = ['extract-constraint', 'extract-auto-constrain', 'extract-tilt', 'extract-coincidence', 'extract-analysis', 'extract-analysis-tolerance']
     for (const id of controls) expect(tests(render())).not.toContain(id)
