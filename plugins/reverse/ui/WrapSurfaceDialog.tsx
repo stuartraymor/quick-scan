@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useEffect, useRef, useState } from 'react'
 import { create } from 'zustand'
+import { useFreeformNavigation } from './useFreeformNavigation'
 import { runCommand } from '../../../src/commands/registry'
 import { commandHost } from '../../../src/commands/host'
 import { useStore } from '../../../src/state/store'
@@ -30,6 +31,7 @@ export function openWrapSurface(): void {
 export function WrapSurfaceDialog() {
   const selection = useWrapSurfaceDialog(s => s.selection)
   const [density, setDensity] = useState<WrapDensity>('low')
+  const backdrop = useFreeformNavigation()
   const [working, setWorking] = useState(false)
   const [error, setError] = useState('')
   const [previewReady, setPreviewReady] = useState(false)
@@ -80,7 +82,7 @@ export function WrapSurfaceDialog() {
     } catch (e) { setError(e instanceof Error ? e.message : String(e)) }
     finally { setWorking(false) }
   }
-  return <div className="modalback" style={{ background: 'transparent', alignItems: 'flex-start', justifyContent: 'flex-start', paddingTop: 176, paddingLeft: 'min(244px, max(12px, calc(100vw - 350px)))' }} data-test="wrap-surface-dialog" onKeyDown={e => {
+  return <div ref={backdrop} className="modalback" style={{ background: 'transparent', alignItems: 'flex-start', justifyContent: 'flex-start', paddingTop: 176, paddingLeft: 'min(244px, max(12px, calc(100vw - 350px)))' }} data-test="wrap-surface-dialog" onKeyDown={e => {
     e.stopPropagation()
     if (e.key === 'Escape') { e.preventDefault(); close() }
   }}>

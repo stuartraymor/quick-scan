@@ -31,6 +31,20 @@ try {
   await page.waitForFunction(() => document.querySelector('[data-test=auto-freeform-ok]').disabled)
   await page.$eval('[aria-label="Quads"]', e => { const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; setter.call(e, '100'); e.dispatchEvent(new Event('input', { bubbles: true })) })
   await page.select('[aria-label="Symmetry"]', 'oyz')
+  const camera = () => page.evaluate(() => {
+    const c = window.__scanruler.scene().viewport.camera
+    return { quaternion: c.quaternion.toArray(), zoom: c.zoom }
+  })
+  const cameraBefore = await camera()
+  await page.mouse.move(1000, 500)
+  await page.mouse.down({ button: 'middle' })
+  await page.mouse.move(1100, 550, { steps: 12 })
+  await page.mouse.up({ button: 'middle' })
+  assert.notDeepEqual((await camera()).quaternion, cameraBefore.quaternion)
+  await page.mouse.wheel({ deltaY: 200 })
+  await page.waitForFunction(z => window.__scanruler.scene().viewport.camera.zoom !== z, {}, cameraBefore.zoom)
+  assert.ok(await page.$(dialog))
+  assert.equal(await features(), 0)
   const undoBefore = await page.evaluate(() => document.querySelector('[data-test=undo]')?.getAttribute('title'))
   assert.equal(typeof undoBefore, 'string')
   await page.click('[data-test=auto-freeform-preview]')

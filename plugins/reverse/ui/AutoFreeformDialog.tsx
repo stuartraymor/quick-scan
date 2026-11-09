@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useEffect, useRef, useState } from 'react'
 import { create } from 'zustand'
+import { useFreeformNavigation } from './useFreeformNavigation'
 import { runCommand } from '../../../src/commands/registry'
 import { useStore } from '../../../src/state/store'
 import { commandHost } from '../../../src/commands/host'
@@ -19,6 +20,7 @@ export function AutoFreeformDialog({ onClose }: { onClose: () => void }) {
   const [density, setDensity] = useState<keyof typeof AUTO_TARGETS | 'custom'>('medium')
   const [custom, setCustom] = useState('2000')
   const [symmetry, setSymmetry] = useState<AutoSymmetry>('none')
+  const backdrop = useFreeformNavigation()
   const [working, setWorking] = useState(false)
   const [error, setError] = useState('')
   const [previewQuads, setPreviewQuads] = useState<number | null>(null)
@@ -83,7 +85,7 @@ export function AutoFreeformDialog({ onClose }: { onClose: () => void }) {
       setError(e instanceof Error ? e.message : String(e))
     } finally { setWorking(false) }
   }
-  return <div className="modalback" style={{ background: 'transparent', alignItems: 'flex-start', justifyContent: 'flex-start', paddingTop: 176, paddingLeft: 'min(244px, max(12px, calc(100vw - 350px)))' }} data-test="auto-freeform-dialog" onKeyDown={e => {
+  return <div ref={backdrop} className="modalback" style={{ background: 'transparent', alignItems: 'flex-start', justifyContent: 'flex-start', paddingTop: 176, paddingLeft: 'min(244px, max(12px, calc(100vw - 350px)))' }} data-test="auto-freeform-dialog" onKeyDown={e => {
     e.stopPropagation()
     if (e.key === 'Escape') { e.preventDefault(); close() }
   }}>
