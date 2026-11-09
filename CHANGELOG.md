@@ -1,3 +1,11 @@
+## 0.0.185
+
+Auto Freeform, Wrap Surface and From 3D Sketch now preview temporary geometry before committing through their existing shared commands. Cancel discards previews without adding document history; parameter changes invalidate previews. Auto shows the actual quad count and supports Clear Result. Freeform dialogs sit to the left without dimming the model, following live native observations. Dark styling, MCP and AI features are retained. Native display modes, viewport interaction during dialogs, feature-aligned Auto and exact geometry equivalence remain incomplete.
+
+## 0.0.184
+
+Added Freeform quad OBJ import and Auto Basic, Wrap Surface and From 3D Sketch dialogs, with selection prerequisites and shared command history.
+
 ## 0.0.183
 
 Fit Surface adds six discrete smoothing levels with explicit Apply/Cancel behavior; new UI fits start at the observed native level 1. Legacy numeric smoothing remains available for existing projects. Levels survive project reopen and shared MCP edits with undo/redo. The new smoothing model uses constant parameter-domain fairness following native density comparisons. Dark styling and AI/MCP features remain intact. Native fitting is approximate: measured boundary differences and a small coarse-mesh maximum regression remain documented in release notes.
