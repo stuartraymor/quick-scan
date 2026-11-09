@@ -15,10 +15,15 @@ import { throughPart } from './PlaceSketch'
 import { usePipeDialog } from './PipeDialog'
 import { chooseFreeformObj } from './FreeformImport'
 import { useAutoFreeformDialog } from './AutoFreeformDialog'
+import { openWrapSurface } from './WrapSurfaceDialog'
+import { reverseSession } from '../app/reSession'
+import { useMark } from '../../../src/state/markStore'
+import { SURFACE_MIN_REGION } from '../core/features'
 
 /** Shared workflow buttons still call plugin-owned verbs and prerequisites. */
 export function useReverseRibbonActions(onExport: () => void): NonNullable<PluginRuntime['ribbonActions']> {
   const state = useReverse()
+  useMark(s => s.count)
   const busy = useStore((s) => s.busy)
   const fileName = useStore((s) => s.fileName)
   const picking = useDeviation((s) => s.picking)
@@ -128,6 +133,7 @@ export function useReverseRibbonActions(onExport: () => void): NonNullable<Plugi
       }
     }),
     freeformObj: action(chooseFreeformObj),
+    wrapSurface: action(openWrapSurface, !!fileName && (reverseSession()?.sceneRef.current?.paintedVertices().length ?? 0) >= SURFACE_MIN_REGION, 'Select a region of the scan first.'),
     autoFreeform: action(() => useAutoFreeformDialog.getState().setOpen(true), !!fileName, 'Import a scan first.'),
     surface: action(() => state.startFeature('surface', { fit: { ...DEFAULT_SURFACE_FIT, smoothingLevel: 1 } }), !!fileName, 'Import a scan first.'),
     network: action(() => state.startFeature('network'), !!fileName, 'Import a scan first.'),

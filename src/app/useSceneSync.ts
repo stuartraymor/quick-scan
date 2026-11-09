@@ -1053,6 +1053,9 @@ export function useSceneSync({
     // the choice sticks: whoever marked the last element with a lasso means to
     // mark the next one with it too.
     useMark.getState().reset()
+    // A plugin can retain the visible selection with gestures stood down.
+    // Keep the shared count truthful after resetting the tool in hand.
+    useMark.getState().setCount(sceneRef.current?.paintedVertices().length ?? 0)
     if (workspace === 'elements') return
     if (useStore.getState().draft) cancelDraft()
     if (useStore.getState().alignDraft) useStore.getState().cancelAlignment()

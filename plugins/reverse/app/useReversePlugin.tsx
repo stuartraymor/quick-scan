@@ -15,7 +15,7 @@ import { dimensionKind } from '../core/parameters'
 import { isDimension } from '../core/sketch'
 import { gripSlotPath } from '../state/reStore'
 import { useShell } from '../../../src/state/shellStore'
-import { useMark } from '../../../src/state/markStore'
+import { EXTRACT_MARK_COLOR, useMark } from '../../../src/state/markStore'
 import { useDeviation } from '../../../src/state/deviationStore'
 import { builtAlignment } from '../../../src/core/deviation/align'
 import { curvatureScale } from '../../../src/core/geometry/curvature'
@@ -23,6 +23,7 @@ import type { Vec2 } from '../../../src/core/flat/types'
 import { MapLegend } from '../../../src/ui/MapLegend'
 import { PipeDialog, usePipeDialog } from '../ui/PipeDialog'
 import { AutoFreeformDialog, useAutoFreeformDialog } from '../ui/AutoFreeformDialog'
+import { WrapSurfaceDialog, useWrapSurfaceDialog } from '../ui/WrapSurfaceDialog'
 import { Icon, type IconName } from '../../../src/ui/icons'
 import { anyChanged, PartChoice, PartKey, PartOption, type ViewSwitch } from '../../../src/ui/PartKey'
 import { KeyIcon } from '../ui/reIcons'
@@ -473,6 +474,7 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
   const mapReport = useReverse((s) => s.mapReport)
   const pipeOpen = usePipeDialog((s) => s.open)
   const autoFreeformOpen = useAutoFreeformDialog((s) => s.open)
+  const wrapSelection = useWrapSurfaceDialog(s => s.selection)
   const len = useLength()
   const curvature = useReverse((s) => (s.curvatureShown ? s.curvature : null))
   // A sketch takes the stage: the 2D sheet stands where the 3D viewport was.
@@ -488,7 +490,7 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
   // Two selections, each a plain value: a store's selector that built an
   // object would be a new one every time it is asked.
   const markColor = useReverse((s) =>
-    s.featureDraft?.kind === 'surface' ? bodyColor(s.featureDraft.featureId ?? s.nextFeatureId) : null,
+    s.featureDraft?.kind === 'surface' ? bodyColor(s.featureDraft.featureId ?? s.nextFeatureId) : EXTRACT_MARK_COLOR,
   )
   const markGestures = useReverse((s) => s.featureDraft?.kind === 'surface' && Boolean(s.featureDraft.paint))
   // The measured elements and sections, as the datums the model is built
@@ -829,6 +831,7 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
     ),
     overlay: (
       <>
+        {wrapSelection && <WrapSurfaceDialog />}
         {autoFreeformOpen && <AutoFreeformDialog onClose={() => useAutoFreeformDialog.getState().setOpen(false)} />}
         {pipeOpen && <PipeDialog onClose={() => usePipeDialog.getState().setOpen(false)} />}
         {mapReport && (
