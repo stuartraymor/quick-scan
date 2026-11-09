@@ -178,7 +178,7 @@ export function bodyFeatureReading(f: Exclude<Feature, { kind: 'sketch' | 'extru
       return { text: `${cells} patch${cells === 1 ? '' : 'es'} · ${curves} curve${curves === 1 ? '' : 's'}`, title: `A patch network: ${curves} curve${curves === 1 ? '' : 's'} drawn on the scan, ${f.curves.filter((c) => c.crease).length} of them creases, and ${cells} region${cells === 1 ? '' : 's'} they close filled with B-spline patches fitted to the scan together — sharing the curves between them and meeting tangent across every one not marked a crease. A sheet, or a solid where the network closes` }
     }
     case 'surface':
-      return { text: `Surface · ${f.region.length.toLocaleString('en-US')} points`, title: `A freeform surface fitted through ${f.region.length.toLocaleString('en-US')} points of the scan — a ${f.fit.net ? `${f.fit.net.u} × ${f.fit.net.v}` : 'self-sized'} net of degree ${f.fit.degree}, reaching ${f.fit.expandPct} % past the region. A surface body: trimmed with the others into a solid, not exported on its own` }
+      return { text: `Surface · ${f.region.length.toLocaleString('en-US')} points`, title: `A freeform surface fitted through ${f.region.length.toLocaleString('en-US')} points of the scan — a ${f.fit.net ? `${f.fit.net.u} × ${f.fit.net.v}` : 'self-sized'} net of ${f.fit.maxDegree ? 'the highest degree it carries' : `degree ${f.fit.degree}`}, reaching ${f.fit.expandPct} % past the region. A surface body: trimmed with the others into a solid, not exported on its own` }
   }
 }
 

@@ -924,7 +924,24 @@ export interface SurfaceFitParams {
   /** The height direction the surface is fitted along, any length — the
    *  way the region faces. Absent: the region's own principal normal. */
   normal?: Vec3
+  /** QUICKSURFACE's Method. `refined` (absent) pulls the cells with no points
+   *  near them back toward the region's plane; `simple` is the plain least
+   *  squares through the points, with no pull. */
+  method?: 'simple' | 'refined'
+  /** QUICKSURFACE's Max degree: the degree is one less than the smaller side
+   *  of the net, up to what the kernel carries, and `degree` is not used. */
+  maxDegree?: boolean
+  /** QUICKSURFACE's Auto…: with no net given, the smallest net whose worst
+   *  point is within this many millimetres of the surface. */
+  tolerance?: number
+  /** QUICKSURFACE's Surface orientation: the height direction as the box
+   *  names it. `bounds` (absent) is the region's own principal normal;
+   *  `axis` the world axis nearest it; `oxy`, `oyz` and `oxz` the normal of
+   *  that coordinate plane. `normal` above, where given, wins. */
+  orientation?: SurfaceOrientation
 }
+
+export type SurfaceOrientation = 'bounds' | 'axis' | 'oxy' | 'oyz' | 'oxz'
 
 /** The box a surface's region was read in off the scan, with what else
  *  the query asked — kept so the box's numbers can follow parameters. */

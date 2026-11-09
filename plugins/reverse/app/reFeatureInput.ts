@@ -20,7 +20,7 @@ import { cloneSketch, emptySketch, type SketchEntity } from '../core/sketch'
 import { INSERT_SIZES, insertHole, insertSize } from '../core/inserts'
 import { applySlots, type ExprMap, exprsFromCommand, slotAt, slotsOf, unlinkSlot } from '../core/parameters'
 import { shadowSketch } from '../core/shadowPieces'
-import { DEFAULT_SURFACE_FIT, NET_MAX } from '../core/surfaceFit'
+import { DEFAULT_SURFACE_FIT, MAX_DEGREE, NET_MAX } from '../core/surfaceFit'
 import { sizeOf, threadFaceReading, threadProblem, threadSizes, type ThreadStandard } from '../core/thread'
 import { bodiesOfFeature } from '../state/reFeatureHelpers'
 import { settle } from '../state/reSketchDraft'
@@ -348,7 +348,12 @@ function boxFields(s: ReverseSession, kind: FeatureDraftKind, input: Json, box: 
         if (net && (net.u > NET_MAX || net.v > NET_MAX)) invalid(`fit.net: ${net.u} × ${net.v} — a surface's net is ${NET_MAX} × ${NET_MAX} at most; leave net out for one chosen from the region's size and noise.`)
         const normal = (input.fit as Json).normal as number[] | undefined
         if (normal && !(Math.hypot(...normal) > 0)) invalid('fit.normal: give the way the region faces, not a zero vector.')
-        out.fit = { ...DEFAULT_SURFACE_FIT, ...(input.fit as Json) }
+        const fitIn = input.fit as Json
+        if (fitIn.method !== undefined && fitIn.method !== 'simple' && fitIn.method !== 'refined') invalid(`fit.method: "${String(fitIn.method)}" — simple or refined.`)
+        if (fitIn.orientation !== undefined && !['bounds', 'axis', 'oxy', 'oyz', 'oxz'].includes(String(fitIn.orientation))) invalid(`fit.orientation: "${String(fitIn.orientation)}" — bounds, axis, oxy, oyz or oxz.`)
+        if (fitIn.tolerance !== undefined && !(typeof fitIn.tolerance === 'number' && fitIn.tolerance > 0)) invalid('fit.tolerance: a number of millimetres above zero.')
+        if (fitIn.degree !== undefined && !(typeof fitIn.degree === 'number' && fitIn.degree >= 1 && fitIn.degree <= MAX_DEGREE)) invalid(`fit.degree: 1 to ${MAX_DEGREE}.`)
+        out.fit = { ...DEFAULT_SURFACE_FIT, ...fitIn }
       }
       for (const k of ['shape', 'constrain']) if (has(k)) out[k] = input[k]
       break

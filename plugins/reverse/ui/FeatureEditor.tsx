@@ -22,12 +22,12 @@ import { symmetryPlaneRef } from '../core/symmetryPlane'
 import { chamferRadius, faceAgainstThread, maxThreadOffset, minorDiameter, sizeForFace, sizeOf, THREAD_STANDARDS, threadDepth, threadDesignation, threadName, threadProblem, threadSizes, threadsPerInch, type ThreadStandard } from '../core/thread'
 import { describeEdgeIn, describeFaceIn } from '../core/topo'
 import { DEFAULT_SPLIT_TOLERANCE_MM } from '../state/reDrafts'
-import { useControlNet } from '../state/controlNetStore'
 import { DEFAULT_WALL_MM, type FeatureDraft, type FeatureDraftKind, featureDraftReady, filletModeSwitch, historyEditOf, snapDraftOf, snapPlanOf, trimToleranceFor, useReverse } from '../state/reStore'
 import { AnalysisRow, ClearPicks, Num, OpFields, PreviewLine, StepFileKey, XyzField } from './featureFields'
 import { fileSize } from './featureReading'
 import { lenBare, lenShort } from './reLength'
 import { PlaneSelect } from './PlaneSelect'
+import { SurfaceFitFields } from './SurfaceFitFields'
 import { SweepFields } from './SweepFields'
 import { NetworkFields } from './NetworkEditor'
 import type { ReactElement } from 'react'
@@ -42,7 +42,6 @@ export function FeatureEditor() {
   const features = useReverse((s) => s.features)
   const preview = useReverse((s) => s.preview)
   const results = useReverse((s) => s.results)
-  const controlNetOn = useControlNet((s) => s.on)
   const elements = useStore((s) => s.elements)
   const sections = useStore((s) => s.sections)
   const len = useLength()
@@ -1115,25 +1114,10 @@ export function FeatureEditor() {
             <span>Mark with the tools</span>
           </label>
           {d.paint && <MarkTools escapeNote="Esc puts the tools away" showCount={false} onClear={() => re.getState().setRegion(new Uint32Array(0))} />}
-          {d.shape === 'freeform' && (
-          <label className="checkrow">
-            <input type="checkbox" data-test="surface-auto-net" checked={d.fit.net === null} onChange={(e) => set({ fit: { ...d.fit, net: e.target.checked ? null : { u: preview.status === 'ok' && preview.surface ? preview.surface.net.u : 5, v: preview.status === 'ok' && preview.surface ? preview.surface.net.v : 5 } } })} />
-            <span>Net sized from the region</span>
-          </label>
-          )}
-          {d.shape === 'freeform' && d.fit.net && (
-            <>
-              <Num label="Net U" unit="" testId="surface-net-u" value={d.fit.net.u} onCommit={(v) => set({ fit: { ...d.fit, net: { u: Math.round(Math.abs(v)), v: d.fit.net!.v } } })} hint="Control points across the region's long side, 3 to 20" />
-              <Num label="Net V" unit="" testId="surface-net-v" value={d.fit.net.v} onCommit={(v) => set({ fit: { ...d.fit, net: { u: d.fit.net!.u, v: Math.round(Math.abs(v)) } } })} hint="Control points across the short side, 3 to 20" />
-            </>
-          )}
-          <Num label="Expand by" unit="%" testId="surface-expand" value={d.fit.expandPct} onCommit={(v) => set({ fit: { ...d.fit, expandPct: Math.min(200, Math.max(0, Math.abs(v))) } })} hint="How far past the region the surface reaches, as a share of its extent — it has to meet its neighbours for the trim" />
-          {d.shape === 'freeform' && <Num label="Smoothness" unit="" testId="surface-smooth" value={d.fit.smoothness} onCommit={(v) => set({ fit: { ...d.fit, smoothness: Math.max(0, Math.abs(v)) } })} hint="How hard the surface is held fair against the points: 0 follows them exactly, 0.01 fairs a scan's noise, more flattens detail" />}
-          {d.shape === 'freeform' && (
-            <label className="checkrow" title="Draw the surface's control net over the part: its poles joined row by row and column by column. The surface is the B-spline of these poles.">
-              <input type="checkbox" data-test="surface-control-net" checked={controlNetOn} onChange={(e) => useControlNet.getState().set(e.target.checked)} />
-              <span>Control Net</span>
-            </label>
+          {d.shape === 'freeform' ? (
+            <SurfaceFitFields d={d} set={set} />
+          ) : (
+            <Num label="Expand by" unit="%" testId="surface-expand" value={d.fit.expandPct} onCommit={(v) => set({ fit: { ...d.fit, expandPct: Math.min(200, Math.max(0, Math.abs(v))) } })} hint="How far past the region the surface reaches, as a share of its extent — it has to meet its neighbours for the trim" />
           )}
         </>
       )

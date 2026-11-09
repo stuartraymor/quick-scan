@@ -29,7 +29,7 @@
 import { principalFrame } from '../../../src/core/deviation/prealign'
 import { choleskySolve, solveLinear, symmetricEigen3 } from '../../../src/core/fit/linalg'
 import type { Vec3 } from '../../../src/core/types'
-import type { SurfaceFitParams } from './features'
+import type { SurfaceFitParams, SurfaceOrientation } from './features'
 
 /** The smallest and largest net per side; Auto chooses within them. */
 export const NET_MIN = 3
@@ -178,6 +178,28 @@ export function autoNet(extentU: number, extentV: number, scatter: number): { u:
   return { u: per(extentU), v: per(extentV) }
 }
 
+/** The highest degree a fit carries: what the kernel's surface through the
+ *  fitted grid goes up to (GRID_RETRIES). */
+export const MAX_DEGREE = 8
+
+/** The height direction QUICKSURFACE's Surface orientation names: undefined
+ *  is the region's own principal normal (`Selection bounds`); `axis` the
+ *  world axis nearest it, on its side. */
+export function orientationNormal(orientation: SurfaceOrientation | undefined, principal: Vec3): Vec3 | undefined {
+  switch (orientation) {
+    case 'oxy': return [0, 0, 1]
+    case 'oyz': return [1, 0, 0]
+    case 'oxz': return [0, 1, 0]
+    case 'axis': {
+      const k = [0, 1, 2].reduce((best, i) => (Math.abs(principal[i]) > Math.abs(principal[best]) ? i : best), 0)
+      const out: Vec3 = [0, 0, 0]
+      out[k] = principal[k] < 0 ? -1 : 1
+      return out
+    }
+    default: return undefined
+  }
+}
+
 /** The plane a surface is fitted over: the region's principal frame, or —
  *  given a height direction — that direction as its normal, the in-plane
  *  axes the principal ones laid square to it. */
@@ -202,13 +224,15 @@ export function heightFrame(axes: readonly Vec3[], normal?: Vec3): [Vec3, Vec3, 
  *  own noise in millimetres, for Auto's net; the plane residual's spread is
  *  used when it is null. `pull` is the pull toward the plane the cells
  *  with no points near start from (PULL; 0 fits without it). */
-export function fitSurface(xyz: Float32Array | Float64Array, params: SurfaceFitParams, scatter: number | null = null, pull = PULL): SurfaceFitResult {
+export function fitSurface(xyz: Float32Array | Float64Array, params: SurfaceFitParams, scatter: number | null = null, pullIn = PULL): SurfaceFitResult {
   const n = Math.floor(xyz.length / 3)
   if (n < 4) throw new Error('Too few points to fit a surface through.')
   const frame = principalFrame(xyz)
-  const [au, av, an] = heightFrame(frame.axes, params.normal)
+  const [au, av, an] = heightFrame(frame.axes, params.normal ?? orientationNormal(params.orientation, frame.axes[2]))
   const c = frame.centroid
-  const p = Math.max(1, Math.min(5, Math.round(params.degree)))
+  // Simple is the plain fit: no pull toward the plane in the empty cells.
+  const pull = params.method === 'simple' ? 0 : pullIn
+  const degreeAsked = Math.max(1, Math.min(MAX_DEGREE, Math.round(Number.isFinite(params.degree) ? params.degree : 3)))
 
   // Every point over the plane.
   const u = new Float64Array(n)
@@ -238,8 +262,22 @@ export function fitSurface(xyz: Float32Array | Float64Array, params: SurfaceFitP
   // a pilot fit on a coarse net reads the noise off its own residual:
   // what a coarse smooth surface cannot follow is noise, or detail Auto
   // then gives the net enough spans to follow.
+  // Auto… with a target tolerance: the smallest net, in the region's own
+  // proportions, whose worst point is within it — else the largest.
+  if (!params.net && params.tolerance !== undefined && params.tolerance > 0) {
+    const long = Math.max(extentU, extentV)
+    let last: SurfaceFitResult | null = null
+    for (let k = Math.max(NET_MIN, params.maxDegree ? NET_MIN : degreeAsked + 1); k <= NET_MAX; k++) {
+      const side = (extent: number) => Math.max(NET_MIN, Math.min(NET_MAX, Math.round((k * extent) / long)))
+      last = fitSurface(xyz, { ...params, net: { u: side(extentU), v: side(extentV) }, tolerance: undefined }, scatter, pullIn)
+      if (last.max <= params.tolerance) return last
+    }
+    if (last) return last
+  }
   const noise = scatter ?? (params.net ? Math.sqrt(frame.spread[2]) : fitSurface(xyz, { ...params, net: { u: PILOT_NET, v: PILOT_NET } }, 0, 0).rms)
-  const net = params.net ? { u: clampNet(params.net.u, p), v: clampNet(params.net.v, p) } : autoNet(extentU, extentV, noise)
+  const net = params.net ? { u: clampNet(params.net.u, degreeAsked), v: clampNet(params.net.v, degreeAsked) } : autoNet(extentU, extentV, noise)
+  // Max degree: one less than the smaller side of the net.
+  const p = params.maxDegree ? Math.max(1, Math.min(MAX_DEGREE, Math.min(net.u, net.v) - 1)) : degreeAsked
   const nu = Math.max(net.u, p + 1)
   const nv = Math.max(net.v, p + 1)
   const knotsU = clampedKnots(nu, p, uRange[0], uRange[1])
