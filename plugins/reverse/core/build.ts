@@ -2074,7 +2074,18 @@ export class Builder {
     if (step.kind === 'import') return this.importPreview(step)
     if (step.kind === 'moveBody') return this.movePreview(step)
     if (step.kind === 'network') return this.networkPreview(step)
-    if (step.kind === 'freeform') throw new Error('A freeform cage is built, not previewed: its faces are made when the list is built.')
+    if (step.kind === 'freeform') {
+      // Use the committed geometry path, but never put the temporary shape
+      // into the builder's body/history caches. Cancel only removes its mesh.
+      const made = this.freeformOf(step)
+      try {
+        const mesh = k.mesh(made.shape, surfaceMeshDeflection(diagonalOf(k, made.shape)))
+        const closed = k.isClosedSolid(made.shape)
+        return { mesh, closed, volume: closed ? k.volume(made.shape) : 0, ...(!closed ? { sheetFaces: k.faceCount(made.shape) } : {}) }
+      } finally {
+        k.release(made.shape)
+      }
+    }
     if (step.kind === 'fill') throw new Error('A Fill Surface is built, not previewed: its face is made when the list is built.')
     if (step.kind === 'extend') throw new Error('An Extend Surface is built, not previewed: its face is made when the list is built.')
     const began = performance.now()
