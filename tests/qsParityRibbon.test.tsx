@@ -144,4 +144,12 @@ describe('QUICKSURFACE ribbon parity', () => {
     }
     expect(checked).toBeGreaterThan(40)
   })
+  it('an unavailable button keeps its own reason after native tooltip', async () => {
+    const { nativeTip } = await import('../src/ui/nativeTips')
+    const NL = String.fromCharCode(10)
+    const native = 'Combines two or more overlapping solids into a single solid'
+    expect(nativeTip('Combine', 'Create or import at least two bodies first.', true)).toBe(native + NL + 'Create or import at least two bodies first.')
+    expect(nativeTip('Combine', 'Create or import at least two bodies first.', false)).toBe(native)
+    expect(nativeTip('Re-polygonize', 'Re-polygonize is not built in Quick Scan yet', true)).toContain('not built in Quick Scan yet')
+  })
 })

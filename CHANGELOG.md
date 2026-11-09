@@ -1,3 +1,7 @@
+## 0.0.173 — Local candidate; GitHub held
+
+- Fix to 0.0.172's tooltips: an unavailable ribbon button was meant to show its reason on a second line after native's description ("Create or import at least two bodies first."), but the pattern that spots a reason had stray characters in it and never matched, so the reason was lost. It matches now; `qsParityRibbon.test.tsx` holds it (reason kept while unavailable, dropped when available, and for the not-built-yet notes).
+
 ## 0.0.172 — Local candidate; GitHub held
 
 - Ribbon tooltips and menu wording as QUICKSURFACE 8.0.128 has them, read from the running program's accessibility tree (REA): 70 buttons now show native's description on hover instead of Quick Scan's own wording, and a button that is unavailable keeps its reason on a second line. Four names that mean different things in different tabs (Export, Thicken, Offset, Draft) take native's text for their tab. Save and Save As in the title row, and the app menu's New, Open ..., Import Scan Data ..., Import CAD ..., Save As ..., Export Model ..., Export Scan Data ..., Recent Documents, read as native's do; Freeform's From quad OBJ ... and Help's Check for update too.

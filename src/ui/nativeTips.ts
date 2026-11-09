@@ -89,7 +89,7 @@ export const NATIVE_TIPS: Record<string, string> = {
 }
 
 /** What an unavailable button's own hint says when it is a reason ("Create a sketch first.", "... not built in Quick Scan yet"). */
-const REASON = /first|not built|not implemented|not available|needs? a/i
+const REASON =/first|not built|not implemented|not available|needs? a/i
 
 /** The tooltip text for a ribbon button: native's description when it has one; Quick Scan's own hint
  *  when it does not. An unavailable button keeps its reason after native's description. */
