@@ -1,3 +1,11 @@
+## 0.0.180
+
+Includes exact fitted-surface construction and sheet STEP export from the uninstalled 0.0.179 candidate. Enables the export button for fitted sheets and refreshes the MCP command manifest. Native smoothing and interactive pole editing remain unfinished.
+
+## 0.0.179
+
+Fit Surface now builds the CAD face directly from its fitted control poles and knots, preserving the fitted degree and net through STEP export. STEP export includes fitted sheets and verifies them as open surfaces. MCP and AI commands use the same construction and export paths; the dark interface is retained. Native smoothing equivalence and interactive control-pole editing remain unfinished.
+
 ## 0.0.178
 
 Fit Surface keeps the displayed degree unchanged during pending control-net edits, updates it on Apply, and resets to cubic when Max degree is disabled, matching observed native transitions.

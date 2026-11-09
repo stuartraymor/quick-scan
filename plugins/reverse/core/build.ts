@@ -15,6 +15,7 @@
 // tests. Owns the kernel handles: a build's shapes are released once no
 // kept build holds them.
 
+import { surfaceAxis } from './surfaceStep'
 import type { NominalSurface } from '../../../src/core/deviation/surface'
 import { emptyHit } from '../../../src/core/deviation/surface'
 import type { Vec3 } from '../../../src/core/types'
@@ -740,40 +741,27 @@ export class Builder {
     return out
   }
 
-  /** The kernel's face through a fitted surface, checked before anything
-   *  meshes it: that it follows the fit — its area within GRID_AREA_SLACK
-   *  of the grid's, a denser grid tried when not (surfaceFit
-   *  GRID_RETRIES) — and that it meshes to no more than SURFACE_TRIANGLES
-   *  at the finest chord it is meshed to. */
+  /** Preserve the fitted poles and knots in the CAD face. Grid samples
+   *  estimate rendering cost only; they never reconstruct the surface. */
   private faceThrough(fit: SurfaceFitResult): Shape {
-    const k = this.kernel
-    let area = 0
-    let off = 0
-    for (const perSpan of [undefined, ...GRID_RETRIES]) {
-      const grid = gridOf(fit, perSpan)
-      const face = k.surfaceThrough(grid.points, grid.rows, grid.cols)
-      area = gridArea(grid)
-      off = k.surfaceArea(face) / area
-      if (!(off > GRID_AREA_SLACK)) {
-        const min = [Infinity, Infinity, Infinity]
-        const max = [-Infinity, -Infinity, -Infinity]
-        grid.points.forEach((x, i) => {
-          min[i % 3] = Math.min(min[i % 3], x)
-          max[i % 3] = Math.max(max[i % 3], x)
-        })
-        const chord = meshDeflection(Math.hypot(max[0] - min[0], max[1] - min[1], max[2] - min[2]))
-        const triangles = meshTriangles(fit, chord)
-        if (triangles > SURFACE_TRIANGLES) {
-          k.release(face)
-          // units-ok: build message, also the agent's answer
-          throw new Error(`The surface would mesh to about ${Math.round(triangles / 1000)} k triangles at its ${chord} mm chord, more than ${SURFACE_TRIANGLES / 1000} k — it bends too often for its size. Fit a coarser net, or smooth it more.`)
-        }
-        return face
-      }
-      k.release(face)
+    const grid = gridOf(fit)
+    const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity]
+    grid.points.forEach((x, i) => {
+      min[i % 3] = Math.min(min[i % 3], x)
+      max[i % 3] = Math.max(max[i % 3], x)
+    })
+    const chord = meshDeflection(Math.hypot(max[0] - min[0], max[1] - min[1], max[2] - min[2]))
+    const triangles = meshTriangles(fit, chord)
+    if (triangles > SURFACE_TRIANGLES) {
+      // units-ok: build message, also the agent's answer
+      throw new Error(`The surface would mesh to about ${Math.round(triangles / 1000)} k triangles at its ${chord} mm chord, more than ${SURFACE_TRIANGLES / 1000} k — it bends too often for its size. Fit a coarser net, or smooth it more.`)
     }
-    // units-ok: build message, also the agent's answer.
-    throw new Error(`The kernel's surface through the fit does not follow it: ${off > 100 ? `${Math.round(off)} times` : `${Math.round((off - 1) * 100)} % more than`} the fit's ${Math.round(area)} mm² of area, at every grid it was given. Fit another net, or keep the region to one surface.`)
+    const net = controlNetOf(fit)
+    return this.kernel.surfaceFromControlNet({
+      u: surfaceAxis(fit.knotsU, fit.degree, fit.nu),
+      v: surfaceAxis(fit.knotsV, fit.degree, fit.nv),
+      poles: Array.from({ length: fit.nu * fit.nv }, (_,i) => Array.from(net.points.slice(i * 3, i * 3 + 3))),
+    })
   }
 
   /** A plane or a cylinder through the region, held to the references
@@ -4781,9 +4769,8 @@ export class Builder {
     return { volume: shared.volume, mesh: shared.mesh }
   }
 
-  /** One STEP file of the given bodies — the solids, and a patch network's
-   *  sheet, a part's skin; any other sheet is a cutter, not a part, and
-   *  stays out. With labels, one per id, each body is a part under its name
+  /** One STEP file of the given solid or sheet bodies.
+   *  With labels, one per id, each body is a part under its name
    *  and in its colour. */
   exportStep(ids: readonly number[], labels?: readonly StepLabel[]): string {
     return this.exportStepMended(ids, labels).text
@@ -4798,7 +4785,7 @@ export class Builder {
     const out = this.kernel.exportStepMended(
       bodies.map((b) => b.shape),
       labels ? kept.map((x) => x.label ?? { name: x.body.name }) : undefined,
-      bodies.map((b) => b.surface === true && b.patches !== undefined),
+      bodies.map((b) => b.surface === true),
     )
     return out.check ? { ...out, check: this.withMakers(out.check, bodies) } : out
   }
@@ -4817,13 +4804,12 @@ export class Builder {
    *  against them (ReKernel.verifyStep). */
   verifyStep(ids: readonly number[], text: string): StepCheck {
     const bodies = this.stepBodies(ids).map((x) => x.body)
-    return this.withMakers(this.kernel.verifyStep(text, bodies.map((b) => b.shape), { sheets: bodies.map((b) => b.surface === true && b.patches !== undefined) }), bodies)
+    return this.withMakers(this.kernel.verifyStep(text, bodies.map((b) => b.shape), { sheets: bodies.map((b) => b.surface === true) }), bodies)
   }
 
-  /** The solids of the given bodies, and a network's sheet, each with its
-   *  label: what a STEP file holds of them. */
+  /** The requested bodies and their labels, including open sheets. */
   private stepBodies(ids: readonly number[], labels?: readonly StepLabel[]) {
-    return ids.map((id, i) => ({ body: this.bodyById(id), label: labels?.[i] })).filter((x): x is { body: Body; label: StepLabel | undefined } => x.body !== undefined && (!x.body.surface || x.body.patches !== undefined))
+    return ids.map((id, i) => ({ body: this.bodyById(id), label: labels?.[i] })).filter((x): x is { body: Body; label: StepLabel | undefined } => x.body !== undefined)
   }
 
   dispose(): void {

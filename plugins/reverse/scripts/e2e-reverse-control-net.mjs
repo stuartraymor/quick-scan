@@ -107,8 +107,22 @@ net = await netInScene()
 check(net.segments === 0 && net.points === 0, 'and no net is drawn for it')
 await page.select('[data-test=surface-shape]', 'freeform')
 await sleep(1500)
-// Closing the box puts the tick away.
-await click(page, '[data-test=surface-cancel]').catch(() => {})
+// Commit the fitted sheet: it must be exportable from the same panel as a solid.
+await page.waitForFunction(() => !document.querySelector('[data-test=surface-create]')?.disabled, { timeout: 60_000 })
+await click(page, '[data-test=surface-create]')
+await page.waitForFunction(() => !document.querySelector('[data-test=surface-editor]'), { timeout: 60_000 })
+await page.waitForFunction(() => !document.querySelector('[data-test=export-body-step]')?.disabled, { timeout: 60_000 })
+check(await page.$eval('[data-test=export-body-step]', e => !e.disabled), 'a committed fitted sheet enables STEP export')
+await page.evaluate(() => {
+  const original = URL.createObjectURL.bind(URL)
+  URL.createObjectURL = blob => {
+    if (blob instanceof Blob) blob.text().then(text => { if (text.startsWith('ISO-10303-21;')) window.__exportedSurfaceStep = text })
+    return original(blob)
+  }
+})
+await click(page, '[data-test=export-body-step]')
+await page.waitForFunction(() => !!window.__exportedSurfaceStep, { timeout: 60_000 })
+check(await page.evaluate(() => window.__exportedSurfaceStep.includes('B_SPLINE_SURFACE_WITH_KNOTS')), 'the panel exports the fitted sheet as a B-spline STEP surface')
 await sleep(500)
 net = await netInScene()
 check(net.segments === 0 && net.points === 0, 'closing the box takes the net off the part')

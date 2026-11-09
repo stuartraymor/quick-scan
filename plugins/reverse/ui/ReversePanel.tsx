@@ -129,7 +129,7 @@ export function ReversePanel({ onOpenScan, onExportStep, onCompare, chainsOf }: 
   const hasSolidElement = elements.some((e) => e.fit && (e.fit.kind === 'plane' || e.fit.kind === 'cylinder' || e.fit.kind === 'cone' || e.fit.kind === 'sphere' || e.fit.kind === 'torus'))
   const hasShadow = sections.some((x) => x.kind === 'shadow')
   // A Patch network's sheet is a skin of the part: it goes into the file too.
-  const canExport = bodies.some((b) => b.visible && (b.closed || (b.surface && features.some((f) => f.kind === 'network' && f.id === bodyMaker(b.id))))) && !building
+  const canExport = bodies.some((b) => b.visible && (b.closed || b.surface)) && !building
   const canCompare = Boolean(fileName) && bodies.some((b) => b.visible && !b.surface) && !building && !busy
 
   // The rollback bar: dragged between the rows, it lands in the gap nearest
@@ -572,7 +572,7 @@ export function ReversePanel({ onOpenScan, onExportStep, onCompare, chainsOf }: 
         <>
           <div className="divider" />
           <div className="toolrow">
-            <button className="withicon" data-test="export-body-step" disabled={!canExport} onClick={onExportStep} title="Write every visible body into one STEP file as solids — what FreeCAD and Fusion open as a body">
+            <button className="withicon" data-test="export-body-step" disabled={!canExport} onClick={onExportStep} title="Write visible solids and sheets into one STEP file">
               <Icon name="exportStep" size={18} />
               Export body STEP
             </button>

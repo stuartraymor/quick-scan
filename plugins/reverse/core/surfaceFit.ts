@@ -19,12 +19,9 @@
 // plane — more than half a cylinder — is not one surface over it. Those
 // are primitives, and Measure fits them; this is for the rest.
 //
-// The kernel does not take a control net. Its bsplineSurface is OCCT's
-// GeomAPI_PointsToBSplineSurface: a surface *through a regular grid of
-// points*, within a thousandth of a millimetre. So the fitted surface is
-// sampled on a grid a few times denser than its net (`gridOf`) and that
-// grid is what the kernel gets — the fit does the smoothing of the scan's
-// noise, the kernel makes the exact B-rep surface through the fit.
+// Fitted surfaces reach the kernel as exact poles and knots through the
+// polynomial STEP constructor. Grid sampling remains for rendering-cost
+// estimates and operations that extrapolate or interpolate new geometry.
 
 import { principalFrame } from '../../../src/core/deviation/prealign'
 import { choleskySolve, solveLinear, symmetricEigen3 } from '../../../src/core/fit/linalg'
@@ -1208,8 +1205,7 @@ export function gridOf(fit: SurfaceFitResult, perSpan = GRID_PER_SPAN): { points
  *  row-major, x y z each). The net's u and v are the Greville abscissae of
  *  the fit's knots and its height the pole's height over the base plane, so
  *  the pole lies where the surface's own frame puts it; the surface is the
- *  B-spline of these poles (the kernel's face is the one through a grid
- *  sampled from it, which follows it within a thousandth of a millimetre). */
+ *  B-spline of these poles, preserved by the kernel's exact constructor. */
 export function controlNetOf(fit: Pick<SurfaceFitResult, 'origin' | 'axisU' | 'axisV' | 'normal' | 'knotsU' | 'knotsV' | 'nu' | 'nv' | 'degree' | 'heights'>): { points: Float64Array; rows: number; cols: number; degree: number } {
   const gu = greville(fit.knotsU, fit.nu, fit.degree)
   const gv = greville(fit.knotsV, fit.nv, fit.degree)

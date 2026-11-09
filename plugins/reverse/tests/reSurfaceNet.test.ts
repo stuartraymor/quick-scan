@@ -148,6 +148,16 @@ describe('reverse.surface.net', () => {
     const xs = r.poles.flat().map((p) => p[0])
     expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(85)
     expect(useReverse.getState().features.filter((f) => f.kind === 'surface')).toHaveLength(1)
+    // The command's reported net must also be the actual exported CAD net,
+    // rather than a differently parameterized interpolation of its samples.
+    const exported = await run<{ file: { bytes: Uint8Array }; verify: { ok: boolean } }>('reverse.export.step', { verify: true })
+    expect(exported.verify.ok).toBe(true)
+    const text = new TextDecoder().decode(exported.file.bytes)
+    const spline = text.match(/B_SPLINE_SURFACE_WITH_KNOTS\s*\(\s*'[^']*'\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*\(([\s\S]*?)\)\s*,\s*\.UNSPECIFIED\./)
+    expect(spline).not.toBeNull()
+    expect(Number(spline![1])).toBe(r.degree)
+    expect(Number(spline![2])).toBe(r.degree)
+    expect(spline![3].match(/#\d+/g)?.length).toBe(r.rows * r.cols)
   })
 
   it('refuses what has no net', async () => {

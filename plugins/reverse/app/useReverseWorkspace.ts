@@ -1458,7 +1458,7 @@ export function useReverseWorkspace({
     try {
       const { name, text } = await session.stepFile(ids)
       saveFile(name, new Blob([text], { type: 'model/step' }))
-      useStore.getState().setStatus(`${ids.length} bod${ids.length === 1 ? 'y' : 'ies'} exported to ${name} as a STEP solid.`)
+      useStore.getState().setStatus(`${ids.length} bod${ids.length === 1 ? 'y' : 'ies'} exported to ${name} as STEP.`)
     } catch (e) {
       useStore.getState().setError(`STEP export failed: ${message(e)}`)
     }

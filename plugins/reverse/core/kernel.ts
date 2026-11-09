@@ -23,6 +23,7 @@ import { computeVertexNormals } from '../../../src/core/geometry/normals'
 import type { Vec3 } from '../../../src/core/types'
 import { addScaled, cross, dot, len, normalize, scale, sub } from '../../../src/core/vec'
 import { canonicalDir } from './topo'
+import { writeSurfaceStep, type PolynomialSurface } from './surfaceStep'
 import { patternPitch } from './features'
 import type { ThreadCut } from './thread'
 import { type FaceHistory, type KernelBounds, type KernelMesh, type LoopPiece, type Profile, type RawEdge, type RawFace, type Shape, type StepLabel, type StepPart, type Tracked, type WasmSource } from './kernelTypes'
@@ -548,11 +549,28 @@ export class ReKernel {
     })
   }
 
-  /** A face through a regular grid of points — `rows` × `cols`, row-major
-   *  and flat. The kernel's bsplineSurface is OCCT's PointsToBSplineSurface,
-   *  a C2 surface through the grid within a thousandth of a millimetre,
-   *  not a surface *from* a control net — so a fitted surface is sampled
-   *  on a grid and handed over (core/re/surfaceFit gridOf). */
+  /** An exact bounded face from polynomial poles and knots. The returned
+   *  face owns its handle independently of the temporary imported shell. */
+  surfaceFromControlNet(surface: PolynomialSurface): Shape {
+    return run('Making the control-net surface', () => {
+      const text = writeSurfaceStep(surface)
+      const shell = this.occt.importStep(text)
+      let faces: number[] = []
+      let kept: number | undefined
+      try {
+        faces = this.occt.getSubShapes(shell, 'face')
+        if (faces.length !== 1 || !this.occt.isValid(faces[0])) throw new KernelError('the control net did not make one valid face.')
+        kept = faces[0]
+        return kept as Shape
+      } finally {
+        for (const face of faces) if (face !== kept) this.occt.release(face)
+        this.occt.release(shell)
+      }
+    })
+  }
+
+  /** Interpolate a row-major grid of samples, for operations that do not
+   *  already have an exact spline representation. */
   surfaceThrough(points: Float64Array, rows: number, cols: number): Shape {
     return run('Making the surface', () => {
       if (rows < 2 || cols < 2 || points.length !== rows * cols * 3) throw new KernelError('the surface grid is malformed.')

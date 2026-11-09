@@ -17,7 +17,7 @@ import { useStore } from '../../../src/state/store'
 import { ASK_MM, AUDIT_DEFAULTS, auditBody, type FaceTrace, type Finding, traceFace } from '../core/audit'
 import { COMPARE_REFERENCE_NAME, VIEW_MESH_MAP_TOLERANCE } from '../core/compare'
 import type { FarPatch, PatchReading, PatchRequest } from '../core/compareDetail'
-import { bodyMaker, type Feature } from '../core/features'
+import type { Feature } from '../core/features'
 import { meshFaultOut } from '../core/kernelMesh'
 import type { KernelMesh } from '../core/kernelTypes'
 import type { StepCheck, StepEdge, StepFace, StepMend, StepShell } from '../core/kernel'
@@ -935,7 +935,7 @@ export const step: Command<{ bodies?: Ref[]; verify?: boolean }> = {
   name: 'step',
   title: 'Export the bodies as STEP',
   description:
-    'The bodies as one STEP file of solids, for CAD — the visible ones by default, as the panel’s Export STEP writes them: each a part of its own, under its name and in its colour (reverse.body.set). Returns the file’s bytes and the name the panel would save it under. A body that reads back open only by free edges a hair long (under 0.01 mm) has the curves there made to end on their corners in the file, kept only where it then reads back a closed, valid solid within 0.001 mm of the body (mended names each such part, and the status says so); a body that reads back whole is never touched. verify: true reads the file back and holds it against the bodies, in place of opening it as a reference: verify: { ok, problems, notes, parts, bodies: [{ name, volume, faces, shells, closed, gap, freeEdges, freeEdgeCount, strayShells }], loops: { read, of, unread, wrong } } — unread counts by surface type the faces whose loops are not read (not a fault), wrong the faces whose loops a strict reader (Onshape, SolidWorks) takes the wrong way round.',
+    'The solid and sheet bodies as one STEP file, for CAD — the visible ones by default, as the panel’s Export STEP writes them: each a part of its own, under its name and in its colour (reverse.body.set). Returns the file’s bytes and the name the panel would save it under. A body that reads back open only by free edges a hair long (under 0.01 mm) has the curves there made to end on their corners in the file, kept only where it then reads back a closed, valid solid within 0.001 mm of the body (mended names each such part, and the status says so); a body that reads back whole is never touched. verify: true reads the file back and holds it against the bodies, in place of opening it as a reference: verify: { ok, problems, notes, parts, bodies: [{ name, volume, faces, shells, closed, gap, freeEdges, freeEdgeCount, strayShells }], loops: { read, of, unread, wrong } } — unread counts by surface type the faces whose loops are not read (not a fault), wrong the faces whose loops a strict reader (Onshape, SolidWorks) takes the wrong way round.',
   input: obj({
     bodies: arr(bodyRef, 'The bodies; the visible ones by default.', { minItems: 1 }),
     verify: bool('Read the file back and check it against the bodies (off by default).'),
@@ -951,19 +951,14 @@ export const step: Command<{ bodies?: Ref[]; verify?: boolean }> = {
     const { name, text, check, mended } = await s.stepFile(picked.map((b) => b.id), verify).catch((e) => {
       throw new CommandError('failed', `STEP export failed: ${errorMessage(e)}`)
     })
-    // The check's bodies are the solids among those picked, in order, and a
-    // Patch network's sheet — a skin of the part, which the file holds as
-    // any other sheet it leaves out; each odd edge's faces by index on its
-    // body, with their makers.
+    // The check follows every picked body in order, including open sheets.
     const features = check ? allFeatures() : []
-    const networks = new Set(allFeatures().filter((f) => f.kind === 'network' || f.kind === 'freeform').map((f) => f.id))
-    const solids = picked.filter((b) => !b.surface || networks.has(bodyMaker(b.id)))
-    const namers = solids.map((b) => faceNamer(s.topologies.get(b.id), features))
+    const namers = picked.map((b) => faceNamer(s.topologies.get(b.id), features))
     const problems = check ? check.problems.map((line) => check.bodies.reduce((l, body, i) => (l.startsWith(body.name ?? `Part ${i + 1}`) ? (problemsNamed([l], body, namers[i])[0] ?? l) : l), line)) : []
     return {
       file: { name, mimeType: 'model/step', bytes: new TextEncoder().encode(text) },
       bodies: picked.map((b) => ({ id: b.id, name: b.name })),
-      status: `${picked.length} bod${picked.length === 1 ? 'y' : 'ies'} as STEP solids, each under its name.${mended ? ` Mended: ${mended.map(mendWords).join(' ')}` : ''}${check ? (check.ok ? ' Read back and checked: it holds.' : ` Read back: ${check.problems.length} problem${check.problems.length === 1 ? '' : 's'}.`) : ''}`,
+      status: `${picked.length} bod${picked.length === 1 ? 'y' : 'ies'} as STEP, each under its name.${mended ? ` Mended: ${mended.map(mendWords).join(' ')}` : ''}${check ? (check.ok ? ' Read back and checked: it holds.' : ` Read back: ${check.problems.length} problem${check.problems.length === 1 ? '' : 's'}.`) : ''}`,
       ...(mended ? { mended: mended.map(mendOut) } : {}),
       ...(planOpenSaid() ? { plan: planOpenSaid() } : {}),
       ...(check
