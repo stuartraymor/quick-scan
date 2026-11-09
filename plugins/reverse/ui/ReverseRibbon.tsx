@@ -16,6 +16,7 @@ import { usePipeDialog } from './PipeDialog'
 import { chooseFreeformObj } from './FreeformImport'
 import { useAutoFreeformDialog } from './AutoFreeformDialog'
 import { openWrapSurface } from './WrapSurfaceDialog'
+import { useFreeformSketchDialog } from './FreeformSketchDialog'
 import { reverseSession } from '../app/reSession'
 import { useMark } from '../../../src/state/markStore'
 import { SURFACE_MIN_REGION } from '../core/features'
@@ -133,6 +134,7 @@ export function useReverseRibbonActions(onExport: () => void): NonNullable<Plugi
       }
     }),
     freeformObj: action(chooseFreeformObj),
+    freeformSketch: action(() => useFreeformSketchDialog.getState().setOpen(true), !!fileName && state.features.some(f => f.kind === 'network'), 'Create a 3D sketch on the scan first.'),
     wrapSurface: action(openWrapSurface, !!fileName && (reverseSession()?.sceneRef.current?.paintedVertices().length ?? 0) >= SURFACE_MIN_REGION, 'Select a region of the scan first.'),
     autoFreeform: action(() => useAutoFreeformDialog.getState().setOpen(true), !!fileName, 'Import a scan first.'),
     surface: action(() => state.startFeature('surface', { fit: { ...DEFAULT_SURFACE_FIT, smoothingLevel: 1 } }), !!fileName, 'Import a scan first.'),

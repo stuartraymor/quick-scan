@@ -24,6 +24,7 @@ import { MapLegend } from '../../../src/ui/MapLegend'
 import { PipeDialog, usePipeDialog } from '../ui/PipeDialog'
 import { AutoFreeformDialog, useAutoFreeformDialog } from '../ui/AutoFreeformDialog'
 import { WrapSurfaceDialog, useWrapSurfaceDialog } from '../ui/WrapSurfaceDialog'
+import { FreeformSketchDialog, useFreeformSketchDialog } from '../ui/FreeformSketchDialog'
 import { Icon, type IconName } from '../../../src/ui/icons'
 import { anyChanged, PartChoice, PartKey, PartOption, type ViewSwitch } from '../../../src/ui/PartKey'
 import { KeyIcon } from '../ui/reIcons'
@@ -475,6 +476,7 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
   const pipeOpen = usePipeDialog((s) => s.open)
   const autoFreeformOpen = useAutoFreeformDialog((s) => s.open)
   const wrapSelection = useWrapSurfaceDialog(s => s.selection)
+  const freeformSketchOpen = useFreeformSketchDialog(s => s.open)
   const len = useLength()
   const curvature = useReverse((s) => (s.curvatureShown ? s.curvature : null))
   // A sketch takes the stage: the 2D sheet stands where the 3D viewport was.
@@ -831,6 +833,7 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
     ),
     overlay: (
       <>
+        {freeformSketchOpen && <FreeformSketchDialog />}
         {wrapSelection && <WrapSurfaceDialog />}
         {autoFreeformOpen && <AutoFreeformDialog onClose={() => useAutoFreeformDialog.getState().setOpen(false)} />}
         {pipeOpen && <PipeDialog onClose={() => usePipeDialog.getState().setOpen(false)} />}
