@@ -1,3 +1,7 @@
+## 0.0.183
+
+Fit Surface adds six discrete smoothing levels with explicit Apply/Cancel behavior; new UI fits start at the observed native level 1. Legacy numeric smoothing remains available for existing projects. Levels survive project reopen and shared MCP edits with undo/redo. The new smoothing model uses constant parameter-domain fairness following native density comparisons. Dark styling and AI/MCP features remain intact. Native fitting is approximate: measured boundary differences and a small coarse-mesh maximum regression remain documented in release notes.
+
 ## 0.0.182
 
 Fit Surface supports persistent XYZ control-point editing with live preview, selection highlighting, Screen/World/Local axes, plane handles and strength control. Exact poles and knots survive undo/redo, project reopen and STEP export. MCP exposes the exact net and a pole-move command using the shared edit history. Cancel/reopen retains control-net preferences. Native measurements verify the recorded axis and plane gestures; broader smoothing and application parity remain unfinished. The dark theme and AI/MCP features are retained.

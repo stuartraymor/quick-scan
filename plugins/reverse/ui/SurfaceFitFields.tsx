@@ -159,7 +159,17 @@ export function SurfaceFitFields({ d, set }: { d: SurfaceDraft; set: (patch: Par
         </label>
       </div>
       <Num label="Expand by" unit="" testId="surface-expand" value={fit.expandPct} onCommit={(v) => edit({ expandPct: Math.min(200, Math.max(0, Math.abs(v))) })} hint="How far past the region the surface reaches, as a share of its extent — it has to meet its neighbours for the trim" />
-      <Num label="Surface smoothness" unit="" testId="surface-smooth" value={fit.smoothness} onCommit={(v) => edit({ smoothness: Math.max(0, Math.abs(v)) })} hint="How hard the surface is held fair against the points: 0 follows them exactly, 0.01 fairs a scan's noise, more flattens detail" />
+      {fit.smoothingLevel === undefined ? (
+        <>
+          <Num label="Surface smoothness" unit="" testId="surface-smooth" value={fit.smoothness} onCommit={(v) => edit({ smoothness: Math.max(0, Math.abs(v)) })} hint="The smoothing weight saved with this surface" />
+          <button type="button" data-test="surface-use-smoothing-levels" onClick={() => edit({ smoothingLevel: 0 })}>Use smoothing levels</button>
+        </>
+      ) : (
+        <label className="field">
+          <span>Surface smoothness</span>
+          <input type="range" data-test="surface-smooth-level" aria-label="Surface smoothness" min={0} max={5} step={1} value={fit.smoothingLevel} onChange={e => edit({ smoothingLevel: Number(e.target.value) })} />
+        </label>
+      )}
       <label className="field">
         <span>Surface orientation</span>
         <select data-test="surface-orientation" value={fit.orientation ?? 'bounds'} onChange={(e) => edit({ orientation: e.target.value as SurfaceOrientation })}>

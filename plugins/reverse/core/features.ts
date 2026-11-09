@@ -919,6 +919,9 @@ export interface SurfaceFitParams {
   /** The weight of the thin-plate term relative to the data's, so the
    *  surface stays fair where the region is thin or noisy. */
   smoothness: number
+  /** Explicit six-position surface smoothing model. Absent preserves the
+   *  legacy smoothness weight; when present this integer (0..5) takes priority. */
+  smoothingLevel?: number
   /** Fit again without the points that stand far off the first fit — a rib
    *  or a stray edge caught in the region. Absent is false. */
   robust?: boolean

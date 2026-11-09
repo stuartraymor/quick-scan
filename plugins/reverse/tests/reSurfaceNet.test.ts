@@ -126,6 +126,28 @@ describe('reverse.surface.net', () => {
   })
   beforeEach(resetReverse)
 
+  it('accepts explicit smoothing levels and lets legacy numeric updates leave that mode', async () => {
+    const fit = { net: { u: 5, v: 5 }, degree: 4, expandPct: 0 }
+    await run('reverse.feature.add', { feature: { kind: 'surface', name: 'Level skin', region: { box: { min: [5, 5, -20], max: [95, 75, 20] } }, fit: { ...fit, smoothingLevel: 3 } } })
+    const read = () => useReverse.getState().features[0] as SurfaceFeature
+    expect(read().fit.smoothingLevel).toBe(3)
+    await run('reverse.feature.update', { feature: 'Level skin', set: { name: 'Renamed level skin' } })
+    expect(read().fit.smoothingLevel).toBe(3)
+    await run('reverse.feature.update', { feature: 'Renamed level skin', set: { fit: { ...fit, smoothness: .02 } } })
+    expect(read().fit.smoothingLevel).toBeUndefined()
+    expect(read().fit.smoothness).toBe(.02)
+    await run('history.undo'); await session.settled()
+    expect(read().fit.smoothingLevel).toBe(3)
+    await run('history.redo'); await session.settled()
+    expect(read().fit.smoothingLevel).toBeUndefined()
+    expect(read().fit.smoothness).toBe(.02)
+    const snapshot = structuredClone(read().fit)
+    for (const level of [-1, 6, 1.5]) {
+      await refused('reverse.feature.update', { feature: 'Renamed level skin', set: { fit: { ...fit, smoothingLevel: level } } })
+      expect(read().fit).toEqual(snapshot)
+    }
+  })
+
   interface Net {
     surface: { id: number; name: string }
     rows: number

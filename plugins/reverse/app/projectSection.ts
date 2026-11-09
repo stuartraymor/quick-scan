@@ -117,6 +117,12 @@ export function validateFeatureJson(e: Record<string, unknown>): void {
   }
   if (e.kind === 'surface') {
     indices(e.region, 'surface.region')
+    // Older documents keep their unbounded legacy smoothing weight. Only the
+    // explicit six-position field opts into the new model.
+    if (e.fit && typeof e.fit === 'object' && 'smoothingLevel' in e.fit) {
+      const level = (e.fit as Record<string, unknown>).smoothingLevel
+      if (level !== undefined && (typeof level !== 'number' || !Number.isInteger(level) || level < 0 || level > 5)) invalid('surface.fit.smoothingLevel must be an integer from 0 to 5')
+    }
     if (e.controlSurface !== undefined) {
       try { validateControlSurface(e.controlSurface as PolynomialSurface) }
       catch { invalid('surface.controlSurface') }

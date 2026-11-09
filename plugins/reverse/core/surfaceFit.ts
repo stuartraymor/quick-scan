@@ -27,6 +27,7 @@ import { principalFrame } from '../../../src/core/deviation/prealign'
 import { choleskySolve, solveLinear, symmetricEigen3 } from '../../../src/core/fit/linalg'
 import type { Vec3 } from '../../../src/core/types'
 import type { SurfaceFitParams, SurfaceOrientation } from './features'
+import { addSurfaceLevelFairness } from './surfaceFairness'
 
 /** The smallest and largest net per side; Auto chooses within them. */
 export const NET_MIN = 3
@@ -222,6 +223,7 @@ export function heightFrame(axes: readonly Vec3[], normal?: Vec3): [Vec3, Vec3, 
  *  used when it is null. `pull` is the pull toward the plane the cells
  *  with no points near start from (PULL; 0 fits without it). */
 export function fitSurface(xyz: Float32Array | Float64Array, params: SurfaceFitParams, scatter: number | null = null, pullIn = PULL): SurfaceFitResult {
+  if (params.smoothingLevel !== undefined && (!Number.isInteger(params.smoothingLevel) || params.smoothingLevel < 0 || params.smoothingLevel > 5)) throw new Error('Surface smoothing level must be an integer from 0 to 5.')
   const n = Math.floor(xyz.length / 3)
   if (n < 4) throw new Error('Too few points to fit a surface through.')
   const frame = principalFrame(xyz)
@@ -352,8 +354,8 @@ export function fitSurface(xyz: Float32Array | Float64Array, params: SurfaceFitP
       }
     }
   }
-  const dense = perUnknown > DENSE_POINTS && covered >= 0.95 * nu * nv ? (DENSE_POINTS / perUnknown) ** 3 : 1
-  const lambda = Math.max(0, params.smoothness) * (extentU * extentV) ** 2 * SMOOTHNESS_SCALE
+  const dense = params.smoothingLevel === undefined && perUnknown > DENSE_POINTS && covered >= 0.95 * nu * nv ? (DENSE_POINTS / perUnknown) ** 3 : 1
+  const lambda = params.smoothingLevel === undefined ? Math.max(0, params.smoothness) * (extentU * extentV) ** 2 * SMOOTHNESS_SCALE : 0
   if (dense < 1) ataFull.set(ata)
   const xu = greville(knotsU, nu, p)
   const xv = greville(knotsV, nv, p)
@@ -389,6 +391,7 @@ export function fitSurface(xyz: Float32Array | Float64Array, params: SurfaceFitP
       if (i + 1 < nu && j + 2 < nv) cross(i, j, dividedWeights(xu, i, 1), dividedWeights(xv, j, 2), 3 * area)
     }
   }
+  if (params.smoothingLevel !== undefined) addSurfaceLevelFairness(ata, knotsU, knotsV, nu, nv, p, params.smoothingLevel)
   // A whisper on the diagonal keeps a net span no point falls in — out in
   // the margin — from making the system singular where the bending term
   // alone does not reach it.

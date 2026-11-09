@@ -349,6 +349,7 @@ function boxFields(s: ReverseSession, kind: FeatureDraftKind, input: Json, box: 
         const normal = (input.fit as Json).normal as number[] | undefined
         if (normal && !(Math.hypot(...normal) > 0)) invalid('fit.normal: give the way the region faces, not a zero vector.')
         const fitIn = input.fit as Json
+        if (fitIn.smoothingLevel !== undefined && (typeof fitIn.smoothingLevel !== 'number' || !Number.isInteger(fitIn.smoothingLevel) || fitIn.smoothingLevel < 0 || fitIn.smoothingLevel > 5)) invalid('fit.smoothingLevel: an integer from 0 to 5.')
         if (fitIn.method !== undefined && fitIn.method !== 'simple' && fitIn.method !== 'refined') invalid(`fit.method: "${String(fitIn.method)}" — simple or refined.`)
         if (fitIn.orientation !== undefined && !['bounds', 'axis', 'oxy', 'oyz', 'oxz'].includes(String(fitIn.orientation))) invalid(`fit.orientation: "${String(fitIn.orientation)}" — bounds, axis, oxy, oyz or oxz.`)
         if (fitIn.tolerance !== undefined && !(typeof fitIn.tolerance === 'number' && fitIn.tolerance > 0)) invalid('fit.tolerance: a number of millimetres above zero.')

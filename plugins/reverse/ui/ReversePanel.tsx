@@ -6,6 +6,7 @@
 // clicked in the viewport, the body shows as a ghost with grips to drag,
 // and the numbers in the box follow the grips as the grips follow them.
 
+import { DEFAULT_SURFACE_FIT } from '../core/surfaceFit'
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { bodyMaker, dependentsOf, type Feature, type PlaneRef, type SketchFeature } from '../core/features'
 import { describePlaneRef } from '../core/resolve'
@@ -358,7 +359,7 @@ export function ReversePanel({ onOpenScan, onExportStep, onCompare, chainsOf }: 
               <KeyIcon name="offsetBody" />
               <span>Offset body</span>
             </button>
-            <button data-test="feature-surface" disabled={!fileName || !ready} title="A smooth freeform surface fitted through a region of the scan — click faces or mark them — for the trim to close into a solid with the others" onClick={() => re.getState().startFeature('surface')}>
+            <button data-test="feature-surface" disabled={!fileName || !ready} title="A smooth freeform surface fitted through a region of the scan — click faces or mark them — for the trim to close into a solid with the others" onClick={() => re.getState().startFeature('surface', { fit: { ...DEFAULT_SURFACE_FIT, smoothingLevel: 1 } })}>
               <Icon name="surface" />
               <span>Fit surface</span>
             </button>

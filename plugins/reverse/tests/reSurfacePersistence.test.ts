@@ -13,6 +13,29 @@ function feature(): SurfaceFeature {
 }
 beforeEach(() => useReverse.getState().reset())
 
+it('retains explicit smoothing levels without converting legacy weights', () => {
+  for (const level of [undefined, 0, 3, 5]) {
+    const f = feature()
+    f.fit = { ...f.fit, smoothness: 17.25, ...(level === undefined ? {} : { smoothingLevel: level }) }
+    const part = validateReversePart(JSON.parse(JSON.stringify({ version: 3, features: [featureToJson(f)], nextFeatureId: 2, nextOfKind: { surface: 1 } })))
+    applyReversePart(part)
+    const restored = useReverse.getState().features[0] as SurfaceFeature
+    expect(restored.fit).toEqual(f.fit)
+    useReverse.getState().editFeature(1)
+    const draft = useReverse.getState().featureDraft!
+    expect(draft.kind === 'surface' && draft.fit.smoothingLevel).toBe(level)
+    useReverse.getState().cancelFeature()
+    expect((useReverse.getState().features[0] as SurfaceFeature).fit).toEqual(f.fit)
+  }
+})
+
+it('rejects invalid explicit smoothing levels before restoring a project', () => {
+  const f = feature(), json = featureToJson(f)
+  for (const level of [null, -1, 6, 1.5, '3', NaN, Infinity]) {
+    expect(() => validateFeatureJson({ ...json, fit: { ...f.fit, smoothingLevel: level } })).toThrow(/smoothingLevel/)
+  }
+})
+
 it('retains edited XYZ poles and nonnormalized knots through project JSON', () => {
   const f = feature()
   const part = validateReversePart(JSON.parse(JSON.stringify({ version: 3, features: [featureToJson(f)], nextFeatureId: 2, nextOfKind: { surface: 1 } })))

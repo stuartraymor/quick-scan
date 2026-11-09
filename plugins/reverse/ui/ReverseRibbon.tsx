@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // The CAD workspace exposes its own actions; the shell knows no plugin state.
+import { DEFAULT_SURFACE_FIT } from '../core/surfaceFit'
 import { useShell } from '../../../src/state/shellStore'
 import { useZebra } from '../state/zebraStore'
 import type { ReactNode } from 'react'
@@ -124,7 +125,7 @@ export function useReverseRibbonActions(onExport: () => void): NonNullable<Plugi
         useStore.getState().setStatus('Create Sketch: pick the plane, drag the yellow arrow through the part, then Create.')
       }
     }),
-    surface: action(() => state.startFeature('surface'), !!fileName, 'Import a scan first.'),
+    surface: action(() => state.startFeature('surface', { fit: { ...DEFAULT_SURFACE_FIT, smoothingLevel: 1 } }), !!fileName, 'Import a scan first.'),
     network: action(() => state.startFeature('network'), !!fileName, 'Import a scan first.'),
     extrude: action(() => state.startExtrude(), sketches > 0, 'Create a sketch first.'),
     revolve: action(() => state.startRevolve(), sketches > 0, 'Create a sketch first.'),
@@ -196,7 +197,7 @@ export function ReverseRibbon() {
       {tool('revolve', 'Revolve', 'revolve', () => state.startRevolve(), sketches > 0, 'Create a sketch first.', 'Revolve sketch regions about an axis.')}
     </Group>
     <Group label="Surface reconstruction">
-      {tool('surface', 'Fit surface', 'surface', () => state.startFeature('surface'), !!fileName, 'Import a scan first.', 'Fit a smooth surface to a selected or marked scan region.')}
+      {tool('surface', 'Fit surface', 'surface', () => state.startFeature('surface', { fit: { ...DEFAULT_SURFACE_FIT, smoothingLevel: 1 } }), !!fileName, 'Import a scan first.', 'Fit a smooth surface to a selected or marked scan region.')}
       {tool('network', 'Patch network', 'spline', () => state.startFeature('network'), !!fileName, 'Import a scan first.', 'Draw curves on the scan and fit connected surface patches.')}
       {tool('loft', 'Loft', 'loft', () => state.startFeature('loft'), sketches >= 2, 'Create at least two sketches first.')}
       {tool('sheet', 'Sheet', 'sheet', () => state.startFeature('sheet'), sketches > 0, 'Create a sketch first.')}
