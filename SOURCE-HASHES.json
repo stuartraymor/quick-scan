@@ -428,7 +428,7 @@
   "plugins/reverse/scripts/e2e-fan-base.mjs": "a92bbefa232ed21b12fbb1b93acec61297f33e47e66ad3585cb6ae7a86d2ad36",
   "plugins/reverse/scripts/e2e-fit-chains.mjs": "9bdbd9386086260700ac9cc59866b6242cbfe37bcda345d1f455555bd82cfc4f",
   "plugins/reverse/scripts/e2e-freeform-import.mjs": "d713c38ddb141435de245417c3ef4f19ff878c91b5d70334a66ecdcf1b5b90ab",
-  "plugins/reverse/scripts/e2e-freeform-sketch.mjs": "0fc1b83c3017a775a8c71ce32ca6fa5ba3e25bdd05d505479ac32581ca1f5b63",
+  "plugins/reverse/scripts/e2e-freeform-sketch.mjs": "4dd3c78e9947d35bc0e1d2d0270d9c49aa354b69ab7603573779bcda4ae7b8db",
   "plugins/reverse/scripts/e2e-full-sketch-workflow.mjs": "58c41f7b6b3894c7833e52a9072be93ee698205bb35ba9570a064999130b7655",
   "plugins/reverse/scripts/e2e-history-tree.mjs": "6947b95035d19626a3a41b44f32a69b8b03910ba19247263798d18dd1f7bdc10",
   "plugins/reverse/scripts/e2e-note-from-file.mjs": "0f1039be8b9cd109f6cd587558ee17487c6de72eeb3166dd2a9df2b7a6715bde",

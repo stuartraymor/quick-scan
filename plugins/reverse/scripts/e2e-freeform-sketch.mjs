@@ -72,6 +72,9 @@ try {
   await page.mouse.move(1200, 700)
   await page.keyboard.down(MOD); await page.keyboard.press('KeyZ'); await page.keyboard.up(MOD)
   await page.waitForFunction(n => document.querySelectorAll('[data-test=feature-row]').length === n, {}, before)
+  console.log('After undo, redo enabled:', await page.$eval('[data-test=redo]', e => !e.disabled))
+  // The feature list updates before asynchronous history restoration finishes.
+  await page.waitForFunction(() => !document.querySelector('[data-test=redo]').disabled)
   await page.keyboard.down(MOD); await page.keyboard.down('Shift'); await page.keyboard.press('KeyZ'); await page.keyboard.up('Shift'); await page.keyboard.up(MOD)
   await page.waitForFunction(n => document.querySelectorAll('[data-test=feature-row]').length === n, {}, before + 1)
   assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), 'dark')
