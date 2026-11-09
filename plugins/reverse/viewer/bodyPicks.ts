@@ -107,6 +107,8 @@ const EDGE_LIT_PX = 3
 const CHAIN_COLOR = '#8fd6ae'
 /** The open edges of a trim that did not close: an alarm, not a pick. */
 const OPEN_COLOR = '#e0564f'
+const NET_LINE_COLOR = '#dfe6ee'
+const NET_POINT_COLOR = '#3b82f6'
 /** A whole body lit from its row in the body list: a see-through fill
  *  over everything — a part inside another shows where it is — and its
  *  edges where they are in sight. */
@@ -246,6 +248,8 @@ export class BodyPicks {
   private silhouetteDirty = false
   private openLines: { line: Line2; geo: LineGeometry }[] = []
   private openMaterial: LineMaterial | null = null
+  private netLines: { line: LineSegments2; geo: LineSegmentsGeometry; mat: LineMaterial } | null = null
+  private netPoints: { points: THREE.Points; geo: THREE.BufferGeometry; mat: THREE.PointsMaterial } | null = null
   private edgeLights: { key: string; line: LineSegments2; geo: LineSegmentsGeometry; mat: LineMaterial }[] = []
   /** Whole bodies lit, by id — see setLit — and what draws them. */
   private litBodies: readonly number[] = []
@@ -353,6 +357,62 @@ export class BodyPicks {
       this.group.add(line)
       this.openLines.push({ line, geo })
     }
+    this.ctx.invalidate()
+  }
+
+  /** Draw a Fit Surface's control net as QUICKSURFACE's Control Net tick
+   *  does: the poles joined row by row and column by column, a point on
+   *  each, ahead of the depth buffer so the net shows through the surface it
+   *  controls. Lines are pale and points blue to read on the dark scene
+   *  (native's are black on its light one). null takes it off. */
+  setControlNet(net: { rows: number; cols: number; points: Float64Array } | null): void {
+    if (this.netLines) {
+      this.group.remove(this.netLines.line)
+      this.netLines.geo.dispose()
+      this.netLines.mat.dispose()
+      this.netLines = null
+    }
+    if (this.netPoints) {
+      this.group.remove(this.netPoints.points)
+      this.netPoints.geo.dispose()
+      this.netPoints.mat.dispose()
+      this.netPoints = null
+    }
+    if (!net || net.rows < 1 || net.cols < 1 || net.points.length < net.rows * net.cols * 3) {
+      this.ctx.invalidate()
+      return
+    }
+    const at = (r: number, c: number): [number, number, number] => {
+      const o = (r * net.cols + c) * 3
+      return [net.points[o], net.points[o + 1], net.points[o + 2]]
+    }
+    const segments: number[] = []
+    for (let r = 0; r < net.rows; r++) {
+      for (let c = 0; c < net.cols; c++) {
+        if (c + 1 < net.cols) segments.push(...at(r, c), ...at(r, c + 1))
+        if (r + 1 < net.rows) segments.push(...at(r, c), ...at(r + 1, c))
+      }
+    }
+    if (segments.length > 0) {
+      const geo = new LineSegmentsGeometry()
+      geo.setPositions(segments)
+      const mat = new LineMaterial({ color: new THREE.Color(NET_LINE_COLOR).getHex(), linewidth: SECTION_LINE_DEFAULT * this.lineScale, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false, worldUnits: false })
+      mat.resolution.copy(this.resolution)
+      const line = new LineSegments2(geo, mat)
+      line.renderOrder = 8
+      this.group.add(line)
+      this.netLines = { line, geo, mat }
+    }
+    const positions = new Float32Array(net.rows * net.cols * 3)
+    for (let i = 0; i < positions.length; i++) positions[i] = net.points[i]
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    const mat = new THREE.PointsMaterial({ color: new THREE.Color(NET_POINT_COLOR).getHex(), size: 12 * this.lineScale, sizeAttenuation: false, depthTest: false, depthWrite: false })
+    const points = new THREE.Points(geo, mat)
+    points.renderOrder = 9
+    points.frustumCulled = false
+    this.group.add(points)
+    this.netPoints = { points, geo, mat }
     this.ctx.invalidate()
   }
 
@@ -771,6 +831,7 @@ export class BodyPicks {
     if (this.edgeMaterial) this.edgeMaterial.resolution.copy(this.resolution)
     if (this.dimmedMaterial) this.dimmedMaterial.resolution.copy(this.resolution)
     if (this.openMaterial) this.openMaterial.resolution.copy(this.resolution)
+    if (this.netLines) this.netLines.mat.resolution.copy(this.resolution)
     for (const l of this.edgeLights) l.mat.resolution.copy(this.resolution)
     for (const l of this.bodyLights) if (l.mat instanceof LineMaterial) l.mat.resolution.copy(this.resolution)
     this.ctx.invalidate()
@@ -1072,6 +1133,7 @@ export class BodyPicks {
     this.rebuildBodyLights()
     this.mode = null
     this.setOpenEdges([])
+    this.setControlNet(null)
     this.setPreviewEdges([], null)
     for (const s of this.silhouettes.values()) {
       if (s.line) this.group.remove(s.line)

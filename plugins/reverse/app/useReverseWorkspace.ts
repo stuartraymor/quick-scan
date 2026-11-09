@@ -12,6 +12,7 @@
 import { useSectionLine } from '../state/sectionLineStore'
 import { edgesThroughSelection, longChains, sectionModeKey } from '../core/selectionCut'
 import { reSceneOf } from '../viewer/reScene'
+import { useControlNet } from '../state/controlNetStore'
 import { useZebra } from '../state/zebraStore'
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { EDGE_MIN_FEATURE_MM, type EdgeChains } from '../../../src/core/flat/edges'
@@ -1170,6 +1171,22 @@ export function useReverseWorkspace({
     reSceneOf(scene).setOpenEdges(open)
     // Runs on the listed dependencies only, not on everything it reads.
   }, [onReverse, featureDraft?.kind, previewOpen, previewWhere, results, bodies, sceneRef])
+
+  // A Fit Surface's control net, drawn over the part while the box is open
+  // and its Control Net tick is on — the preview's net, so it follows the
+  // numbers as they are typed. The tick goes with the box.
+  const netOn = useControlNet((s) => s.on)
+  const netDraftShape = useReverse((s) => (s.featureDraft?.kind === 'surface' ? s.featureDraft.shape : null))
+  const previewNet = useReverse((s) => (s.preview.status === 'ok' ? s.preview.surface?.controlNet : undefined))
+  useEffect(() => {
+    const scene = sceneRef.current
+    if (!scene) return
+    const wanted = onReverse && netOn && netDraftShape === 'freeform'
+    reSceneOf(scene).setControlNet(wanted && previewNet ? previewNet : null)
+  }, [onReverse, netOn, netDraftShape, previewNet, sceneRef])
+  useEffect(() => {
+    if (netDraftShape === null && useControlNet.getState().on) useControlNet.getState().set(false)
+  }, [netDraftShape])
 
   // A surface's region is shown on the scan as a marking while its box is
   // open — the same layer the tools paint into, so a flood and a brush

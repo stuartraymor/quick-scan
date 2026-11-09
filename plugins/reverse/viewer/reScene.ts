@@ -994,6 +994,13 @@ export class ReScene {
     this.host.invalidate()
   }
 
+  /** A Fit Surface's control net, drawn over the part while the Control Net
+   *  tick is on; null takes it off. See BodyPicks.setControlNet. */
+  setControlNet(net: { rows: number; cols: number; points: Float64Array } | null): void {
+    this.bodyPicks.setControlNet(net)
+    this.host.invalidate()
+  }
+
   /** Light whole bodies, by id — those whose rows the pointer is on in the
    *  body list; none with an empty list. See BodyPicks.setLit. */
   setLitBodies(ids: readonly number[]): void {
