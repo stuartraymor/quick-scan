@@ -6,6 +6,7 @@
 // project, which says for itself what it holds; a plain scan or image dropped
 // on the same button goes where it would have gone from its workspace.
 
+import { NATIVE_TIPS } from './nativeTips'
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { useStore } from '../state/store'
 import { useFlat } from '../state/flatStore'
@@ -307,7 +308,7 @@ export function TopBar({
         data-test="save-project"
         onClick={onSaveProject}
         disabled={busy || !savable}
-        title={`Save the scan, the reference, the image and every measurement as one .${PROJECT_EXTENSION} file`}
+        title={NATIVE_TIPS.Save}
       >
         <Icon name="save" size={16} />
         <span className="btxt">Save<span className="ptxt"> Project</span></span>
@@ -317,7 +318,7 @@ export function TopBar({
         data-test="save-project-as"
         onClick={onSaveProjectAs}
         disabled={busy || !savable}
-        title="Save as — save the project under a new name (the desktop app asks where)"
+        title={NATIVE_TIPS['Save As ...']}
       >
         <Icon name="saveAs" size={16} />
         <span className="btxt">Save as</span>

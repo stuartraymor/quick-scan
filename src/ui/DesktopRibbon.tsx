@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { nativeTip } from './nativeTips'
 import { useMeasureTool } from '../state/measureToolStore'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useStore } from '../state/store'
@@ -112,15 +113,15 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
   }, [busy, picking, savable, needsScan, onFit, onSave, onSaveAs, onOpen])
   // `small` is QUICKSURFACE's compact key: just the icon, three to a column. The
   // label stays in the DOM for assistive technology and for the title tooltip.
-  const tool = (label: string, icon: IconName, action: () => void, disabled = false, hint = label, small = false) => (
+  const tool = (label: string, icon: IconName, action: () => void, disabled = false, hint = label, small = false, tipKey = label) => (
     <button className={small ? 'desktop-ribbon-tool ribbon-stack-tool' : 'desktop-ribbon-tool'} key={label} disabled={disabled} aria-label={small ? label : undefined} onClick={event => { event.currentTarget.closest('details')?.removeAttribute('open'); useShell.getState().setInspectorOpen(true); useStore.getState().setStatus(''); action() }}
-      title={hint} data-test={`ribbon-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}>
+      title={nativeTip(tipKey, hint, disabled)} data-test={`ribbon-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}>
       <Icon name={icon} size={small ? 18 : 30} /><span>{label}</span>
     </button>
   )
   // QUICKSURFACE's text-only keys (Help tab, System and About groups).
   const textKey = (label: string, action: () => void, hint = label) => (
-    <button className="ribbon-text-key" key={label} title={hint} data-test={`ribbon-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`} onClick={action}>{label}</button>
+    <button className="ribbon-text-key" key={label} title={nativeTip(label, hint)} data-test={`ribbon-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`} onClick={action}>{label}</button>
   )
   // Ribbon menus behave like desktop menus: one open at a time, dismissed by an
   // outside click or Escape (Escape is consumed so it does not also cancel an
@@ -185,7 +186,7 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
     const timer = setTimeout(() => { setPending(null); useStore.getState().setStatus('CAD initialization is taking longer than expected. Check the CAD tool panel.'); }, 30000)
     return () => clearTimeout(timer)
   }, [pending])
-  const cad = (id: string, label: string, icon: IconName, scanRequired = false, small = false) => {
+  const cad = (id: string, label: string, icon: IconName, scanRequired = false, small = false, tipKey = label) => {
     const action = cadActions?.[id]
     const loading = action?.title?.includes('CAD kernel')
     const disabled = locked || !!pending || !action || (scanRequired && !file) || (action.disabled && !loading)
@@ -193,7 +194,7 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
       go('reverse')
       if (loading) { setPending(id); useStore.getState().setStatus(`Preparing CAD tools for ${label}…`) }
       else action?.run()
-    }, disabled, action?.title || `${label} — open its contextual editor`, small)
+    }, disabled, action?.title || `${label} — open its contextual editor`, small, tipKey)
   }
   // A plain button, as in QUICKSURFACE: it opens the Extract primitives dialog
   // (select the area, then click the primitive type).
@@ -292,18 +293,18 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
   </details>
   const fileGroup = <Group label="File">{tool('Open', 'load', onOpen, busy || picking, 'Open a scan or project')}{tool('Save', 'save', onSave, busy || !savable, 'Save the entire Quick Scan project')}</Group>
   const analysis = <Group label="Analysis">{tool('Compare', 'compare', () => go('deviation'), locked, 'Compare scan data with CAD or fitted geometry')}</Group>
-  const exportGroup = <Group label="Export Model">{cadActions ? cad('export', 'Export', 'exportStep') : tool('Export', 'exportStep', onExport, needsScan)}</Group>
+  const exportGroup = <Group label="Export Model">{cadActions ? cad('export', 'Export', 'exportStep', false, false, 'Export Model') : tool('Export', 'exportStep', onExport, needsScan, 'Export', false, 'Export Model')}</Group>
   const scanGroup = <Group label="Scan Data">{tool('Prepare Scan', 'prepareScan', () => { useShell.getState().setPrepareStep(0); if (mesh) go(mesh.id) }, needsScan, 'Prepare Scan: a four-step guide — mesh quality, symmetry, alignment primitives, alignment')}{tool('Edit Scan', 'wsMesh', editScan, needsScan || !mesh, 'Open mesh selection, repair and editing')}{tool('Deselect All', 'select', onDeselect, needsScan || marked === 0, 'Clear the painted scan selection')}</Group>
   // QUICKSURFACE's small key with a visible label: a 16 px icon and the name,
   // three to a column (Scan Data's Tools, Align and Colors groups).
-  const smallText = (label: string, icon: IconName, action: () => void, disabled = false, hint = label) => (
-    <button className="ribbon-text-key with-icon" key={label} disabled={disabled} title={hint} data-test={`ribbon-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`} onClick={action}>
+  const smallText = (label: string, icon: IconName, action: () => void, disabled = false, hint = label, tipKey = label) => (
+    <button className="ribbon-text-key with-icon" key={label} disabled={disabled} title={nativeTip(tipKey, hint, disabled)} data-test={`ribbon-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`} onClick={action}>
       <Icon name={icon} size={16} /><span>{label}</span>
     </button>
   )
   // A CAD-plugin action as a small labelled key, as QUICKSURFACE draws most of
   // its CAD commands; the same first-use kernel loading as cad().
-  const cadText = (id: string, label: string, icon: IconName, scanRequired = false) => {
+  const cadText = (id: string, label: string, icon: IconName, scanRequired = false, tipKey = label) => {
     const action = cadActions?.[id]
     const loading = action?.title?.includes('CAD kernel')
     const disabled = locked || !!pending || !action || (scanRequired && !file) || (!!action.disabled && !loading)
@@ -311,7 +312,7 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
       go('reverse')
       if (loading) { setPending(id); useStore.getState().setStatus(`Preparing CAD tools for ${label}…`) }
       else action?.run()
-    }, disabled, action?.title || `${label} — open its contextual editor`)
+    }, disabled, action?.title || `${label} — open its contextual editor`, tipKey)
   }
   const soonText = (label: string, icon: IconName) => smallText(label, icon, () => {}, true, `${label} is not built in Quick Scan yet`)
   const main = <>
@@ -368,15 +369,15 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
       </div>
     </Group>
     <Group label="Colors"><div className="ribbon-text-stack">{smallText('Auto colorize', 'scanColours', () => onAutoColorize?.(), needsScan || !onAutoColorize, 'Give each mesh a colour of its own')}{smallText('Set Default Color', 'colourPlot', () => onDefaultColor?.(), needsScan || !onDefaultColor, 'Put the default scan colour back')}</div></Group>
-    <Group label="Export Visible">{tool('Export', 'exportStep', () => onExportVisible?.(), needsScan || !onExportVisible, 'Export the visible scan data as an STL mesh (hidden triangles are left out)')}</Group>
+    <Group label="Export Visible">{tool('Export', 'exportStep', () => onExportVisible?.(), needsScan || !onExportVisible, 'Export the visible scan data as an STL mesh (hidden triangles are left out)', false, 'Export Visible')}</Group>
     <Group label="Visibility">{tool('Hide Selected', 'eyeOff', onHideSelected, needsScan || marked === 0, 'Hide the selected triangles')}{tool('Isolate', 'model', onIsolate, needsScan || marked === 0, 'Leave the selected triangles and hide the rest')}</Group>
   </>
   // Freeform and Surfacing as seen live in QUICKSURFACE 8.0.128 (2026-11-02):
   // large keys first, then columns of small labelled keys; no File or Export.
   const freeformTab = <>
     <Group label="Create New Freeform">{tool('New Freeform', 'freeform', () => {}, true, 'Quad-based freeform surfacing is not implemented in Quick Scan yet')}{tool('Auto Freeform', 'scan', () => {}, true, 'Automatic freeform surfacing is not implemented in Quick Scan yet')}
-      <div className="ribbon-text-stack">{soonText('Wrap Surface', 'elCylinder')}{soonText('From 3D Sketch', 'sketch3')}{soonText('From quad OBJ', 'load')}</div></Group>
-    <Group label="Tools"><div className="ribbon-text-stack">{cadText('thicken', 'Thicken', 'shell')}{cadText('offsetBody', 'Offset', 'sheet')}{soonText('Convert to CAD body', 'exportStep')}</div></Group>
+      <div className="ribbon-text-stack">{soonText('Wrap Surface', 'elCylinder')}{soonText('From 3D Sketch', 'sketch3')}{soonText('From quad OBJ ...', 'load')}</div></Group>
+    <Group label="Tools"><div className="ribbon-text-stack">{cadText('thicken', 'Thicken', 'shell', false, 'Freeform:Thicken')}{cadText('offsetBody', 'Offset', 'sheet', false, 'Freeform:Offset')}{soonText('Convert to CAD body', 'exportStep')}</div></Group>
   </>
   const surfacingTab = <>
     <Group label="Create">{cad('surface', 'Fit Surface', 'surface', true)}{cad('loft', 'Loft', 'loft')}
@@ -385,7 +386,7 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
       {cad('network', '3D Sketch', 'sketch3', true)}
       <div className="ribbon-text-stack">{cadText('thread', 'Helix', 'rotateCw')}{soonText('Roll Sketch', 'revolve')}</div></Group>
     <Group label="Tools">
-      <div className="ribbon-text-stack">{soonText('Duplicate Face', 'deleteSurface')}{cadText('offsetBody', 'Offset', 'sheet')}{cadText('thicken', 'Thicken', 'shell')}</div>
+      <div className="ribbon-text-stack">{soonText('Duplicate Face', 'deleteSurface')}{cadText('offsetBody', 'Offset', 'sheet', false, 'Surfacing:Offset')}{cadText('thicken', 'Thicken', 'shell', false, 'Surfacing:Thicken')}</div>
       <div className="ribbon-text-stack">{soonText('Extend Surface', 'extrude')}{soonText('Sew surfaces', 'opJoin')}{soonText('Project sketch', 'project')}</div>
       <div className="ribbon-text-stack">{soonText('Flatten', 'sheet')}</div></Group>
   </>
@@ -397,7 +398,7 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
       <div className="ribbon-text-stack">{cadText('extrude', 'Extrude', 'extrude')}{cadText('revolve', 'Revolve', 'revolve')}</div>
       {cad('trim', 'Trim', 'trim', true)}
       <div className="ribbon-text-stack">{cadText('booleanJoin', 'Combine', 'opJoin')}{cadText('booleanCut', 'Cut', 'opCut')}{cadText('booleanIntersect', 'Intersect', 'opIntersect')}</div>
-      <div className="ribbon-text-stack">{cadText('shell', 'Shell', 'shell')}{cadText('draft', 'Draft', 'draft')}{cadText('deleteFace', 'Delete faces', 'deleteSurface')}</div>
+      <div className="ribbon-text-stack">{cadText('shell', 'Shell', 'shell')}{cadText('draft', 'Draft', 'draft', false, 'CAD:Draft')}{cadText('deleteFace', 'Delete faces', 'deleteSurface')}</div>
       <div className="ribbon-text-stack">{cadText('moveBody', 'Move body', 'navigate')}{cadText('moveFace', 'Move face', 'moveFace')}{soonText('Separate bodies', 'islands')}</div>
       <div className="ribbon-text-stack">{cadText('scaleBody', 'Scale body', 'dimLength')}{cadText('split', 'Split solid', 'split')}</div>
     </Group>
@@ -411,7 +412,7 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
     <Group label="Tools">
       {tool('Measure', 'wsMeasure', () => useMeasureTool.getState().setOpen(true), locked || !file, 'Measure on the mesh: 3D Distance, Extended Distance and Point')}
       <div className="ribbon-text-stack">{smallText('Surface Area', 'surface', onSurfaceArea, !file, 'Surface area of the scan mesh')}{smallText('Volume', 'model', onVolume, !file, 'Volume enclosed by the scan mesh')}</div>
-      <div className="ribbon-text-stack">{cadText('zebra', 'Zebra Stripes', 'curvature')}{cadText('envMap', 'Environment Map', 'scanColours')}{cadText('draftAnalysis', 'Draft', 'draft')}</div>
+      <div className="ribbon-text-stack">{cadText('zebra', 'Zebra Stripes', 'curvature')}{cadText('envMap', 'Environment Map', 'scanColours')}{cadText('draftAnalysis', 'Draft', 'draft', false, 'Analysis:Draft')}</div>
       {tool('Snapshot', 'splitView', onSnapshot, !file, 'Snapshot to clipboard — copy the view as a picture')}
     </Group>
     <Group label="Control">{tool('Compare', 'compare', () => go('deviation'), locked, 'Compare scan data with CAD or fitted geometry')}{tool('Compare to other meshes', 'compare', () => go('deviation'), locked, 'Compare the scan with a second mesh in Surface Deviation')}</Group>
@@ -462,7 +463,7 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
       : tab === 'cad' ? cadTab
       : tab === 'settings' ? settingsTab
       : tab === 'help' ? <>
-        <Group label="Help">{tool('Help', 'note', () => window.open('https://github.com/stuartraymor/quick-scan#readme', '_blank'), false, 'Quick Scan documentation on GitHub (opens your browser)')}{tool('Shortcuts', 'navigate', () => setHelpDialog('shortcuts'), false, 'Keyboard shortcuts')}{examplesMenu}{updater ? tool(updater.label === 'Check for updates' ? 'Check for Update' : updater.label, 'rotateCw', updater.run, updater.busy, updater.title) : tool('Check for Update', 'rotateCw', () => {}, true, 'Updates are checked by the Windows app')}</Group>
+        <Group label="Help">{tool('Help', 'note', () => window.open('https://github.com/stuartraymor/quick-scan#readme', '_blank'), false, 'Quick Scan documentation on GitHub (opens your browser)')}{tool('Shortcuts', 'navigate', () => setHelpDialog('shortcuts'), false, 'Keyboard shortcuts')}{examplesMenu}{updater ? tool(updater.label === 'Check for updates' ? 'Check for update' : updater.label, 'rotateCw', updater.run, updater.busy, updater.title) : tool('Check for update', 'rotateCw', () => {}, true, 'Updates are checked by the Windows app')}</Group>
         <Group label="System"><div className="ribbon-text-stack">{textKey('System Log ...', () => setHelpDialog('log'), 'Warnings and errors since Quick Scan started')}{textKey('Reset layout...', () => { if (window.confirm('Reset the layout? The ribbon returns to the Main tab and the tool panel is put back.')) useShell.getState().resetLayout() }, 'Put the ribbon tab and tool panel back as they start')}{textKey('Change log', () => setHelpDialog('changelog'), 'What changed in each release')}</div></Group>
         <Group label="About"><div className="ribbon-text-stack">{textKey('Credits ...', () => useStore.getState().openImprint(true), 'Licences, attribution and imprint')}{textKey('About ...', () => setAbout(true), 'Version and licence')}</div></Group></>
       : tab === 'ai' ? <>{fileGroup}

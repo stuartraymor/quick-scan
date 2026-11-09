@@ -43,7 +43,7 @@ describe('QUICKSURFACE ribbon parity', () => {
     expect(groups(surfacing)).toEqual(['Create', 'Tools', 'Assistant'])
     // Checked live against QUICKSURFACE 8.0.128 on 2026-11-02: no File group on CAD.
     expect(groups(cad)).toEqual(['Cross sections', 'Create', 'Edges', 'Patterns', 'Export Model', 'Assistant'])
-    expect(labels(freeform)).toEqual(expect.arrayContaining(['New Freeform', 'Auto Freeform', 'Wrap Surface', 'From 3D Sketch', 'From quad OBJ', 'Thicken', 'Offset', 'Convert to CAD body']))
+    expect(labels(freeform)).toEqual(expect.arrayContaining(['New Freeform', 'Auto Freeform', 'Wrap Surface', 'From 3D Sketch', 'From quad OBJ ...', 'Thicken', 'Offset', 'Convert to CAD body']))
     expect(labels(surfacing)).toEqual(expect.arrayContaining(['Fit Surface', 'Loft', 'Fill Surface', 'From 2D sketch', 'Sweep', 'Pipe', '3D Sketch', 'Helix', 'Roll Sketch', 'Duplicate Face', 'Extend Surface', 'Sew surfaces', 'Flatten', 'Project sketch']))
   })
 
@@ -65,7 +65,8 @@ describe('QUICKSURFACE ribbon parity', () => {
     const html = render('scan')
     const group = html.slice(html.indexOf('>Export Visible<') - 2000, html.indexOf('>Export Visible<'))
     const key = [...group.matchAll(/<button class="desktop-ribbon-tool"[^>]*>/g)].pop()?.[0] ?? ''
-    expect(key).toMatch(/title="Export the visible scan data as an STL mesh/)
+    // QUICKSURFACE's own tooltip for this key (read from its ribbon); the button still writes the scan mesh.
+    expect(key).toMatch(/title="Exports all the visible scan data for another applications/)
   })
 
   it('Combine, Cut, Intersect and the two pattern keys each take their own action (audit W-02)', () => {
@@ -126,5 +127,21 @@ describe('QUICKSURFACE ribbon parity', () => {
     expect(useShell.getState().ribbonTab).toBe('main')
     useShell.getState().setWorkspace('mesh')
     expect(useShell.getState().ribbonTab).toBe('main')
+  })
+  it('every ribbon button whose name QUICKSURFACE tooltips shows that tooltip (read from its ribbon)', async () => {
+    const { NATIVE_TIPS } = await import('../src/ui/nativeTips')
+    const decode = (t: string) => t.replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    let checked = 0
+    for (const tab of ['main', 'view', 'scan', 'construct', 'freeform', 'surfacing', 'cad', 'analysis', 'settings', 'help']) {
+      const html = render(tab)
+      for (const m of html.matchAll(/<button [^>]*?title="([^"]*)"[^>]*>(?:<[^>]+>)*?<span>([^<]*)<\/span>/g)) {
+        const name = decode(m[2])
+        const native = NATIVE_TIPS[name]
+        if (!native) continue
+        expect(decode(m[1]).split('\n')[0], `${tab} › ${name}`).toBe(native)
+        checked++
+      }
+    }
+    expect(checked).toBeGreaterThan(40)
   })
 })

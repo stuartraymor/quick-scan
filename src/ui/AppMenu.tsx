@@ -126,19 +126,19 @@ export function AppMenu({
   return (
     <div className="appmenu" data-app-menu data-test="app-menu" role="dialog" aria-label="Quick Scan menu" ref={panel}>
       <div className="appmenu-commands" role="menu">
-        {item('New project', 'newProject', onNew, { test: 'menu-new', disabled: busy })}
-        {item('Open…', 'load', onOpen, { test: 'menu-open', disabled: busy, hint: 'Ctrl+O', title: `Open a .${PROJECT_EXTENSION} project, a scan or an image` })}
-        {item('Import scan…', 'scan', onImportScan, { test: 'menu-import-scan', disabled: busy, title: 'Import an STL, PLY, OBJ or 3MF scan' })}
-        {item('Import CAD…', 'exportStep', onImportCad, { test: 'menu-import-cad', disabled: busy, title: 'Import a STEP model' })}
+        {item('New', 'newProject', onNew, { test: 'menu-new', disabled: busy })}
+        {item('Open ...', 'load', onOpen, { test: 'menu-open', disabled: busy, hint: 'Ctrl+O', title: `Open a .${PROJECT_EXTENSION} project, a scan or an image` })}
+        {item('Import Scan Data ...', 'scan', onImportScan, { test: 'menu-import-scan', disabled: busy, title: 'Import an STL, PLY, OBJ or 3MF scan' })}
+        {item('Import CAD ...', 'exportStep', onImportCad, { test: 'menu-import-cad', disabled: busy, title: 'Import a STEP model' })}
         <hr />
         {item('Save', 'save', onSave, { test: 'menu-save', disabled: busy || !savable, hint: 'Ctrl+S' })}
-        {item('Save as…', 'saveAs', onSaveAs, { test: 'menu-save-as', disabled: busy || !savable, hint: 'Ctrl+Shift+S', title: 'Choose a name and location for a copy of the project' })}
+        {item('Save As ...', 'saveAs', onSaveAs, { test: 'menu-save-as', disabled: busy || !savable, hint: 'Ctrl+Shift+S', title: 'Choose a name and location for a copy of the project' })}
         <hr />
-        {item('Export model', 'exportStep', onExportModel, { test: 'menu-export-model', disabled: busy, title: 'Export the CAD model and fitted geometry as STEP' })}
+        {item('Export Model ...', 'exportStep', onExportModel, { test: 'menu-export-model', disabled: busy, title: 'Export the CAD model and fitted geometry as STEP' })}
         <div className="appmenu-export" role="none">
           <Icon name="scan" size={18} />
           <ExportMeshButton
-            label="Export scan data"
+            label="Export Scan Data ..."
             testId="menu-export-scan"
             block
             disabled={busy || !hasScan}
@@ -163,7 +163,7 @@ export function AppMenu({
       </div>
       <div className="appmenu-recent" role="group" aria-label="Recent documents">
         <div className="appmenu-recent-head">
-          <b>Recent documents</b>
+          <b>Recent Documents</b>
           {files && recent.length > 0 && (
             <button className="linkish" data-test="menu-clear-recent" onClick={() => void files.clear().then(setRecent)}>
               Clear
