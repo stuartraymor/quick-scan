@@ -1,3 +1,7 @@
+## 0.0.177
+
+Fit Surface: Degree and Max degree share a stable row; Expand by omits the visible percent suffix, matching observed native controls. Internal values and MCP fields remain unchanged. Verified in browser and installed app at two sizes with dark theme, stable degree-toggle layout and expression entry. Full unit, E2E, build and packaged smoke checks passed.
+
 ## 0.0.176 — Local candidate; GitHub held
 
 - Fit Surface (freeform) edit box takes QUICKSURFACE 8.0.128's fit controls, in its order and words, shown and approved as visible changes: **Method** (Simple / Refined), **U** with a lock that ties **V** to it and **Auto ...**, **Degree** with **Max degree**, **Expand by**, **Surface smoothness**, **Surface orientation** (Selection bounds, Axis aligned, OXY, OYZ, OXZ), **Fit with the new parameters** (dimmed until something has changed; the surface is no longer fitted again at every keystroke, only when the button is pressed), then **Control Net**. Picking a Method, even the one already there, puts U and V to 10, as native does. Net sizes U × V are as before, 3 to 20.

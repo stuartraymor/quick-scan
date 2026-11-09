@@ -211,3 +211,10 @@
 /* Analysis → Measure: the way chosen stands pressed, as in QUICKSURFACE. */
 .measure-dialog .measure-modes button { min-height: 38px; }
 .measure-dialog .measure-modes button.on { background: color-mix(in srgb, var(--accent) 35%, transparent); border-color: var(--accent); }
+
+/* Fit Surface: manual and maximum degree use the same native row geometry. */
+.surface-degree-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; }
+.surface-degree-row > .field { min-width: 0; }
+.surface-degree-row .unitfield { flex: 0 0 52px; width: 52px; min-width: 0; }
+.surface-degree-row .unitfield input { box-sizing: border-box; width: 100%; min-width: 0; }
+.surface-degree-row > .checkrow { white-space: nowrap; }

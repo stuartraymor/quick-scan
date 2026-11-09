@@ -134,19 +134,21 @@ export function SurfaceFitFields({ d, set }: { d: SurfaceDraft; set: (patch: Par
           </span>
         </div>
       )}
-      {fit.maxDegree ? (
-        <label className="field">
-          <span>Degree</span>
-          <input data-test="surface-degree" value={degree} disabled readOnly />
+      <div className="surface-degree-row" data-test="surface-degree-row">
+        {fit.maxDegree ? (
+          <label className="field">
+            <span>Degree</span>
+            <span className="unitfield"><input data-test="surface-degree" value={degree} disabled readOnly /></span>
+          </label>
+        ) : (
+          <Num label="Degree" unit="" testId="surface-degree" value={degree} onCommit={(v) => edit({ degree: Math.max(1, Math.min(MAX_DEGREE, Math.round(Math.abs(v)))) })} />
+        )}
+        <label className="checkrow">
+          <input type="checkbox" data-test="surface-max-degree" checked={fit.maxDegree === true} onChange={(e) => edit({ maxDegree: e.target.checked })} />
+          <span>Max degree</span>
         </label>
-      ) : (
-        <Num label="Degree" unit="" testId="surface-degree" value={degree} onCommit={(v) => edit({ degree: Math.max(1, Math.min(MAX_DEGREE, Math.round(Math.abs(v)))) })} hint={`The degree of the surface, 1 to ${MAX_DEGREE}`} />
-      )}
-      <label className="checkrow">
-        <input type="checkbox" data-test="surface-max-degree" checked={fit.maxDegree === true} onChange={(e) => edit({ maxDegree: e.target.checked })} />
-        <span>Max degree</span>
-      </label>
-      <Num label="Expand by" unit="%" testId="surface-expand" value={fit.expandPct} onCommit={(v) => edit({ expandPct: Math.min(200, Math.max(0, Math.abs(v))) })} hint="How far past the region the surface reaches, as a share of its extent — it has to meet its neighbours for the trim" />
+      </div>
+      <Num label="Expand by" unit="" testId="surface-expand" value={fit.expandPct} onCommit={(v) => edit({ expandPct: Math.min(200, Math.max(0, Math.abs(v))) })} hint="How far past the region the surface reaches, as a share of its extent — it has to meet its neighbours for the trim" />
       <Num label="Surface smoothness" unit="" testId="surface-smooth" value={fit.smoothness} onCommit={(v) => edit({ smoothness: Math.max(0, Math.abs(v)) })} hint="How hard the surface is held fair against the points: 0 follows them exactly, 0.01 fairs a scan's noise, more flattens detail" />
       <label className="field">
         <span>Surface orientation</span>
