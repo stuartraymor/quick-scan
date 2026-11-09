@@ -9,6 +9,7 @@ import type { PoleFrame } from './poleFrameGizmo'
 // lies behind them, the bodies, which come after, and the coordinate planes
 // at the origin, last.
 
+import { cageLines } from '../core/freeform/cageLines'
 import { SliceArrow } from './sliceArrow'
 import { SurfacePoleDrag } from './surfacePoleDrag'
 import { surfacePolePreview } from './surfacePolePreview'
@@ -58,6 +59,7 @@ export class ReScene {
   private bodiesFaint = false
   /** The ghost of a feature being set up — see setBodyPreview. */
   bodyPreview: THREE.Mesh | null = null
+  cagePreview: THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial> | null = null
   /** The sketches drawn on the part, and their regions as click targets. */
   readonly sketches: SketchOverlay
   readonly bodyPicks: BodyPicks
@@ -636,8 +638,24 @@ export class ReScene {
   setBodyPreview(
     mesh: { positions: Float32Array; normals: Float32Array; indices: Uint32Array; faceHash?: Int32Array } | null,
     color: string,
-    options: { through?: boolean; replaces?: readonly number[]; edges?: boolean } = {},
+    options: { through?: boolean; replaces?: readonly number[]; edges?: boolean; cage?: { positions: ArrayLike<number>; faces: readonly (readonly number[])[] } } = {},
   ): void {
+    if (this.cagePreview) {
+      this.bodyGroup.remove(this.cagePreview)
+      this.cagePreview.geometry.dispose()
+      this.cagePreview.material.dispose()
+      this.cagePreview = null
+    }
+    if (mesh && options.cage) {
+      const geometry = new THREE.BufferGeometry()
+      geometry.setAttribute('position', new THREE.BufferAttribute(cageLines(options.cage.positions, options.cage.faces), 3))
+      const material = new THREE.LineBasicMaterial({ color: '#182630', depthWrite: false })
+      material.clippingPlanes = this.host.clipPlanes()
+      const lines = new THREE.LineSegments(geometry, material)
+      lines.renderOrder = 4
+      this.bodyGroup.add(lines)
+      this.cagePreview = lines
+    }
     const replaces = mesh ? (options.replaces ?? []) : []
     this.replacedBodies = new Set(replaces)
     for (const [id, body] of this.bodyMeshes) (body.material as THREE.Material).visible = !this.replacedBodies.has(id)

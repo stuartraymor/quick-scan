@@ -52,7 +52,7 @@ export function FreeformSketchDialog() {
       if (!result) throw new Error('The preview was superseded. Preview again.')
       const scene = session.sceneRef.current
       if (!scene) throw new Error('The viewport is unavailable.')
-      reSceneOf(scene).setBodyPreview(result.mesh, '#5da9d6')
+      reSceneOf(scene).setBodyPreview(result.mesh, '#5da9d6', { cage })
       setPreviewReady(true)
     } catch (e) { if (alive.current) setError(e instanceof Error ? e.message : String(e)) }
     finally { if (alive.current) setWorking(false) }
