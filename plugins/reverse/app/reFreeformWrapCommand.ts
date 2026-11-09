@@ -16,7 +16,7 @@ import { MAX_STEPS } from '../core/freeform/make'
 import { fitWrap, regionClosest, scanVertexNormals, settleWrap, snapRegionOf, WrapError, type WrapClosure, type WrapDensity, wrapCage } from '../core/freeform/wrap'
 import { bodiesChanged, bodyRows } from './reCommandAnswers'
 import { madeOut } from './reFreeformEditCommands'
-import { change, featureNamed, type Json, re, ready, session } from './reCommandCore'
+import { change, featureNamed, type Json, re, ready } from './reCommandCore'
 import { requireFreeName } from './reFeatureCommands'
 import { scanPaths } from './reNetworkCommands'
 import { regionOf, SURFACE_REGION_LIMIT, SURFACE_REGION_MAX } from './reSurfaceRegion'
@@ -77,52 +77,7 @@ export const freeformWrap: Command<{
   run: async ({ region, density = 'medium', closure = 'chord', axis, name, steps = 2, snap = true, iterations = 8 }) => {
     requireFreeName(name)
     const s = await ready()
-    // The region: the vertices given, or read off the scan.
-    let vertices: number[]
-    if (Array.isArray(region)) {
-      if (region.length < SURFACE_MIN_REGION) return invalid(`region: ${region.length} scan points — a wrap needs ${SURFACE_MIN_REGION} at least.`)
-      vertices = region
-    } else {
-      vertices = await regionOf(region)
-    }
-    await s.syncScan()
-    const scene = s.sceneRef.current
-    const positions = scene?.scanPositions() ?? null
-    const indices = scene?.scanIndices() ?? null
-    if (!scene || !positions || !indices) throw new CommandError('unavailable', 'A wrap reads the scan as the viewport holds it — this needs the ScanRuler page with the scan shown.')
-    const count = positions.length / 3
-    if (vertices.some((v) => !Number.isInteger(v) || v < 0 || v >= count)) return invalid(`region: a vertex is not one of the scan’s ${count}.`)
-
-    let wrap
-    try {
-      const normals = scanVertexNormals(positions, indices)
-      const fit = fitWrap(positions, vertices, normals, axis)
-      wrap = wrapCage(fit, density, closure)
-    } catch (e) {
-      if (e instanceof WrapError) return invalid(`Wrap: ${e.message}`)
-      throw e
-    }
-
-    // The cage snapped over the region only: the chord closing the ring runs through the part and holds.
-    const closest = regionClosest(wrap.fit, density, (() => {
-      const paths = scanPaths(session())
-      return (p: Vec3) => {
-        const c = paths.closest(p)
-        return c ? { point: c.point, distance: c.distance } : null
-      }
-    })())
-    // Settled on the fitted cylinder first (the ring's limit falls inside it at the arc's ends), then taken onto the scan.
-    let cage = settleWrap(wrap, density)
-    const was = deviation(cage, closest, TOLERANCE_MM)
-    let snapped: Json | null = null
-    if (was.points > 0) {
-      const r = snapCage(cage, closest, iterations, 0.01)
-      cage = r.cage
-      const now = deviation(cage, closest, TOLERANCE_MM)
-      const show = (d: typeof was) => ({ points: d.points, missed: d.missed, rms: round3(d.rms), max: round3(d.max), within: d.within, fraction: d.points > 0 ? round3(d.within / d.points) : 0 })
-      snapped = { iterations: r.stats.iterations, tolerance: TOLERANCE_MM, before: show(was), after: show(now) }
-    }
-
+    const { vertices, wrap, cage, snapped } = await prepareWrapCage(s, region, density, closure, axis, iterations)
     const before = bodyRows(s)
     const snapRegion = snapRegionOf(wrap.fit, density)
     const id = await change(() => re().addFreeform({ positions: Array.from(cage.positions), faces: cage.faces, creases: cage.creases, steps, snap, ...(snapRegion ? { snapRegion } : {}) }, name))
@@ -145,4 +100,55 @@ export const freeformWrap: Command<{
       bodies: bodiesChanged(s, before),
     }
   },
+}
+
+/** Prepare the same cage for temporary preview and committed commands. */
+export async function prepareWrapCage(s: Awaited<ReturnType<typeof ready>>, region: RegionIn, density: WrapDensity, closure: WrapClosure = 'chord', axis?: { dir: Vec3; radius?: number }, iterations = 8) {
+  // The region: the vertices given, or read off the scan.
+  let vertices: number[]
+  if (Array.isArray(region)) {
+    if (region.length < SURFACE_MIN_REGION) return invalid(`region: ${region.length} scan points — a wrap needs ${SURFACE_MIN_REGION} at least.`)
+    vertices = region
+  } else {
+    vertices = await regionOf(region)
+  }
+  await s.syncScan()
+  const scene = s.sceneRef.current
+  const positions = scene?.scanPositions() ?? null
+  const indices = scene?.scanIndices() ?? null
+  if (!scene || !positions || !indices) throw new CommandError('unavailable', 'A wrap reads the scan as the viewport holds it — this needs the ScanRuler page with the scan shown.')
+  const count = positions.length / 3
+  if (vertices.some((v) => !Number.isInteger(v) || v < 0 || v >= count)) return invalid(`region: a vertex is not one of the scan’s ${count}.`)
+
+  let wrap
+  try {
+    const normals = scanVertexNormals(positions, indices)
+    const fit = fitWrap(positions, vertices, normals, axis)
+    wrap = wrapCage(fit, density, closure)
+  } catch (e) {
+    if (e instanceof WrapError) return invalid(`Wrap: ${e.message}`)
+    throw e
+  }
+
+  // The cage snapped over the region only: the chord closing the ring runs through the part and holds.
+  const closest = regionClosest(wrap.fit, density, (() => {
+    const paths = scanPaths(s)
+    return (p: Vec3) => {
+      const c = paths.closest(p)
+      return c ? { point: c.point, distance: c.distance } : null
+    }
+  })())
+  // Settled on the fitted cylinder first (the ring's limit falls inside it at the arc's ends), then taken onto the scan.
+  let cage = settleWrap(wrap, density)
+  const was = deviation(cage, closest, TOLERANCE_MM)
+  let snapped: Json | null = null
+  if (was.points > 0) {
+    const r = snapCage(cage, closest, iterations, 0.01)
+    cage = r.cage
+    const now = deviation(cage, closest, TOLERANCE_MM)
+    const show = (d: typeof was) => ({ points: d.points, missed: d.missed, rms: round3(d.rms), max: round3(d.max), within: d.within, fraction: d.points > 0 ? round3(d.within / d.points) : 0 })
+    snapped = { iterations: r.stats.iterations, tolerance: TOLERANCE_MM, before: show(was), after: show(now) }
+  }
+
+  return { vertices, wrap, cage, snapped, snapRegion: snapRegionOf(wrap.fit, density) }
 }
