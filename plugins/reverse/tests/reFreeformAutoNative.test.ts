@@ -15,7 +15,7 @@
 // irregular vertices (ours, from cubes, has about three times as many), or
 // the same worst deviation (native's is 1.7 mm after the snap, ours several), or a cage box like native's, whose control cage overshoots the scan by up to 5.6 mm.
 import { readFileSync } from 'node:fs'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { strFromU8, unzipSync } from 'fflate'
 import { buildMeshGraph } from '../../../src/core/geometry/buildGraph'
 import { rigidApply } from '../../../src/core/deviation/rigid'
@@ -80,15 +80,22 @@ function euler(c: Cage): { V: number; E: number; F: number; loose: number } {
 }
 
 describe.skipIf(!SCAN.exists)('Auto Freeform, Basic on basic_part against QUICKSURFACE', () => {
-  const g = loadScan(SCAN.path)
-  const scan = new ScanPaths(g.positions, g.indices)
-  const closest = (p: [number, number, number]) => {
-    const c = scan.closest(p)
-    return c ? { point: c.point, distance: c.distance } : null
+  // Skipped suites still collect their callback; load optional scans only when run.
+  function prepare() {
+    const g = loadScan(SCAN.path)
+    const scan = new ScanPaths(g.positions, g.indices)
+    const closest = (p: [number, number, number]) => {
+      const c = scan.closest(p)
+      return c ? { point: c.point, distance: c.distance } : null
+    }
+    const native = nativeMedium()
+    return { scan, closest, native }
   }
-  const native = nativeMedium()
+  let data: ReturnType<typeof prepare>
+  beforeAll(() => { data = prepare() }, 120_000)
 
   it('Medium: about 2000 quads, a closed sphere-like mesh, edge and box like native’s', () => {
+    const { scan, native } = data
     const r = autoCage(scan, 2000)
     const t = euler(r.cage)
     expect(Math.abs(r.quads - 2000) / 2000).toBeLessThan(0.02)
@@ -111,6 +118,7 @@ describe.skipIf(!SCAN.exists)('Auto Freeform, Basic on basic_part against QUICKS
   })
 
   it('Fine: about 4000 quads, edge like native’s 5.40 mm', () => {
+    const { scan } = data
     const r = autoCage(scan, 4000)
     const t = euler(r.cage)
     expect(Math.abs(r.quads - 4014) / 4014).toBeLessThan(0.03)
@@ -121,6 +129,7 @@ describe.skipIf(!SCAN.exists)('Auto Freeform, Basic on basic_part against QUICKS
   })
 
   it('snapped, its surface lies as near the scan as native’s does (rms within twice, most points near)', () => {
+    const { scan, closest, native } = data
     const r = autoCage(scan, 2000)
     const ours = deviation(snapCage(r.cage, closest, 8, 0.01).cage, closest, 0.05, 2)
     const theirs = deviation(snapCage(native, closest, 8, 0.01).cage, closest, 0.05, 2)
@@ -131,6 +140,7 @@ describe.skipIf(!SCAN.exists)('Auto Freeform, Basic on basic_part against QUICKS
   })
 
   it('converts to a closed, valid CAD solid (sewn at 0.05 mm, not a micron; native’s own Medium cage does the same, as one face a quad, which takes half a minute and is measured, not run here)', async () => {
+    const { scan } = data
     const k = await ReKernel.load()
     for (const [label, cage] of [['ours', autoCage(scan, 2000).cage]] as [string, Cage][]) {
       const made = freeformBody(k, cage, { steps: 2, snap: false })

@@ -10,7 +10,7 @@
 // and the fit is held to the native cylinder at the level the two apps'
 // selections allow (analysis/wand-2026-11-07/coverage.json).
 import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { strFromU8, unzipSync } from 'fflate'
 import { buildMeshGraph } from '../src/core/geometry/buildGraph'
 import { buildTriangleGraph, wandGrow, type TriangleGraph } from '../src/core/geometry/wand'
@@ -88,20 +88,29 @@ function takenTriangles(m: Loaded, sel: Uint32Array): Uint8Array {
 }
 
 describe.skipIf(!FILE.exists)('Magic Wand on the basic_part outer wall', () => {
-  const m = load(FILE.path)
-  // The wall runs round the half away from the U cut (about 90°–270° in this frame).
-  const seeds = [0.3, 0.4, 0.5, 0.6, 0.7].map((turn) => seedAt(m, turn)).filter((s) => s >= 0)
+  // Skipped suites still collect their callback; load optional scans only when run.
+  function prepare() {
+    const m = load(FILE.path)
+    // The wall runs round the half away from the U cut (about 90°–270° in this frame).
+    const seeds = [0.3, 0.4, 0.5, 0.6, 0.7].map((turn) => seedAt(m, turn)).filter((s) => s >= 0)
+    return { m, seeds }
+  }
+  let data: ReturnType<typeof prepare>
+  beforeAll(() => { data = prepare() }, 120_000)
 
   it('finds seeds round the wall', () => {
+    const { seeds } = data
     expect(seeds.length).toBeGreaterThanOrEqual(3)
   })
 
   it('takes the same patch from any seed on the wall', () => {
+    const { m, seeds } = data
     const sizes = seeds.map((s) => wandGrow(m.tg, s, 3).length)
     expect(new Set(sizes).size).toBe(1)
   })
 
   it('covers the wall by area at 3° and stays off the groove rims and the neighbouring faces', () => {
+    const { m, seeds } = data
     const taken = takenTriangles(m, wandGrow(m.tg, seeds[0], 3))
     let wall = 0, hit = 0, leak = 0, rimCount = 0, rimArea = 0
     for (let t = 0; t < m.tg.count; t++) {
@@ -119,6 +128,7 @@ describe.skipIf(!FILE.exists)('Magic Wand on the basic_part outer wall', () => {
   })
 
   it('fits the cylinder QUICKSURFACE fitted, to the level the selections allow', () => {
+    const { m, seeds } = data
     const f = fitCylinderOnSelection(m.g, wandGrow(m.tg, seeds[0], 3), { method: 'gaussian', sigma: 3 } as FitSettings)
     const axisDeg = (Math.acos(Math.min(1, Math.abs(f.axis[0] * m.axis[0] + f.axis[1] * m.axis[1] + f.axis[2] * m.axis[2]))) * 180) / Math.PI
     const d = [f.center[0] - NATIVE.s[0], f.center[1] - NATIVE.s[1], f.center[2] - NATIVE.s[2]]

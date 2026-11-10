@@ -15,7 +15,7 @@
 // to the nearest scan point (and onto the far wall where the sketch cuts
 // through the shell) — reported, not asserted equal.
 import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { strFromU8, unzipSync } from 'fflate'
 import { buildMeshGraph } from '../../../src/core/geometry/buildGraph'
 import { rigidApply } from '../../../src/core/deviation/rigid'
@@ -100,37 +100,44 @@ const boundaryOf = (c: Cage): number[] => {
 const rms = (xs: number[]) => Math.sqrt(xs.reduce((a, b) => a + b * b, 0) / xs.length)
 
 describe.skipIf(!SCAN.exists)('From 3D Sketch on the basic_part wall against QUICKSURFACE', () => {
-  const g = loadScan(SCAN.path)
-  const paths = new ScanPaths(g.positions, g.indices)
-  const curves = igesCurves(here('native-3d-sketch.iges'))
-  const point = (c: Float64Array, share: number): Vec3 => {
-    const i = Math.round(share * (c.length / 3 - 1))
-    return [c[i * 3], c[i * 3 + 1], c[i * 3 + 2]]
-  }
-  // The network: a node at the start of each curve (the end of the one before), grips at a quarter, half and three quarters.
-  const nodes: NetworkNode[] = curves.map((c, i) => ({ id: i, at: point(c, 0) }))
-  const net: NetworkCurve[] = curves.map((c, i) => ({ id: i, from: i, to: (i + 1) % 4, via: [point(c, 0.25), point(c, 0.5), point(c, 0.75)] }))
-  const traced = traceNetwork(paths, nodes, net)
-  const first = readCells(paths, traced.nodes, traced.curves, [])
-  const cells = readCells(paths, traced.nodes, traced.curves, first.unfilled.map((u) => u.seed))
-  const byId = new Map(traced.curves.map((c) => [c.id, c]))
-  const ok = cells.cells.filter((c) => c.status === 'ok')
+  // Skipped suites still collect their callback; load optional scans only when run.
+  function prepare() {
+    const g = loadScan(SCAN.path)
+    const paths = new ScanPaths(g.positions, g.indices)
+    const curves = igesCurves(here('native-3d-sketch.iges'))
+    const point = (c: Float64Array, share: number): Vec3 => {
+      const i = Math.round(share * (c.length / 3 - 1))
+      return [c[i * 3], c[i * 3 + 1], c[i * 3 + 2]]
+    }
+    // The network: a node at the start of each curve (the end of the one before), grips at a quarter, half and three quarters.
+    const nodes: NetworkNode[] = curves.map((c, i) => ({ id: i, at: point(c, 0) }))
+    const net: NetworkCurve[] = curves.map((c, i) => ({ id: i, from: i, to: (i + 1) % 4, via: [point(c, 0.25), point(c, 0.5), point(c, 0.75)] }))
+    const traced = traceNetwork(paths, nodes, net)
+    const first = readCells(paths, traced.nodes, traced.curves, [])
+    const cells = readCells(paths, traced.nodes, traced.curves, first.unfilled.map((u) => u.seed))
+    const byId = new Map(traced.curves.map((c) => [c.id, c]))
+    const ok = cells.cells.filter((c) => c.status === 'ok')
 
-  const all = parseQuadObj(here('native-from-sketch-quads.obj'))
-  const split = (n: number, at: number): Cage => {
-    const faces = all.faces.slice(at, at + n)
-    const used = [...new Set(faces.flat())].sort((a, b) => a - b)
-    const map = new Map(used.map((v, i) => [v, i]))
-    return { positions: Float64Array.from(used.flatMap((v) => [all.positions[v * 3], all.positions[v * 3 + 1], all.positions[v * 3 + 2]])), faces: faces.map((f) => f.map((v) => map.get(v) as number)), creases: [] }
+    const all = parseQuadObj(here('native-from-sketch-quads.obj'))
+    const split = (n: number, at: number): Cage => {
+      const faces = all.faces.slice(at, at + n)
+      const used = [...new Set(faces.flat())].sort((a, b) => a - b)
+      const map = new Map(used.map((v, i) => [v, i]))
+      return { positions: Float64Array.from(used.flatMap((v) => [all.positions[v * 3], all.positions[v * 3 + 1], all.positions[v * 3 + 2]])), faces: faces.map((f) => f.map((v) => map.get(v) as number)), creases: [] }
+    }
+    const native: Record<number, Cage> = { 1: split(4, 0), 3: split(64, 4), 2: split(16, 68) }
+    const cageAt = (r: number) => {
+      const cell = ok[0]
+      if (cell.status !== 'ok') throw new Error('no cell')
+      return sketchCage([{ sides: cell.sides.map((s) => polylinePath(sidePoints(s, byId))) }], r)
+    }
+    return { paths, traced, ok, native, cageAt }
   }
-  const native: Record<number, Cage> = { 1: split(4, 0), 3: split(64, 4), 2: split(16, 68) }
-  const cageAt = (r: number) => {
-    const cell = ok[0]
-    if (cell.status !== 'ok') throw new Error('no cell')
-    return sketchCage([{ sides: cell.sides.map((s) => polylinePath(sidePoints(s, byId))) }], r)
-  }
+  let data: ReturnType<typeof prepare>
+  beforeAll(() => { data = prepare() }, 120_000)
 
   it('reads the loop as one four-sided region', () => {
+    const { traced, ok } = data
     expect(traced.lost).toEqual([])
     expect(ok.length).toBe(1)
     const cell = ok[0]
@@ -139,6 +146,7 @@ describe.skipIf(!SCAN.exists)('From 3D Sketch on the basic_part wall against QUI
   })
 
   it('makes the native cage’s quads, vertices and valences at Resolution 1, 2 and 3', () => {
+    const { native, cageAt } = data
     const valences = (c: Cage) => {
       const h: Record<number, number> = {}
       for (const ve of topology(c).vertexEdges) h[ve.length] = (h[ve.length] ?? 0) + 1
@@ -153,6 +161,7 @@ describe.skipIf(!SCAN.exists)('From 3D Sketch on the basic_part wall against QUI
   })
 
   it('has the nodes for corners, and its boundary as near the native boundary as the two traces of one wall are', () => {
+    const { traced, native, cageAt } = data
     const lines: string[] = []
     for (const r of [1, 2, 3]) {
       const ours = cageAt(r)
@@ -173,6 +182,7 @@ describe.skipIf(!SCAN.exists)('From 3D Sketch on the basic_part wall against QUI
   })
 
   it('gives, once snapped as the command and the build snap it, a surface on the outer wall, as the native freeform’s is', () => {
+    const { paths, ok, cageAt } = data
     const NATIVE = { s: [-1.250317984, 21.635862871, -264.868961646], e: [-1.069856164, 21.919975087, 53.125209598], r: 100.084537315 }
     const len = Math.hypot(NATIVE.e[0] - NATIVE.s[0], NATIVE.e[1] - NATIVE.s[1], NATIVE.e[2] - NATIVE.s[2])
     const D = NATIVE.e.map((v, i) => (v - NATIVE.s[i]) / len)
