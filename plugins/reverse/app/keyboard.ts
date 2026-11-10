@@ -70,6 +70,7 @@ export const reverseKeyboard: KeyboardContribution = {
       if (d.placing && !e.ctrlKey && !e.altKey && !e.metaKey && 'lcrdsftmo'.includes(e.key.toLowerCase()) && e.key.length === 1) return true
       const tool = !e.ctrlKey && !e.altKey && !e.metaKey ? SKETCH_TOOL_KEYS[e.key.toLowerCase()] : undefined
       if (e.key === 'Escape') {
+        if (useSketchPresentation.getState().edit) { useSketchPresentation.getState().setEdit(null); return true }
         // A dimension following the cursor is taken back, never made; a
         // spline's points are made the curve, as a chain of lines is ended
         // with the lines it has.

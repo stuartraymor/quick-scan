@@ -31,7 +31,7 @@ export function SketchControls({chainsOf}:{chainsOf:()=>SketchChains|null}) {
  const { format:exportFormat, setFormat:setExportFormat }=useSketchExportPrefs()
  const [draftFormat,setDraftFormat]=useState<SketchExportFormat>('iges')
  const {edit,setEdit}=presentation
- const [distance,setDistance]=useState(1), [dx,setDx]=useState(10),[dy,setDy]=useState(10)
+ const {offsetDistance:distance,setOffsetDistance:setDistance,duplicateDelta:[dx,dy],setDuplicateDelta}=presentation
  if(!d)return null
  const re=useReverse.getState(), has=d.selection.length>0
  const tool=activateSketchTool
@@ -72,7 +72,7 @@ export function SketchControls({chainsOf}:{chainsOf:()=>SketchChains|null}) {
    {key('project','Project other visible sketches','sketch-tool-project',()=>{tool('select');useSketchCornerTrim.getState().setOpen(false);useSketchProject.getState().setOpen(true)})}
   </div>
   {edit&&<div className="sketch-edit-values" data-test="sketch-edit-values">
-   {edit==='offset'?<label>Offset <input data-test="sketch-offset-distance" type="number" value={len.toDisplay(distance)} step={len.step(0.1)} onChange={e=>setDistance(len.fromDisplay(Number(e.target.value)))}/> {len.word()} <button onClick={()=>setDistance(-distance)}>Flip</button></label>:<><label>X ({len.word()}) <input data-test="sketch-duplicate-x" type="number" value={len.toDisplay(dx)} onChange={e=>setDx(len.fromDisplay(Number(e.target.value)))}/></label><label>Y ({len.word()}) <input data-test="sketch-duplicate-y" type="number" value={len.toDisplay(dy)} onChange={e=>setDy(len.fromDisplay(Number(e.target.value)))}/></label></>}
+   {edit==='offset'?<label>Offset <input data-test="sketch-offset-distance" type="number" value={len.toDisplay(distance)} step={len.step(0.1)} onChange={e=>setDistance(len.fromDisplay(Number(e.target.value)))}/> {len.word()} <button onClick={()=>setDistance(-distance)}>Flip</button></label>:<><label>X ({len.word()}) <input data-test="sketch-duplicate-x" type="number" value={len.toDisplay(dx)} onChange={e=>setDuplicateDelta([len.fromDisplay(Number(e.target.value)),dy])}/></label><label>Y ({len.word()}) <input data-test="sketch-duplicate-y" type="number" value={len.toDisplay(dy)} onChange={e=>setDuplicateDelta([dx,len.fromDisplay(Number(e.target.value))])}/></label></>}
    <button data-test="sketch-edit-apply" onClick={()=>{if(edit==='offset'?offsetSketchSelection(distance):duplicateSketchSelection([dx,dy]))setEdit(null)}}>Apply</button><button onClick={()=>setEdit(null)}>Cancel</button>
   </div>}
   <div className="sketch-section-label">Constraints</div>

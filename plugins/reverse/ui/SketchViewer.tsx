@@ -22,6 +22,7 @@ import { SketchSelectionTools } from './SketchSelectionTools'
 import { SketchCornerTrimOverlay } from './SketchCornerTrimOverlay'
 import { SketchCornerGestureOverlay } from './SketchCornerGestureOverlay'
 import { SketchProjectOverlay } from './SketchProjectPanel'
+import { SketchEditPreview } from './SketchEditPreview'
 
 export function SketchViewer({
   chainsOf,
@@ -128,6 +129,7 @@ export function SketchViewer({
       <SketchCornerTrimOverlay scene={activeScene} chainsOf={chainsOf} />
       <SketchCornerGestureOverlay scene={activeScene} chainsOf={chainsOf} />
       <SketchProjectOverlay scene={activeScene} />
+      <SketchEditPreview scene={activeScene} />
       <SketchExtraOverlay scene={activeScene} />
       <SketchSelectionTools scene={activeScene} />
       {webglError !== null && (

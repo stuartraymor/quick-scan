@@ -17,7 +17,7 @@ export function mirrorSketchSelection(): boolean {
   const d = useReverse.getState().sketchDraft
   return d ? apply(mirrorSelected(d.sketch, d.selection)) : false
 }
-export function duplicateSketchSelection(delta: Vec2 = [10, 10]): boolean {
+export function duplicateSketchSelection(delta: Vec2 = [10, 0]): boolean {
   const d = useReverse.getState().sketchDraft
   return d ? apply(duplicateSelected(d.sketch, d.selection, delta)) : false
 }

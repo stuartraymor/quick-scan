@@ -1,3 +1,9 @@
+## 0.0.192 — Sketch Modify previews
+
+- Duplicate starts at +10 mm X and 0 Y, matching the observed native default.
+- Duplicate and Offset show provisional yellow geometry before Apply. Parameter edits refresh the preview; Cancel, Escape and tool switches discard it. Apply stays one undoable edit.
+- Paired constraint checks confirm relation invariants and Undo for six cases, but free endpoint placement still differs. Full Modify and constraint parity is not claimed.
+
 ## 0.0.191 — Corner Trim endpoint painting
 
 - Capture left-button Corner Trim strokes, show gray paint while held, and commit on release as one undoable edit instead of dragging an endpoint.

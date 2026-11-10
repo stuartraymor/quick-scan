@@ -31,7 +31,7 @@ const free = (e: SketchEntity): EntityInput => {
   return result
 }
 
-export function duplicateSelected(input: Sketch, ids: readonly number[], delta: Vec2 = [10, 10]): SketchEditResult {
+export function duplicateSelected(input: Sketch, ids: readonly number[], delta: Vec2 = [10, 0]): SketchEditResult {
   if (!delta.every(Number.isFinite)) return fail('The copy displacement must be finite.')
   if (!selected(input, ids).length) return fail('Select the pieces to duplicate.')
   const sketch = cloneSketch(input)
