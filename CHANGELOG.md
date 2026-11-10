@@ -1,3 +1,10 @@
+## 0.0.191 — Corner Trim endpoint painting
+
+- Capture left-button Corner Trim strokes, show gray paint while held, and commit on release as one undoable edit instead of dragging an endpoint.
+- Join the painted endpoints, including the farther ends of crossing lines, preserving the opposite endpoints and line carriers. Fixed/auto fillets use the same endpoint choice.
+- Match the three corner mode buttons, initial 1 mm radius, unchecked automatic dimension, and OK return flow. Preserve dark theme and shared MCP/AI geometry actions.
+- Add paired native-coordinate/browser regressions for both retained corners, Auto Join repeat behavior, and angle placement/edit to 60 degrees/undo. Full curve/constraint parity is not claimed.
+
 ## 0.0.190 — display-units CI repair
 
 - Correct length controls and feedback in sketch fitting, grid, multiple sections, mesh deviation/scale, pipe and freeform display to follow selected display units while retaining model millimetres.

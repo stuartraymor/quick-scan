@@ -6,6 +6,7 @@ import { lineIntersection } from './corners'
 import { filletLines } from './filletCorner'
 import { addConstraint, anchorPoint, cloneSketch, constraintEntities, entityOf, type Anchor, type Constraint, type Sketch, type SketchLine } from './sketch'
 import { solveSketch } from './solver'
+import { pathDistance } from './cornerGesture'
 
 export type CornerTrimMode = 'trim' | 'autoFillet' | 'fixedFillet'
 export interface CornerTrimOptions { mode: CornerTrimMode; radiusMm: number; addDimension: boolean }
@@ -32,8 +33,15 @@ export function pointsInCornerArea(points: readonly Vec2[], corners: readonly Ve
   })
 }
 
-function side(line: SketchLine, corner: Vec2): Side | null {
-  const near = distance(line.a, corner) <= distance(line.b, corner) ? 'a' : 'b'
+/** Native Corner Trim paints endpoints, not whole pieces or their bounding box. */
+export function cornerEndsNearPath(sketch: Sketch, path: readonly Vec2[], radius: number): Anchor[] {
+  if (!(radius > 0) || !Number.isFinite(radius) || !path.length || path.some((p) => !p.every(Number.isFinite))) return []
+  return sketch.entities.flatMap((e): Anchor[] => e.kind !== 'line' ? [] : (['a', 'b'] as const)
+    .filter((at) => pathDistance(e[at], path) <= radius).map((at) => ({ entity: e.id, at })))
+}
+
+function side(line: SketchLine, corner: Vec2, painted?: 'a' | 'b'): Side | null {
+  const near = painted ?? (distance(line.a, corner) <= distance(line.b, corner) ? 'a' : 'b')
   const far = near === 'a' ? 'b' : 'a'
   const reach = distance(line[far], corner)
   return reach > 1e-8 ? { line, near, far, reach, direction: [(line[far][0] - corner[0]) / reach, (line[far][1] - corner[1]) / reach] } : null
@@ -104,9 +112,10 @@ function autoRadius(a: Side, b: Side, corner: Vec2, points: readonly Vec2[]): { 
 }
 
 /** Produces a solved candidate without ever mutating the source sketch. */
-export function buildCornerTrim(source: Sketch, ids: readonly number[], options: CornerTrimOptions, points: readonly Vec2[] = []): CornerTrimResult {
+export function buildCornerTrim(source: Sketch, ids: readonly number[], options: CornerTrimOptions, points: readonly Vec2[] = [], ends?: readonly Anchor[]): CornerTrimResult {
   const fail = (error: string): CornerTrimResult => ({ ok: false, error })
-  if (ids.length !== 2 || new Set(ids).size !== 2) return fail('Select exactly two lines, or Shift-drag a box around one corner.')
+  if (ids.length !== 2 || new Set(ids).size !== 2) return fail('Paint over one endpoint on each of two lines.')
+  if (ends && (ends.length !== 2 || ids.some((id) => ends.filter((p) => p.entity === id && (p.at === 'a' || p.at === 'b')).length !== 1))) return fail('Paint exactly two endpoints, one on each line.')
   const chosen = ids.map((id) => entityOf(source, id))
   if (chosen.some((e) => !e || e.kind !== 'line')) return fail('Corner Trim currently supports two straight lines. Select two lines only.')
   const [la, lb] = chosen as SketchLine[]
@@ -114,7 +123,8 @@ export function buildCornerTrim(source: Sketch, ids: readonly number[], options:
   if (Boolean(la.construction) !== Boolean(lb.construction)) return fail('Choose two profile lines or two construction lines; a mixed corner is ambiguous.')
   const corner = lineIntersection(la, lb)
   if (!corner) return fail('These lines are parallel or nearly parallel; no stable corner intersection exists.')
-  const a = side(la, corner), b = side(lb, corner)
+  const endOf = (id: number) => ends?.find((p) => p.entity === id)?.at as 'a' | 'b' | undefined
+  const a = side(la, corner, endOf(la.id)), b = side(lb, corner, endOf(lb.id))
   if (!a || !b) return fail('The corner would consume an entire line.')
   const sides = [a, b]
   if (source.constraints.some((c) => protectedConstraint(c, sides))) return fail('A dimension or another constrained corner prevents trimming these endpoints. Remove that constraint first.')
@@ -134,7 +144,7 @@ export function buildCornerTrim(source: Sketch, ids: readonly number[], options:
       radiusMm = fit.radius; rms = fit.rms; usedPoints = fit.points.length; data = fit.points
     }
     if (!(radiusMm > 0) || !Number.isFinite(radiusMm)) return fail('Enter a finite radius above zero.')
-    const made = filletLines(sketch, la.id, lb.id, radiusMm)
+    const made = filletLines(sketch, la.id, lb.id, radiusMm, undefined, [a.near, b.near])
     if (typeof made === 'string') return fail(made)
     changedIds.push(made.arc)
     if (!options.addDimension) sketch.constraints = sketch.constraints.filter((c) => c.id !== made.dimension)

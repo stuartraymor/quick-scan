@@ -2,7 +2,8 @@
 import { create } from 'zustand'
 import type { Vec2 } from '../../../src/core/flat/types'
 import { piecesInBox } from '../core/boxSelect'
-import { buildCornerTrim, pointsInCornerArea, type CornerTrimMode, type CornerTrimResult } from '../core/sketchCornerTrim'
+import { buildCornerTrim, cornerEndsNearPath, pointsInCornerArea, type CornerTrimMode, type CornerTrimResult } from '../core/sketchCornerTrim'
+import { pathDistance } from '../core/cornerGesture'
 import { useReverse } from './reStore'
 
 interface SketchCornerTrimState {
@@ -21,6 +22,7 @@ interface SketchCornerTrimState {
   setAddDimension: (on: boolean) => void
   previewSelected: (points?: readonly Vec2[]) => void
   selectArea: (corners: readonly Vec2[], points: readonly Vec2[]) => void
+  paint: (path: readonly Vec2[], radius: number, points: readonly Vec2[]) => boolean
   apply: () => boolean
   cancel: () => void
   undo: () => void
@@ -34,7 +36,7 @@ export const useSketchCornerTrim = create<SketchCornerTrimState>()((set, get) =>
     set({ preview: result, sourceKey: JSON.stringify(draft.sketch), message: result.ok ? null : result.error })
   }
   return {
-    open: false, mode: 'trim', radiusMm: 2, addDimension: true, preview: null, message: null, ids: [], points: [], sourceKey: null,
+    open: false, mode: 'trim', radiusMm: 1, addDimension: false, preview: null, message: null, ids: [], points: [], sourceKey: null,
     setOpen: (open) => {
       if (open) useReverse.getState().setSketchTool('select')
       set({ open, preview: null, message: null, ids: [], points: [], sourceKey: null })
@@ -53,6 +55,19 @@ export const useSketchCornerTrim = create<SketchCornerTrimState>()((set, get) =>
       const ids = piecesInBox(draft.sketch, corners, true)
       set({ ids, points: pointsInCornerArea(points, corners) })
       preview()
+    },
+    paint: (path, radius, points) => {
+      const s = get(), draft = useReverse.getState().sketchDraft
+      if (!s.open || !draft) return false
+      const ends = cornerEndsNearPath(draft.sketch, path, radius)
+      const selectedPoints = points.filter((p) => pathDistance(p, path) <= radius)
+      const result = buildCornerTrim(draft.sketch, ends.map((p) => p.entity), s, selectedPoints, ends)
+      set({ preview: null, ids: [], points: [], sourceKey: null })
+      if (!result.ok) { set({ message: result.error }); return false }
+      if (JSON.stringify(result.sketch) === JSON.stringify(draft.sketch)) return false
+      useReverse.getState().setSketch(result.sketch, result.farAnchors)
+      set({ message: s.mode === 'trim' ? 'Corner trimmed. Paint another pair of endpoints.' : 'Fillet created. Paint another pair of endpoints.' })
+      return true
     },
     apply: () => {
       const s = get(), draft = useReverse.getState().sketchDraft

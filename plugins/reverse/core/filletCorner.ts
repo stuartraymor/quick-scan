@@ -78,7 +78,7 @@ export function cornerLinesAt(sketch: Sketch, p: Anchor): [number, number] | nul
  * knows better than the lines as they now stand — a shape rounding all its
  * corners measures it on the sides before the first one was cut back.
  */
-export function filletLines(sketch: Sketch, idA: number, idB: number, radius?: number, room?: number): FilletResult | string {
+export function filletLines(sketch: Sketch, idA: number, idB: number, radius?: number, room?: number, ends?: readonly ['a' | 'b', 'a' | 'b']): FilletResult | string {
   const la = entityOf(sketch, idA)
   const lb = entityOf(sketch, idB)
   if (!la || !lb || la.kind !== 'line' || lb.kind !== 'line' || la.id === lb.id) return 'A round goes between two lines.'
@@ -88,15 +88,15 @@ export function filletLines(sketch: Sketch, idA: number, idB: number, radius?: n
 
   // Each line seen from the corner: the end that is cut back, the end that
   // stays, and the way the line runs from the corner.
-  const seen = (l: SketchLine) => {
-    const near: AnchorAt = len2(sub2(l.a, x)) <= len2(sub2(l.b, x)) ? 'a' : 'b'
+  const seen = (l: SketchLine, end?: 'a' | 'b') => {
+    const near: AnchorAt = end ?? (len2(sub2(l.a, x)) <= len2(sub2(l.b, x)) ? 'a' : 'b')
     const nearP = near === 'a' ? l.a : l.b
     const farP = near === 'a' ? l.b : l.a
     const dir = normalize2(sub2(farP, x))
     return dir ? { near, dir, off: dot2(sub2(nearP, x), dir), reach: len2(sub2(farP, x)) } : null
   }
-  const a = seen(la)
-  const b = seen(lb)
+  const a = seen(la, ends?.[0])
+  const b = seen(lb, ends?.[1])
   if (!a || !b) return 'A line ends on the corner itself — there is nothing of it to round into.'
   const half = Math.acos(Math.max(-1, Math.min(1, dot2(a.dir, b.dir)))) / 2
   const tanHalf = Math.tan(half)

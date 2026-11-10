@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { Vec2 } from '../../../src/core/flat/types'
-import { buildCornerTrim, pointsInCornerArea, type CornerTrimOptions } from '../core/sketchCornerTrim'
+import { buildCornerTrim, cornerEndsNearPath, pointsInCornerArea, type CornerTrimOptions } from '../core/sketchCornerTrim'
 import { addConstraint, addEntity, cloneSketch, emptySketch, entityOf, type Sketch, type SketchArc, type SketchLine } from '../core/sketch'
 import { useReverse } from '../state/reStore'
 import { useSketchCornerTrim } from '../state/sketchCornerTrimStore'
@@ -179,5 +179,62 @@ describe('Corner Trim preview/apply/cancel/undo', () => {
     expect(useSketchCornerTrim.getState().ids).toEqual([1, 2])
     expect(useSketchCornerTrim.getState().points).not.toContainEqual([40, 40])
     expect(useSketchCornerTrim.getState().preview?.ok).toBe(true)
+  })
+})
+
+
+describe('painted endpoint corner selection', () => {
+  const cross = () => {
+    const sketch = emptySketch()
+    addEntity(sketch, { kind: 'line', a: [-9, 0], b: [3, 0] })
+    addEntity(sketch, { kind: 'line', a: [0, 6], b: [0, -6.2] })
+    return sketch
+  }
+  it('keeps the opposite endpoints when the farther ends are painted', () => {
+    const source = cross()
+    const ends = cornerEndsNearPath(source, [[-9, 0], [0, -6.2]], .1)
+    expect(ends).toEqual([{ entity: 1, at: 'a' }, { entity: 2, at: 'b' }])
+    const result = buildCornerTrim(source, [1, 2], options, [], ends)
+    if (!result.ok) throw new Error(result.error)
+    const expected = [[[0,0],[3,0]],[[0,6],[0,0]]]
+    result.sketch.entities.forEach((e,i) => { const l=e as SketchLine; [l.a,l.b].forEach((p,j)=>p.forEach((v,k)=>expect(v).toBeCloseTo(expected[i][j][k],8))) })
+    expect(source).toEqual(cross())
+  })
+  it('does not select an interior crossing or nearby line body as an endpoint', () => {
+    expect(cornerEndsNearPath(cross(), [[-2, 0], [0, 2]], .2)).toEqual([])
+    expect(cornerEndsNearPath(cross(), [[NaN, 0]], 1)).toEqual([])
+    expect(cornerEndsNearPath(cross(), [[0, 0]], Infinity)).toEqual([])
+  })
+  it('rejects ambiguous, stale, same-line and fixed endpoint choices without mutation', () => {
+    const source = cross(), before = cloneSketch(source)
+    for (const ends of [[{entity:1,at:'a'},{entity:1,at:'b'}], [{entity:1,at:'a'},{entity:3,at:'b'}], [{entity:1,at:'center'},{entity:2,at:'b'}]] as const) {
+      expect(buildCornerTrim(source,[1,2],options,[],ends).ok).toBe(false)
+    }
+    expect(source).toEqual(before)
+    source.entities[0].fixed = true
+    expect(buildCornerTrim(source,[1,2],options,[],[{entity:1,at:'a'},{entity:2,at:'b'}]).ok).toBe(false)
+  })
+  it('fillets the painted far ends instead of silently choosing a different quadrant', () => {
+    const result = buildCornerTrim(cross(),[1,2],{...options,mode:'fixedFillet',radiusMm:1},[],[{entity:1,at:'a'},{entity:2,at:'b'}])
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error(result.error)
+    const arc = result.sketch.entities.find(e=>e.kind==='arc') as SketchArc
+    expect(arc.c[0]).toBeCloseTo(1,7);expect(arc.c[1]).toBeCloseTo(1,7)
+    const a=result.sketch.entities[0] as SketchLine,b=result.sketch.entities[1] as SketchLine
+    a.b.forEach((v,i)=>expect(v).toBeCloseTo([3,0][i],8));b.a.forEach((v,i)=>expect(v).toBeCloseTo([0,6][i],8))
+  })
+  it('commits a release once, leaves the panel open, and undoes atomically', () => {
+    useReverse.getState().reset()
+    useReverse.getState().startSketch({kind:'world',axis:'z',offset:0},XY,cross().entities)
+    useSketchCornerTrim.setState({mode:'trim'})
+    useSketchCornerTrim.getState().setOpen(true)
+    const before=cloneSketch(useReverse.getState().sketchDraft!.sketch)
+    expect(useSketchCornerTrim.getState().paint([[-9,0],[0,-6.2]],.1,[])).toBe(true)
+    expect(useSketchCornerTrim.getState().open).toBe(true)
+    expect(useReverse.getState().sketchDraft!.history).toHaveLength(1)
+    expect(useSketchCornerTrim.getState().paint([[20,20]],.1,[])).toBe(false)
+    expect(useReverse.getState().sketchDraft!.history).toHaveLength(1)
+    useReverse.getState().undoSketch()
+    expect(useReverse.getState().sketchDraft!.sketch).toEqual(before)
   })
 })
