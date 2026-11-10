@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// Current Quick Scan toolbar regression, not certification of native control parity.
 // Focused actual-browser checks of the independent sketch controls. Seeds use the
 // existing DEV bridge; commands, selections, drawing and dimensions use real UI.
 import { writeFileSync } from 'node:fs'
@@ -21,7 +22,7 @@ if(await page.$('[data-test=support-card] .sc-x'))await click(page,'[data-test=s
 await seed()
 const groups={
  'sketch-tools':['sketch-tool-line','sketch-tool-polyline','sketch-tool-circle-three','sketch-tool-circle','sketch-tool-tangent-arc','sketch-tool-arc','sketch-tool-spline','sketch-tool-middle','sketch-tool-rectangle','sketch-tool-slot','sketch-tool-polygon'],
- 'sketch-edit':['sketch-tool-select','sketch-join','sketch-tool-fillet','sketch-trim','sketch-dimension','sketch-mirror','sketch-duplicate','sketch-offset-entities','sketch-sharpen','sketch-tool-project'],
+ 'sketch-edit':['sketch-tool-select','sketch-join','sketch-sharpen','sketch-trim','sketch-dimension','sketch-mirror','sketch-duplicate','sketch-offset-entities','sketch-tool-fillet','sketch-tool-project'],
  'sketch-relations':['sketch-construction','sketch-fix','sketch-rel-horizontal','sketch-rel-vertical','sketch-rel-tangent','sketch-rel-collinear','sketch-rel-equal','sketch-rel-parallel','sketch-rel-perpendicular','sketch-rel-symmetric'],
 }
 await test('ordered-command-rows',async()=>{

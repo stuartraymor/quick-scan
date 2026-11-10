@@ -100,7 +100,7 @@ export function SketchBrushOverlay({ scene, chainsOf }: { scene: FlatScene | nul
       if (e.button !== 0 || overMenu(e)) return
       e.preventDefault(); e.stopImmediatePropagation()
       setMenu(null)
-      painting = true; last = null
+      painting = true; lastDrawn = null; last = null
       cursor = { x: e.clientX, y: e.clientY }; follow()
       if (useSketchBrush.getState().instant && !e.shiftKey && !e.altKey) useSketchBrush.getState().clear()
       host.setPointerCapture(e.pointerId)
@@ -177,7 +177,7 @@ export function SketchBrushOverlay({ scene, chainsOf }: { scene: FlatScene | nul
           ctx.stroke()
         }
         ctx.globalCompositeOperation = 'source-over'
-        if (state.preview?.ok) {
+        if (!painting && state.preview?.ok) {
           const entities = state.preview.shapeSketch?.entities.filter((e) => !e.construction) ?? [{ ...state.preview.entity, id: 0 } as SketchEntity]
           for (const entity of entities) {
             const polyline = entityPolyline(entity, 192)

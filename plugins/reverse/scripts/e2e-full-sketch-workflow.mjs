@@ -53,7 +53,7 @@ try {
     for (let i = 0; i < rgba.length; i += 4) { if (rgba[i] > 220 && rgba[i + 1] > 100 && rgba[i + 1] < 190 && rgba[i + 2] < 30) orange++; if (rgba[i] < 30 && rgba[i + 1] > 110 && rgba[i + 2] > 25 && rgba[i + 2] < 100) green++ }
     return { orange, green }
   })
-  must(preview.orange > 100 && preview.green > 100, `actual pointer stroke highlights section points and previews fitted circle (${JSON.stringify(preview)})`)
+  must(preview.orange > 100 && preview.green === 0, `held pointer stroke highlights section points without drawing an early fit (${JSON.stringify(preview)})`)
   await page.screenshot({ path: shotPath('01-circular-brush-circle-preview.png') })
   await page.mouse.up(); await sleep(300)
   const circle = await re(() => window.__re.store.getState().sketchDraft.sketch.entities.find((e) => e.kind === 'circle'))
@@ -81,8 +81,8 @@ try {
   await fill(dimInput, 20, 'Enter'); await sleep(300)
   const dimensioned = await re(() => { const d = window.__re.store.getState().sketchDraft; return { dimensions: d.sketch.constraints.filter((c) => c.kind === 'diameter').map((c) => c.value), r: d.sketch.entities.find((e) => e.kind === 'circle').r, solved: d.report.ok, regions: d.found.length } })
   must(dimensioned.dimensions.includes(20) && Math.abs(dimensioned.r - 10) < 1e-5 && dimensioned.solved && dimensioned.regions === 1, `typed diameter drives circle geometry while construction lines leave one closed region (${JSON.stringify(dimensioned)})`)
-  const labels = await page.$$eval('.viewport-label', (els) => els.map((el) => el.textContent))
-  must(labels.some((text) => text.includes('20')) && labels.some((text) => text.includes('H')), 'dimension value and real constraint glyphs are visible on the graphical sketch')
+  const labels = await page.$$eval('.viewport-label', (els) => els.map((el) => ({text:el.textContent,relation:el.getAttribute('aria-label'),icon:!!el.querySelector('svg path'),visible:el.getBoundingClientRect().width>0&&el.getBoundingClientRect().height>0})))
+  must(labels.some((el) => el.visible&&el.text.includes('20')) && labels.some((el) => el.visible&&el.relation==='Horizontal'&&el.icon), 'dimension value and real SVG horizontal constraint glyph are visible on the graphical sketch')
   await page.screenshot({ path: shotPath('02-constraints-and-diameter.png') })
   await click(page, '[data-test=sketch-extrude]')
   await page.waitForSelector('[data-test=extrude-editor]')

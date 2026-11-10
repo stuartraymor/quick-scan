@@ -8,7 +8,8 @@ import { useSketchBrush } from '../state/sketchBrushStore'
 import { useSketchCornerTrim } from '../state/sketchCornerTrimStore'
 import { useSketchProject } from '../state/sketchProjectStore'
 import { useSketchPresentation } from '../state/sketchPresentation'
-import { mirrorSketchSelection, duplicateSketchSelection, offsetSketchSelection, middleLineSketchSelection } from '../state/sketchExtraTools'
+import { duplicateSketchSelection, offsetSketchSelection, middleLineSketchSelection } from '../state/sketchExtraTools'
+import { activateSketchTool, activateExtraSketchTool, closeSketchToolOverlays, dimensionSketchSelection, mirrorSelectedSketchEntities, openSketchEditPanel } from '../state/sketchToolActions'
 import { SketchCommandIcon, type SketchCommandIconName } from './SketchCommandIcon'
 import { useLength } from '../../../src/app/useUnits'
 import { saveFile } from '../../../src/app/exports'
@@ -29,19 +30,20 @@ export function SketchControls({chainsOf}:{chainsOf:()=>SketchChains|null}) {
  const [exportOptions,setExportOptions]=useState(false)
  const { format:exportFormat, setFormat:setExportFormat }=useSketchExportPrefs()
  const [draftFormat,setDraftFormat]=useState<SketchExportFormat>('iges')
- const [edit,setEdit]=useState<'offset'|'duplicate'|null>(null), [distance,setDistance]=useState(1), [dx,setDx]=useState(10),[dy,setDy]=useState(10)
+ const {edit,setEdit}=presentation
+ const [distance,setDistance]=useState(1), [dx,setDx]=useState(10),[dy,setDy]=useState(10)
  if(!d)return null
  const re=useReverse.getState(), has=d.selection.length>0
- const tool=(t:Parameters<typeof re.setSketchTool>[0])=>{presentation.setTool(null);useSketchBrush.getState().setOpen(false);re.setSketchTool(t)}
- const extra=(t:'slot'|'middle'|'trim'|'tangentArc')=>{tool('select');presentation.setTool(t)}
+ const tool=activateSketchTool
+ const extra=activateExtraSketchTool
  const key=(icon:SketchCommandIconName,label:string,id:string,action:()=>void,on=false,disabled=false)=><button key={id} type="button" data-test={id} aria-label={label} title={label} aria-pressed={on} className={on?'on':undefined} disabled={disabled} onClick={action}><SketchCommandIcon name={icon}/></button>
  const relation=(kind:ConstraintKind)=>{
-   presentation.setTool(null)
+   closeSketchToolOverlays()
    if(has)re.addRelation(kind);else re.armRelation(kind)
  }
  const active=(t:string)=>!presentation.tool&&d.tool===t
  return <div className="sketch-controls">
-  <div className="sketch-entry-row"><button data-test="sketch-extract" onClick={()=>{presentation.setTool(null);re.setSketchTool('select');useSketchBrush.getState().setOpen(true)}}>Extract primitives</button><button data-test="sketch-assist" title="Fit section chains using the existing segmentation and fit options" disabled={!chainsOf()?.chains.length} onClick={()=>setAssist(true)}>Sketch assist</button></div>
+  <div className="sketch-entry-row"><button data-test="sketch-extract" onClick={()=>{tool('select');useSketchBrush.getState().setOpen(true)}}>Extract primitives</button><button data-test="sketch-assist" title="Fit section chains using the existing segmentation and fit options" disabled={!chainsOf()?.chains.length} onClick={()=>setAssist(true)}>Sketch assist</button></div>
   <div className="sketch-section-label">Create</div>
   <div className="sketch-command-row create" data-test="sketch-tools">
    {key('line','Line','sketch-tool-line',()=>{presentation.setLineChain(false);tool('line')},active('line')&&!presentation.lineChain)}
@@ -61,11 +63,11 @@ export function SketchControls({chainsOf}:{chainsOf:()=>SketchChains|null}) {
    {key('select','Modify — select and drag sketch entities','sketch-tool-select',()=>tool('select'),active('select'))}
    {key('join','Auto Join — join eligible nearby ends','sketch-join',()=>re.joinSelected())}
    {key('corner','Corner Trim','sketch-sharpen',()=>{tool('select');useSketchProject.getState().setOpen(false);useSketchCornerTrim.getState().setOpen(true)})}
-   {key('trim','Trim — paint unwanted spans between intersections','sketch-trim',()=>extra('trim'),presentation.tool==='trim')}
-   {key('dimension','Dimensions (D)','sketch-dimension',()=>{presentation.setTool(null);if(has)re.dimensionSelection();else tool('dimension')},active('dimension'))}
-   {key('mirror','Mirror selected entities — include a construction line','sketch-mirror',()=>mirrorSketchSelection(),false,!has)}
-   {key('duplicate','Duplicate selected entities','sketch-duplicate',()=>setEdit(edit==='duplicate'?null:'duplicate'),edit==='duplicate',!has)}
-   {key('offset','Offset selected entities','sketch-offset-entities',()=>setEdit(edit==='offset'?null:'offset'),edit==='offset',!has)}
+   {key('trim','Trim (T) — paint unwanted spans between intersections','sketch-trim',()=>extra('trim'),presentation.tool==='trim')}
+   {key('dimension','Dimensions (D)','sketch-dimension',dimensionSketchSelection,active('dimension'))}
+   {key('mirror','Mirror selected entities (M) — include a construction line','sketch-mirror',mirrorSelectedSketchEntities,false,!has)}
+   {key('duplicate','Duplicate selected entities','sketch-duplicate',()=>openSketchEditPanel(edit==='duplicate'?null:'duplicate'),edit==='duplicate',!has)}
+   {key('offset','Offset selected entities (O)','sketch-offset-entities',()=>openSketchEditPanel(edit==='offset'?null:'offset'),edit==='offset',!has)}
    {key('fillet','Fillet','sketch-tool-fillet',()=>{if(d.selection.length===2)re.filletSelected();else tool('fillet')},active('fillet'))}
    {key('project','Project other visible sketches','sketch-tool-project',()=>{tool('select');useSketchCornerTrim.getState().setOpen(false);useSketchProject.getState().setOpen(true)})}
   </div>

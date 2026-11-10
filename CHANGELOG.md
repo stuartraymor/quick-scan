@@ -1,3 +1,11 @@
+## 0.0.189 — 2D Sketch placement, fitting feedback and shortcuts
+
+- Keep the complete scan visible during plane placement; use one neutral translucent sheet and a centered screen-sized arrow.
+- Highlight reference points during primitive-fit strokes; draw the fitted entity on mouse release.
+- Route native L/C/R/D/T/M/O sketch shortcuts through the same tool transitions as buttons, clearing previous overlays and protecting text entry/plane placement.
+- Expand graphical regression coverage for Create/Modify, constraints, angular dimensions, brush fitting and saved sketch workflows.
+- Full native parity remains incomplete: Extrapolate, line-drag and Shift-selection semantics, corner-gesture confirmation and other display differences remain under audit.
+
 ## 0.0.185
 
 Auto Freeform, Wrap Surface and From 3D Sketch now preview temporary geometry before committing through their existing shared commands. Cancel discards previews without adding document history; parameter changes invalidate previews. Auto shows the actual quad count and supports Clear Result. Freeform dialogs sit to the left without dimming the model, following live native observations. Dark styling, MCP and AI features are retained. Native display modes, viewport interaction during dialogs, feature-aligned Auto and exact geometry equivalence remain incomplete.

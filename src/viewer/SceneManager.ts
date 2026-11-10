@@ -2266,9 +2266,9 @@ export class SceneManager {
    *  what a sketch plane being placed cuts through the scan. Null takes it
    *  away. Shares the section preview's drawing, so it is never shown while a
    *  section is being made. */
-  setCutPreview(frame: SectionFrame | null, cut: SectionCut | null, color: string): void {
+  setCutPreview(frame: SectionFrame | null, cut: SectionCut | null, color: string, showSheet = true): void {
     if (this.draftHandles) return
-    this.sections.setPreview(frame, cut, color, false)
+    this.sections.setPreview(frame, cut, color, false, showSheet)
     this.invalidate()
   }
 

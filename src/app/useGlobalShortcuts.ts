@@ -158,7 +158,12 @@ export function useGlobalShortcuts({
       const view = VIEW_KEYS[e.key] ?? VIEW_LETTERS[letter]
       if ((view || letter === 'a') && !e.ctrlKey && !e.altKey && !e.metaKey) {
         if (useShell.getState().workspace === 'flat' || useDeviation.getState().picking) return
-        if (plugins().some((p) => p.keyboard?.holdsViewKeys?.())) return
+        if (plugins().some((p) => p.keyboard?.holdsViewKeys?.())) {
+          // A sketch holds the camera still, but L/R/T can be its drawing
+          // commands. Give its keyboard owner the key before suppressing view.
+          pluginKeys()?.keydown?.(e, { confirmButton })
+          return
+        }
         if (view) viewFrom(view)
         else fitView()
         return

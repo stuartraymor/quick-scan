@@ -131,6 +131,7 @@ export class SketchOverlay {
     border.renderOrder = 6
     this.hintGroup.add(border)
     const label = pinLabel('element-label', name, '', color)
+    label.visible = !!name
     label.position.copy(centre)
     this.hintGroup.add(label)
     this.hintCleanup.push(() => {
@@ -166,6 +167,7 @@ export class SketchOverlay {
     line.renderOrder = 6
     this.hintGroup.add(line)
     const label = pinLabel('element-label', name, '', color)
+    label.visible = !!name
     label.position.copy(foot)
     this.hintGroup.add(label)
     this.hintCleanup.push(() => {

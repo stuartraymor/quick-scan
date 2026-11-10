@@ -422,10 +422,7 @@ export class ReScene {
     const c = this.host.modelCenter()
     const [nx, ny, nz] = frame.normal
     const d = (c[0] - frame.origin[0]) * nx + (c[1] - frame.origin[1]) * ny + (c[2] - frame.origin[2]) * nz
-    // Stood to one side of the centre, clear of the sketch's name tag.
-    const side = this.host.modelRadius() * 0.55
-    const [ux, uy, uz] = frame.basisU
-    this.sliceArrow.set({ origin: [c[0] - nx * d + ux * side, c[1] - ny * d + uy * side, c[2] - nz * d + uz * side], normal: frame.normal, offset }, onOffset)
+    this.sliceArrow.set({ origin: [c[0] - nx * d, c[1] - ny * d, c[2] - nz * d], normal: frame.normal, offset }, onOffset)
   }
 
   /** Take the layers out of the viewport. */

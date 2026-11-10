@@ -85,12 +85,15 @@ const closed = d.splines.find((e) => e.closed)
 check(closed !== undefined && closed.pts.length === 4, `a click back on the first point closes it (${JSON.stringify(d.splines.map((e) => ({ n: e.pts.length, closed: e.closed })))})`)
 check(d.regions >= 1, `the closed spline is a region (${d.regions})`)
 
+// Current Quick Scan returns to Modify after completing a spline. Re-arm its
+// visible tool before testing Enter; this transition is not native-parity evidence.
+await click(page, '[data-test=sketch-tool-spline]')
 // ---- Enter ends the points in hand ------------------------------------------------------------
 for (const p of [[0, -20], [25, -15]]) await clickAt(p)
 await page.keyboard.press('Enter')
 await sleep(200)
 d = await draft()
-check(d.splines.length === 3 && d.pending === 0 && d.tool === 'spline', `Enter makes the curve of the points in hand and keeps the tool (${d.splines.length}, ${d.pending}, ${d.tool})`)
+check(d.splines.length === 3 && d.pending === 0 && d.tool === 'select', `Enter makes the curve of the points in hand and returns to Modify in Quick Scan (${d.splines.length}, ${d.pending}, ${d.tool})`)
 await page.screenshot({ path: shotPath('sketch-spline-2.png') })
 
 // ---- a fit point dragged bends the curve --------------------------------------------------

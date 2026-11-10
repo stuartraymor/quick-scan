@@ -225,13 +225,14 @@ export class SectionOverlay {
 
   /** The section being made: its plane through the part, and its cut drawn
    *  ahead of the depth buffer so every chain of it shows. Null clears. */
-  setPreview(frame: SectionFrame | null, cut: SectionCut | null, color: string, extrude = false): void {
+  setPreview(frame: SectionFrame | null, cut: SectionCut | null, color: string, extrude = false, showSheet = true): void {
     for (const fn of this.previewCleanup) fn()
     this.previewCleanup = []
     this.previewGroup.clear()
     this.ctx.invalidate()
     if (!frame) return
 
+    if (showSheet) {
     // The sheet: a square wide enough to cross the whole part, centred where
     // the part's centre falls on the plane — the element it was taken along
     // may sit right at an edge of the scan.
@@ -273,6 +274,8 @@ export class SectionOverlay {
       borderGeo.dispose()
       borderMat.dispose()
     })
+
+    }
 
     if (cut)
       this.addPolylines(this.previewGroup, this.previewCleanup, cut, color, 1, SECTION_LINE_DEFAULT + 0.5, false)

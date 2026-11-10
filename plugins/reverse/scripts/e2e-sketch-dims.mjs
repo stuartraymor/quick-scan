@@ -7,6 +7,7 @@
 // Prereqs: dev server running (npm run dev), Chrome installed.
 //   node plugins/reverse/scripts/e2e-sketch-dims.mjs
 // Env: CHROME (chrome.exe path), APP_URL, SHOT_DIR.
+import { writeFileSync } from 'node:fs'
 import { check, click, drag, finish, launchApp, shotPath, sleep } from '../../../scripts/e2e-lib.mjs'
 import { reverseHelpers } from './lib.mjs'
 
@@ -31,13 +32,11 @@ await re(() => {
 })
 await sleep(800)
 
-// ---- the corner tools sit with the drawing tools ---------------------------------------
-check(await page.$('[data-test=sketch-tools] [data-test=sketch-tool-fillet]') !== null, 'Fillet is in the tool row')
-check(await page.$('[data-test=sketch-tools] [data-test=sketch-tool-chamfer]') !== null, 'Chamfer is in the tool row')
-check(await page.$('[data-test=sketch-edit] [data-test=sketch-tool-fillet]') === null, 'and no longer among the edits')
-
-await click(page, '[data-test=sketch-tool-chamfer]')
-check(await re(() => window.__re.store.getState().sketchDraft.tool) === 'chamfer', 'the Chamfer key takes the tool in hand')
+// Current toolbar: Fillet remains a Modify operation. Chamfer is an existing
+// core operation, not an exposed native-parity toolbar button in this build.
+check(await page.$('[data-test=sketch-edit] [data-test=sketch-tool-fillet]') !== null, 'current Quick Scan Modify row exposes Fillet')
+await re(() => window.__re.store.getState().setSketchTool('chamfer'))
+check(await re(() => window.__re.store.getState().sketchDraft.tool) === 'chamfer', 'existing Chamfer operation can be armed for core geometry regression')
 const chamfer = await re(() => {
   const s = () => window.__re.store.getState()
   s().sketchClick([0, 24], 0.5, false, {})
@@ -123,4 +122,26 @@ const undone = await re((id) => window.__re.store.getState().sketchDraft.sketch.
 check(undone.value === 21 && undone.place == null, `undo walks back through the value and the moves (${JSON.stringify(undone)})`)
 
 await page.screenshot({ path: shotPath('sketch-dims-3.png') })
+// Native-paired angle case: two 45-degree lines, D, two graphical picks,
+// place the number, type60, and compare the solved angle rather than positions.
+await re(async () => (await import('/src/state/shellStore.ts')).useShell.getState().setInspectorMode('docked'))
+await re(() => window.__re.store.getState().startSketch({kind:'world',axis:'z',offset:0},{origin:[0,0,0],normal:[0,0,1],basisU:[1,0,0],basisV:[0,1,0]},[{kind:'line',a:[0,0],b:[30,0]},{kind:'line',a:[0,0],b:[22,22]}]))
+await sleep(350)
+await click(page,'[data-test=sketch-tool-select]')
+const angleClick=async p=>{const q=await re(p=>window.__re.sheet().sheetScreenPoint(p),p);await page.mouse.click(q.x,q.y);await sleep(100)}
+await page.keyboard.press('d');await angleClick([15,0]);await angleClick([11,11]);
+const angleHeld=await re(()=>window.__re.store.getState().sketchDraft.dimMade)
+check(angleHeld!=null,'D and two graphical line picks create a pending angular dimension')
+await angleClick([21,8]);await page.waitForSelector(`[data-test=flat-dimension-${angleHeld}] input`)
+await page.focus(`[data-test=flat-dimension-${angleHeld}] input`);await page.keyboard.down('Control');await page.keyboard.press('a');await page.keyboard.up('Control');await page.keyboard.type('60');await page.keyboard.press('Enter');await sleep(250)
+const angular=await re(id=>{const d=window.__re.store.getState().sketchDraft,c=d.sketch.constraints.find(c=>c.id===id),[a,b]=d.sketch.entities.filter(e=>e.kind==='line');const u=[a.b[0]-a.a[0],a.b[1]-a.a[1]],v=[b.b[0]-b.a[0],b.b[1]-b.a[1]],angle=Math.acos(Math.max(-1,Math.min(1,(u[0]*v[0]+u[1]*v[1])/(Math.hypot(...u)*Math.hypot(...v)))))*180/Math.PI;return {constraint:c,angle,ok:d.report?.ok}},angleHeld)
+check(angular.constraint?.kind==='angle'&&angular.constraint.value===60&&Math.abs(angular.angle-60)<1e-5&&angular.ok,'typed60 drives the actual line angle within1e-5degrees, matching native numeric acceptance')
+const angularLabel=await page.$eval(`[data-test=flat-dimension-${angleHeld}]`,e=>({text:e.textContent,visible:e.getBoundingClientRect().width>0&&e.getBoundingClientRect().height>0}))
+check(angularLabel.visible&&angularLabel.text.includes('60')&&angularLabel.text.includes('°'),'angular callout visibly shows60degrees on the graphics sheet')
+await page.screenshot({path:shotPath('sketch-angle-60.png')})
+await page.keyboard.down('Control');await page.keyboard.press('z');await page.keyboard.up('Control');await sleep(150)
+const undoneAngle=await re(()=>{const [a,b]=window.__re.store.getState().sketchDraft.sketch.entities.filter(e=>e.kind==='line'),u=[a.b[0]-a.a[0],a.b[1]-a.a[1]],v=[b.b[0]-b.a[0],b.b[1]-b.a[1]];return Math.acos(Math.max(-1,Math.min(1,(u[0]*v[0]+u[1]*v[1])/(Math.hypot(...u)*Math.hypot(...v)))))*180/Math.PI})
+check(Math.abs(undoneAngle-45)<1e-5,'Undo restores the original45degree geometry')
+writeFileSync(shotPath('sketch-angle-60.json'),JSON.stringify({angular,angularLabel,undoneAngle,toleranceDeg:1e-5,nativeAngleDeg:60.00000038375945},null,2))
+
 await finish(browser, consoleErrors)

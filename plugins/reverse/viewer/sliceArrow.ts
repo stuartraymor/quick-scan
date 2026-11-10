@@ -9,8 +9,8 @@ import * as THREE from 'three'
 import type { SceneLayer, SceneLayerHost } from '../../../src/viewer/sceneLayers'
 import type { Vec3 } from '../../../src/core/types'
 
-const COLOR = 0xffd400
-const HOVER = 0xffffff
+const COLOR = 0xffff00
+const HOVER = 0xffff00
 
 export interface SliceArrowSpec {
   /** A point on the plane, in the part's coordinates — where the arrow stands. */
@@ -23,7 +23,9 @@ export interface SliceArrowSpec {
 
 export class SliceArrow {
   private group = new THREE.Group()
-  private materials: THREE.MeshBasicMaterial[] = []
+  private material: THREE.SpriteMaterial | null = null
+  private sprite: THREE.Sprite | null = null
+  private texture: THREE.DataTexture | null = null
   private spec: SliceArrowSpec | null = null
   private onOffset: ((offset: number) => void) | null = null
   private hovered = false
@@ -51,42 +53,44 @@ export class SliceArrow {
     if (!(n.length() > 0)) return this.set(null)
     n.normalize()
     this.spec = { origin: spec.origin, normal: [n.x, n.y, n.z], offset: spec.offset }
-    const length = Math.max(this.host.modelRadius() * 0.45, 1)
-    if (Math.abs(length - this.length) > 1e-9 || this.group.children.length === 0) this.build(length)
+    if (!this.sprite) this.build()
     this.group.position.set(...spec.origin)
-    this.group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n)
+    this.updateScreenSize()
     this.group.visible = true
     this.host.invalidate()
   }
 
-  private build(length: number): void {
-    this.length = length
-    for (const child of [...this.group.children]) {
-      this.group.remove(child)
-      ;(child as THREE.Mesh).geometry.dispose()
+  /** Flat, screen-sized handle: native placement keeps it readable through zoom. */
+  private build(): void {
+    const width = 40, height = 64, pixels = new Uint8Array(width * height * 4)
+    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+      const inside = y < 32 ? x >= 14 && x < 26 : Math.abs(x - 19.5) <= (63 - y) * 0.625
+      const i = (y * width + x) * 4
+      pixels[i] = pixels[i + 1] = pixels[i + 2] = 255; pixels[i + 3] = inside ? 255 : 0
     }
-    for (const m of this.materials) m.dispose()
-    this.materials = []
-    const material = new THREE.MeshBasicMaterial({ color: COLOR, depthTest: false, toneMapped: false })
-    this.materials.push(material)
-    const shaftLength = length * 0.72
-    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(length * 0.025, length * 0.025, shaftLength, 12), material)
-    shaft.rotation.x = Math.PI / 2
-    shaft.position.z = shaftLength / 2
-    const head = new THREE.Mesh(new THREE.ConeGeometry(length * 0.11, length * 0.28, 16), material)
-    head.rotation.x = Math.PI / 2
-    head.position.z = shaftLength + length * 0.14
-    shaft.renderOrder = head.renderOrder = 12
-    // A generous, invisible target round the tip: the shaft is thin on screen, and
-    // seen end-on (the sketch view looks straight down the normal) the arrow is a dot.
-    const grab = new THREE.Mesh(new THREE.SphereGeometry(length * 0.14, 12, 8), new THREE.MeshBasicMaterial({ visible: false }))
-    grab.position.z = shaftLength
-    this.materials.push(grab.material as THREE.MeshBasicMaterial)
-    this.group.add(shaft, head, grab)
+    this.texture = new THREE.DataTexture(pixels, width, height)
+    this.texture.magFilter = THREE.LinearFilter; this.texture.minFilter = THREE.LinearFilter
+    this.texture.needsUpdate = true
+    this.material = new THREE.SpriteMaterial({ map: this.texture, color: COLOR, depthTest: false, depthWrite: false, toneMapped: false, transparent: true })
+    this.sprite = new THREE.Sprite(this.material)
+    this.sprite.center.set(0.5, 0)
+    this.sprite.renderOrder = 12
+    this.group.add(this.sprite)
+  }
+
+  private updateScreenSize(): void {
+    if (!this.spec || !this.sprite || !this.material) return
+    const camera = this.host.camera(), rect = this.host.canvas.getBoundingClientRect()
+    const mmPerPx = (camera.top - camera.bottom) / camera.zoom / Math.max(1, rect.height)
+    this.length = 32 * mmPerPx
+    this.sprite.scale.set(20 * mmPerPx, this.length, 1)
+    const axis = this.screenAxis()
+    // End-on uses a vertical handle and drag, rather than an unpickable dot.
+    this.material.rotation = axis && Math.hypot(axis.x, axis.y) >= 4 ? Math.atan2(-axis.y, axis.x) - Math.PI / 2 : 0
   }
 
   private paint(): void {
-    for (const m of this.materials) m.color.setHex(this.hovered || this.dragging ? HOVER : COLOR)
+    this.material?.color.setHex(this.hovered || this.dragging ? HOVER : COLOR)
     this.host.invalidate()
   }
 
@@ -127,6 +131,7 @@ export class SliceArrow {
   layer(): SceneLayer {
     return {
       order: 5,
+      tick: () => this.updateScreenSize(),
       dispose: () => {},
       covers: true,
       hover: (at, covered) => {
@@ -141,6 +146,7 @@ export class SliceArrow {
       },
       pointerDown: (e) => {
         if (e.button !== 0 || e.shiftKey || e.ctrlKey || e.metaKey || !this.spec || !this.under(e.clientX, e.clientY)) return false
+        this.updateScreenSize()
         const axis = this.screenAxis()
         if (!axis) return false
         const px = axis.x * axis.x + axis.y * axis.y
@@ -148,7 +154,7 @@ export class SliceArrow {
         // carries the plane along its normal — at the scale the view is drawn at.
         const camera = this.host.camera()
         const mmPerPx = (camera.top - camera.bottom) / camera.zoom / Math.max(1, this.host.canvas.getBoundingClientRect().height)
-        const endOn = px < 40 * 40
+        const endOn = px < 4 * 4
         const start = { x: e.clientX, y: e.clientY, offset: this.spec.offset }
         this.dragging = true
         this.host.claimDrag(true)
@@ -178,7 +184,8 @@ export class SliceArrow {
   dispose(): void {
     this.release()
     this.host.partGroup.remove(this.group)
-    for (const child of this.group.children) (child as THREE.Mesh).geometry.dispose()
-    for (const m of this.materials) m.dispose()
+    this.material?.dispose()
+    this.texture?.dispose()
+    this.group.clear()
   }
 }

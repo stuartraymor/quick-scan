@@ -13,6 +13,9 @@ import { pausePlayback, resumePlayback, stepPlayback, stopPlayback } from './pla
 import { NO_PICK } from '../core/bodyFolders'
 import { useNotes } from '../state/noteStore'
 import { networkFinishPlacing, networkKey } from './useNetworkLayer'
+import { activateSketchTool, activateExtraSketchTool, dimensionSketchSelection, mirrorSelectedSketchEntities, openSketchEditPanel } from '../state/sketchToolActions'
+import { useSketchPresentation } from '../state/sketchPresentation'
+import { useRePrefs } from '../state/rePrefs'
 
 /** The sketch's tools by the letters QUICKSURFACE has them on (L, C, R = Arc,
  *  D), plus S and F, which it leaves free in a sketch. D is the one asked for
@@ -62,6 +65,9 @@ export const reverseKeyboard: KeyboardContribution = {
     const re = useReverse.getState()
     if (re.sketchDraft) {
       const d = re.sketchDraft
+      // Placement owns the plane and its handle, not the sketch sheet. Held
+      // view letters must not arm drawing overlays before Create is accepted.
+      if (d.placing && !e.ctrlKey && !e.altKey && !e.metaKey && 'lcrdsftmo'.includes(e.key.toLowerCase()) && e.key.length === 1) return true
       const tool = !e.ctrlKey && !e.altKey && !e.metaKey ? SKETCH_TOOL_KEYS[e.key.toLowerCase()] : undefined
       if (e.key === 'Escape') {
         // A dimension following the cursor is taken back, never made; a
@@ -71,8 +77,20 @@ export const reverseKeyboard: KeyboardContribution = {
         else if (d.pending.length > 0 || d.dimPick || d.dimMade != null || d.selection.length > 0 || d.selectedConstraint !== null) re.clearSelection()
         else if (d.tool !== 'select') re.setSketchTool('select')
       } else if (e.key === 'Enter') confirmable()?.()
-      else if (tool === 'dimension' && d.tool === 'select' && d.selection.length > 0) re.dimensionSelection()
-      else if (tool) re.setSketchTool(d.tool === tool ? 'select' : tool)
+      else if (tool === 'dimension' && d.tool === 'select' && d.selection.length > 0) dimensionSketchSelection()
+      else if (tool) {
+        const presentation = useSketchPresentation.getState()
+        const prefs = useRePrefs.getState()
+        const same = d.tool === tool && !presentation.tool && !(tool === 'line' && presentation.lineChain)
+          && !(tool === 'circle' && prefs.drawModes.circle !== 'center') && !(tool === 'arc' && prefs.drawModes.arc !== 'threePoint')
+        if (tool === 'line') presentation.setLineChain(false)
+        if (tool === 'circle') prefs.setDrawMode('circle', 'center')
+        if (tool === 'arc') prefs.setDrawMode('arc', 'threePoint')
+        activateSketchTool(same ? 'select' : tool)
+      }
+      else if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === 't') activateExtraSketchTool('trim')
+      else if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === 'm') mirrorSelectedSketchEntities()
+      else if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === 'o') openSketchEditPanel(useSketchPresentation.getState().edit === 'offset' ? null : 'offset')
       else if (e.key === 'Delete' || e.key === 'Backspace') {
         if (re.sketchDraft.selectedConstraint !== null) re.removeSelectedConstraint()
         else re.deleteSelected()

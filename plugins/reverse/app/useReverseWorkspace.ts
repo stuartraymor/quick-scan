@@ -538,7 +538,7 @@ export function useReverseWorkspace({
     const { sketchDraft, chainsStatus } = useReverse.getState()
     const result = chainsRef.current
     if (onReverse && sketchDraft?.placing && result && chainsStatus === 'ready') {
-      scene.setCutPreview(sketchDraft.frame, referenceCut(result.chains, sketchDraft.frame), '#ffd400')
+      scene.setCutPreview(sketchDraft.frame, referenceCut(result.chains, sketchDraft.frame), '#ffff80', false)
     } else {
       scene.setCutPreview(null, null, '')
     }
@@ -561,7 +561,7 @@ export function useReverseWorkspace({
     const draft = useReverse.getState().sketchDraft
     // Only while it cuts: the slice is shared with Mesh Tools' cut preview,
     // which a sketch that is not open must leave alone.
-    if (!scene || !(sketchOpen && sketchModelShown && sketchSliced && draft)) return
+    if (!scene || sketchPlacing || !(sketchOpen && sketchModelShown && sketchSliced && draft)) return
     // The cut face in the sketch's own tone, which its lines read against;
     // the bodies closed where they are cut, in their own cut colours.
     scene.setSliceCapColor(sketchPalette(dark).cap)
@@ -571,7 +571,7 @@ export function useReverseWorkspace({
       reScene()?.capSketchSlice(false)
       scene.setSlicePlane(null)
     }
-  }, [sketchOpen, sketchModelShown, sketchSliced, sketchFrameKey, sceneRef, dark])
+  }, [sketchOpen, sketchPlacing, sketchModelShown, sketchSliced, sketchFrameKey, sceneRef, dark])
 
   // ---- the picture under the sketch ---------------------------------------------------
   // Laid on the sketch plane in the 3D view, which the sheet the sketch is
@@ -628,7 +628,7 @@ export function useReverseWorkspace({
         clear()
         return clear
       }
-      reSceneOf(scene).setPlaneHint(draft.frame, SKETCH_COLOR, draft.name, 0.06)
+      reSceneOf(scene).setPlaneHint(draft.frame, '#ffffff', '', 0.25)
       // The arrow that walks the plane through the part, while the plane takes an offset.
       reSceneOf(scene).setSliceArrow(planeTakesOffset(draft.plane) ? draft.frame : null, planeOffset(draft.plane), (v) => useReverse.getState().setSketchOffset(v))
       scene.setHintedElements([])

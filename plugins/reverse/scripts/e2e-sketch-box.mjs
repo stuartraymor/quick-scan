@@ -19,6 +19,9 @@ const { browser, page, consoleErrors } = await launchApp({ width: 1600, height: 
 const { re } = reverseHelpers(page)
 
 await openReverse(page)
+// The old first box press hit an inspector chip (recorded elementFromPoint).
+// Dock the inspector so this is a sheet-selection test rather than panel text selection.
+await re(async () => (await import('/src/state/shellStore.ts')).useShell.getState().setInspectorMode('docked'))
 await sleep(300)
 // The support card sits over the stage's lower left, where the boxes start.
 if (await page.$('[data-test=support-card] .sc-x')) await click(page, '[data-test=support-card] .sc-x')

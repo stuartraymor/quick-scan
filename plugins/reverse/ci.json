@@ -12,6 +12,15 @@
     "scripts/e2e-auto-freeform.mjs",
     "scripts/e2e-wrap-surface.mjs",
     "scripts/e2e-freeform-sketch.mjs",
-    "scripts/e2e-sketch-assist-export.mjs"
+    "scripts/e2e-sketch-assist-export.mjs",
+    "scripts/e2e-sketch-shortcuts.mjs",
+    "scripts/e2e-sketch-placement-fit.mjs",
+    "scripts/e2e-sketch-controls-parity.mjs",
+    "scripts/e2e-sketch-dims.mjs",
+    "scripts/e2e-sketch-brush-parity.mjs",
+    "scripts/e2e-corner-project-44.mjs",
+    "scripts/e2e-sketch-spline.mjs",
+    "scripts/e2e-sketch-part-view.mjs",
+    "scripts/e2e-full-sketch-workflow.mjs"
   ]
 }
