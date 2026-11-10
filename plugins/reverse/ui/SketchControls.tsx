@@ -12,7 +12,10 @@ import { mirrorSketchSelection, duplicateSketchSelection, offsetSketchSelection,
 import { SketchCommandIcon, type SketchCommandIconName } from './SketchCommandIcon'
 import { useLength } from '../../../src/app/useUnits'
 import { saveFile } from '../../../src/app/exports'
-import { sketchToIges } from '../core/igesExport'
+import { exportSketch, SKETCH_EXPORT_FORMATS, type SketchExportFormat } from '../core/sketchExport'
+import { useSketchExportPrefs } from '../state/sketchExportPrefs'
+import { SketchAssistDialog } from './SketchAssistDialog'
+import { createPortal } from 'react-dom'
 import { useSketchCurvature } from '../state/sketchCurvatureStore'
 
 export function SketchControls({chainsOf}:{chainsOf:()=>SketchChains|null}) {
@@ -22,6 +25,10 @@ export function SketchControls({chainsOf}:{chainsOf:()=>SketchChains|null}) {
  const [analysis,setAnalysis]=useState(false)
  const len=useLength()
  const comb=useSketchCurvature()
+ const [assist,setAssist]=useState(false)
+ const [exportOptions,setExportOptions]=useState(false)
+ const { format:exportFormat, setFormat:setExportFormat }=useSketchExportPrefs()
+ const [draftFormat,setDraftFormat]=useState<SketchExportFormat>('iges')
  const [edit,setEdit]=useState<'offset'|'duplicate'|null>(null), [distance,setDistance]=useState(1), [dx,setDx]=useState(10),[dy,setDy]=useState(10)
  if(!d)return null
  const re=useReverse.getState(), has=d.selection.length>0
@@ -34,7 +41,7 @@ export function SketchControls({chainsOf}:{chainsOf:()=>SketchChains|null}) {
  }
  const active=(t:string)=>!presentation.tool&&d.tool===t
  return <div className="sketch-controls">
-  <div className="sketch-entry-row"><button data-test="sketch-extract" onClick={()=>{presentation.setTool(null);re.setSketchTool('select');useSketchBrush.getState().setOpen(true)}}>Extract primitives</button><button data-test="sketch-assist" title="Fit section chains using the existing segmentation and fit options" disabled={!chainsOf()?.chains.length} onClick={()=>{const c=chainsOf();if(c)re.autoFit(c.chains,'all',prefs.fitOptions)}}>Sketch assist</button></div>
+  <div className="sketch-entry-row"><button data-test="sketch-extract" onClick={()=>{presentation.setTool(null);re.setSketchTool('select');useSketchBrush.getState().setOpen(true)}}>Extract primitives</button><button data-test="sketch-assist" title="Fit section chains using the existing segmentation and fit options" disabled={!chainsOf()?.chains.length} onClick={()=>setAssist(true)}>Sketch assist</button></div>
   <div className="sketch-section-label">Create</div>
   <div className="sketch-command-row create" data-test="sketch-tools">
    {key('line','Line','sketch-tool-line',()=>{presentation.setLineChain(false);tool('line')},active('line')&&!presentation.lineChain)}
@@ -96,7 +103,17 @@ export function SketchControls({chainsOf}:{chainsOf:()=>SketchChains|null}) {
   <button className="sketch-overdefined" data-test="sketch-overdefined" disabled={!d.report?.unmet.length} onClick={()=>{const id=d.report?.unmet[0]?.id;if(id!==undefined)re.selectConstraint(id)}}>Select overdefining constraints</button>
   <div className="sketch-section-label">Sketch Reference points</div>
   <div className="sketch-entry-row"><button data-test="sketch-reference-clear" disabled={!chainsOf()?.chains.length} onClick={()=>{const sketch=cloneSketch(d.sketch);sketch.referenceChains=[];re.setSketch(sketch)}}>Clear</button><button disabled title="Reference-point cleanup behavior is still being compared with QUICKSURFACE">Clean up reference points …</button></div>
-  <div className="sketch-section-label">Export in IGES</div>
-  <div className="sketch-entry-row"><button data-test="sketch-export-iges" disabled={!d.sketch.entities.some(e=>!e.construction&&e.kind!=='point')} title="Save the sketch's lines, arcs and circles as an IGES file, placed on the sketch plane" onClick={()=>{const name=(d.name||'sketch').replace(/[^\w.-]+/g,'_');saveFile(`${name}.igs`,new Blob([sketchToIges(d.sketch.entities,d.frame,name)],{type:'model/iges'}))}}>Export …</button><button disabled title="No IGES options yet">Options …</button></div>
+  {assist&&<SketchAssistDialog chains={chainsOf()?.chains??[]} onClose={()=>setAssist(false)}/>}
+  <div className="sketch-section-label">{SKETCH_EXPORT_FORMATS[exportFormat]}</div>
+  <div className="sketch-entry-row"><button data-test="sketch-export-iges" disabled={!d.sketch.entities.some(e=>!e.construction&&e.kind!=='point')} title="Export sketch geometry in its local XY coordinates" onClick={()=>{const name=(d.name||'sketch').replace(/[^\w.-]+/g,'_');const out=exportSketch(d.sketch.entities,exportFormat,name);saveFile(`${name}.${out.extension}`,new Blob([out.text],{type:out.mime}))}}>Export …</button><button data-test="sketch-export-options" onClick={()=>{setDraftFormat(exportFormat);setExportOptions(true)}}>Options …</button></div>
+  {exportOptions&&createPortal(<div className="modalback" onKeyDown={e=>{e.stopPropagation();if(e.key==='Escape'){e.preventDefault();setExportOptions(false)}}}>
+    <form className="modal" role="dialog" aria-modal="true" aria-label="Export Sketch Options" data-test="sketch-export-options-dialog" style={{width:360,padding:14,display:'grid',gap:12}}
+      onSubmit={e=>{e.preventDefault();e.stopPropagation();setExportFormat(draftFormat);setExportOptions(false)}}>
+      <header>Export Sketch Options</header>
+      <select autoFocus aria-label="Sketch export format" value={draftFormat} onChange={e=>setDraftFormat(e.target.value as SketchExportFormat)}>
+        {Object.entries(SKETCH_EXPORT_FORMATS).map(([key,label])=><option key={key} value={key}>{label}</option>)}
+      </select>
+      <footer style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button type="button" onClick={()=>setExportOptions(false)}>Cancel</button><button type="submit" data-test="sketch-export-options-ok">OK</button></footer>
+    </form></div>,document.body)}
  </div>
 }

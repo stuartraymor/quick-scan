@@ -11,6 +11,7 @@
     "scripts/e2e-freeform-import.mjs",
     "scripts/e2e-auto-freeform.mjs",
     "scripts/e2e-wrap-surface.mjs",
-    "scripts/e2e-freeform-sketch.mjs"
+    "scripts/e2e-freeform-sketch.mjs",
+    "scripts/e2e-sketch-assist-export.mjs"
   ]
 }
