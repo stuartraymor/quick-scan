@@ -22,6 +22,7 @@ export function polynomialOfFit(fit: SurfaceFitResult): PolynomialSurface {
 export function buildEditedSurface(kernel: ReKernel, surface: PolynomialSurface, xyz: Float32Array) {
   if (xyz.length === 0 || xyz.length % 3 !== 0) throw Error('The edited surface needs scan points for its report.')
   const cost = surfaceMeshCost(surface)
+  // units-ok: kernel/API diagnostic reports model-space millimetres explicitly.
   if (cost.triangles > SURFACE_TRIANGLES) throw Error(`The edited surface would mesh to about ${Math.round(cost.triangles / 1000)} k triangles at its ${cost.chord} mm chord, more than ${SURFACE_TRIANGLES / 1000} k. Reduce the pole displacement or refit a coarser, smoother net.`)
   const face = kernel.surfaceFromControlNet(surface)
   try {

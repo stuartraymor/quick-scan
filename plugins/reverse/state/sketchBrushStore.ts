@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { fmtLen } from '../../../src/core/units'
+import { usePrefs } from '../../../src/state/prefsStore'
 import { create } from 'zustand'
 import { fitBrushPrimitive, sketchWithBrushFit, type BrushFit, type BrushPoint, type BrushPrimitive } from '../core/sketchBrush'
 import { useReverse } from './reStore'
@@ -74,7 +76,7 @@ export const useSketchBrush = create<SketchBrushState>()((set, get) => {
       // The brush already fitted the new primitive. Appending it must not
       // refit unrelated, satisfied geometry. Unsatisfied relations still solve.
       useReverse.getState().setSketch(sketch, undefined, true)
-      set({ preview: null, selected: [], message: `Fitted ${s.primitive === 'curve' ? 'curve' : s.primitive} to ${s.selected.length} points (maximum deviation ${fit.maxDeviation.toFixed(3)} mm).` })
+      set({ preview: null, selected: [], message: `Fitted ${s.primitive === 'curve' ? 'curve' : s.primitive} to ${s.selected.length} points (maximum deviation ${fmtLen(fit.maxDeviation, usePrefs.getState().units)}).` })
       return true
     },
   }

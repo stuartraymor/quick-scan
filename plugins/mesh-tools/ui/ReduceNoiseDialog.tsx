@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { useLength } from '../../../src/app/useUnits'
+import { useLengthDraft } from '../../../src/app/useLengthDraft'
+
 // Scan Data → Reduce noise: QUICKSURFACE 8.0.128's Reduce Noise dialog,
 // recorded live — Iterations, Apply on selection only, Apply on boundary
 // edges, Preview, Deviation of original mesh with its range and Apply,
@@ -13,6 +16,7 @@ import { useMark } from '../../../src/state/markStore'
 import { useMeshTools } from '../state/meshStore'
 
 export function ReduceNoiseDialog({ onRun, onClose }: { onRun: (iterations: number, boundary: boolean, selectionOnly: boolean) => Promise<unknown>; onClose: () => void }) {
+  const len = useLength()
   const wireframe = useStore((s) => s.wireframe)
   const marked = useMark((s) => s.count)
   const editing = useMeshTools((s) => s.editing)
@@ -21,7 +25,7 @@ export function ReduceNoiseDialog({ onRun, onClose }: { onRun: (iterations: numb
   const [boundary, setBoundary] = useState(true)
   const [previewed, setPreviewed] = useState(false)
   const [deviation, setDeviation] = useState(false)
-  const [range, setRange] = useState('0.05')
+  const [range, setRange, rangeMm] = useLengthDraft(0.05)
   const [keep, setKeep] = useState(false)
   // A change after a preview takes the preview back: what is shown is
   // always what OK would keep.
@@ -56,8 +60,8 @@ export function ReduceNoiseDialog({ onRun, onClose }: { onRun: (iterations: numb
         </label>
         <div className="field">
           <input type="number" step="any" min={0} value={range} disabled={!previewed || !deviation} onChange={(e) => setRange(e.target.value)} style={{ width: 80 }} />
-          <span>mm</span>
-          <button disabled={!previewed || !deviation} onClick={() => useMeshTools.getState().setMapRange(Number(range))}>Apply</button>
+          <span>{len.word()}</span>
+          <button disabled={!previewed || !deviation} onClick={() => useMeshTools.getState().setMapRange(rangeMm)}>Apply</button>
         </div>
         <label className="checkrow">
           <input type="checkbox" checked={wireframe} onChange={(e) => useStore.getState().setWireframe(e.target.checked)} />

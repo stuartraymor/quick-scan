@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { fmtLen } from '../../../src/core/units'
+import { usePrefs } from '../../../src/state/prefsStore'
 import type { Vec2 } from '../../../src/core/flat/types'
 import { classifyCornerGesture } from '../core/cornerGesture'
 import { buildCornerTrim } from '../core/sketchCornerTrim'
@@ -23,7 +25,7 @@ export function applyCornerGesture(path: readonly Vec2[], radius: number, scan: 
     return result.error
   }
   r.setSketch(result.sketch, result.farAnchors)
-  return `Fillet fitted to ${result.usedPoints ?? 0} scan points (R ${result.radiusMm?.toFixed(3)} mm).`
+  return `Fillet fitted to ${result.usedPoints ?? 0} scan points (R ${fmtLen(result.radiusMm ?? 0, usePrefs.getState().units)}).`
 }
 
 /** Apply a Shift+drag Instant Fit: line or arc fitted to the scan points under the brush. */
@@ -38,7 +40,7 @@ export function applyInstantFit(path: readonly Vec2[], radius: number, scan: rea
   if (!fit.ok || !sketch) return fail(fit.ok ? 'The primitive could not be fitted.' : fit.error)
   // As in Fit Primitives: append without refitting satisfied existing geometry.
   r.setSketch(sketch, undefined, true)
-  return `Fitted ${fit.kind ?? 'primitive'} to ${selected.length} points (maximum deviation ${fit.maxDeviation.toFixed(3)} mm).`
+  return `Fitted ${fit.kind ?? 'primitive'} to ${selected.length} points (maximum deviation ${fmtLen(fit.maxDeviation, usePrefs.getState().units)}).`
 }
 
 function fail(error: string): string {

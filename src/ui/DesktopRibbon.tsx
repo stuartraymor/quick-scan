@@ -406,7 +406,8 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
     <Group label="Patterns"><div className="ribbon-text-stack">{cadText('patternCircular', 'Circular pattern', 'rotateCcw')}{cadText('patternLinear', 'Linear pattern', 'pattern')}{cadText('mirror', 'Mirror', 'mirror')}</div></Group>
     {exportGroup}</>
   const settingsTab = <>
-    <Group label="Display Units">{tool('Millimetres', 'dimLength', () => usePrefs.getState().setUnits('mm'), units === 'mm', 'Show and type lengths in millimetres')}{tool('Inches', 'dimLength', () => usePrefs.getState().setUnits('in'), units === 'in', 'Show and type lengths in inches')}{tool('Metres', 'dimLength', () => usePrefs.getState().setUnits('m'), units === 'm', 'Show and type lengths in metres')}</Group>
+    {/* units-ok: setUnits receives the stored unit identifier. */}
+        <Group label="Display Units">{tool('Millimetres', 'dimLength', () => usePrefs.getState().setUnits('mm'), units === 'mm', 'Show and type lengths in millimetres')}{tool('Inches', 'dimLength', () => usePrefs.getState().setUnits('in'), units === 'in', 'Show and type lengths in inches')}{tool('Metres', 'dimLength', () => usePrefs.getState().setUnits('m'), units === 'm', 'Show and type lengths in metres')}</Group>
     <Group label="Software Options">{tool('Options', 'settings', () => usePrefs.getState().openSettings(true), false, 'Navigation, display, files and agent options')}{tool('Mouse controls', 'navigate', () => usePrefs.getState().openSettings(true), false, 'Navigation scheme and display options')}</Group></>
   const analysisTab = <>
     <Group label="Tools">

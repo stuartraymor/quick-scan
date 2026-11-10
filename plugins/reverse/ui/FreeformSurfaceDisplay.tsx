@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { useLength } from '../../../src/app/useUnits'
+import { useLengthDraft } from '../../../src/app/useLengthDraft'
+
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useStore } from '../../../src/state/store'
@@ -9,12 +12,13 @@ import { previewDeviationColours, type PreviewColouring } from '../core/freeform
 
 /** Display-only controls. The reference scan and committed bodies are untouched. */
 export function FreeformSurfaceDisplay({ positions }: { positions: Float32Array }) {
+  const len = useLength()
   const [surfaceOnly, setSurfaceOnly] = useState(false)
   const [deviation, setDeviation] = useState(false)
   const [options, setOptions] = useState(false)
   const [tolerance, setTolerance] = useState(.01)
   const [colouring, setColouring] = useState<PreviewColouring>('gradient')
-  const [draft, setDraft] = useState('0.01')
+  const [draft, setDraft, draftMm] = useLengthDraft(0.01)
   const [draftColouring, setDraftColouring] = useState<PreviewColouring>('gradient')
   const [values, setValues] = useState<Float32Array | null>(null)
   const [error, setError] = useState('')
@@ -65,14 +69,14 @@ export function FreeformSurfaceDisplay({ positions }: { positions: Float32Array 
     <div style={{ display: 'flex', gap: 6 }}>
       <button type="button" aria-pressed={!deviation} onClick={() => { setDeviation(false); setOptions(false) }}>Shaded</button>
       <button type="button" aria-pressed={deviation} onClick={() => setDeviation(true)}>Deviation</button>
-      <button ref={optionsButton} type="button" disabled={!deviation} onClick={() => { setDraft(String(tolerance)); setDraftColouring(colouring); setOptions(true) }}>Options</button>
+      <button ref={optionsButton} type="button" disabled={!deviation} onClick={() => { setDraft(String(len.toDisplay(tolerance))); setDraftColouring(colouring); setOptions(true) }}>Options</button>
     </div>
     <button type="button" aria-pressed={surfaceOnly} onClick={() => setSurfaceOnly(on => !on)}>Surface Only (Space)</button>
     {deviation && !values && !error && <small role="status">Measuring surface deviation…</small>}
     {error && <small role="alert">{error}</small>}
-    {deviation && values && <div data-test="freeform-deviation-legend" aria-label="Surface deviation in millimetres">
+    {deviation && values && <div data-test="freeform-deviation-legend" aria-label={`Surface deviation in ${len.word()}`}>
       <div style={{ height: 10, background: 'linear-gradient(to right, blue, cyan 20%, lime 40%, lime 60%, yellow 80%, red)' }} />
-      <small style={{ display: 'flex', justifyContent: 'space-between' }}><span>{-5*tolerance}</span><span>±{tolerance} mm</span><span>{5*tolerance}</span></small>
+      <small style={{ display: 'flex', justifyContent: 'space-between' }}><span>{len.fmt(-5*tolerance)}</span><span>±{len.fmt(tolerance)}</span><span>{len.fmt(5*tolerance)}</span></small>
     </div>}
     {options && createPortal(<div className="modalback" style={{ zIndex: 10000 }} onKeyDown={e => {
       e.stopPropagation()
@@ -86,9 +90,9 @@ export function FreeformSurfaceDisplay({ positions }: { positions: Float32Array 
     }}>
       <form className="modal" role="dialog" aria-modal="true" aria-label="Deviation Options" data-test="freeform-deviation-options"
         style={{ width: 310, display: 'grid', gap: 12, padding: 14 }}
-        onSubmit={e => { e.preventDefault(); e.stopPropagation(); if (valid) { setTolerance(Number(draft)); setColouring(draftColouring); closeOptions() } }}>
+        onSubmit={e => { e.preventDefault(); e.stopPropagation(); if (valid) { setTolerance(draftMm); setColouring(draftColouring); closeOptions() } }}>
         <header>Deviation Options</header>
-        <label>Tolerance ± <input autoFocus aria-label="Deviation tolerance" type="number" step="any" value={draft} onChange={e => setDraft(e.target.value)} /> mm</label>
+        <label>Tolerance ± <input autoFocus aria-label="Deviation tolerance" type="number" step="any" value={draft} onChange={e => setDraft(e.target.value)} /> {len.word()}</label>
         <fieldset><legend>Colouring</legend>
           <label><input type="radio" name="preview-colouring" value="pass-fail" checked={draftColouring === 'pass-fail'} onChange={() => setDraftColouring('pass-fail')} /> Pass / Fail</label>
           <label><input type="radio" name="preview-colouring" value="gradient" checked={draftColouring === 'gradient'} onChange={() => setDraftColouring('gradient')} /> Gradient</label>

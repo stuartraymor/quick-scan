@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { useLength } from '../../../src/app/useUnits'
+import { useLengthDraft } from '../../../src/app/useLengthDraft'
+
 // Scan Data → Reduce polygons: QUICKSURFACE 8.0.128's Polygon Reduction
 // dialog, recorded live — Active Mesh, Current and New Number of Triangles,
 // Reduce down to as triangles or a percentage, Preview, Deviation of
@@ -21,12 +24,13 @@ export function reductionTarget(current: number, typed: number, as: 'triangles' 
 export function PolygonReductionDialog({ onPreview, onReplace, onClose }: { onPreview: () => Promise<unknown>; onReplace: () => Promise<unknown>; onClose: () => void }) {
   const name = useStore((s) => s.fileName)
   const current = useStore((s) => s.triangleCount)
+  const len = useLength()
   const wireframe = useStore((s) => s.wireframe)
   const report = useMeshTools((s) => s.report)
   const running = useMeshTools((s) => s.status === 'running')
   const [target, setTarget] = useState(() => Math.round(current / 2))
   const [deviation, setDeviation] = useState(false)
-  const [range, setRange] = useState('0.05')
+  const [range, setRange, rangeMm] = useLengthDraft(0.05)
   const [keep, setKeep] = useState(false)
   const [previewed, setPreviewed] = useState(false)
   const percent = current > 0 ? Math.round((target / current) * 1000) / 10 : 0
@@ -63,13 +67,13 @@ export function PolygonReductionDialog({ onPreview, onReplace, onClose }: { onPr
         <button data-test="reduction-preview" disabled={running} onClick={() => void preview()}>{running ? 'Reducing…' : 'Preview'}</button>
         <label className="checkrow">
           <input type="checkbox" disabled={!previewed} checked={deviation} data-test="reduction-deviation"
-            onChange={(e) => { setDeviation(e.target.checked); useMeshTools.getState().setView(e.target.checked ? 'deviation' : 'reduced'); if (e.target.checked) useMeshTools.getState().setMapRange(Number(range)) }} />
+            onChange={(e) => { setDeviation(e.target.checked); useMeshTools.getState().setView(e.target.checked ? 'deviation' : 'reduced'); if (e.target.checked) useMeshTools.getState().setMapRange(rangeMm) }} />
           <span>Deviation of original mesh</span>
         </label>
         <div className="field">
           <input type="number" step="any" min={0} value={range} disabled={!previewed || !deviation} onChange={(e) => setRange(e.target.value)} style={{ width: 80 }} />
-          <span>mm</span>
-          <button disabled={!previewed || !deviation} data-test="reduction-apply-range" onClick={() => useMeshTools.getState().setMapRange(Number(range))}>Apply</button>
+          <span>{len.word()}</span>
+          <button disabled={!previewed || !deviation} data-test="reduction-apply-range" onClick={() => useMeshTools.getState().setMapRange(rangeMm)}>Apply</button>
         </div>
         <label className="checkrow">
           <input type="checkbox" checked={wireframe} onChange={(e) => useStore.getState().setWireframe(e.target.checked)} />

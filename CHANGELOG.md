@@ -1,3 +1,9 @@
+## 0.0.190 — display-units CI repair
+
+- Correct length controls and feedback in sketch fitting, grid, multiple sections, mesh deviation/scale, pipe and freeform display to follow selected display units while retaining model millimetres.
+- Document deliberate metric identifiers, engineering examples and geometry/API diagnostics; keep the units checker enabled.
+- Add rendered controls regression for inch/metre conversion and run it in browser CI. Includes the three 0.0.189 sketch fixes; that candidate was held before installation after the missed units gate was found.
+
 ## 0.0.189 — 2D Sketch placement, fitting feedback and shortcuts
 
 - Keep the complete scan visible during plane placement; use one neutral translucent sheet and a centered screen-sized arrow.

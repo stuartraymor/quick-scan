@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { fmtLen } from '../core/units'
 // What QUICKSURFACE shows while Extract primitives is open: a three-line hint
 // boxed in the bottom-right corner of the 3D view, and Ctrl + mouse wheel
 // over the view sizing the brush, or with the Magic Wand its sensitivity,
@@ -38,7 +39,7 @@ export function ctrlWheelStep(deltaY: number): void {
   }
   const { min, max } = brushRange(useStore.getState().modelSize)
   m.setDiameter(Math.min(Math.max(m.diameter * (up ? 1.1 : 1 / 1.1), min), max))
-  useStore.getState().setStatus(`Brush ${useMark.getState().diameter.toFixed(2)} mm across`)
+  useStore.getState().setStatus(`Brush ${fmtLen(useMark.getState().diameter, usePrefs.getState().units, 2)} across`)
 }
 
 export function ExtractHints() {

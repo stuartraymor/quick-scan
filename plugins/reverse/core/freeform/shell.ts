@@ -106,7 +106,8 @@ export function freeformShell(k: ReKernel, body: Shape, closed: boolean, op: Fre
     const { shape } = patchesBody(k, op.patches)
     try {
       const deviation = k.skinDeviation(body, shape) ?? undefined
-      if (deviation && Math.max(deviation.max - Math.abs(d), Math.abs(d) - deviation.min) > Math.abs(d) * 0.05 + 0.01) throw new Error(`The offset by ${d} mm leaves the surface: its points lie ${Math.round(deviation.min * 1000) / 1000} to ${Math.round(deviation.max * 1000) / 1000} mm from it.`)
+      // units-ok: kernel/API diagnostic reports model-space millimetres explicitly.
+  if (deviation && Math.max(deviation.max - Math.abs(d), Math.abs(d) - deviation.min) > Math.abs(d) * 0.05 + 0.01) throw new Error(`The offset by ${d} mm leaves the surface: its points lie ${Math.round(deviation.min * 1000) / 1000} to ${Math.round(deviation.max * 1000) / 1000} mm from it.`)
       const solid = closed && k.isClosedSolid(shape)
       return { shape, report: { kind: 'offset', solid, valid: k.isValid(shape), faces: k.faceCount(shape), area: k.surfaceArea(shape), volume: solid ? k.volume(shape) : null, ...(deviation ? { deviation } : {}) } }
     } catch (e) {

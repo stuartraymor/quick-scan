@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { useLength } from '../../../src/app/useUnits'
+import { useLengthDraft } from '../../../src/app/useLengthDraft'
+import { fmtLen } from '../../../src/core/units'
+import { usePrefs } from '../../../src/state/prefsStore'
 // Surfacing → Pipe: pick the path sketch, type the diameter, and the pipe
 // opens as a Sweep — the circle drawn square to the path's start — whose
 // preview and Create / OK are the sweep editor's own.
@@ -26,15 +30,15 @@ export function startPipe(pathId: number, diameter: number): boolean {
   if (profile === null) return false
   useReverse.getState().startFeature('sweep')
   useReverse.setState((s) => (s.featureDraft?.kind === 'sweep' ? { featureDraft: { ...s.featureDraft, profile, path: pathId } } : {}))
-  useStore.getState().setStatus(`Pipe ⌀${diameter} mm along ${path.name} — check the preview, then Create.`)
+  useStore.getState().setStatus(`Pipe ⌀${fmtLen(diameter, usePrefs.getState().units)} along ${path.name} — check the preview, then Create.`)
   return true
 }
 
 export function PipeDialog({ onClose }: { onClose: () => void }) {
+  const len = useLength()
   const paths = pipePaths(useReverse((s) => s.features))
   const [pathId, setPathId] = useState<number | null>(paths[paths.length - 1]?.id ?? null)
-  const [text, setText] = useState(String(DEFAULT_PIPE_DIAMETER_MM))
-  const diameter = Number(text)
+  const [text, setText, diameter] = useLengthDraft(DEFAULT_PIPE_DIAMETER_MM)
   const valid = Number.isFinite(diameter) && diameter > 0 && pathId !== null
   return (
     <div className="modalback" data-test="pipe-dialog" onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}>
@@ -53,7 +57,7 @@ export function PipeDialog({ onClose }: { onClose: () => void }) {
               </select>
             </label>}
         <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-          Diameter (mm)
+          Diameter ({len.word()})
           <input type="number" step="any" min="0" value={text} aria-label="Diameter" style={{ width: 100 }} onChange={(e) => setText(e.target.value)} />
         </label>
         <footer style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>

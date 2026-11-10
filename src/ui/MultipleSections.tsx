@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { useLength } from '../app/useUnits'
+import { useLengthDraft } from '../app/useLengthDraft'
+
 // Main → Multiple sections: QUICKSURFACE 8.0.128's dialog, recorded live —
 // a stack of parallel cross sections at a spacing, square to OXY, OYZ, OXZ
 // or a plane of the part, from an offset in one direction or both. Preview
@@ -59,11 +62,12 @@ const AXES: { id: 'z' | 'x' | 'y'; label: string }[] = [
 ]
 
 export function MultipleSections({ onClose }: { onClose: () => void }) {
+  const len = useLength()
   const elements = useStore((s) => s.elements)
   const planes = elements.filter((e) => e.fit?.kind === 'plane')
   const [ref, setRef] = useState<SectionPlaneRef>('z')
-  const [offset, setOffset] = useState('0')
-  const [spacing, setSpacing] = useState('10')
+  const [offset, setOffset, offsetMm] = useLengthDraft(0)
+  const [spacing, setSpacing, spacingMm] = useLengthDraft(10)
   const [direction, setDirection] = useState<Direction>('both')
   const [made, setMade] = useState<number[]>([])
   const [working, setWorking] = useState<string | null>(null)
@@ -80,7 +84,7 @@ export function MultipleSections({ onClose }: { onClose: () => void }) {
 
   const cut = async (): Promise<number[]> => {
     const [lo, hi] = span()
-    const offsets = sectionOffsets(Number(offset), Number(spacing), direction, lo, hi)
+    const offsets = sectionOffsets(offsetMm, spacingMm, direction, lo, hi)
     const ids: number[] = []
     const st = useStore.getState
     for (let i = 0; i < offsets.length; i++) {
@@ -97,7 +101,7 @@ export function MultipleSections({ onClose }: { onClose: () => void }) {
       } else st().cancelSection()
     }
     setWorking(null)
-    st().setStatus(ids.length > 0 ? `${ids.length} sections cut, ${spacing} mm apart.` : 'No section crosses the part — check the offset and the direction.')
+    st().setStatus(ids.length > 0 ? `${ids.length} sections cut, ${len.fmt(spacingMm)} apart.` : 'No section crosses the part — check the offset and the direction.')
     return ids
   }
   const discard = (ids: number[]) => ids.forEach((id) => useStore.getState().removeSection(id))
@@ -123,19 +127,19 @@ export function MultipleSections({ onClose }: { onClose: () => void }) {
         {planes.map((p) => <option key={p.id} value={p.id}>Parallel to {p.name}</option>)}
       </select>
       <label className="checkrow" title={soon}><input type="checkbox" disabled /><span>Curve guided</span></label>
-      <label className="field"><span>Offset</span><input type="number" step="any" value={offset} data-test="sections-offset" onChange={(e) => { setOffset(e.target.value); changed() }} /><span>mm</span></label>
-      <label className="field"><span>Spacing</span><input type="number" step="any" min="0" value={spacing} data-test="sections-spacing" onChange={(e) => { setSpacing(e.target.value); changed() }} /><span>mm</span></label>
+      <label className="field"><span>Offset</span><input type="number" step="any" value={offset} data-test="sections-offset" onChange={(e) => { setOffset(e.target.value); changed() }} /><span>{len.word()}</span></label>
+      <label className="field"><span>Spacing</span><input type="number" step="any" min="0" value={spacing} data-test="sections-spacing" onChange={(e) => { setSpacing(e.target.value); changed() }} /><span>{len.word()}</span></label>
       <label className="field"><span>Direction</span>
         <select value={direction} data-test="sections-direction" onChange={(e) => { setDirection(e.target.value as Direction); changed() }}>
           <option value="both">Both</option><option value="positive">Positive</option><option value="negative">Negative</option>
         </select>
       </label>
-      <label className="field" title={soon}><span>Cloud Capture</span><input type="number" value={10} disabled /><span>mm</span></label>
+      <label className="field" title={soon}><span>Cloud Capture</span><input type="number" value={len.toDisplay(10)} disabled /><span>{len.word()}</span></label>
       <label className="checkrow" title={soon}><input type="checkbox" disabled /><span>Through selection only</span></label>
       <label className="checkrow" title={soon}><input type="checkbox" disabled /><span>Close section curves</span></label>
       <p className="qs-step">Reconstructed Freeform curves</p>
       <label className="checkrow"><input type="radio" checked readOnly /><span>None</span></label>
-      <label className="checkrow" title={soon}><input type="radio" disabled /><span>Approximate within 0.05 mm</span></label>
+      <label className="checkrow" title={soon}><input type="radio" disabled /><span>Approximate within {len.fmt(0.05, 2)}</span></label>
       <label className="checkrow" title={soon}><input type="radio" disabled /><span>Build with 10 points</span></label>
       <label className="checkrow" title={soon}><input type="radio" disabled /><span>Circle</span></label>
       {working && <p className="hint" data-test="sections-working">{working}</p>}

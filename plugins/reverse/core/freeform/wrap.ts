@@ -102,6 +102,7 @@ export function fitWrap(positions: Float32Array, idx: ArrayLike<number>, normals
     angles.push(Math.atan2(q[0] * v[0] + q[1] * v[1] + q[2] * v[2], q[0] * u[0] + q[1] * u[1] + q[2] * u[2]))
   }
   // A ring of quads over less than a hundredth of the radius would be slivers.
+  // units-ok: kernel/API diagnostic reports model-space millimetres explicitly.
   if (!(t1 - t0 > Math.max(1e-6, axis.r * 0.01))) throw new WrapError(`The region is ${(t1 - t0).toFixed(3)} mm long along its axis, too thin to lay a ring of quads over.`)
   angles.sort((x, y) => x - y)
   let gap = angles[0] + 2 * Math.PI - angles[angles.length - 1]

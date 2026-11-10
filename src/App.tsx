@@ -1840,7 +1840,7 @@ export default function App() {
     setExampleBusy(true)
     try {
       const file = await fetchReferenceExample(id)
-      await openFile(file, 'mm')
+      await openFile(file, 'mm') // units-ok: generated example mesh coordinates are millimetres, not display values.
     } catch (error) {
       useStore.setState({ errorText: error instanceof Error ? error.message : String(error) })
     } finally { setExampleBusy(false) }

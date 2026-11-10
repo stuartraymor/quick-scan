@@ -127,7 +127,7 @@ export function SurfaceFitFields({ d, set }: { d: SurfaceDraft; set: (patch: Par
       {autoOpen && (
         <div data-test="surface-auto-box" role="group" aria-label="Automatically find the best U and V">
           <span>Automatically find the best U and V</span>
-          <Num label="Target tolerance" testId="surface-auto-tolerance" unit="mm" value={tolerance} onCommit={(v) => setTolerance(Math.max(0.001, Math.abs(v)))} hint="The smallest net whose worst point stands within this of the surface" />
+          <Num label="Target tolerance" testId="surface-auto-tolerance" kind="length" value={tolerance} onCommit={(v) => setTolerance(Math.max(0.001, Math.abs(v)))} hint="The smallest net whose worst point stands within this of the surface" />
           <span className="unitfield">
             <button
               data-test="surface-auto-ok"

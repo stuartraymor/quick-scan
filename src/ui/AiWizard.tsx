@@ -85,7 +85,8 @@ export function AiWizard({ open, onClose, onAddNote, noteDisabledReason }: {
             </ul></>}
           </li>
           <li>
-            <b>Leave notes for the AI.</b> Click a face, an edge or the scan and write what it should know — "this bore is 10 mm H7",
+            {/* units-ok: quoted example of a metric engineering note, not a measured value. */}
+          <b>Leave notes for the AI.</b> Click a face, an edge or the scan and write what it should know — "this bore is 10 mm H7",
             "keep this face flat". The AI reads them, answers them, and pins its own questions for you.
             <div className="toolrow">
               <button data-test="ai-add-note" disabled={!onAddNote || !agentLink} title={!agentLink ? 'Switch the AI connection on first' : noteDisabledReason} onClick={() => { onClose(); onAddNote?.() }}>

@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { useLength } from '../../../src/app/useUnits'
+
 // Scan Data → Scale: the Scale Mesh dialog. As in QUICKSURFACE, the factor is
 // typed as a value or as a percentage, Preview shows what it comes to, and OK
 // is offered only once the preview is current.
@@ -14,6 +16,7 @@ interface Props {
 }
 
 export function ScaleDialog({ size, onApply, onClose }: Props) {
+  const len = useLength()
   const [mode, setMode] = useState<'value' | 'percent'>('percent')
   const [text, setText] = useState('100')
   const [previewed, setPreviewed] = useState<string | null>(null)
@@ -28,7 +31,7 @@ export function ScaleDialog({ size, onApply, onClose }: Props) {
     setPreviewed(null)
   }
   const preview = () =>
-    setPreviewed(size ? `New size ${size.map((v) => (v * factor).toFixed(2)).join(' × ')} mm` : `Scale × ${factor}`)
+    setPreviewed(size ? `New size ${size.map((v) => len.fmt(v * factor, 2, { bare: true })).join(' × ')} ${len.word()}` : `Scale × ${factor}`)
   return (
     <div className="modalback" data-test="scale-dialog" onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}>
       <form
