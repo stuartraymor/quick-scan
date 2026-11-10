@@ -23,6 +23,7 @@
     "scripts/e2e-sketch-spline.mjs",
     "scripts/e2e-sketch-part-view.mjs",
     "scripts/e2e-full-sketch-workflow.mjs",
-    "scripts/e2e-sketch-corner-paint.mjs"
+    "scripts/e2e-sketch-corner-paint.mjs",
+    "scripts/e2e-qsf-project.mjs"
   ]
 }

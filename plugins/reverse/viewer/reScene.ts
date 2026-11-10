@@ -203,6 +203,7 @@ export class ReScene {
       },
       tick: (w, h) => this.sketches.setResolution(w, h),
       lineWidthChanged: (px) => this.sketches.setLineWidth(px),
+      frameBox: () => this.sketches.frameBox(),
       dispose: () => this.sketches.dispose(),
     }
   }

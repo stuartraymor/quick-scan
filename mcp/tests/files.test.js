@@ -80,6 +80,7 @@ async function copy(store = config) {
 }
 
 test('a file’s kind by its extension', () => {
+  assert.equal(fileKind('native-project.QSF'), 'project')
   assert.deepEqual(['a.STL', 'b.scanruler', 'c.step', 'd.png', 'e.dxf', 'f.md', 'g.bin'].map(fileKind), ['mesh', 'project', 'step', 'picture', 'drawing', 'text', 'other'])
 })
 

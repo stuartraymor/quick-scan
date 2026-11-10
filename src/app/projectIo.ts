@@ -33,6 +33,7 @@ import type { ImportQueue } from './importQueue'
 import { prepareScan, prepareNominal, prepareImage, runImport, type PreparedScan, type PreparedNominal, type PreparedImage } from './imports'
 import { bundleFiles } from './scanFiles'
 import type { ProjectSnapshot } from './projectSnapshot'
+import { projectReaderFor } from './projectReaders'
 
 /** Packing and reading the archive — the worker in the app, the functions headless. */
 export interface ProjectArchive {
@@ -136,7 +137,9 @@ export function createProjectIo(deps: ProjectIoDeps) {
     let image: PreparedImage | null = null
     let committed = false
     try {
-      const { manifest, members } = await archive.unpack(new Uint8Array(await file.arrayBuffer()))
+      const reader = projectReaderFor(file.name)
+      const bytes = new Uint8Array(await file.arrayBuffer())
+      const { manifest, members } = reader ? await reader.read(bytes, file.name) : await archive.unpack(bytes)
       const applyState = prepareProjectState(manifest, members)
       const memberFile = (member: string, name: string) => {
         const bytes = members.get(member)
@@ -206,14 +209,25 @@ export function createProjectIo(deps: ProjectIoDeps) {
       useDeviation.setState({ probes: manifest.deviation.probes })
 
       // Establish navigation bounds first; old files share the import pose.
-      sceneRef.current?.frameAll('iso')
+      if (reader?.settled) {
+        await reader.settled()
+        // Let subscribed viewport layers apply the completed body meshes.
+        if (sceneRef.current) await new Promise(resolve => setTimeout(resolve, 0))
+      }
+      sceneRef.current?.frameAll('iso', !!reader)
       const view = readProjectView(manifest.viewport)
       if (view) sceneRef.current?.restoreProjectView(view)
       useStore.setState({
         busy: false,
-        statusText: `Project opened — ${file.name}.${unowned.length > 0 ? ' It also holds work this build has no workspace for; that is kept, and saved with the project.' : ''}`,
+        statusText: reader
+          ? `${reader.label} project imported — ${file.name}. Save a Quick Scan copy to keep edits.`
+          : `Project opened — ${file.name}.${unowned.length > 0 ? ' It also holds work this build has no workspace for; that is kept, and saved with the project.' : ''}`,
       })
-      if (recovered) {
+      if (reader) {
+        // Never give Save a write-back target for a foreign source file.
+        useDocument.getState().startNew('scan')
+        saved.restored()
+      } else if (recovered) {
         useDocument.getState().startNew('recovered')
         saved.restored()
       } else {

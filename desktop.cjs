@@ -1,6 +1,7 @@
 const { app, BrowserWindow, protocol, net, dialog, ipcMain, shell } = require('electron');
 const { spawn } = require('node:child_process');
 const updater = require('./updater.cjs');
+const { createStartupGuard } = require('./desktop-startup.cjs');
 const recents = require('./recents.cjs');
 const agentSetup = require('./agent-setup.cjs');
 const path = require('node:path');
@@ -80,8 +81,35 @@ else {
       if (url.host !== 'app' || !file.startsWith(root + path.sep)) return new Response('Forbidden', { status: 403 });
       return net.fetch(pathToFileURL(file).href);
     });
-    win = new BrowserWindow({ width: 1500, height: 960, minWidth: 1000, minHeight: 650, title: `Quick Scan v${app.getVersion()}`, backgroundColor: '#e7e6e1', autoHideMenuBar: true, webPreferences: { preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true, backgroundThrottling: !smoke } });
+    win = new BrowserWindow({ width: 1500, height: 960, minWidth: 1000, minHeight: 650, title: `Quick Scan v${app.getVersion()}`, backgroundColor: '#1b1d20', autoHideMenuBar: true, webPreferences: { preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true, backgroundThrottling: !smoke } });
     win.setMenu(null);
+    // Only fixed lifecycle codes are persisted: no project paths, text or errors.
+    const startupLog = path.join(app.getPath('userData'), 'startup.jsonl');
+    const reportStartup = record => {
+      try {
+        fs.mkdirSync(path.dirname(startupLog), { recursive: true });
+        if (fs.existsSync(startupLog) && fs.statSync(startupLog).size > 256 * 1024) fs.renameSync(startupLog, startupLog + '.previous');
+        fs.appendFileSync(startupLog, JSON.stringify({ time: new Date().toISOString(), version: app.getVersion(), ...record }) + '\n');
+      } catch { /* Diagnostics must never prevent startup. */ }
+    };
+    const startup = createStartupGuard({
+      reload: () => win.webContents.reloadIgnoringCache(),
+      report: reportStartup,
+      failed: () => {
+        if (win.isDestroyed()) return;
+        void dialog.showMessageBox(win, { type: 'error', title: 'Quick Scan could not start',
+          message: 'Quick Scan could not finish opening.',
+          detail: 'Close Quick Scan and open it again. Your saved files have not been changed.', buttons: ['Close Quick Scan']
+        }).then(() => { if (startup.state !== 'ready') app.quit(); });
+      },
+    });
+    const fromMainWindow = event => event.sender === win.webContents && event.senderFrame === win.webContents.mainFrame && event.senderFrame.url.startsWith('scanruler://app/');
+    ipcMain.on('startup:ready', event => { if (fromMainWindow(event)) startup.ready(); });
+    ipcMain.on('startup:error', event => { if (fromMainWindow(event)) startup.fail('boot-error'); });
+    win.webContents.on('render-process-gone', () => startup.fail('renderer-gone'));
+    win.webContents.on('preload-error', () => startup.fail('preload-failed'));
+    win.webContents.on('did-fail-load', (_event, code, _description, _url, mainFrame) => { if (mainFrame && code !== -3) startup.fail('load-failed'); });
+    win.on('closed', () => startup.close());
     wireUpdater();
     wireFiles();
     wireAgentSetup();
@@ -98,7 +126,7 @@ else {
         item.once('done', (e, state) => { if (state === 'completed') { recents.remember(recentFile(), item.getSavePath()); win?.webContents.send('files:changed'); } });
       }
     });
-    await win.loadURL('scanruler://app/');
+    await win.loadURL('scanruler://app/').catch(() => startup.fail('load-failed'));
     if (smoke) {
       const oldSave = path.join(app.getPath('userData'), 'desktop-smoke.scanruler');
       if (fs.existsSync(oldSave)) fs.unlinkSync(oldSave);

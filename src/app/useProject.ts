@@ -17,9 +17,10 @@ import { useRecovery } from './useRecovery'
 import type { ImportQueue } from './importQueue'
 import type { PreparedScan, PreparedNominal, PreparedImage } from './imports'
 import { createProjectIo, type ProjectIo, type SavedWatch } from './projectIo'
+import { projectReaderFor } from './projectReaders'
 
 export const isProjectFile = (name: string) =>
-  name.toLowerCase().endsWith(`.${PROJECT_EXTENSION}`)
+  name.toLowerCase().endsWith(`.${PROJECT_EXTENSION}`) || projectReaderFor(name) !== undefined
 
 export function useProject(deps: {
   sources: RefObject<SourceFiles>

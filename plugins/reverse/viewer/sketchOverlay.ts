@@ -212,6 +212,18 @@ export class SketchOverlay {
     this.rebuild()
   }
 
+  /** Visible sketch strokes in part coordinates, including geometry beyond the scan. */
+  frameBox(): THREE.Box3 | null {
+    if (!this.group.visible) return null
+    const box = new THREE.Box3(), point = new THREE.Vector3()
+    for (const item of this.items) for (const stroke of item.strokes) {
+      for (let i = 0; i + 2 < stroke.points.length; i += 3) {
+        box.expandByPoint(point.set(stroke.points[i], stroke.points[i + 1], stroke.points[i + 2]))
+      }
+    }
+    return box.isEmpty() ? null : box
+  }
+
   /** Arm the regions as click targets, with the ones already picked lit,
    *  or (off) hide them. The keys are `${sketchId}:${regionKey}`.
    *  `through` says a region is picked through the part, as a feature

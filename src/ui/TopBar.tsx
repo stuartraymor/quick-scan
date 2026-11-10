@@ -22,6 +22,7 @@ import { IMAGE_ACCEPT, SCAN_ACCEPT, isImageFile, isModelFile, isTextureFile } fr
 import { bundleFiles } from '../app/scanFiles'
 import { PROJECT_EXTENSION, projectStem } from '../core/project/manifest'
 import { isProjectFile } from '../app/useProject'
+import { foreignProjectAccept } from '../app/projectReaders'
 import { APP_VERSION } from '../version'
 import { AppMenu, OPEN_FILE_EVENT } from './AppMenu'
 import { SaveWarning } from './SaveWarning'
@@ -285,7 +286,7 @@ export function TopBar({
       <input
         ref={openRef}
         type="file"
-        accept={`.${PROJECT_EXTENSION},${SCAN_ACCEPT},${IMAGE_ACCEPT}`}
+        accept={`.${PROJECT_EXTENSION},${foreignProjectAccept()},${SCAN_ACCEPT},${IMAGE_ACCEPT}`}
         multiple
         hidden
         data-test="project-input"

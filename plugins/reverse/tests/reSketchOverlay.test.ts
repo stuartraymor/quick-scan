@@ -44,6 +44,18 @@ function fatLines(part: THREE.Group): Map<number, LineMaterial> {
 }
 
 describe('the sketch overlay', () => {
+  it('frames visible strokes outside the scan in part coordinates', () => {
+    const { overlay: o } = overlay()
+    expect(o.frameBox()).toBeNull()
+    o.setSketches([{ id: 1, color: '#ffffff', frame: XY, regions: [], strokes: [
+      { entity: 1, kind: 'line', construction: false, points: [-9, -4, 5, 25, 10, 5] },
+    ] }])
+    expect(o.frameBox()?.min.toArray()).toEqual([-9, -4, 5])
+    expect(o.frameBox()?.max.toArray()).toEqual([25, 10, 5])
+    o.setShown(false)
+    expect(o.frameBox()).toBeNull()
+    o.dispose()
+  })
   it('sizes a hint on screen to a new line width and a new canvas', () => {
     const { overlay: o, part } = overlay()
     o.setResolution(800, 600)

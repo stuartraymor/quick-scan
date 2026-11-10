@@ -8,6 +8,8 @@ import { pick, registerHistory } from '../../src/state/historyStore'
 import { registerDocumentOrderProvider } from '../../src/state/documentOrderStore'
 import { reverseDocumentOrderProvider } from './state/reDocumentOrder'
 import { registerProjectSection } from '../../src/app/projectSections'
+import { registerProjectReader } from '../../src/app/projectReaders'
+import { readQsfProject, qsfSourceSection } from './app/qsfProject'
 import { reverseSection } from './app/projectSection'
 import { useReversePlugin } from './app/useReversePlugin'
 import { reverseKeyboard } from './app/keyboard'
@@ -69,6 +71,10 @@ const plugin: ScanRulerPlugin = {
   notices: ReverseNotices,
   install() {
     registerProjectSection(reverseSection)
+    registerProjectSection(qsfSourceSection)
+    registerProjectReader({ extension: '.qsf', label: 'QuickSurface', read: readQsfProject,
+      async settled() { const session = reverseSession(); if (session) { await session.startKernel(); await session.settled() } },
+    })
     registerDocumentOrderProvider(reverseDocumentOrderProvider)
     // The notes pinned on the part for an agent: saved with the project,
     // let go with the scan, moved with the part.

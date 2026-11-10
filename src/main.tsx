@@ -2,7 +2,7 @@
 // The app's stylesheet first: a plugin's own stylesheet, loaded with the
 // plugin, builds on it and has to come after it.
 import './styles.css'
-import { StrictMode } from 'react'
+import { StrictMode, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
 import { installPlugins } from './plugins/registry'
@@ -18,9 +18,19 @@ installPlugins()
 installSystemLog(APP_VERSION)
 void installDesktopAgentPersistence()
 
+function StartupReady() {
+  useEffect(() => {
+    document.getElementById('startup-status')?.remove()
+    ;(window as Window & { quickScanStartup?: { ready(): void } }).quickScanStartup?.ready()
+    document.documentElement.dataset.appReady = 'true'
+  }, [])
+  return null
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
+    <StartupReady />
   </StrictMode>,
 )
 

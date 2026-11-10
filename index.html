@@ -40,6 +40,25 @@
     </script>
   </head>
   <body>
+    <div id="startup-status" role="status" style="position:fixed;inset:0;z-index:2147483647;display:grid;place-content:center;background:#1b1d20;color:#eee;font:16px system-ui;text-align:center;padding:24px">
+      <p>Opening Quick Scan...</p>
+    </div>
+    <script>
+      (function () {
+        function failed() {
+          if (document.documentElement.dataset.appReady === 'true') return
+          var status = document.getElementById('startup-status')
+          if (status) {
+            status.innerHTML = '<p>Quick Scan could not finish opening.</p><p>Close Quick Scan and open it again.</p>'
+          }
+          if (window.quickScanStartup) window.quickScanStartup.error()
+        }
+        addEventListener('error', function (event) {
+          if (event.target === window || event.target instanceof HTMLScriptElement) failed()
+        }, true)
+        addEventListener('unhandledrejection', failed)
+      })()
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

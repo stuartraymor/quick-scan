@@ -3089,13 +3089,14 @@ export class SceneManager {
 
   /** Frame the camera so that both models are on screen, wherever the
    *  reference happens to sit before anything has been fitted. */
-  frameAll(view?: StandardView): void {
+  frameAll(view?: StandardView, includeLayers = false): void {
     const box = new THREE.Box3()
     this.partGroup.updateMatrixWorld(true)
     if (this.mesh) {
       const g = this.mesh.geometry as THREE.BufferGeometry
       if (g.boundingBox) box.union(g.boundingBox.clone().applyMatrix4(this.partGroup.matrixWorld))
-    } else {
+    }
+    if (!this.mesh || includeLayers) {
       // No scan: what a layer stands in its place is the part.
       for (const layer of this.layers) {
         const b = layer.frameBox?.()

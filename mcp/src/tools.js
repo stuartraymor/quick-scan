@@ -155,7 +155,7 @@ export const absolute = (path, base) => (isAbsolute(path) ? path : resolve(base,
  *  of its kind in it. Other commands take a file only. */
 const FOLDER_PICKS = {
   'scan.open': { what: 'mesh', kinds: ['.stl', '.ply', '.obj', '.3mf'] },
-  'project.load': { what: 'project', kinds: ['.scanruler'] },
+  'project.load': { what: 'project', kinds: ['.scanruler', '.qsf'] },
 }
 
 /** The file a path names: itself, or — for a folder, where the command
@@ -291,7 +291,7 @@ export async function withFiles(value, cwd) {
 /** A file's kind by its extension, as scanruler_files lists it. */
 const KINDS = {
   mesh: ['.stl', '.ply', '.obj', '.3mf', '.off'],
-  project: ['.scanruler'],
+  project: ['.scanruler', '.qsf'],
   step: ['.step', '.stp'],
   picture: ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp'],
   drawing: ['.dxf', '.svg', '.pdf'],

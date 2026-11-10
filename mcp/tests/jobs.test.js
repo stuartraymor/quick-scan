@@ -39,6 +39,7 @@ const history = []
 const sections = []
 /** Until when the page says it is busy with something of its own. */
 let busyUntil = 0
+let compareGates = null
 let link
 let http
 let client
@@ -63,9 +64,11 @@ before(async () => {
       }
       if (name === 'demo.compare') {
         progress('Meshing the bodies…')
-        await new Promise((r) => setTimeout(r, input.ms / 2))
+        if (compareGates) await compareGates.next.promise
+        else await new Promise((r) => setTimeout(r, input.ms / 2))
         progress('Measuring the reference against the scan — 42%…')
-        await new Promise((r) => setTimeout(r, input.ms / 2))
+        if (compareGates) await compareGates.finish.promise
+        else await new Promise((r) => setTimeout(r, input.ms / 2))
         return { rms: 0.29 }
       }
       if (name === 'session.state') return { busy: Date.now() < busyUntil ? 'working out a map' : null, running: null }
@@ -329,23 +332,41 @@ test('two calls giving the same name refuse the batch before anything runs, nami
   assert.equal(fine.json.ran, 3)
 })
 
-test('a long change keeps the page’s last progress line; scanruler_wait and the status answer it while it runs, without a progress token', async () => {
+test('a long change keeps the page’s last progress line; scanruler_wait and the status answer it while it runs, without a progress token', async (t) => {
+  // Hold the fake computation at each phase, so CPU load cannot finish it
+  // between requesting its status and asserting the reported progress.
+  const gates = () => ({ next: Promise.withResolvers(), finish: Promise.withResolvers() })
+  compareGates = gates()
+  t.after(() => { compareGates?.next.resolve(); compareGates?.finish.resolve(); compareGates = null })
+  const progressOf = async (job, phase) => {
+    const deadline = Date.now() + 5000
+    let result
+    do {
+      result = await call('scanruler_wait', { for: 'job', job, timeoutSeconds: 0.01 })
+      if (result.json.progress?.phase === phase) return result
+      await new Promise((r) => setTimeout(r, 10))
+    } while (Date.now() < deadline)
+    assert.fail(`Progress was not delivered: ${JSON.stringify(result.json)}`)
+  }
   const queued = await call('demo_compare', { ms: 600, wait: false })
-  await new Promise((r) => setTimeout(r, 100))
-  const early = await call('scanruler_wait', { for: 'job', job: queued.json.job, timeoutSeconds: 0.05 })
+  const early = await progressOf(queued.json.job, 'Meshing the bodies…')
   assert.equal(early.json.state, 'running')
   assert.deepEqual(early.json.progress, { phase: 'Meshing the bodies…', percent: null })
-  await new Promise((r) => setTimeout(r, 350))
+  compareGates.next.resolve()
+  await progressOf(queued.json.job, 'Measuring the reference against the scan…')
   const listed = (await call('scanruler_status')).json.jobs.find((j) => j.job === queued.json.job)
   assert.deepEqual(listed.progress, { phase: 'Measuring the reference against the scan…', percent: 42 })
   assert.equal(typeof listed.runningMs, 'number')
+  compareGates.finish.resolve()
   const done = await call('scanruler_wait', { for: 'job', job: queued.json.job, timeoutSeconds: 5 })
   assert.equal(done.json.state, 'done')
   assert.equal(done.json.progress, undefined, 'a finished job answers its result, not how far it got')
-  // In a batch, the batch's job says which call the line came from.
+  compareGates = gates()
   const batch = await call('scanruler_batch', { calls: [{ tool: 'demo_read' }, { tool: 'demo_compare', arguments: { ms: 400 } }], wait: false })
-  await new Promise((r) => setTimeout(r, 300))
-  const running = await call('scanruler_wait', { for: 'job', job: batch.json.job, timeoutSeconds: 0.05 })
+  await progressOf(batch.json.job, 'Meshing the bodies…')
+  compareGates.next.resolve()
+  const running = await progressOf(batch.json.job, 'Measuring the reference against the scan…')
   assert.deepEqual(running.json.progress, { phase: 'Measuring the reference against the scan…', percent: 42, call: 1 })
+  compareGates.finish.resolve()
   assert.equal((await call('scanruler_wait', { for: 'job', job: batch.json.job, timeoutSeconds: 5 })).json.state, 'done')
 })
