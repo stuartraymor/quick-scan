@@ -1,3 +1,7 @@
+## 0.0.201 — Horizontal and Vertical on a line already tied to another
+
+- Horizontal or Vertical on a line that is already Parallel, Perpendicular or at an angle to another now keeps its second end and brings the first to it, as on a free line, and the other line turns with it. In 0.0.200 such a line fell back to meeting halfway. Only a length dimension holds a line in place for Horizontal or Vertical. Found checking 0.0.200 in the installed app.
+
 ## 0.0.200 — Relations move the lines the way QUICKSURFACE does
 
 - Horizontal and Vertical keep a line's second end where it is and bring the first end level with it (or straight above or below it), moving it along one axis only. Before, both ends met halfway.

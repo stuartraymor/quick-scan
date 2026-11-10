@@ -83,6 +83,14 @@ describe('as QUICKSURFACE places the lines', () => {
     expect(len(l2)).toBeCloseTo(5.689, 3)
   })
 
+  it('Horizontal on a line already parallel to another still keeps its second end; the other turns with it', () => {
+    const [p1] = relate('parallel')
+    const [l1, l2] = relate('horizontal', false)
+    close(l1.b, p1.b, 1e-6)
+    expect(l1.a[1]).toBeCloseTo(p1.b[1], 6)
+    expect(Math.abs(deg(l2))).toBeLessThan(1e-4)
+  })
+
   it('Undo puts both lines back', () => {
     relate('parallel')
     s().undoSketch()

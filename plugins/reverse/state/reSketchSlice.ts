@@ -67,12 +67,14 @@ function placeLines(sketch: Sketch, kind: string, ids: readonly number[], before
   if (lines.some((e) => !e || e.kind !== 'line')) return undefined
   // A line already held by another relation keeps what is held: its
   // direction (horizontal, vertical, angle, collinear, parallel, square) for
-  // a turn, its length for Equal, either for Horizontal / Vertical. It is
+  // a turn, its length for Equal. It is
   // placed as fixed, so the free lines take the whole change.
   const turnKinds = new Set(['horizontal', 'vertical', 'parallel', 'perpendicular', 'angle', 'collinear'])
   const sizeKinds = new Set(['length', 'equal'])
   const holds = (id: number, kinds: Set<string>) => before.constraints.some((c) => kinds.has(c.kind) && (('entity' in c && c.entity === id) || ('a' in c && (c.a === id || c.b === id)) || ('line' in c && c.line === id) || ('on' in c && typeof c.on === 'object' && c.on !== null && 'line' in c.on && c.on.line === id)))
-  const held = (id: number) => kind === 'equal' ? holds(id, sizeKinds) : kind === 'parallel' || kind === 'perpendicular' ? holds(id, turnKinds) : holds(id, sizeKinds) || holds(id, turnKinds)
+  // Horizontal / Vertical turn the line and the solver carries any line tied
+  // to it by direction along; only a length dimension holds it in place.
+  const held = (id: number) => kind === 'equal' ? holds(id, sizeKinds) : kind === 'parallel' || kind === 'perpendicular' ? holds(id, turnKinds) : holds(id, new Set(['length']))
   const placed = placeForRelation(kind, (lines as SketchLine[]).map((l) => (held(l.id) ? { ...l, fixed: true } : l)))
   if (!placed || placed.size === 0) return undefined
   sketch.entities = sketch.entities.map((e) => placed.get(e.id) ?? e)
