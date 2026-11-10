@@ -73,7 +73,10 @@ function lineByLength(selected: readonly BrushPoint[], unique: readonly BrushPoi
 }
 
 export function fitBrushPrimitive(kind: BrushPrimitive, selected: readonly BrushPoint[], options: BrushFitOptions): BrushFit {
-  if (!(options.tolerance > 0) || !Number.isFinite(options.tolerance)) return { ok: false, error: 'Target tolerance must be greater than zero.' }
+  // The panel enables Target tolerance for Fit Curve only. A value left there
+  // must not block the other fits, whose field is disabled and cannot be fixed.
+  const toleranceOk = options.tolerance > 0 && Number.isFinite(options.tolerance)
+  if (kind === 'curve' && !toleranceOk) return { ok: false, error: 'Target tolerance must be greater than zero.' }
   const identities = [...new Map(selected.map((p) => [`${p.chain}:${p.index}`, p])).values()]
   const unique = [...new Map(identities.map((p) => [`${p.p[0]}:${p.p[1]}`, p])).values()]
   const points = unique.map((p) => p.p)
@@ -81,7 +84,8 @@ export function fitBrushPrimitive(kind: BrushPrimitive, selected: readonly Brush
   if (points.length < min) return { ok: false, error: `Highlight at least ${min} distinct section points to fit ${kind === 'curve' ? 'a curve' : `a ${kind}`}.` }
   if (points.some((p) => !p.every(Number.isFinite))) return { ok: false, error: 'The selected points contain invalid coordinates.' }
   if (kind === 'rectangle' || kind === 'slot' || kind === 'hexagon') {
-    const fit = fitBrushClosedShape(kind, points, options.tolerance)
+    // 0 keeps the shapes' existing 0.001 scatter floor for an unusable value.
+    const fit = fitBrushClosedShape(kind, points, toleranceOk ? options.tolerance : 0)
     if (typeof fit === 'string') return { ok: false, error: fit }
     const { id: _id, ...entity } = fit.sketch.entities.find((e) => !e.construction)!
     return { ok: true, entity, shapeSketch: fit.sketch, maxDeviation: fit.maxDeviation }

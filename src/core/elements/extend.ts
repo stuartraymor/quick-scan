@@ -13,7 +13,7 @@
 // The values are millimetres per side, positive outward. Negative shrinks, and
 // each side is clamped so the element can never be given away entirely.
 
-import type { AxialWindow, CylinderFit, FitData, PlaneFit } from '../types'
+import type { AxialWindow, ConeFit, CylinderFit, FitData, PlaneFit } from '../types'
 import { addScaled } from '../vec'
 
 /** A cylinder grows along its axis: `start` runs against it, `end` with it.
@@ -27,6 +27,11 @@ import { addScaled } from '../vec'
 export type Extension =
   | { kind: 'cylinder'; start: number; end: number; fitInside?: boolean }
   | { kind: 'plane'; uMin: number; uMax: number; vMin: number; vMax: number; rotation?: number }
+  /** A cone grows along its axis like a cylinder — `start` against the axis
+   *  (the `radius1` end), `end` with it (the `radius2` end) — keeping its
+   *  taper, axis and apex. Only set by Extract primitives' default extent:
+   *  there are no grips or fields for it (see isExtendable). */
+  | { kind: 'cone'; start: number; end: number }
 
 export type CylinderSide = 'start' | 'end'
 export type PlaneSide = 'uMin' | 'uMax' | 'vMin' | 'vMax'
@@ -95,7 +100,86 @@ export function withFitInside(ext: Extension, on: boolean): Extension {
 }
 
 export function sides(ext: Extension): readonly ExtendSide[] {
-  return ext.kind === 'cylinder' ? CYLINDER_SIDES : PLANE_SIDES
+  return ext.kind === 'plane' ? PLANE_SIDES : CYLINDER_SIDES
+}
+
+/** The kinds an extension is carried and drawn for: the two with grips
+ *  (isExtendable), and the cone, which only Extract primitives extends. */
+export function carriesExtension(fit: FitData | undefined): fit is ExtendableFit | ConeFit {
+  return isExtendable(fit) || fit?.kind === 'cone'
+}
+
+/** How far past the selected patch Extract primitives draws a new primitive,
+ *  as a share of the measured size: each plane edge by this times the half
+ *  extent on its axis, each cylinder end by this times the length, a cone's
+ *  larger end by this times the length. Read off QUICKSURFACE's saved QSF
+ *  geometry for plane, cylinder and cone extractions (parent measurement,
+ *  2026-11-10); the plane's in-plane frame is QuickScan's own fitted one. */
+export const EXTRACT_EXTENT_FACTOR = 0.55
+
+/** The extension a fresh Extract primitives fit starts with — computed from
+ *  the measured fit alone and replacing (never adding to) any other, so a
+ *  refit under a constraint gives the same default again. Undefined for kinds
+ *  that are not drawn past their surface. */
+export function defaultExtractExtension(fit: FitData | undefined): Extension | undefined {
+  const k = EXTRACT_EXTENT_FACTOR
+  const ok = (v: number) => Number.isFinite(v) && v > 0
+  if (fit?.kind === 'plane') {
+    if (!ok(fit.extentU) || !ok(fit.extentV)) return undefined
+    const u = k * fit.extentU, v = k * fit.extentV
+    return { kind: 'plane', uMin: u, uMax: u, vMin: v, vMax: v }
+  }
+  if (fit?.kind === 'cylinder') {
+    if (!ok(fit.length)) return undefined
+    return { kind: 'cylinder', start: k * fit.length, end: k * fit.length }
+  }
+  if (fit?.kind === 'cone') {
+    if (!ok(fit.length)) return undefined
+    // The larger end, whichever way the axis happens to point.
+    return fit.radius2 >= fit.radius1
+      ? { kind: 'cone', start: 0, end: k * fit.length }
+      : { kind: 'cone', start: k * fit.length, end: 0 }
+  }
+  return undefined
+}
+
+/** The cone's radius change per millimetre along its axis: the analytic
+ *  half-angle, signed by which end is the larger. Falls back to the two end
+ *  radii when the angle is unusable. */
+function coneSlope(fit: ConeFit): number {
+  const sign = fit.radius2 >= fit.radius1 ? 1 : -1
+  const tan = Math.abs(Math.tan((fit.halfAngle * Math.PI) / 180))
+  if (Number.isFinite(tan)) return sign * tan
+  return fit.length > 0 ? (fit.radius2 - fit.radius1) / fit.length : 0
+}
+
+/** A cone carried further along its own surface: the axis, half-angle and
+ *  apex stay put, the interval along the axis moves, and the middle and the
+ *  radii are read off the taper again. Never past the apex. */
+function extendCone(fit: ConeFit, ext: { start: number; end: number }): ConeFit {
+  const half = fit.length / 2
+  let lo = -half - (Number.isFinite(ext.start) ? ext.start : 0)
+  let hi = half + (Number.isFinite(ext.end) ? ext.end : 0)
+  const k = coneSlope(fit)
+  // r(t) = radius + k t, t along the axis from the fit's centre.
+  if (k !== 0) {
+    const apex = -fit.radius / k
+    if (k > 0 && lo < apex) lo = apex
+    if (k < 0 && hi > apex) hi = apex
+  }
+  // A malformed or over-shrunk saved interval must not move a cone through
+  // its apex and manufacture a negative middle radius.
+  if (!Number.isFinite(lo + hi) || hi - lo < MIN_SIZE) return fit
+  if (lo === -half && hi === half) return fit
+  const mid = (lo + hi) / 2
+  return {
+    ...fit,
+    center: addScaled(fit.center, fit.axis, mid),
+    length: hi - lo,
+    radius: fit.radius + k * mid,
+    radius1: Math.max(0, fit.radius + k * lo),
+    radius2: Math.max(0, fit.radius + k * hi),
+  }
 }
 
 export function sideValue(ext: Extension, side: ExtendSide): number {
@@ -151,7 +235,9 @@ export function withSide(
  * element is still exactly the measured surface — there is just more of it.
  */
 export function applyExtension(fit: FitData, ext: Extension | undefined): FitData {
-  if (!ext || !isExtendable(fit) || ext.kind !== fit.kind) return fit
+  if (!ext || !carriesExtension(fit) || ext.kind !== fit.kind) return fit
+
+  if (fit.kind === 'cone' && ext.kind === 'cone') return extendCone(fit, ext)
 
   if (fit.kind === 'cylinder' && ext.kind === 'cylinder') {
     const length = Math.max(fit.length + ext.start + ext.end, MIN_SIZE)

@@ -24,6 +24,7 @@ import {
 } from '../core/dimensions'
 import { roleOf } from '../core/elements/refs'
 import {
+  carriesExtension,
   extensionOf,
   fitsInside,
   isExtendable,
@@ -989,7 +990,7 @@ export const useStore = create<AppState>()((set, get) => ({
     // ended up producing something else drops whatever was set for the shape
     // it used to be, and one that was never extended carries nothing at all.
     const extend =
-      isExtendable(d.fit) && d.extend?.kind === d.fit.kind && isExtended(d.extend)
+      carriesExtension(d.fit) && d.extend?.kind === d.fit.kind && isExtended(d.extend)
         ? d.extend
         : undefined
     // The assumed diameter the element goes out with: exactly what was typed,

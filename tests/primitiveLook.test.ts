@@ -18,11 +18,11 @@ describe('primitive look', () => {
     expect(d.r / base.r).toBeCloseTo(PRIMITIVE_SHADE, 1)
     expect(d.g / base.g).toBeCloseTo(PRIMITIVE_SHADE, 1)
   })
-  it('is above the old 0.5 wash, and denser still when selected', () => {
-    expect(PRIMITIVE_OPACITY).toBeGreaterThan(0.55)
+  it('uses a quarter-strength committed surface and stronger selection feedback', () => {
+    expect(PRIMITIVE_OPACITY).toBe(0.25)
     expect(PRIMITIVE_OPACITY_SELECTED).toBeGreaterThan(PRIMITIVE_OPACITY)
   })
-  it('draws a plane at its own extent, its handles on the sheet rim, as QUICKSURFACE does', () => {
+  it('draws the extended geometry without an extra renderer-only multiplier', () => {
     expect(PLANE_OVERHANG).toBe(1)
   })
 })

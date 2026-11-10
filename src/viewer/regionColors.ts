@@ -47,6 +47,7 @@ const REGION_STATE = [
   'tintMask',
   'scanVertices',
   'baseColor',
+  'elementTints',
 ] as const
 
 export class RegionColors {
@@ -84,7 +85,8 @@ export class RegionColors {
    *  rest are shading copies, which nothing here is keyed by. */
   private scanVertices = 0
 
-  constructor(private baseColor: Rgb) {}
+  /** Keep fitted-region ownership for picking without painting a committed selection. */
+  constructor(private baseColor: Rgb, private elementTints = true) {}
 
   /** Repaint bare surface in a new colour — the viewport's colour scheme has
    *  been switched. Only the unowned, unmeasured vertices move: an element's
@@ -182,7 +184,7 @@ export class RegionColors {
     const field = this.fieldColors
     if (field) return [field[v * 3], field[v * 3 + 1], field[v * 3 + 2]]
     const id = this.owner ? this.owner[v] : 0
-    if (id > 0 && !this.hiddenRegions.has(id))
+    if (this.elementTints && id > 0 && !this.hiddenRegions.has(id))
       return this.elementColors.get(id) ?? this.baseColor
     return this.baseColor
   }
@@ -197,7 +199,7 @@ export class RegionColors {
     // While a deviation map is on the surface it owns every vertex colour; the
     // ownership recorded above is enough to repaint on the way back. The same
     // goes for an element that is currently hidden.
-    if (this.fieldColors || this.hiddenRegions.has(elementId)) return cleared
+    if (!this.elementTints || this.fieldColors || this.hiddenRegions.has(elementId)) return cleared
     const arr = this.colors
     const tint = this.tintMask!
     for (let i = 0; i < region.length; i++) {
@@ -265,7 +267,7 @@ export class RegionColors {
         arr[v * 3] = c[0]
         arr[v * 3 + 1] = c[1]
         arr[v * 3 + 2] = c[2]
-        tint[v] = this.visibleOwnerAt(v) === null ? 0 : 1
+        tint[v] = this.elementTints && this.visibleOwnerAt(v) !== null ? 1 : 0
       }
     }
     this.previewRegion = region
@@ -331,7 +333,7 @@ export class RegionColors {
     const tint = this.tintMask!
     for (let v = 0; v < this.owner.length; v++) {
       const id = this.owner[v]
-      const own = (!this.hiddenRegions.has(id) && this.elementColors.get(id)) || null
+      const own = (this.elementTints && !this.hiddenRegions.has(id) && this.elementColors.get(id)) || null
       const c = own ?? this.baseColor
       arr[v * 3] = c[0]
       arr[v * 3 + 1] = c[1]

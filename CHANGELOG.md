@@ -1,3 +1,11 @@
+## 0.0.197 — Primitive fitting and display
+
+- Extend newly extracted planes, cylinders and cones beyond the selected scan region using measured QUICKSURFACE defaults. Keep the original measurements and carry the extension through preview, creation, Undo/Redo, Save/reopen and export. Existing projects retain their prior extents.
+- Make committed primitives more transparent and restore the underlying scan colour after Create and stay, while preserving fitted-region ownership and analysis maps.
+- Let 2D Line/Arc/Circle and shape fitting work when a zero Curve tolerance was left in the disabled field. Continue creating on mouse release; Curve still requires a positive tolerance.
+
+Scope: plane bounding-frame orientation and screen-door transparency are not pixel-identical to QUICKSURFACE. Alignment across multiple meshes, Ctrl-only sketch selection, always-visible handles and snap rings remain under investigation. Full QSF history/surface compatibility and the original intermittent startup issue remain unresolved.
+
 ## 0.0.196 — Startup recovery and limited QSF import
 
 - Show startup progress on a dark background, retry an initial renderer failure once, and display an actionable error after persistent failure. Never automatically reload an already-open document. The original intermittent blank launch was not independently reproduced.

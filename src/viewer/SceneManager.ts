@@ -226,7 +226,7 @@ export class SceneManager {
    *  theme's bare surface, until Set Default Color. */
   private scanTint: readonly [number, number, number] | null = null
   /** Who owns each vertex's colour, and every tint layered over it. */
-  private regions = new RegionColors(DEFAULT_THEME.surface)
+  private regions = new RegionColors(DEFAULT_THEME.surface, false)
   private marking: SurfaceMarking
   private alignMirror: THREE.Points | null = null
   private alignMirrorPlane: 'OYZ' | 'OXZ' | 'OXY' | null = null
@@ -2941,7 +2941,7 @@ export class SceneManager {
       )
       geometry.computeBoundsTree()
       const own = mesh.positions.length / 3 - mesh.copyOf.length
-      const regions = new RegionColors(this.theme.surface)
+      const regions = new RegionColors(this.theme.surface, false)
       regions.attach(colors, paint, tint, own)
       this.other = {
         geometry,

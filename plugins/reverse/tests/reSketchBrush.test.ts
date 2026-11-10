@@ -242,6 +242,26 @@ describe('brush fit draft commit', () => {
     useReverse.getState().undoSketch()
     expect(useReverse.getState().sketchDraft!.sketch.entities).toHaveLength(0)
   })
+  it('does not let a curve-only tolerance left at zero block the other fits', () => {
+    // Panel route: the field is editable only under Fit Curve, then disabled.
+    const s = () => useSketchBrush.getState()
+    s().setPrimitive('curve'); s().setTolerance(0); s().setPrimitive('line')
+    s().setSelected(sample([[0, 2], [5, 2], [10, 2]]))
+    expect(s().preview?.ok).toBe(true)
+    expect(s().apply()).toBe(true)
+    expect(useReverse.getState().sketchDraft!.sketch.entities).toHaveLength(1)
+    for (const tolerance of [0, -1, NaN]) {
+      const o = { ...options, tolerance }
+      expect(fitBrushPrimitive('line', sample([[0, 2], [5, 2], [10, 2]]), o).ok).toBe(true)
+      expect(fitBrushPrimitive('arc', sample(arc()), o).ok).toBe(true)
+      expect(fitBrushPrimitive('circle', sample(arc(0, Math.PI * 2)), o).ok).toBe(true)
+      const rect = fitBrushPrimitive('rectangle', sample(polygonPoints([[-10, -4], [10, -4], [10, 4], [-10, 4]])), o)
+      expect(rect.ok).toBe(true)
+      if (rect.ok) expect(rect.shapeSketch!.entities.every((e) => e.kind === 'point' || e.scatter === 0.001)).toBe(true)
+      // Fit Curve, where the field is enabled, still refuses it.
+      expect(fitBrushPrimitive('curve', sample(Array.from({ length: 30 }, (_, i): Vec2 => [i / 3, 2 + i / 6])), o).ok).toBe(false)
+    }
+  })
   it('does not commit a truncated selection after the brush point budget is exceeded', () => {
     useSketchBrush.getState().setSelected(sample([[0, 2], [5, 2], [10, 2]]))
     useSketchBrush.setState({ selectionOverflow: true, preview: null })

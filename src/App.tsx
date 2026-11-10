@@ -34,7 +34,7 @@ import { chainBounds, projectCut } from './core/section/slice'
 import { shadowFlatFits } from './core/section/shadow'
 import { elementKindInfo } from './core/elements/kinds'
 import { creationMethod, takesSurface } from './core/elements/construct'
-import { extensionOf, fitWindow, isExtendable, sideValue } from './core/elements/extend'
+import { defaultExtractExtension, extensionOf, fitWindow, isExtendable, sideValue } from './core/elements/extend'
 import { roleOf } from './core/elements/refs'
 import { type AutoChoice, autoConstrainFit, canConstrain, constrainFit, constraintLabel, pointsBeyond, canHoldCoincidentAxis } from './core/elements/constrain'
 import { useExtract } from './state/extractStore'
@@ -1086,6 +1086,16 @@ export default function App() {
       }
       if (held) {
         useStore.setState((s) => (s.draft ? { draft: { ...s.draft, fit: held.fit } } : {}))
+        d = useStore.getState().draft
+      }
+      // As in QUICKSURFACE, a new extraction is drawn past the selected patch.
+      // Carried as the draft's extension, so the fit stays the measurement and
+      // the preview, grips, Create, save, undo and export all read the same
+      // numbers. Computed from this (possibly constrained) fit and set, never
+      // added: every type click starts a fresh draft, so a refit cannot stack it.
+      const extractExtent = d && d.status === 'ready' ? defaultExtractExtension(d.fit) : undefined
+      if (extractExtent) {
+        useStore.setState((s) => (s.draft ? { draft: { ...s.draft, extend: extractExtent } } : {}))
         d = useStore.getState().draft
       }
       if (d && d.status !== 'failed') {

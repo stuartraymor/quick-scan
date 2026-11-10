@@ -132,6 +132,18 @@ try {
   } })
   const fittedCircle = await re(() => window.__re.store.getState().sketchDraft.sketch.entities.find((e) => e.kind === 'circle'))
   check(fittedCircle && Math.abs(fittedCircle.r - 8) < 0.1 && Math.hypot(fittedCircle.c[0] - 30, fittedCircle.c[1]) < 0.1, `instant release commits the circle measured from section points (${JSON.stringify(fittedCircle && { r: fittedCircle.r, c: fittedCircle.c })})`)
+  // Native Fit Curve accepts zero, and switching to Line still permits a fit.
+  await click(page, '[data-test=sketch-fit-curve]')
+  await page.$eval('[data-test=sketch-fit-tolerance]', e => { e.focus(); e.select() })
+  await page.keyboard.type('0'); await page.keyboard.press('Tab')
+  await click(page, '[data-test=sketch-fit-line]')
+  const beforeZero = await entities()
+  await stroke(line(8), { beforeUp: async () => {
+    check(await entities() === beforeZero, 'zero-tolerance line selection does not commit while held')
+  } })
+  check(await entities() === beforeZero + 1, 'a disabled Curve tolerance of zero does not block Line on release')
+  await re(() => window.__re.store.getState().undoSketch())
+  check(await entities() === beforeZero, 'zero-tolerance fit is one undoable change')
   await page.setViewport({ width: 1000, height: 720 }); await sleep(500)
   await page.screenshot({ path: shotPath('brush-panel-1000.png') })
   check(await page.$eval('[data-test=sketch-fit-back]', (b) => { const r = b.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight }), 'Back remains visible at 1000×720')

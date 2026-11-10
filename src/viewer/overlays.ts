@@ -51,12 +51,12 @@ const RIM_TUBE_PX = 1.5
 // As in QUICKSURFACE: the primitive being built is solid; once created it
 // turns a lighter, translucent shade that still reads clearly.
 const GHOST_OPACITY = 0.95
-/** A created primitive is drawn in a deeper shade of its palette colour and more
- *  solid than a see-through wash, so it stands out from the scan under it at a
- *  glance. These are for the eye only: the fit, its measurements and exports
- *  keep the real extent. */
+/** Created primitives retain their palette colour with a light transparent
+ *  fill so the underlying scan remains readable. This affects appearance
+ *  only; geometry and measurements are unchanged. */
 export const PRIMITIVE_SHADE = 1
-export const PRIMITIVE_OPACITY = 0.62
+// Native committed surfaces cover one pixel in four; keep the scan readable.
+export const PRIMITIVE_OPACITY = 0.25
 export const PRIMITIVE_OPACITY_SELECTED = 0.78
 // QUICKSURFACE draws a plane at its own extent, its yellow rim and resize
 // handles on the sheet's edge: a sheet drawn past the patch left the handles
