@@ -22,6 +22,8 @@ try {
  await page.click('[data-test=save-project]')
  await page.waitForFunction(()=>window.qsfSaved instanceof Blob)
  const saved=Uint8Array.from(await page.evaluate(async()=>Array.from(new Uint8Array(await window.qsfSaved.arrayBuffer()))))
+ await page.waitForFunction(()=>document.querySelector('[data-test=project-save-status]')?.textContent.startsWith('No unsaved changes'))
+ check(true,'saving a converted QSF clears the unsaved-changes indicator')
  const archive=unzipSync(saved), manifest=JSON.parse(strFromU8(archive['project.json']))
  const sketch=manifest.reverse.features.find(f=>f.kind==='sketch'),extrude=manifest.reverse.features.find(f=>f.kind==='extrude')
  check(sketch?.sketch.constraints[0]?.kind==='diameter'&&sketch.sketch.constraints[0].value===20,'Open and Save preserve the driving diameter')
@@ -45,6 +47,7 @@ try {
  await page.waitForFunction(()=>!document.querySelector('[data-test=save-project]')?.disabled,{timeout:60000})
  await page.click('[data-test=save-project]');await page.waitForFunction(()=>window.qsfSaved instanceof Blob)
  const converted=Uint8Array.from(await page.evaluate(async()=>Array.from(new Uint8Array(await window.qsfSaved.arrayBuffer()))))
+ await page.waitForFunction(()=>document.querySelector('[data-test=project-save-status]')?.textContent.startsWith('No unsaved changes'))
  const convertedArchive=unzipSync(converted),part=JSON.parse(strFromU8(convertedArchive['project.json'])).reverse
  check(part.features.length===3&&part.features.every(f=>f.kind==='sketch'),'preserved project imports all three sketches in history')
  check(part.features[2].sketch.constraints.some(c=>c.kind==='coincident'),'shared endpoint constraint survives public Open and Save')

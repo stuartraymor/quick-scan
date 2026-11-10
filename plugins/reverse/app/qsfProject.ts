@@ -29,7 +29,9 @@ export const qsfSourceSection: ProjectSection<QsfSource> = {
   members: value => [value.member],
   collect(ctx) {
     if (!ctx.scanSaved || !archivedSource) return undefined
-    ctx.addMember(QSF_SOURCE_MEMBER, Uint8Array.from(archivedSource.bytes))
+    // Snapshot identity tracks member bytes. This owned, immutable copy must
+    // stay stable between captures or every successful Save appears dirty.
+    ctx.addMember(QSF_SOURCE_MEMBER, archivedSource.bytes)
     return { ...archivedSource.value }
   },
   prepare(value, ctx) {

@@ -14,6 +14,7 @@ import { Builder } from '../core/build'
 import { resolveFeatures } from '../core/resolve'
 import { findRegions } from '../core/regions'
 import { solveSketch } from '../core/solver'
+import { snapshotKey } from '../../../src/app/projectSnapshot'
 import type { Feature, SketchFeature } from '../core/features'
 import type { ReversePart } from '../app/projectSection'
 
@@ -81,6 +82,18 @@ describe('atomic supported QSF project conversion', () => {
     qsfSourceSection.prepare(roundtrip.manifest.qsfSource, roundtrip)()
     expect(qsfSourceSection.collect({ sources, scanSaved: false, addMember() {} })).toBeUndefined()
     expect(qsfSourceSection.collect({ sources, scanSaved: true, addMember() {} })).toEqual(source)
+  })
+  it('keeps snapshot identity stable after saving retained source bytes', async () => {
+    const project = await readQsfProject(file(), 'source.qsf')
+    qsfSourceSection.prepare(project.manifest.qsfSource, project)()
+    const capture = () => {
+      const members: { name: string; bytes: Uint8Array }[] = []
+      const value = qsfSourceSection.collect({ sources, scanSaved: true, addMember: (name, bytes) => members.push({ name, bytes }) })
+      return { manifest: { ...project.manifest, qsfSource: value }, members }
+    }
+    const first = capture(), second = capture(), key = snapshotKey()
+    expect(key(first)).toBe(key(second))
+    expect(first.members[0].bytes).not.toBe(project.members.get(QSF_SOURCE_MEMBER))
   })
   it('fails missing provenance during preparation without clearing live provenance', async () => {
     const project = await readQsfProject(file(), 'source.qsf'); qsfSourceSection.prepare(project.manifest.qsfSource, project)()

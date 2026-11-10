@@ -1,8 +1,9 @@
-## 0.0.195 — Startup recovery and limited QSF import
+## 0.0.196 — Startup recovery and limited QSF import
 
 - Show startup progress on a dark background, retry an initial renderer failure once, and display an actionable error after persistent failure. Never automatically reload an already-open document. The original intermittent blank launch was not independently reproduced.
 - Open supported QSF projects as editable Quick Scan copies, preserving supported sketch geometry, measured frames, visibility, constraints, linked extrusion history, and original source bytes. Save never overwrites the QSF source.
 - Reject unsupported content before changing the current project. General freeform/fitted surfaces, arbitrary constraints, splines, and complete QuickSurface history compatibility remain incomplete.
+- Retain stable source-byte identity so a successfully saved imported project is marked clean.
 - Frame imported geometry fully in the graphics window. Preserve dark theme, AI, MCP, and the verified Windows updater behavior.
 
 ## 0.0.194 — Windows updater repair
