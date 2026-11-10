@@ -1,4 +1,4 @@
-## 0.0.192 — Sketch Modify previews
+## 0.0.193 — Sketch Modify previews
 
 - Duplicate starts at +10 mm X and 0 Y, matching the observed native default.
 - Duplicate and Offset show provisional yellow geometry before Apply. Parameter edits refresh the preview; Cancel, Escape and tool switches discard it. Apply stays one undoable edit.
