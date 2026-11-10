@@ -730,7 +730,7 @@ describe('Symmetric in the sketch', () => {
     s().sketchClick([6.5, 0.5], 0.2, false, { off: true })
     s().setSketchTool('select')
     s().sketchClick([-4, 0], 0.3, false)
-    s().sketchClick([6.5, 0.5], 0.3, false)
+    s().sketchClick([6.5, 0.5], 0.3, true)
     s().addRelation('symmetric')
     expect(s().sketchDraft!.tool).toBe('relation')
     expect(s().sketchDraft!.armedRelation).toBe('symmetric')

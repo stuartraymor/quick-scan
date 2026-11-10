@@ -14,6 +14,8 @@ const frame={origin:[0,0,0],normal:[0,0,1],basisU:[1,0,0],basisV:[0,1,0]}
 const seed=async(entities=[])=>{await re((f,es)=>window.__re.store.getState().startSketch({kind:'world',axis:'z',offset:0},f,es),frame,entities);await sleep(350);await click(page,'[data-test=sketch-tool-select]');await sleep(80)}
 const client=async(p)=>re(p=>{const q=window.__re.sheet().sheetScreenPoint(p);return [q.x,q.y]},p)
 const pick=async(p)=>{const [x,y]=await client(p);await page.mouse.click(x,y);await sleep(90)}
+// Ctrl+click adds to a sketch selection, as in QUICKSURFACE; a plain click replaces it.
+const pickAdd=async(p)=>{await page.keyboard.down('Control');try{await pick(p)}finally{await page.keyboard.up('Control')}}
 const move=async(p)=>{const [x,y]=await client(p);await page.mouse.move(x,y);await sleep(100)}
 const safe=async()=>re(()=>{const r=document.querySelector('[data-test=sketch-viewport]').getBoundingClientRect();const s=window.__re.sheet();const left=Math.max(r.left+380,r.left+r.width*.57), top=r.top+r.height*.45;return [[left,top],[left+100,top],[left+100,top-80],[left+40,top+75]].map(([x,y])=>s.sheetPoint(x,y))})
 const undo=async()=>{await page.keyboard.down('Control');await page.keyboard.press('z');await page.keyboard.up('Control');await sleep(180)}
@@ -69,8 +71,8 @@ await test('multi-selection-and-context',async()=>{
  await seed();const [a,b,c]=await safe(), dx=(b[0]-a[0]), dy=(c[1]-a[1])
  const lines=[0,1,2].map(i=>({kind:'line',a:[a[0]+i*dx*.42,a[1]],b:[a[0]+i*dx*.42+dx*.14,a[1]+dy]}))
  await seed(lines)
- for(const l of lines)await pick([(l.a[0]+l.b[0])/2,(l.a[1]+l.b[1])/2])
- check((await state()).selection.length===3,'three ordinary graphical line clicks accumulate a multi-selection')
+ for(const [i,l] of lines.entries())await (i?pickAdd:pick)([(l.a[0]+l.b[0])/2,(l.a[1]+l.b[1])/2])
+ check((await state()).selection.length===3,'a click and two Ctrl+clicks select three lines')
  await page.waitForSelector('[data-test=sketch-context-tools]');await sleep(100)
  check(await page.$eval('[data-test=sketch-context-tools]',e=>getComputedStyle(e).visibility==='visible'),'contextual actionable glyph toolbar is visible near selected geometry')
  await click(page,'[data-test=sketch-context-vertical]')
@@ -97,7 +99,7 @@ await test('mirror-duplicate-offset-undo',async()=>{
  await seed();const [a,b,c]=await safe(), span=Math.abs(b[0]-a[0])*.3
  const x=a[0], y=a[1]
  await seed([{kind:'line',a:[x,y],b:[x,y+span*2],construction:true},{kind:'line',a:[x+span,y],b:[x+span*2,y]}])
- await pick([x,y+span]);await pick([x+span*1.5,y]);await click(page,'[data-test=sketch-mirror]')
+ await pick([x,y+span]);await pickAdd([x+span*1.5,y]);await click(page,'[data-test=sketch-mirror]')
  let d=await state();check(d.sketch.entities.length===3,'Mirror command creates a real independent copy about selected construction line')
  const made=d.sketch.entities.at(-1);check(made.kind==='line'&&Math.abs(made.a[0]-(x-span))<1e-5,'mirrored line is geometrically reflected')
  await undo();check((await state()).sketch.entities.length===2,'Undo removes the entire mirror operation')

@@ -357,7 +357,7 @@ describe('tools that take what is clicked', () => {
   it('the selection dimensions too', () => {
     drawL()
     s().sketchClick([5, 0], 0.5, false)
-    s().sketchClick([10, 4], 0.5, false)
+    s().sketchClick([10, 4], 0.5, true)
     s().dimensionSelection()
     const d = s().sketchDraft!
     const angle = d.sketch.constraints.find((c) => c.kind === 'angle')!

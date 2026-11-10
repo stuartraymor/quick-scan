@@ -12,7 +12,7 @@ import { sketchGrips } from '../core/drag'
 import { useEffect, useRef, type MutableRefObject } from 'react'
 import type { FlatFit, Vec2 } from '../../../src/core/flat/types'
 import { len2, normalize2, sub2 } from '../../../src/core/flat/vec2'
-import { anchorPoint, constraintEntities, entityOf, fixedEntityOf, fixedPieces, fixId, isDimension, lineDir, type Anchor, type Constraint, type Sketch, type SketchEntity } from '../core/sketch'
+import { anchorPoint, constraintEntities, entityOf, fixedEntityOf, fixedPieces, fixId, isDimension, lineDir, type Anchor, type AnchorAt, type Constraint, type Sketch, type SketchEntity } from '../core/sketch'
 import { datumName, datumTraces, traceSegment, type DatumPlane } from '../core/datums'
 import { piecesInBox } from '../core/boxSelect'
 import { dimPlaceAt, dimShape } from '../core/dimLayout'
@@ -24,7 +24,7 @@ import { lineIntent, snapSketchPoint, type SnapContext, type SnapKind } from '..
 import { usePrefs } from '../../../src/state/prefsStore'
 import { useRePrefs } from '../state/rePrefs'
 import { arcThrough, chainArcStart, dragHandleAt, sketchHoverAt, splineClosesAt, useReverse, type SketchHover } from '../state/reStore'
-import { sketchDragGuide } from '../state/reSketchSlice'
+import { sketchDragGuide, sketchDragSnap } from '../state/reSketchSlice'
 import type { FlatScene, SketchDimensionItem } from '../../../src/viewer/FlatScene'
 import { SKETCH_DOT, SKETCH_LINE, sketchPalette } from '../viewer/sketchPalette'
 import { curvatureComb } from '../core/curvatureComb'
@@ -190,6 +190,22 @@ export function snapMark(kind: SnapKind, at: Vec2, s: number): FlatFit[] {
   return shapes.filter((f): f is FlatFit => f !== null)
 }
 
+/** How big the mark round a caught handle is against the 8 px pick radius:
+ *  QUICKSURFACE's ring is about three and a half of its end squares across
+ *  (read live, 2026-11-10). */
+export const HANDLE_RING = 1.4
+export const HANDLE_BOX = 1.1
+
+/** The mark round a dragged handle that has caught something: a ring on a
+ *  point, a square box on a piece's body. `radius` is the pick radius in
+ *  sketch units, so the mark keeps its size on the screen at any zoom. */
+export function handleSnapMark(kind: 'point' | 'curve', at: Vec2, radius: number): FlatFit[] {
+  if (!(radius > 0) || !Number.isFinite(radius)) return []
+  return kind === 'point'
+    ? [{ kind: 'circle', center: at, radius: radius * HANDLE_RING, sigma: 0, usedPoints: 0 }]
+    : snapMark('anchor', at, radius * HANDLE_BOX)
+}
+
 /** H or V beside the rubber-banded line, matching its real inferred
  *  relation. Strokes live in the draft layer, so they cannot intercept a
  *  click intended for the geometry or persist after the tool is put down. */
@@ -207,6 +223,12 @@ export function axisIntentMark(from: Vec2, to: Vec2, s: number): FlatFit[] {
 /** Control-points display never removes handles from selected or hovered
  *  pieces: those handles remain the means of editing the active geometry. */
 export const sketchPointVisible = (showAll: boolean, selected: boolean, hovered: boolean): boolean => showAll || selected || hovered
+
+/** Whether a grip's square is drawn: every end and centre always, as
+ *  QUICKSURFACE draws them; a line's middle (its body grip) only while the
+ *  line is selected, hovered or Control Points is on. */
+export const sketchGripShown = (kind: SketchEntity['kind'], at: AnchorAt | 'body', inHand: boolean): boolean =>
+  kind !== 'point' && (at !== 'body' || inHand)
 
 /** A screen-scaled dotted original carrier. Its dashes extend beyond both
  *  original ends and the current drag position, with a bounded work count. */
@@ -521,8 +543,11 @@ export function useSketchSceneSync({
       const reach = Math.max(len2(sub2(guide.a, guide.b)), len2(sub2(guide.a, guide.at))) + guide.radius * 5
       for (const p of [guide.a, guide.b, ...guide.crossings.filter(p => len2(sub2(p, guide.a)) <= reach)])
         fits.push(...snapMark('entity', p, guide.radius * 0.22))
-      if (guide.snapped) fits.push(...snapMark(guide.snapped === 'original' ? 'anchor' : 'entity', guide.at, guide.radius * 0.6))
     }
+    // The handle in the hand, once it has caught something: ringed on a
+    // point, boxed on a piece, as QUICKSURFACE marks it.
+    const caught = draft.tool === 'select' ? sketchDragSnap() : null
+    if (caught) fits.push(...handleSnapMark(caught.kind, caught.at, caught.radius))
     view.setCursor(draft.tool === 'select' ? (pick ? 'pointer' : '') : draft.tool === 'dimension' || draft.tool === 'relation' || draft.tool === 'fillet' || draft.tool === 'chamfer' ? 'pointer' : 'crosshair')
     // Over a piece the navigator lets go of the press, so it is a drag of
     // the piece and not a pan of the sheet.
@@ -634,10 +659,16 @@ export function useSketchSceneSync({
     // next begins, which a run of fitted pieces in one colour does not say.
     const dots: { at: Vec2; color: string; size: number; shape?: 'round' | 'square' }[] = []
     // A spline's fit points too: what it is drawn through, and dragged by.
+    // Drawn all the time, as QUICKSURFACE does with Control Points off (read
+    // live, 2026-11-10): a line's ends, an arc's ends, a circle's centre, a
+    // spline's points. A line's middle grip shows only on the piece in hand.
     for (const e of sketch.entities) {
-      if (e.kind !== 'line' && e.kind !== 'arc' && e.kind !== 'spline') continue
-      if (!sketchPointVisible(useRePrefs.getState().sketchControlPoints, selected.has(e.id), lit.has(e.id))) continue
-      for (const {point} of sketchGrips(e)) dots.push({ at: point, color: '#111111', size: SKETCH_DOT.end, shape: 'square' })
+      if (e.kind === 'point') continue
+      const inHand = sketchPointVisible(useRePrefs.getState().sketchControlPoints, selected.has(e.id), lit.has(e.id))
+      for (const {at, point} of sketchGrips(e)) {
+        if (!sketchGripShown(e.kind, at, inHand)) continue
+        dots.push({ at: point, color: '#111111', size: SKETCH_DOT.end, shape: 'square' })
+      }
     }
     for (const p of picks) {
       if (p.kind !== 'point') continue

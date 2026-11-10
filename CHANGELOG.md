@@ -1,3 +1,11 @@
+## 0.0.199 — 2D sketch handles, snap marks and Ctrl selection as QUICKSURFACE has them
+
+- The square handles on line and arc ends, circle centres and spline points are drawn all the time, not only on the piece selected or under the cursor, as QUICKSURFACE draws them with Control Points off. A line's middle grip still shows only on the line in hand; Control Points still adds a spline's control polygon.
+- Dragging a handle: once it catches a point (another end, a centre, a midpoint, a crossing, the origin, or where it started) a ring is drawn round it; once it catches a piece's body or a coordinate trace, a square box. Sliding along its own line, the grid, or with snapping off (Ctrl): no mark. Read live in QUICKSURFACE 8.0.128.
+- Selecting in a sketch: a plain click takes that piece alone, Ctrl+click adds a piece or takes it back out, and a click on nothing without Ctrl clears the selection — as QUICKSURFACE does. (Before, every click added to the selection until Esc.)
+
+Scope: QUICKSURFACE also shows a circle's four quadrant squares, which resize it; Quick Scan shows the centre only. Ring and box sizes are matched by eye. Constraint behaviour when adding relations is unchanged.
+
 ## 0.0.198 — Alignment origin as QUICKSURFACE places it
 
 - A secondary or tertiary plane after a plane primary now sets its coordinate where it crosses the planes already set to zero, not at the centre of its scanned patch, as QUICKSURFACE does. A tilted wall no longer shifts the origin by its tilt times its height. A cylinder secondary keeps this for a plane tertiary, and a cylinder primary used alone centres on the cylinder itself. Measured on owned QSF copies aligned and saved in QUICKSURFACE 8.0.128 (7 cases and a two-mesh assembly); Quick Scan lands within 1e-4 mm of native.

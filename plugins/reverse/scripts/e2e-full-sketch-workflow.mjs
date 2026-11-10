@@ -66,8 +66,8 @@ try {
   await click(page, '[data-test=sketch-rel-horizontal]')
   await click(page, '[data-test=sketch-construction]')
   await drawLine([-4, -7], [4, -5]); await clearSelection(); await pointClick([0, -6]); await click(page, '[data-test=sketch-construction]')
-  await clearSelection(); await pointClick([0, -2]); await pointClick([0, -6])
-  must(await re(() => window.__re.store.getState().sketchDraft.selection.length === 2), 'graphical clicks select both construction lines together')
+  await clearSelection(); await pointClick([0, -2]); await page.keyboard.down('Control'); try { await pointClick([0, -6]) } finally { await page.keyboard.up('Control') }
+  must(await re(() => window.__re.store.getState().sketchDraft.selection.length === 2), 'a click and a Ctrl+click select both construction lines together')
   await click(page, '[data-test=sketch-rel-parallel]')
   const constrained = await re(() => { const d = window.__re.store.getState().sketchDraft; return { horizontal: d.sketch.constraints.some((c) => c.kind === 'horizontal'), parallel: d.sketch.constraints.some((c) => c.kind === 'parallel'), construction: d.sketch.entities.filter((e) => e.construction).length, solved: d.report.ok } })
   must(constrained.horizontal && constrained.parallel && constrained.construction === 2 && constrained.solved, `actual solver accepts graphical horizontal/parallel constraints (${JSON.stringify(constrained)})`)

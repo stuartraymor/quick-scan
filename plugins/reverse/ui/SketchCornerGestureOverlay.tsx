@@ -68,7 +68,12 @@ export function SketchCornerGestureOverlay({ scene, chainsOf }: { scene: FlatSce
       const upp = scene.unitsPerScreenPx()
       const brush = Math.max(useSketchBrush.getState().brushPx, 14) / 2
       const chains = chainsOf()?.chains ?? []
-      if (mode === 'join') applyCornerGesture(path, brush * upp, chains.flat())
+      if (mode === 'join' && travelled <= 6) {
+        // A Ctrl click, not a stroke: it adds the piece to the selection or
+        // takes it back out, as QUICKSURFACE's Ctrl+click does.
+        const at = scene.sheetPoint(start.x, start.y)
+        if (at) scene.onPick?.(at, { alt: false, shift: false, ctrl: true, unitsPerScreenPx: upp })
+      } else if (mode === 'join') applyCornerGesture(path, brush * upp, chains.flat())
       else if (travelled <= 6) {
         // A Shift click, not a stroke: hand the additive pick back to the sheet.
         const at = scene.sheetPoint(start.x, start.y)

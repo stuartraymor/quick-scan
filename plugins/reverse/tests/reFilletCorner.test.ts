@@ -153,7 +153,7 @@ describe('the Fillet tool in the store', () => {
 
     open()
     useReverse.getState().sketchClick([6, 0], 0.5, false)
-    useReverse.getState().sketchClick([0, 5], 0.5, false)
+    useReverse.getState().sketchClick([0, 5], 0.5, true)
     expect(useReverse.getState().sketchDraft?.selection).toHaveLength(2)
     useReverse.getState().filletSelected()
     expect(useReverse.getState().sketchDraft?.sketch.entities.filter((e) => e.kind === 'arc')).toHaveLength(1)

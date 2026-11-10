@@ -29,7 +29,7 @@ import { shadowPieceCount, shadowSketch } from '../core/shadowPieces'
 import { addConstraint, addEntity, addPolygon, addRectangle, addRectangleCentre, addTurnedRectangle, type Anchor, type AnchorAt, anchorPoint, anchorsOf, arcThrough, axisRelationOf, cloneSketch, type ConstraintInput, entityOf, fixedEntityOf, isDimension, lineDir, patternPieces, relationTakes, removeConstraint, removeEntities, type Sketch, sketchBounds, type SketchEntity, splineJoint, type SketchSpline } from '../core/sketch'
 import { fitSplineToPoints, splineScatter } from '../core/sketchSpline'
 import { levelImage, moveImage, scaleImage } from '../core/sketchImage'
-import { lineDragCrossings, snapHold, type SnapHold, snapLineDrag, snapSketchPoint } from '../core/snap'
+import { lineDragCrossings, snapHold, type SnapHold, type SnapKind, snapLineDrag, snapSketchPoint } from '../core/snap'
 import { measureDimension, type Pull } from '../core/solver'
 import { everyRegion, nameFor, remember } from './reFeatureHelpers'
 import { useRePrefs } from './rePrefs'
@@ -45,7 +45,7 @@ type StoreGet = StoreApi<ReState>['getState']
 /** The drag in the hand. `rigid`, for a shape defined in all but its place
  *  (see rigidCluster), is every piece of it as it was when the drag began:
  *  the hand's move carries them all. */
-let sketchDrag: { entity: number; at: AnchorAt | 'body'; start: Vec2; origin: SketchEntity; last: Vec2; snapped: SnapHold | null; pull: Pull[]; begun: boolean; rigid: SketchEntity[] | null; radius: number; guideSnap: 'original' | 'carrier' | 'intersection' | null; raw: boolean; crossings: Vec2[] } | null = null
+let sketchDrag: { entity: number; at: AnchorAt | 'body'; start: Vec2; origin: SketchEntity; last: Vec2; snapped: SnapHold | null; pull: Pull[]; begun: boolean; rigid: SketchEntity[] | null; radius: number; guideSnap: 'original' | 'carrier' | 'intersection' | null; handleSnap: 'point' | 'curve' | null; raw: boolean; crossings: Vec2[] } | null = null
 
 /** Transient geometry only: the scene reads the same original carrier and
  *  acquired position used by the real drag. Never persisted into a project. */
@@ -53,6 +53,27 @@ export function sketchDragGuide(): { a: Vec2; b: Vec2; at: Vec2; radius: number;
   const drag = sketchDrag
   if (!drag?.begun || drag.raw || drag.origin.kind !== 'line' || (drag.rigid && drag.rigid.length > 1)) return null
   return { a: drag.origin.a, b: drag.origin.b, at: drag.last, radius: drag.radius, snapped: drag.guideSnap, crossings: drag.crossings }
+}
+
+/** What the dragged handle has caught, as QUICKSURFACE marks it (read live,
+ *  2026-11-10): a point — another end, a centre, a crossing, a slice point,
+ *  the origin, or its own first place — is ringed; a piece's body or a
+ *  coordinate trace is boxed.
+ *  Sliding along its own line, the grid, or nothing: no mark. */
+export function handleSnapOf(guide: 'original' | 'carrier' | 'intersection' | null, snap: SnapKind | null): 'point' | 'curve' | null {
+  if (guide === 'original' || guide === 'intersection') return 'point'
+  if (guide === 'carrier') return null
+  if (snap === 'entity' || snap === 'datum') return 'curve'
+  if (snap === 'anchor' || snap === 'origin' || snap === 'midpoint' || snap === 'edge') return 'point'
+  return null
+}
+
+/** The dragged handle and what it has caught, for the scene to ring or box.
+ *  Null while nothing is caught, for a body drag, or with snapping off. */
+export function sketchDragSnap(): { at: Vec2; radius: number; kind: 'point' | 'curve' } | null {
+  const drag = sketchDrag
+  if (!drag?.begun || drag.raw || drag.at === 'body' || !drag.handleSnap) return null
+  return { at: drag.last, radius: drag.radius, kind: drag.handleSnap }
 }
 
 /** Which chains were fitted when a history snapshot was taken by a fit or a
@@ -383,11 +404,14 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
       if (d.tool === 'select') {
         const hit = pieceNear(d.sketch, spot, radius)
         if (!hit) return additive ? {} : { sketchDraft: { ...d, selection: [], selectedConstraint: null, error: null } }
-        // Each click toggles its piece, regardless of how many are already
-        // selected. This lets a whole group be constrained without a box.
-        const selection = d.selection.includes(hit.id)
-          ? d.selection.filter((id) => id !== hit.id)
-          : [...d.selection, hit.id]
+        // As QUICKSURFACE (read live, 2026-11-10): a plain click takes that
+        // piece alone, a click with Ctrl adds it or takes it back out, and a
+        // click on nothing without Ctrl lets the selection go.
+        const selection = !additive
+          ? [hit.id]
+          : d.selection.includes(hit.id)
+            ? d.selection.filter((id) => id !== hit.id)
+            : [...d.selection, hit.id]
         return { sketchDraft: { ...d, selection, selectedConstraint: null, error: null } }
       }
       // The Project tool's click is resolved against the part by the app,
@@ -590,7 +614,7 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
     // the click is what selects — a selection made here would be the one
     // that click then takes off again.
     const rigid = rigidCluster(d.sketch, handle)
-    sketchDrag = { entity: handle.entity, at: handle.at, start: spot, origin: detached(e), last: spot, snapped: null, pull: [], begun: false, radius, guideSnap: null, raw: false, crossings: e.kind === 'line' ? lineDragCrossings(e, d.sketch) : [], rigid: rigid ? (JSON.parse(JSON.stringify(rigid.map((id) => entityOf(d.sketch, id)!))) as SketchEntity[]) : null }
+    sketchDrag = { entity: handle.entity, at: handle.at, start: spot, origin: detached(e), last: spot, snapped: null, pull: [], begun: false, radius, guideSnap: null, handleSnap: null, raw: false, crossings: e.kind === 'line' ? lineDragCrossings(e, d.sketch) : [], rigid: rigid ? (JSON.parse(JSON.stringify(rigid.map((id) => entityOf(d.sketch, id)!))) as SketchEntity[]) : null }
     return true
   },
 
@@ -635,6 +659,7 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
           drag.snapped = useOriginal ? null : snapHold(snap)
           drag.last = point
           drag.guideSnap = useOriginal ? original.kind : null
+          drag.handleSnap = handleSnapOf(useOriginal ? original.kind : null, useOriginal ? null : snap.kind)
         }
         const carried = new Map(drag.rigid.map((x) => [x.id, translateEntity(x, delta)]))
         sketch.entities = sketch.entities.map((x) => carried.get(x.id) ?? x)
@@ -665,6 +690,7 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
         drag.last = [drag.start[0] + delta[0], drag.start[1] + delta[1]]
         for (const at of anchorsOf(moved)) pull.push({ anchor: { entity: moved.id, at }, to: anchorPoint(moved, at) })
         drag.snapped = null
+        drag.handleSnap = null
       } else {
         // An end or a centre lands on what is near — another end, a slice
         // point, the grid — and the hand's piece is left out of the search,
@@ -678,6 +704,7 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
         const useOriginal = original?.kind && (snap.kind === null || snap.kind === 'edge' || snap.kind === 'grid' || (original.kind === 'intersection' && snap.kind === 'entity'))
         const point = useOriginal ? original.point : snap.point
         drag.guideSnap = useOriginal ? original.kind : null
+        drag.handleSnap = handleSnapOf(useOriginal ? original.kind : null, useOriginal ? null : snap.kind)
         const arcGrip = drag.origin.kind === 'arc' && (drag.at === 'a' || drag.at === 'b' || drag.at === 'p0')
         moved = arcGrip && drag.origin.kind === 'arc'
           ? detached(reshapeArc(drag.origin, drag.at, point))

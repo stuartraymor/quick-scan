@@ -14,7 +14,8 @@ const lines: EntityInput[] = [
 ]
 const open = (seed = lines) => s().startSketch({ kind: 'world', axis: 'z', offset: 0 }, XY, seed)
 const selectAll = () => {
-  for (const y of [0, 10, 20]) s().sketchClick([5, y], 0.1, false)
+  // Ctrl held from the second on, as QUICKSURFACE needs to add to a selection.
+  for (const [i, y] of [0, 10, 20].entries()) s().sketchClick([5, y], 0.1, i > 0)
 }
 
 beforeEach(() => {
@@ -23,17 +24,23 @@ beforeEach(() => {
 })
 
 describe('graphical multi-selection', () => {
-  it('accumulates three ordinary clicks and toggles only the clicked piece', () => {
+  it('a plain click takes one piece, Ctrl+click adds or takes back one, as QUICKSURFACE', () => {
     const history = d().history.length
+    s().sketchClick([5, 0], 0.1, false)
+    s().sketchClick([5, 10], 0.1, false)
+    expect(d().selection).toEqual([2])
     selectAll()
     expect(d().selection).toEqual([1, 2, 3])
-    s().sketchClick([5, 10], 0.1, false)
+    s().sketchClick([5, 10], 0.1, true)
     expect(d().selection).toEqual([1, 3])
     expect(d().history).toHaveLength(history)
     s().sketchClick([80, 80], 0.1, true)
     expect(d().selection).toEqual([1, 3])
     s().sketchClick([80, 80], 0.1, false)
     expect(d().selection).toEqual([])
+    selectAll()
+    s().sketchClick([5, 20], 0.1, false)
+    expect(d().selection).toEqual([3])
   })
 
   it.each(['horizontal', 'vertical'] as const)('applies %s to all lines as one undo step', (kind) => {
@@ -108,7 +115,7 @@ describe('graphical multi-selection', () => {
     expect(d().sketch).toEqual(before)
     expect(d().selection).toEqual([1, 2, 3])
     // Put one piece down and dimension the remaining pair normally.
-    s().sketchClick([5, 20], 0.1, false)
+    s().sketchClick([5, 20], 0.1, true)
     s().dimensionSelection()
     expect(d().tool).toBe('dimension')
     expect(d().dimMade).not.toBeNull()
