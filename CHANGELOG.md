@@ -1,3 +1,9 @@
+## 0.0.194 — Windows updater repair
+
+- Discover Windows installers from the published SHA256SUMS.txt manifest while retaining legacy installer checksum support. Match the exact installer filename and reject invalid checksums or mismatched release assets.
+- Release assets include both checksum formats so existing installed versions can update.
+- QSF investigation verified container and mesh layouts across 50 fixtures. Sketch constraints, mixed CAD payloads and editable history require further mapping; full QSF project import is not included.
+
 ## 0.0.193 — Sketch Modify previews
 
 - Duplicate starts at +10 mm X and 0 Y, matching the observed native default.

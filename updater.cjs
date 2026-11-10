@@ -7,7 +7,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const REPO = 'stuartraymor/quick-scan';
-const SETUP = /^Quick-Scan-Setup-(\d+\.\d+\.\d+)\.exe$/;
 const DOWNLOAD_PREFIX = `https://github.com/${REPO}/releases/download/`;
 
 const parse = v => { const m = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(String(v).trim()); return m ? m.slice(1).map(Number) : null; };
@@ -18,12 +17,31 @@ const isNewer = (candidate, current) => {
   return false;
 };
 
-/** Pick the setup program and its checksum from a release; null if either is missing or off-repo. */
+/** Only the installer named for this tag, with assets hosted on that release.
+ * New releases publish a checksum manifest; older releases use a sidecar. */
 function pickAssets(release) {
+  const tag = String(release?.tag_name ?? ''), version = tag.replace(/^v/, '');
+  if (!parse(version)) return null;
   const assets = Array.isArray(release?.assets) ? release.assets : [];
-  const setup = assets.find(a => SETUP.test(a?.name ?? '') && String(a.browser_download_url).startsWith(DOWNLOAD_PREFIX));
-  const sum = setup && assets.find(a => a?.name === `${setup.name}.sha256` && String(a.browser_download_url).startsWith(DOWNLOAD_PREFIX));
+  const asset = name => assets.find(a => a?.name === name && a.browser_download_url === `${DOWNLOAD_PREFIX}${encodeURIComponent(tag)}/${encodeURIComponent(name)}`);
+  const setup = asset(`Quick-Scan-Setup-${version}.exe`);
+  const sum = setup && (asset('SHA256SUMS.txt') || asset(`${setup.name}.sha256`));
   return setup && sum ? { setup, sum } : null;
+}
+
+/** A manifest's first hash may belong to the source archive. Match the exact
+ * installer name, and reject missing/ambiguous entries instead of guessing. */
+function installerChecksum(text, picked) {
+  const lines = String(text).replace(/^\uFEFF/, '').split(/\r?\n/).map(line => line.trim()).filter(line => line && !line.startsWith('#'));
+  if (picked.sum.name === `${picked.setup.name}.sha256` && lines.length === 1 && /^[0-9a-f]{64}$/i.test(lines[0])) return lines[0].toLowerCase();
+  const matches = [];
+  for (const line of lines) {
+    const match = /^([0-9a-f]{64})[ \t]+\*?(.+)$/i.exec(line);
+    if (!match) throw new Error('The published checksum is malformed.');
+    if (match[2] === picked.setup.name) matches.push(match[1].toLowerCase());
+  }
+  if (matches.length !== 1) throw new Error(`The published checksum must contain exactly one entry for ${picked.setup.name}.`);
+  return matches[0];
 }
 
 async function checkForUpdate({ fetch, current, repo = REPO }) {
@@ -59,9 +77,9 @@ async function renameWithRetry(from, to, { rename = fs.promises.rename, sleep = 
 async function downloadUpdate({ fetch, release, dir, onProgress = () => {} }) {
   const picked = pickAssets(release);
   if (!picked) throw new Error('No verified Windows installer in this release.');
-  const sumText = await (await fetch(picked.sum.browser_download_url)).text();
-  const expected = /^[0-9a-f]{64}/i.exec(sumText.trim())?.[0]?.toLowerCase();
-  if (!expected) throw new Error('The published checksum is malformed.');
+  const sumResponse = await fetch(picked.sum.browser_download_url);
+  if (!sumResponse.ok) throw new Error(`Checksum download failed (${sumResponse.status}).`);
+  const expected = installerChecksum(await sumResponse.text(), picked);
   const response = await fetch(picked.setup.browser_download_url);
   if (!response.ok || !response.body) throw new Error(`Download failed (${response.status}).`);
   await fs.promises.mkdir(dir, { recursive: true });
