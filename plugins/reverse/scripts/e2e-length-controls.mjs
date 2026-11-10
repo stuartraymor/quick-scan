@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Render real controls and verify that display-unit edits preserve model millimetres.
-import { launchApp, finish, check, fail } from './e2e-lib.mjs'
+import { launchApp, finish, check, fail } from '../../../scripts/e2e-lib.mjs'
 const { browser, page, consoleErrors } = await launchApp()
 try {
   // Isolate component state from the live application's workspace effects.

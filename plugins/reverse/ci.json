@@ -14,6 +14,7 @@
     "scripts/e2e-freeform-sketch.mjs",
     "scripts/e2e-sketch-assist-export.mjs",
     "scripts/e2e-sketch-shortcuts.mjs",
+    "scripts/e2e-length-controls.mjs",
     "scripts/e2e-sketch-placement-fit.mjs",
     "scripts/e2e-sketch-controls-parity.mjs",
     "scripts/e2e-sketch-dims.mjs",
