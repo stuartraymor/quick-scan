@@ -95,10 +95,16 @@ try {
   },way)
   check(await re(()=>window.__brush.getState().selected.some(q=>Math.hypot(q.p[0]-10,q.p[1]+8)<0.01)), 'fast bent stroke includes points at the intermediate corner')
   await page.mouse.up(); await click(page,'[data-test=sketch-fit-clear]')
-  await stroke(line(-8))
+  await stroke(line(-8), { beforeUp: async () => {
+    const held = await colors()
+    check(held.orange > 30 && held.black === 0 && held.green === 0, `held stroke draws orange selection without an early fitted line (${JSON.stringify(held)})`)
+    await page.screenshot({ path: shotPath('brush-highlight-line-held-1500.png') })
+  } })
   const selected = await count(), paint = await colors()
   check(selected > 20, `left brush selects actual section points (${selected})`)
-  check(paint.orange > 30 && paint.black > 30 && paint.green === 0, `orange highlights and solid black fitted line are drawn on canvas (${JSON.stringify(paint)})`)
+  // On a straight sample chain the released black line covers the orange
+  // samples; measure their highlight before release, not through that line.
+  check(paint.black > 30 && paint.green === 0, `release draws the solid black fitted line (${JSON.stringify(paint)})`)
   check(await entities() === 0, 'noninstant painting previews geometry without committing')
   await page.screenshot({ path: shotPath('brush-highlight-line-1500.png') })
   const beforeSize = await re(() => window.__brush.getState().brushPx)

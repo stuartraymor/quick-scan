@@ -457,7 +457,7 @@
   "plugins/reverse/scripts/e2e-reverse.mjs": "d04ecdba2cf2e1d253ae605e8d99bebeea72f88deabc00b16a6b526dfa661ccd",
   "plugins/reverse/scripts/e2e-sketch-assist-export.mjs": "a080def42f1c65813759a82578bd5c7f37eb84681a0ed3e7fb2969070cf258cc",
   "plugins/reverse/scripts/e2e-sketch-box.mjs": "c8558bc8c34b8ed1ffd3be73eb75c84d9f8eebd972af1783bf99cf0229c2adf8",
-  "plugins/reverse/scripts/e2e-sketch-brush-parity.mjs": "6b6d7bf9088561e293e74e3c8c6898d793912853be15589540f2e66429432e21",
+  "plugins/reverse/scripts/e2e-sketch-brush-parity.mjs": "512cd10b9747efc448ce0b0d9fec70bc765ccb499cd3f7e9479dd7d767c7b87b",
   "plugins/reverse/scripts/e2e-sketch-controls-parity.mjs": "8b2d10b3e343225f16a3c19a437d805a349f0fbf312196cc36ee05d35a1fbede",
   "plugins/reverse/scripts/e2e-sketch-dims.mjs": "9c82a1e973aa57128afb90b3ef1cc4c8a1e2a113bcf1977f6a85401635d5673a",
   "plugins/reverse/scripts/e2e-sketch-part-view.mjs": "dc3a9747c6380d806a72ee9a606a35922fc10ba6ee87d20294a32e2be05ca9f8",
