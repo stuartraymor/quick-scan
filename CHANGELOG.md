@@ -1,3 +1,12 @@
+## 0.0.200 — Relations move the lines the way QUICKSURFACE does
+
+- Horizontal and Vertical keep a line's second end where it is and bring the first end level with it (or straight above or below it), moving it along one axis only. Before, both ends met halfway.
+- Equal keeps each line's direction and midpoint and gives them all the mean length (a fixed line's length when one is fixed). Before, the lines also turned.
+- Parallel and Perpendicular turn each line about its midpoint, keeping its length; the turn is shared so a long line turns less than a short one (in proportion to length squared, the smallest movement of the ends). A fixed line stays put and the others take the whole turn. A line already held by another relation keeps what is held — its direction for a turn (already Horizontal, Vertical, at an angle, collinear, parallel or square to another), its length for Equal (a length dimension, or already equal to another) — and the other lines move.
+- Measured against QUICKSURFACE 8.0.128's own DXF exports of the same two lines: Horizontal, Vertical and Equal land on native's coordinates; Parallel and Perpendicular on native's angles to within 0.2 degrees. Checked again live: a line drawn right to left keeps its second end for Horizontal, as native.
+
+Scope: native shortens lines by about 1 % for Parallel, and for Perpendicular and Collinear its result stretches the lines and warns that the sketch is overdefined; Quick Scan keeps the lengths and Collinear is unchanged. Tangent and Symmetric, and Fix Position letting a fixed end slide along its line, are not changed.
+
 ## 0.0.199 — 2D sketch handles, snap marks and Ctrl selection as QUICKSURFACE has them
 
 - The square handles on line and arc ends, circle centres and spline points are drawn all the time, not only on the piece selected or under the cursor, as QUICKSURFACE draws them with Control Points off. A line's middle grip still shows only on the line in hand; Control Points still adds a spline's control polygon.

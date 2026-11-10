@@ -26,7 +26,8 @@ import { nominalOf } from '../core/nominal'
 import { replaceSketch } from '../core/parameters'
 import { resolvePlaneFrame } from '../core/resolve'
 import { shadowPieceCount, shadowSketch } from '../core/shadowPieces'
-import { addConstraint, addEntity, addPolygon, addRectangle, addRectangleCentre, addTurnedRectangle, type Anchor, type AnchorAt, anchorPoint, anchorsOf, arcThrough, axisRelationOf, cloneSketch, type ConstraintInput, entityOf, fixedEntityOf, isDimension, lineDir, patternPieces, relationTakes, removeConstraint, removeEntities, type Sketch, sketchBounds, type SketchEntity, splineJoint, type SketchSpline } from '../core/sketch'
+import { addConstraint, addEntity, addPolygon, addRectangle, addRectangleCentre, addTurnedRectangle, type Anchor, type AnchorAt, anchorPoint, anchorsOf, arcThrough, axisRelationOf, cloneSketch, type ConstraintInput, entityOf, fixedEntityOf, isDimension, lineDir, patternPieces, relationTakes, removeConstraint, removeEntities, type Sketch, sketchBounds, type SketchEntity, type SketchLine, splineJoint, type SketchSpline } from '../core/sketch'
+import { placeForRelation } from '../core/relationPlacement'
 import { fitSplineToPoints, splineScatter } from '../core/sketchSpline'
 import { levelImage, moveImage, scaleImage } from '../core/sketchImage'
 import { lineDragCrossings, snapHold, type SnapHold, type SnapKind, snapLineDrag, snapSketchPoint } from '../core/snap'
@@ -53,6 +54,31 @@ export function sketchDragGuide(): { a: Vec2; b: Vec2; at: Vec2; radius: number;
   const drag = sketchDrag
   if (!drag?.begun || drag.raw || drag.origin.kind !== 'line' || (drag.rigid && drag.rigid.length > 1)) return null
   return { a: drag.origin.a, b: drag.origin.b, at: drag.last, radius: drag.radius, snapped: drag.guideSnap, crossings: drag.crossings }
+}
+
+/** Lines put where QUICKSURFACE puts them for a relation just added (see
+ *  core/relationPlacement), written into `sketch`, and the pull that holds
+ *  their ends there while the solver settles the rest. Undefined — the
+ *  solver alone, as before — for other relations, pieces that are not all
+ *  lines, or geometry that cannot be placed. */
+function placeLines(sketch: Sketch, kind: string, ids: readonly number[], before: Sketch): Pull[] | undefined {
+  if (kind !== 'horizontal' && kind !== 'vertical' && kind !== 'parallel' && kind !== 'perpendicular' && kind !== 'equal') return undefined
+  const lines = ids.map((id) => entityOf(sketch, id))
+  if (lines.some((e) => !e || e.kind !== 'line')) return undefined
+  // A line already held by another relation keeps what is held: its
+  // direction (horizontal, vertical, angle, collinear, parallel, square) for
+  // a turn, its length for Equal, either for Horizontal / Vertical. It is
+  // placed as fixed, so the free lines take the whole change.
+  const turnKinds = new Set(['horizontal', 'vertical', 'parallel', 'perpendicular', 'angle', 'collinear'])
+  const sizeKinds = new Set(['length', 'equal'])
+  const holds = (id: number, kinds: Set<string>) => before.constraints.some((c) => kinds.has(c.kind) && (('entity' in c && c.entity === id) || ('a' in c && (c.a === id || c.b === id)) || ('line' in c && c.line === id) || ('on' in c && typeof c.on === 'object' && c.on !== null && 'line' in c.on && c.on.line === id)))
+  const held = (id: number) => kind === 'equal' ? holds(id, sizeKinds) : kind === 'parallel' || kind === 'perpendicular' ? holds(id, turnKinds) : holds(id, sizeKinds) || holds(id, turnKinds)
+  const placed = placeForRelation(kind, (lines as SketchLine[]).map((l) => (held(l.id) ? { ...l, fixed: true } : l)))
+  if (!placed || placed.size === 0) return undefined
+  sketch.entities = sketch.entities.map((e) => placed.get(e.id) ?? e)
+  const pull: Pull[] = []
+  for (const l of placed.values()) for (const at of ['a', 'b'] as const) pull.push({ anchor: { entity: l.id, at }, to: l[at] })
+  return pull
 }
 
 /** What the dragged handle has caught, as QUICKSURFACE marks it (read live,
@@ -911,7 +937,8 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
         }
         const sketch = cloneSketch(d.sketch)
         for (const [a, b] of pairs) addConstraint(sketch, { kind, a: a.id, b: b.id })
-        return { sketchDraft: settle({ ...d, sketch }, before) }
+        const pull = placeLines(sketch, kind, picked.map((e) => e.id), before)
+        return { sketchDraft: settle({ ...d, sketch }, before, pull) }
       }
       if (picked.length !== d.selection.length) return { sketchDraft: { ...d, error: 'The selection contains a piece that is no longer in this sketch.' } }
       if (kind === 'collinear') {
@@ -977,7 +1004,7 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
         default:
           return {}
       }
-      return { sketchDraft: settle({ ...d }, before) }
+      return { sketchDraft: settle({ ...d }, before, placeLines(d.sketch, kind, picked.map((e) => e.id), before)) }
     }),
 
   addDimension: (kind, value) =>
