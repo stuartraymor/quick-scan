@@ -1,3 +1,10 @@
+## 0.0.198 — Alignment origin as QUICKSURFACE places it
+
+- A secondary or tertiary plane after a plane primary now sets its coordinate where it crosses the planes already set to zero, not at the centre of its scanned patch, as QUICKSURFACE does. A tilted wall no longer shifts the origin by its tilt times its height. A cylinder secondary keeps this for a plane tertiary, and a cylinder primary used alone centres on the cylinder itself. Measured on owned QSF copies aligned and saved in QUICKSURFACE 8.0.128 (7 cases and a two-mesh assembly); Quick Scan lands within 1e-4 mm of native.
+- After Apply, the "Part aligned — rotated …, moved …" report stays in the status bar; it was replaced at once by the panel hint (also in 0.0.197).
+
+Scope: other cylinder-primary combinations keep the previous rule. Ctrl-only sketch selection, always-visible handles and snap rings, full QSF history/surface compatibility and the original intermittent startup issue remain open.
+
 ## 0.0.197 — Primitive fitting and display
 
 - Extend newly extracted planes, cylinders and cones beyond the selected scan region using measured QUICKSURFACE defaults. Keep the original measurements and carry the extension through preview, creation, Undo/Redo, Save/reopen and export. Existing projects retain their prior extents.

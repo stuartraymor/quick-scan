@@ -2,7 +2,7 @@
 // The alignment group: the 3-2-1 datum editor, the manual move / rotate box,
 // and the buttons that open them.
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ALIGN_PICK_COUNT,
   axisIndex,
@@ -176,9 +176,18 @@ export function AlignmentSection({
   // Translate X / Y / Z, typed in the units shown, added after the alignment.
   const [shift, setShift] = useState(['0', '0', '0'])
   const draftOpen = alignDraft !== null
+  // Apply closes the draft in the store and reopens it here so the panel stays
+  // up; that reopening is not the panel opening, so it must not replace the
+  // "Part aligned" report with the opening hint.
+  // When React renders the close and the reopen together nothing fires, so the
+  // mark is a time, not a flag that could linger to the next real opening.
+  const reopenedByApply = useRef(0)
   useEffect(() => {
     if (!draftOpen) return
     setShift(['0', '0', '0'])
+    const fresh = performance.now() - reopenedByApply.current < 1000
+    reopenedByApply.current = 0
+    if (fresh) return
     useStore.getState().setStatus('Choose the primary, secondary and tertiary features that define the coordinate system, then press Apply.')
   }, [draftOpen])
   const len = useLength()
@@ -548,6 +557,7 @@ export function AlignmentSection({
               if (!await onApplyAlignment(m)) return
               // Retain choices in the committed frame; never reuse a stale
               // transform or the translation typed for the previous Apply.
+              reopenedByApply.current = performance.now()
               const moved = (v: Vec3, normal = false): Vec3 => {
                 const out = new Float64Array(3)
                 ;(normal ? rigidRotate : rigidApply)(m, ...v, out)

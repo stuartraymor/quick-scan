@@ -230,13 +230,14 @@ export function computeDatumAlignment(
   rigid.t[2] = c1[2] - out[2]
 
   const constrained = new Set<number>()
+  const zeroCoord = (k: number, value: number) => {
+    if (constrained.has(k)) return
+    rigid.t[k] -= value
+    constrained.add(k)
+  }
   const zeroAt = (anchor: Vec3, coords: number[]) => {
     rigidApply(rigid, anchor[0], anchor[1], anchor[2], out)
-    for (const k of coords) {
-      if (constrained.has(k)) continue
-      rigid.t[k] -= out[k]
-      constrained.add(k)
-    }
+    for (const k of coords) zeroCoord(k, out[k])
   }
   const datumCoords = (spec: DatumSpec): number[] => {
     const k = axisIndex(spec.axis)
@@ -244,11 +245,59 @@ export function computeDatumAlignment(
     return spec.fit.kind === 'plane' ? [k] : [0, 1, 2].filter((i) => i !== k)
   }
   zeroAt(c1, datumCoords(primary))
-  if (secondary) zeroAt(secondary.fit.center, datumCoords(secondary))
-  if (origin) zeroAt(originAnchor(rigid, origin, primary), [0, 1, 2])
-  if (centerOf) zeroAt(datum?.origin ?? centerOf, [0, 1, 2])
+  // Plane after plane: a secondary or tertiary plane zeroes its coordinate
+  // where it crosses the planes already set at zero, not at its patch centroid
+  // — QUICKSURFACE does (QSF fixtures, 0.0.198: a 3° wall secondary and a 5°
+  // tertiary both land on the three-plane corner). A tilted face's centroid
+  // stands off that corner by tan(tilt) × its height above the other datums.
+  // Other datum kinds and degenerate crossings keep the centroid.
+  const planeChain = primary.fit.kind === 'plane'
+  if (secondary) {
+    const k = axisIndex(secondary.axis)
+    const v = planeChain && !along && secondary.fit.kind === 'plane' ? planeCrossing(rigid, secondary.fit, k, constrained) : null
+    if (v !== null) zeroCoord(k, v)
+    else zeroAt(secondary.fit.center, datumCoords(secondary))
+  }
+  if (origin) {
+    const open = [0, 1, 2].filter((i) => !constrained.has(i))
+    const v =
+      // A cylinder secondary too (native 0.0.198: Plane Top, tilted Cylinder
+      // to X, tilted Plane tertiary → the tertiary's crossing). Only after a
+      // plane primary: cylinder-primary combinations remain a separate case.
+      planeChain && (secondary === null || secondary.fit.kind === 'plane' || secondary.fit.kind === 'cylinder') && origin.kind === 'plane' && open.length === 1
+        ? planeCrossing(rigid, origin, open[0], constrained)
+        : null
+    if (v !== null) zeroCoord(open[0], v)
+    else zeroAt(originAnchor(rigid, origin, primary), [0, 1, 2])
+  }
+  // What is still open is centred on the primary itself where it has a
+  // measured centre: a plane's datum origin, or a cylinder's mid-axis point —
+  // QUICKSURFACE (Cylinder primary on Z Axis alone, 0.0.198 QSF fixture) puts
+  // the cylinder's centre at z = 0, not the scan's box centre. Others keep
+  // centring on the box.
+  if (centerOf) zeroAt(datum?.origin ?? (primary.fit.kind === 'cylinder' ? primary.fit.center : centerOf), [0, 1, 2])
 
   return rigid
+}
+
+/** A plane datum's crossing of the coordinates already zeroed: the value
+ *  coordinate `k` takes, in the current aligned frame, at the point of the
+ *  plane where every `constrained` coordinate is 0 and every other open one
+ *  stays at the plane's centre. Solved from n·(x − c) = 0 with n and c as the
+ *  rigid carries them. An untilted plane gives its centre's own coordinate, as
+ *  before. Null when the plane hardly faces `k` (below the clocking angle), so
+ *  the caller keeps its centroid. Reads the fit; never writes it. */
+function planeCrossing(rigid: Rigid, plane: PlaneFit, k: number, constrained: ReadonlySet<number>): number | null {
+  const p = new Float64Array(3), q = new Float64Array(3)
+  rigidApply(rigid, plane.center[0], plane.center[1], plane.center[2], p)
+  rigidRotate(rigid, plane.normal[0], plane.normal[1], plane.normal[2], q)
+  const len = Math.hypot(q[0], q[1], q[2])
+  // MIN_CLOCK_ANGLE is in degrees, as acuteAngle returns.
+  if (!(Math.abs(q[k]) >= Math.sin((MIN_CLOCK_ANGLE * Math.PI) / 180) * len)) return null
+  let s = 0
+  for (const j of constrained) if (j !== k) s += q[j] * p[j]
+  const v = p[k] + s / q[k]
+  return Number.isFinite(v) ? v : null
 }
 
 /** Where a zero-point feature fixes the open coordinates. An axis (cylinder,
