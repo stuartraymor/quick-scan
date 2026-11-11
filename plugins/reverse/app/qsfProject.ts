@@ -16,7 +16,7 @@ import { decodeQsfExtrude } from '../core/qsfExtrude'
 import { decodeQsfPlane } from '../core/qsfPlane'
 import { decodeQsfPrimitive, isQsfPrimitiveType, type QsfPrimitive } from '../core/qsfPrimitive'
 import type { Feature, SketchFeature } from '../core/features'
-import type { Sketch, SketchEntity } from '../core/sketch'
+import { splineAnchor, type AnchorAt, type Sketch, type SketchEntity } from '../core/sketch'
 import { findRegions } from '../core/regions'
 import { PART_VERSION, featureToJson, validateFeatureJson, type ReversePart } from './projectSection'
 
@@ -95,13 +95,17 @@ function nativeConstraint(c: ReturnType<typeof decodeQsfSketch>['constraints'][n
   const [pa, pb] = c.pointIndices
   const size = Math.max(1, ...entities.flatMap(e => e.kind === 'line' ? [...e.a, ...e.b].map(Math.abs) : e.kind === 'circle' ? [...e.c.map(Math.abs), e.r] : []))
   const tol = 1e-6 * size
-  const end = (e: SketchEntity | undefined, at: number): [number, number] | null => e?.kind === 'line' && (at === 0 || at === 1) ? (at === 0 ? e.a : e.b) : null
-  const at = (n: number) => (n === 0 ? 'a' : 'b') as 'a' | 'b'
+  // A point as the native point selector names it: a line's start (0) or
+  // end (1), a spline's control point by its index (0 and the last are its
+  // ends — a clamped curve passes through both).
+  const end = (e: SketchEntity | undefined, at: number): [number, number] | null =>
+    e?.kind === 'line' ? (at === 0 ? e.a : at === 1 ? e.b : null) : e?.kind === 'spline' && e.controlKnots ? (e.pts[at] ?? null) : null
+  const anchor = (e: SketchEntity, n: number): AnchorAt => e.kind === 'spline' ? splineAnchor(e, n) : n === 0 ? 'a' : 'b'
   switch (c.semantic) {
     case 'coincident': {
       const p = end(ea, pa), q = end(eb, pb)
       if (!p || !q || ea === eb || Math.hypot(p[0] - q[0], p[1] - q[1]) > tol) return null
-      return { id, kind: 'coincident', p: { entity: ea.id, at: at(pa) }, q: { entity: eb.id, at: at(pb) } }
+      return { id, kind: 'coincident', p: { entity: ea.id, at: anchor(ea, pa) }, q: { entity: eb.id, at: anchor(eb, pb) } }
     }
     case 'horizontal':
     case 'vertical': {
@@ -114,8 +118,16 @@ function nativeConstraint(c: ReturnType<typeof decodeQsfSketch>['constraints'][n
       if (ea?.kind === 'line' && ea === eb && pa !== pb && (pa === 0 || pa === 1) && (pb === 0 || pb === 1) && c.value > 0 &&
         Math.abs(Math.hypot(ea.b[0] - ea.a[0], ea.b[1] - ea.a[1]) - c.value) <= tol) return { id, kind: 'length', entity: ea.id, value: c.value }
       const p = end(ea, pa), q = end(eb, pb)
-      if (p && q && ea !== eb && c.value > 0 && Math.abs(Math.hypot(p[0] - q[0], p[1] - q[1]) - c.value) <= tol) return { id, kind: 'distance', p: { entity: ea.id, at: at(pa) }, q: { entity: eb.id, at: at(pb) }, value: c.value }
+      if (p && q && ea !== eb && c.value > 0 && Math.abs(Math.hypot(p[0] - q[0], p[1] - q[1]) - c.value) <= tol) return { id, kind: 'distance', p: { entity: ea.id, at: anchor(ea, pa) }, q: { entity: eb.id, at: anchor(eb, pb) }, value: c.value }
       return null
+    }
+    case 'pointOn': {
+      // A point on a line: held on it, as drawn.
+      const p = end(ea, pa)
+      if (!p || eb?.kind !== 'line' || ea === eb) return null
+      const [dx, dy] = [eb.b[0] - eb.a[0], eb.b[1] - eb.a[1]], len = Math.hypot(dx, dy)
+      if (!(len > 0) || Math.abs((p[0] - eb.a[0]) * dy - (p[1] - eb.a[1]) * dx) / len > tol) return null
+      return { id, kind: 'pointOn', p: { entity: ea.id, at: anchor(ea, pa) }, on: { line: eb.id } }
     }
     case 'radius': {
       if (ea?.kind !== 'circle' || !(c.value > 0) || Math.abs(ea.r - c.value) > tol) return null
@@ -156,13 +168,24 @@ function sketchFeature(s: ReturnType<typeof decodeQsfSketch>, id: number, droppe
       if (Math.abs(e.center[2]) > 1e-9) throw Error('Nonplanar sketch circle')
       return { id: i + 1, kind: 'circle', c: [e.center[0], e.center[1]], r: e.radius }
     }
+    if (e.kind === 'spline' && e.poles && e.knots) {
+      // QUICKSURFACE's fitted curve as Quick Scan's own control-point
+      // spline: the same poles, the same uniform clamped cubic knots.
+      if (e.poles.some((x, k) => k % 3 === 2 && Math.abs(x) > 1e-6)) throw Error('A 3D curve is not a sketch Quick Scan can hold')
+      const pts: [number, number][] = []
+      for (let k = 0; k < e.poles.length; k += 3) pts.push([e.poles[k], e.poles[k + 1]])
+      const controlKnots = [...e.knots]
+      return { id: i + 1, kind: 'spline', pts, controlKnots }
+    }
     throw Error('Unverified sketch entity conversion')
   })
+  const flagged = s.pieceFlags.filter(x => x === 1).length
+  if (flagged) dropped.push(`${s.name}: a QuickSurface setting on ${flagged === 1 ? 'one piece' : `${flagged} pieces`}, not read yet (the pieces come across as drawn)`)
   const constraints: Sketch['constraints'] = []
   for (const c of s.constraints) {
     const made = nativeConstraint(c, entities, entities.length + constraints.length + 1)
     if (made) constraints.push(made)
-    else dropped.push(`${s.name}: a ${c.semantic} relation`)
+    else dropped.push(c.semantic === 'other' ? `${s.name}: a relation of a kind not read yet (native type ${c.nativeType})` : `${s.name}: a ${c.semantic} relation`)
   }
   const referenceChains: [number, number][][] = s.references.map(r => {
     const points: [number, number][] = []

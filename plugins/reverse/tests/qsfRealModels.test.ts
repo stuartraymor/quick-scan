@@ -8,6 +8,10 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fixture } from '../../../tests/fixtures'
 import { readQsfProject, inspectQsfProject, qsfLeftOut } from '../app/qsfProject'
+import { entityPolyline, type SketchEntity } from '../core/sketch'
+import { readQsfContainer } from '../core/qsfContainer'
+import { decodeQsfSketch } from '../core/qsfSketch'
+import type { Vec2 } from '../../../src/core/flat/types'
 
 type El = { kind: string; name: string; visible: boolean; fit: Record<string, unknown> & { center?: number[]; axis?: number[]; radius?: number; length?: number; sigma?: number } }
 type Sk = { kind: string; name: string; frame?: { normal: number[] }; sketch?: { entities: { kind: string; a?: number[]; b?: number[] }[]; constraints: { kind: string }[]; referenceChains: [number, number][][] } }
@@ -71,6 +75,56 @@ describe.skipIf(!real('sketch-edit-user-start.qsf').exists)('sketches on a tilte
       expect(on.length).toBeGreaterThan(400)
       expect(sk.sketch!.constraints.map(c => c.kind)).toContain('vertical')
     }
+  })
+})
+
+describe.skipIf(!real('native-user-start.qsf').exists || !real('native-before-join.igs').exists)('splines QUICKSURFACE fitted in a sketch', () => {
+  it('draw the curve QUICKSURFACE exported for the same state, to its precision', async () => {
+    const { features, asked } = await open('native-user-start.qsf')
+    expect(asked).toEqual([])
+    const sp = features.find(f => f.kind === 'sketch')!.sketch!.entities.find(e => e.kind === 'spline') as unknown as SketchEntity & { pts: number[][]; controlKnots: number[] }
+    expect(sp.pts).toHaveLength(8)
+    expect(sp.controlKnots).toEqual([0, 0.2, 0.4, 0.6, 0.8, 1])
+    // The IGES rational B-spline (type 126) QUICKSURFACE wrote: degree,
+    // knots, weights (all 1), poles — evaluated by de Boor's algorithm.
+    const iges = readFileSync(real('native-before-join.igs').path, 'utf8').split(/\r?\n/).filter(l => l[72] === 'P').map(l => l.slice(0, 64)).join('')
+    const n = iges.slice(iges.indexOf('126,')).split(';')[0].split(',').map(Number)
+    const K = n[1], M = n[2], knots = n.slice(7, 7 + K + M + 2), poles = n.slice(7 + K + M + 2 + K + 1, 7 + K + M + 2 + K + 1 + 3 * (K + 1))
+    sp.pts.forEach((p, i) => close(p, [poles[3 * i], poles[3 * i + 1]], 1e-9))
+    const at = (t: number) => {
+      let k = M; while (k < K && t >= knots[k + 1]) k++
+      const d = Array.from({ length: M + 1 }, (_, j) => [poles[3 * (j + k - M)], poles[3 * (j + k - M) + 1]])
+      for (let r = 1; r <= M; r++) for (let j = M; j >= r; j--) { const i = j + k - M, a = (t - knots[i]) / (knots[i + 1 + M - r] - knots[i]); d[j] = [(1 - a) * d[j - 1][0] + a * d[j][0], (1 - a) * d[j - 1][1] + a * d[j][1]] }
+      return d[M]
+    }
+    const ref = Array.from({ length: 20001 }, (_, i) => at(i / 20000))
+    const seg = (p: Vec2, a: number[], b: number[]) => { const dx = b[0] - a[0], dy = b[1] - a[1], L = dx * dx + dy * dy; const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L)); return Math.hypot(a[0] + t * dx - p[0], a[1] + t * dy - p[1]) }
+    let worst = 0
+    for (const p of entityPolyline(sp, 200)) { let best = Infinity; for (let i = 1; i < ref.length; i++) best = Math.min(best, seg(p, ref[i - 1], ref[i])); worst = Math.max(worst, best) }
+    expect(worst).toBeLessThan(1e-5)
+  })
+  it('a cut or damaged spline record fails with a reason, never with a crash or a wrong curve', () => {
+    const rec = readQsfContainer(new Uint8Array(readFileSync(real('native-user-start.qsf').path))).records.find(r => r.type === 16)!.bytes
+    for (let n = 0; n < rec.length; n += 37) expect(() => decodeQsfSketch(rec.subarray(0, n))).toThrow(Error)
+    let seed = 7
+    for (let k = 0; k < 400; k++) {
+      const b = Uint8Array.from(rec)
+      seed = (seed * 1103515245 + 12345) % 2 ** 31
+      const at = 67086 + (seed % (rec.length - 67086)) // within the spline and the trailer after it
+      b[at] ^= 1 + (seed % 255)
+      try {
+        const s = decodeQsfSketch(b)
+        for (const e of s.entities) if (e.poles) expect(e.poles.every(Number.isFinite)).toBe(true)
+      } catch (e) { expect(e).toBeInstanceOf(Error) }
+    }
+  })
+  it('keep a spline end and a line end on another line, named as Quick Scan names them', async () => {
+    const f = real('block-curve-reference.qsf')
+    if (!f.exists) return
+    const { features } = await open('block-curve-reference.qsf')
+    const c = features.find(x => x.kind === 'sketch')!.sketch!.constraints as unknown as { kind: string; p?: { entity: number; at: string } }[]
+    const on = c.filter(x => x.kind === 'pointOn').map(x => x.p)
+    expect(on).toEqual([{ entity: 5, at: 'a' }, { entity: 6, at: 'a' }, { entity: 6, at: 'b' }])
   })
 })
 

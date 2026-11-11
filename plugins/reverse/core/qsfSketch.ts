@@ -6,6 +6,7 @@
 const LINE = '5f34e60d18fe5848986ace6f2c0fa157';
 const CIRCLE = 'cba13e9e64a49e4897836e8b5de2b247';
 const ARC = 'bb93de9441f27d438a1d534626450648';
+const SPLINE = '5e1bae82b5f86549aa3e493bc09685eb';
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
 const MAX_COUNT = 1_000_000;
 class Reader {
@@ -25,16 +26,24 @@ class Reader {
 const hex = (a: Uint8Array) => Array.from(a, n => n.toString(16).padStart(2, '0')).join('');
 const verifiedRotation = (a: number[]) => [IDENTITY, [0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0]].some(expected => a.every((n, i) => [3, 7, 11].includes(i) || Math.abs(n - expected[i]) <= 1e-12));
 export type QsfSketchEntity = {
-  kind: 'line' | 'circle' | 'arc'; classGuid: string; transform: number[];
+  kind: 'line' | 'circle' | 'arc' | 'spline'; classGuid: string; transform: number[];
+  /** A spline's: the points it was fitted through and its control points, xyz in the sketch frame; cubic, uniformly clamped. */
+  fitPoints?: number[]; poles?: number[]; degree?: 3;
+  /** The distinct knots of the clamped cubic, read from the record's trailer. */
+  knots?: number[];
   points: number[]; center?: number[]; radius?: number; nativeFlags: number[];
 };
 export type QsfSketchConstraint = {
   nativeType: number; value: number; entityIndices: [number, number]; pointIndices: [number, number];
   raw: Uint8Array; auxiliary: Uint8Array;
-  semantic: 'coincident' | 'horizontal' | 'vertical' | 'distance' | 'angle' | 'radius';
+  /** 'other': a native type not mapped yet — carried so it can be named, never applied. */
+  semantic: 'coincident' | 'horizontal' | 'vertical' | 'distance' | 'angle' | 'radius' | 'pointOn' | 'other';
 };
 const SEMANTICS: Record<number, QsfSketchConstraint['semantic']> = {
   2: 'coincident', 5: 'horizontal', 6: 'vertical', 9: 'distance', 11: 'angle', 12: 'radius',
+  // A piece's point on another piece (block-curve-reference.qsf: a line's
+  // start and a spline's first and last pole on the upright line).
+  21: 'pointOn',
 };
 export function decodeQsfSketch(record: Uint8Array) {
   if (record.length > 128 * 1024 * 1024) throw new Error('QSF sketch record exceeds size limit');
@@ -61,14 +70,42 @@ export function decodeQsfSketch(record: Uint8Array) {
     const points = Array.from({ length: count * 3 }, () => r.f32()); references.push({ transform, points });
   }
   const transform = r.doubles(12); r.zero(76, 'sketch frame flags'); r.expect(1, 'entity list version');
-  const count = r.count(); r.need(count * 196);
+  const count = r.count(); r.need(count * 196); // the smallest piece, a line
   const entities: QsfSketchEntity[] = [];
   for (let i = 0; i < count; i++) {
     const classGuid = hex(r.raw(16));
-    if (![LINE, CIRCLE, ARC].includes(classGuid)) throw new Error(`Unsupported QSF entity class ${classGuid}`);
+    if (![LINE, CIRCLE, ARC, SPLINE].includes(classGuid)) throw new Error(`Unsupported QSF entity class ${classGuid}`);
     r.zero(4, 'entity flags'); const matrix = r.doubles(12); const points = r.doubles(9);
     const nativeFlags = [r.u32(), r.u32()];
     if (nativeFlags[0] !== 0 || nativeFlags[1] !== 1) throw new Error('Unsupported QSF entity state flags');
+    if (classGuid === SPLINE) {
+      // A fitted curve: the points it was fitted through, then 10 bytes —
+      // a zero, a byte that changes from save to save, the degree (3) and
+      // a word not read — the same points twice more, 24 bytes each, 12
+      // zero bytes, and its control points, 24 bytes each. The knots are
+      // not stored: QUICKSURFACE's IGES export of the same state
+      // (0.0.136 native-before-join.igs) has these 8 control points to
+      // float precision, uniformly clamped (0, 0.2 … 1).
+      const fitCount = r.count(); r.need(fitCount * 12);
+      const fitPoints = Array.from({ length: fitCount * 3 }, () => r.f32());
+      const head = r.raw(10), hv = new DataView(head.buffer);
+      if (head[0] !== 0 || hv.getUint32(2, true) !== 3) throw new Error('Unsupported QSF spline degree');
+      for (let copy = 0; copy < 2; copy++) {
+        if (r.count() !== fitCount) throw new Error('Unsupported QSF spline point copies');
+        r.need(fitCount * 24);
+        for (let i = 0; i < fitCount; i++) {
+          for (let k = 0; k < 3; k++) if (r.f32() !== fitPoints[3 * i + k]) throw new Error('Unsupported QSF spline point copies');
+          r.zero(12, 'spline point padding');
+        }
+      }
+      r.zero(12, 'spline flags');
+      const poleCount = r.count(); r.need(poleCount * 24);
+      const poles: number[] = [];
+      for (let i = 0; i < poleCount; i++) { poles.push(r.f32(), r.f32(), r.f32()); r.zero(12, 'spline pole padding'); }
+      if (poleCount < 4) throw new Error('Unsupported QSF spline pole count');
+      entities.push({ kind: 'spline', classGuid, transform: matrix, points, nativeFlags, fitPoints, poles, degree: 3 });
+      continue;
+    }
     const entity: QsfSketchEntity = { kind: classGuid === LINE ? 'line' : classGuid === CIRCLE ? 'circle' : 'arc', classGuid, transform: matrix, points, nativeFlags };
     if (classGuid !== LINE) {
       entity.center = r.doubles(3); entity.radius = r.f64();
@@ -76,13 +113,17 @@ export function decodeQsfSketch(record: Uint8Array) {
     }
     entities.push(entity);
   }
-  r.expect(count, 'entity flag count'); r.zero(count, 'entity flags');
+  // One byte a piece, 0 or 1 — 1 on some lines, with or without splines in
+  // the sketch (pass3-quicksurface.qsf, block-curve-reference.qsf); what it
+  // sets is not known, so it is carried, not applied.
+  r.expect(count, 'entity flag count');
+  const pieceFlags = Array.from(r.raw(count));
+  if (pieceFlags.some(x => x > 1)) throw new Error('Unsupported QSF entity flags');
   const constraintCount = r.count(); r.need(constraintCount * 184);
   const constraints: QsfSketchConstraint[] = [];
   for (let i = 0; i < constraintCount; i++) {
     const raw = r.raw(184); const v = new DataView(raw.buffer); const nativeType = v.getUint32(16, true);
-    const semantic = SEMANTICS[nativeType];
-    if (!semantic) throw new Error(`Unsupported QSF constraint type ${nativeType}`);
+    const semantic = SEMANTICS[nativeType] ?? 'other';
     const value = v.getFloat64(20, true);
     if (!Number.isFinite(value)) throw new Error('Nonfinite QSF constraint value');
     const entityIndices: [number, number] = [v.getUint32(168, true), v.getUint32(172, true)];
@@ -90,15 +131,65 @@ export function decodeQsfSketch(record: Uint8Array) {
     if (entityIndices.some(n => n >= count)) throw new Error('Invalid QSF constraint entity index');
     if (nativeType === 12) {
       if (entities[entityIndices[0]].kind !== 'circle' || pointIndices[0] !== 4 || pointIndices[1] !== -1) throw new Error('Unsupported QSF radius selectors');
-    } else if (pointIndices.some(n => n < 0 || n > 1)) throw new Error('Unsupported QSF point selector');
+    } else if (semantic !== 'other') {
+      // A point selector names a line's or arc's end (0, 1) or a spline's
+      // control point by its index; "point on" selects nothing on its target.
+      const points = (e: QsfSketchEntity) => e.kind === 'spline' ? (e.poles?.length ?? 0) / 3 : 2;
+      const valid = (n: number, i: number) => n >= 0 && n < points(entities[entityIndices[i]]);
+      if (semantic === 'pointOn' ? !valid(pointIndices[0], 0) || pointIndices[1] !== -1 : !valid(pointIndices[0], 0) || !valid(pointIndices[1], 1)) throw new Error('Unsupported QSF point selector');
+    }
     constraints.push({ nativeType, value, entityIndices, pointIndices, semantic, raw, auxiliary: new Uint8Array() });
   }
   r.zero(4, 'cache flags');
   const cachedPoints = entities.map(() => { const n = r.count(); return r.doubles(n * 3); });
   r.zero(count, 'cached entity flags'); r.expect(referenceCount, 'reference flag count'); r.zero(referenceCount, 'reference flags');
-  r.zero(count, 'secondary entity flags'); r.expect(1, 'constraint metadata version'); r.expect(constraintCount, 'constraint metadata count');
+  // One byte a piece; a spline's is 1, followed by its B-spline in full:
+  // a zero, the degree, the distinct knots, their multiplicities and the
+  // control points in double precision (0.0.136 native-user-start.qsf: 3,
+  // 0 0.2 0.4 0.6 0.8 1, 4 1 1 1 1 4, the 8 poles of native-before-join.igs).
+  // The record ends with the same list again, each definition led by two
+  // zero bytes instead of one and followed by its poles' weights and its fit
+  // points; it must say the same.
+  const readDefinitions = (zeros: number) => {
+    const out = new Map<number, { knots: number[]; poles: number[] }>();
+    entities.forEach((e, index) => {
+      const flag = r.raw(1)[0];
+      if (flag === 0 && e.kind !== 'spline') return;
+      if (flag !== 1 || e.kind !== 'spline') throw new Error('Unsupported QSF secondary entity flags');
+      if (r.raw(zeros).some(x => x !== 0) || r.u32() !== 3) throw new Error('Unsupported QSF spline definition');
+      const knotCount = r.count(); r.need(knotCount * 8); const knots = r.doubles(knotCount);
+      if (r.count() !== knotCount) throw new Error('Unsupported QSF spline definition');
+      r.need(knotCount * 4); const multiplicities = Array.from({ length: knotCount }, () => r.u32());
+      const poleCount = r.count(); r.need(poleCount * 24); const poles = r.doubles(poleCount * 3);
+      // The second copy also weighs each pole: 1 each, a plain (not rational) curve.
+      if (zeros === 2 && (r.count() !== poleCount || r.doubles(poleCount).some(w => w !== 1))) throw new Error('Unsupported QSF rational spline');
+      // ... and then the points it was fitted through, in double precision.
+      if (zeros === 2) {
+        const fit = e.fitPoints ?? [];
+        if (r.count() * 3 !== fit.length) throw new Error('Unsupported QSF spline definition');
+        r.need(fit.length * 8);
+        if (r.doubles(fit.length).some((x, i) => Math.abs(x - fit[i]) > 1e-4 * Math.max(1, Math.abs(x)))) throw new Error('Unsupported QSF spline definition');
+      }
+      const clamped = multiplicities.every((m, i) => m === (i === 0 || i === knotCount - 1 ? 4 : 1));
+      const rising = knots.every((k, i) => i === 0 || k > knots[i - 1]);
+      if (!clamped || !rising || poleCount !== knotCount + 2 || poleCount !== (e.poles?.length ?? 0) / 3) throw new Error('Unsupported QSF spline definition');
+      // The double poles are the curve; the float copy beside the piece must agree with them.
+      if (poles.some((x, i) => Math.abs(x - (e.poles?.[i] ?? NaN)) > 1e-4 * Math.max(1, Math.abs(x)))) throw new Error('Unsupported QSF spline definition');
+      out.set(index, { knots, poles });
+    });
+    return out;
+  };
+  const definitions = readDefinitions(1);
+  r.expect(1, 'constraint metadata version'); r.expect(constraintCount, 'constraint metadata count');
   for (const c of constraints) c.auxiliary = r.raw(156);
-  r.expect(1, 'final entity version'); r.expect(count, 'final entity count'); r.zero(count, 'final entity flags');
+  r.expect(1, 'final entity version'); r.expect(count, 'final entity count');
+  const again = readDefinitions(2);
+  for (const [index, d] of definitions) {
+    const e = again.get(index);
+    if (!e || e.knots.join() !== d.knots.join() || e.poles.join() !== d.poles.join()) throw new Error('Unsupported QSF final entity flags');
+    Object.assign(entities[index], d);
+  }
+  if (again.size !== definitions.size) throw new Error('Unsupported QSF final entity flags');
   if (r.p !== record.length) throw new Error('Unmapped trailing QSF sketch bytes');
   const frameSupported = verifiedRotation(transform) && references.every(x => verifiedRotation(x.transform)) && entities.every(x => x.transform.every((n, i) => [3, 7, 11].includes(i) || Math.abs(n - IDENTITY[i]) <= 1e-12));
   const limitations: string[] = [];
@@ -107,7 +198,8 @@ export function decodeQsfSketch(record: Uint8Array) {
   if (constraints.some(c => c.nativeType === 11 || c.nativeType === 12)) limitations.push('Angle/diameter display metadata is not verified');
   // Constraint records retain native flag/display metadata; decoding does not assert solver equivalence.
   if (constraints.length) limitations.push('Native constraint flags and auxiliary metadata are retained but not semantically verified');
-  return { name, guid, visible: visibility === 1, links, nativeHeaderWord, references, frame: { transform, supported: frameSupported, origin: [transform[3], transform[7], transform[11]] as [number, number, number], normal: [transform[2], transform[6], transform[10]] as [number, number, number], basisU: [transform[0], transform[4], transform[8]] as [number, number, number], basisV: [transform[1], transform[5], transform[9]] as [number, number, number], entityCoordinates: 'local' as const, referenceCoordinates: 'world' as const }, entities, constraints, cachedPoints, editableSupported: limitations.length === 0, limitations, consumedBytes: r.p };
+  if (pieceFlags.some(x => x === 1)) limitations.push('A per-piece native setting is not read');
+  return { name, guid, visible: visibility === 1, links, nativeHeaderWord, references, frame: { transform, supported: frameSupported, origin: [transform[3], transform[7], transform[11]] as [number, number, number], normal: [transform[2], transform[6], transform[10]] as [number, number, number], basisU: [transform[0], transform[4], transform[8]] as [number, number, number], basisV: [transform[1], transform[5], transform[9]] as [number, number, number], entityCoordinates: 'local' as const, referenceCoordinates: 'world' as const }, entities, constraints, cachedPoints, pieceFlags, editableSupported: limitations.length === 0, limitations, consumedBytes: r.p };
 }
 
 

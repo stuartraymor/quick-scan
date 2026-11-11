@@ -1,3 +1,10 @@
+## 0.0.204 — QuickSurface spline sketches come across
+
+- Fitted curves in QuickSurface sketches now open as Quick Scan control-point splines. They use the same control points and knots that QuickSurface stores, so they draw QuickSurface's curve exactly: within 0.00001 mm of its own IGES export of the same sketch. Before, a sketch holding a spline was left out.
+- Relations at a spline's ends and points come across: coincident, and a point held on a line.
+- A relation kind Quick Scan does not read yet is named and left out, and its sketch still comes across. Before, the whole sketch was left out.
+- 69 of the 82 QuickSurface files in the parity work now open whole (65 in 0.0.203), including another of the user's models.
+
 ## 0.0.203 — QuickSurface projects open
 
 - All 82 QuickSurface project files in the parity work now open; before, 13 did, including 3 of the 13 working models. 65 open whole. 17 open with some items left out (freeform work, sketches with splines), after asking first.

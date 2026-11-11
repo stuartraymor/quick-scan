@@ -33,8 +33,8 @@ describe('strict QSF sketch decoder',()=>{
   expect(r.frame.transform[3]).toBe(12);expect(r.frame.supported).toBe(true);expect(r.frame.referenceCoordinates).toBe('world'); new DataView(bytes.buffer).setFloat64(frame,0,true);expect(decodeQsfSketch(bytes).frame.supported).toBe(false);
   expect(decodeQsfSketch(Buffer.from(fixture(9).bytes)).constraints[0].value).toBe(180);
  });
- it('rejects unknown constraint and entity kinds',()=>{
-  expect(()=>decodeQsfSketch(fixture(14).bytes)).toThrow('constraint type 14');const{bytes,entity}=fixture();bytes[entity]=255;expect(()=>decodeQsfSketch(bytes)).toThrow('entity class');
+ it('carries an unknown constraint kind as other, and rejects an unknown entity kind',()=>{
+  const c=decodeQsfSketch(fixture(14).bytes).constraints[0];expect(c.semantic).toBe('other');expect(c.nativeType).toBe(14);const{bytes,entity}=fixture();bytes[entity]=255;expect(()=>decodeQsfSketch(bytes)).toThrow('entity class');
  });
  it('rejects every truncation',()=>{const{bytes}=fixture(9);for(let i=0;i<bytes.length;i++)expect(()=>decodeQsfSketch(bytes.subarray(0,i))).toThrow();});
  it('rejects trailing bytes and unsupported flags',()=>{
