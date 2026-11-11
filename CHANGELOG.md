@@ -1,3 +1,13 @@
+## 0.0.203 — QuickSurface projects open
+
+- All 82 QuickSurface project files in the parity work now open; before, 13 did, including 3 of the 13 working models. 65 open whole. 17 open with some items left out (freeform work, sketches with splines), after asking first.
+- A project with things Quick Scan cannot read yet opens after a question, instead of being refused. The question lists what will not come across. No leaves the open project as it was. Yes opens the scan and everything else as QuickSurface has it. The original .qsf is kept inside the Quick Scan project when you save.
+- Planes come across wherever they are, with their fit RMS and whether they were shown. Before, only one test plane did.
+- Cylinders, spheres and cones QuickSurface fitted come across at their size and place, with QuickSurface's fit RMS. A cylinder or cone keeps the length QuickSurface draws, past the scan it was fitted on.
+- Sketch relations come across when the drawing satisfies them: coincident ends, horizontal, vertical, length, distance and diameter. One that does not hold is left out and named, and the sketch comes across exactly as drawn.
+- Sketches on tilted planes come across, checked against the section of the scan they were drawn on.
+- A project with two scans opens the first. The first scan is opened even when shaded differently. Projects saved by QuickSurface 8.0.127 open.
+
 ## 0.0.202 — Opening a QuickSurface project no longer sticks on "Reading file…"
 
 - Opening a project of sketches alone (a .qsf with no solids) while the part before it was still being built in the CAD kernel could leave Quick Scan on "Reading file…" with Save greyed out and the old solid still listed. The kernel's late answer for the old part landed after the new project and was taken as the latest build, so the open waited for a build that never came. A build overtaken by a newer one is now dropped. Found as an intermittent failure of the QSF open/save check (about 1 run in 4 under load); 15 runs under the same load now pass.

@@ -111,7 +111,7 @@ describe('independent native cylinder project evidence', () => {
     const result = await readQsfProject(bytes, 'visibility.qsf')
     expect((result.manifest.reverse as ReversePart).features[0].visible).toBe(visible)
   })
-  it('keeps unverified coincident constraints an atomic refusal', async () => {
+  it('leaves out a relation the drawing does not satisfy, and asks before opening without it', async () => {
     const bytes = readFileSync(new URL('cylinder-solid.qsf', nativeRoot))
     const r = readQsfContainer(bytes).records.find(r => r.type === 16)!, raw = decodeQsfSketch(r.bytes).constraints[0].raw
     const offset = r.bytes.findIndex((_, i) => i + raw.length <= r.bytes.length && raw.every((b, j) => b === r.bytes[i + j]))
@@ -119,9 +119,19 @@ describe('independent native cylinder project evidence', () => {
     const view = new DataView(r.bytes.buffer, r.bytes.byteOffset)
     view.setUint32(offset + 16, 2, true); view.setInt32(offset + 52, 0, true); view.setInt32(offset + 56, 1, true)
     expect(decodeQsfSketch(r.bytes).constraints[0].semantic).toBe('coincident')
+    // A "coincidence" of a circle's ends: no reading of it holds on the
+    // drawing, so it is not brought across — the circle is, as drawn.
+    expect(inspectQsfProject(bytes, 'unsupported-coincidence.qsf').dropped).toEqual(['Sketch(1): a coincident relation'])
     const before = useReverse.getState()
-    await expect(readQsfProject(bytes, 'unsupported-coincidence.qsf')).rejects.toThrow('Constraint metadata mapping is not verified')
+    await expect(readQsfProject(bytes, 'unsupported-coincidence.qsf')).rejects.toThrow('cannot be opened')
+    let asked = ''
+    await expect(readQsfProject(bytes, 'unsupported-coincidence.qsf', () => false)).rejects.toThrow('The current project was not changed')
     expect(useReverse.getState()).toBe(before)
+    const { manifest } = await readQsfProject(bytes, 'unsupported-coincidence.qsf', (q) => { asked = q; return true })
+    expect(asked).toContain('1 sketch relation (the sketch comes across as drawn)')
+    const sketch = (manifest.reverse as { features: { kind: string; sketch?: { constraints: unknown[]; entities: { kind: string; r?: number }[] } }[] }).features.find(f => f.kind === 'sketch')!
+    expect(sketch.sketch!.constraints).toEqual([])
+    expect(sketch.sketch!.entities[0]).toMatchObject({ kind: 'circle', r: 10 })
   })
   it('projects world references into the measured empty X2 frame', async () => {
     const original = readQsfContainer(readFileSync(new URL('cylinder-solid.qsf', nativeRoot)))
@@ -227,7 +237,7 @@ describe('owned native three-sketch project', () => {
     expect(Math.hypot(a.a[0] - target[0], a.a[1] - target[1])).toBeLessThan(2e-5)
     expect(roundtrip.members.get(QSF_SOURCE_MEMBER)).toEqual(Uint8Array.from(bytes))
   })
-  it('rejects a changed native coincidence mode without replacing the open session', async () => {
+  it('brings a coincidence across on what it binds — the ends that meet — not on its other bytes', async () => {
     const bytes = readFileSync(new URL('preserved-three-sketches.qsf', nativeRoot))
     const third = readQsfContainer(bytes).records.filter(r => r.type === 16)[2]
     const raw = decodeQsfSketch(third.bytes).constraints[0].raw
@@ -235,8 +245,12 @@ describe('owned native three-sketch project', () => {
     expect(offset).toBeGreaterThan(0)
     third.bytes[offset + 62] ^= 1
     const before = useReverse.getState()
-    expect(inspectQsfProject(bytes, 'changed-coincidence.qsf').supported).toBe(false)
-    await expect(readQsfProject(bytes, 'changed-coincidence.qsf')).rejects.toThrow('Constraint metadata mapping is not verified')
+    // Bytes outside the pieces and their ends it binds do not decide it:
+    // the two lines' first ends meet, and that is what is held.
+    expect(inspectQsfProject(bytes, 'changed-coincidence.qsf').supported).toBe(true)
+    const { manifest } = await readQsfProject(bytes, 'changed-coincidence.qsf')
+    const third3 = (manifest.reverse as { features: { sketch?: { constraints: { kind: string }[] } }[] }).features[2]
+    expect(third3.sketch!.constraints.map(c => c.kind)).toEqual(['coincident'])
     expect(useReverse.getState()).toBe(before)
   })
 })

@@ -9,8 +9,11 @@ const MAX_RECORDS = 100_000
 export function readQsfContainer(source: Uint8Array): QsfContainer {
   if (source.byteLength < 148 || source.byteLength > MAX_BYTES) throw Error('QSF file is truncated or exceeds the 512 MiB import limit.')
   const v = new DataView(source.buffer, source.byteOffset, source.byteLength)
+  // The fourth word names the QUICKSURFACE build that saved it: 0x80 for
+  // 8.0.128, 0x7f for the 8.0.127 projects in the customer hand-off — the
+  // same record layout (the directory below is checked twice over).
   const header = [0x37dc4ef7, 1, 4, 0x00800008, 1]
-  if (header.some((value, i) => v.getUint32(i * 4, true) !== value)) throw Error('Unsupported QSF file version. No project data was imported.')
+  if (header.some((value, i) => v.getUint32(i * 4, true) !== value && !(i === 3 && v.getUint32(12, true) === 0x007f0008))) throw Error('Unsupported QSF file version. No project data was imported.')
   const count = v.getUint32(144, true)
   const start = 148 + 24 * count
   if (count > MAX_RECORDS || start > source.byteLength) throw Error('Invalid QSF record directory.')
@@ -33,8 +36,13 @@ const hex = (bytes: Uint8Array) => Array.from(bytes, b => b.toString(16).padStar
 export function validateQsfMeshState(bytes: Uint8Array): { guid: string } {
   if (bytes.length < 156) throw Error('Truncated QSF mesh state.')
   const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  // The word at 32: its low byte shown (1) or hidden (0) — a second scan
+  // saved hidden reads 0 — and its top byte a display setting (0x08, or
+  // 0x10 in a model shaded another way): neither is geometry, and the scan
+  // opens shown in Quick Scan either way.
+  const display = v.getUint32(32, true)
   if (v.getUint32(8, true) !== 0 || v.getUint32(28, true) !== 0x006b7376 ||
-      v.getUint32(32, true) !== 0x08000101 || bytes.subarray(36, 120).some(b => b !== 0)) throw Error('Unsupported QSF mesh display or pose metadata.')
+      (display & 0x00fffffe) !== 0x100 || ![0x08, 0x10].includes(display >>> 24) || bytes.subarray(36, 120).some(b => b !== 0)) throw Error('Unsupported QSF mesh display or pose metadata.')
   const chars = v.getUint32(120, true), end = 124 + chars * 2
   if (chars > 4096 || end + 28 > bytes.length) throw Error('Truncated QSF mesh state.')
   const guid = hex(bytes.subarray(12, 28))

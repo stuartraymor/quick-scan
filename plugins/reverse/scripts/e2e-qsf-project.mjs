@@ -7,7 +7,7 @@ import { launchApp, check, finish, shotPath } from '../../../scripts/e2e-lib.mjs
 const fixture=fileURLToPath(new URL('../tests/fixtures/qsf/cylinder-solid.qsf',import.meta.url))
 const original=new Uint8Array(readFileSync(fixture))
 const {browser,page,consoleErrors}=await launchApp({width:1500,height:960})
-page.on('dialog',d=>d.accept())
+let answer=true;const questions=[];page.on('dialog',d=>{questions.push(d.message());return answer||!d.message().includes('will not come across')?d.accept():d.dismiss()})
 const drop=(bytes,name)=>page.evaluate((bytes,name)=>{
  const d=new DataTransfer();d.items.add(new File([new Uint8Array(bytes)],name));window.dispatchEvent(new DragEvent('drop',{dataTransfer:d,bubbles:true,cancelable:true}))
 },Array.from(bytes),name)
@@ -36,9 +36,13 @@ try {
  check(true,'converted Quick Scan project reopens through the public project workflow')
  const invalid=original.slice(),v=new DataView(invalid.buffer),n=v.getUint32(144,true)
  for(let i=0;i<n;i++)if(v.getUint32(148+8*i,true)===48){v.setUint32(148+8*i,777,true);v.setBigUint64(148+8*n+16*i,777n,true);break}
+ // A record QUICKSURFACE never writes: asked first; No leaves the project as it was.
+ answer=false;const asked=questions.length
  await drop(invalid,'unsupported.qsf')
  await page.waitForFunction(()=>document.body.innerText.includes('cannot be opened without losing editable data'),{timeout:30000})
  check(await page.evaluate(()=>document.querySelectorAll('[data-test=feature-row]').length===2),'unsupported QSF contents leave the current project intact')
+ check(questions.slice(asked).some(q=>q.includes('will not come across')&&q.includes('1 other item')),'opening a QSF with an unknown record names what will not come across first')
+ answer=true
  await page.screenshot({path:shotPath('qsf-refused.png')})
  const preserved=fileURLToPath(new URL('../tests/fixtures/qsf/preserved-three-sketches.qsf',import.meta.url))
  await (await page.$('[data-test=project-input]')).uploadFile(preserved)

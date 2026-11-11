@@ -8,11 +8,13 @@ import type { UnpackedProject } from '../../../src/core/project/archive'
 import { validateManifest } from '../../../src/core/project/manifest'
 import { evaluateConstruction } from '../../../src/core/elements/construct'
 import { useStore } from '../../../src/state/store'
+import { elementColor } from '../../../src/state/elementModel'
 import { APP_VERSION } from '../../../src/version'
 import { readQsfContainer, decodeQsfMesh, validateQsfMeshState, validateQsfEmptyAuxiliary, type QsfRecord } from '../core/qsfContainer'
-import { decodeQsfSketch, isVerifiedQsfDrivingDiameter, isVerifiedQsfCoincidentEndpoints } from '../core/qsfSketch'
+import { decodeQsfSketch } from '../core/qsfSketch'
 import { decodeQsfExtrude } from '../core/qsfExtrude'
 import { decodeQsfPlane } from '../core/qsfPlane'
+import { decodeQsfPrimitive, isQsfPrimitiveType, type QsfPrimitive } from '../core/qsfPrimitive'
 import type { Feature, SketchFeature } from '../core/features'
 import type { Sketch, SketchEntity } from '../core/sketch'
 import { findRegions } from '../core/regions'
@@ -52,6 +54,8 @@ export interface QsfInspection {
   name: string
   supported: boolean
   notes: string[]
+  /** Native relations left out of sketches that did come across. */
+  dropped: string[]
   records: { index: number; type: number; supported: boolean; reason?: string }[]
 }
 export class QsfProjectUnsupportedError extends Error {
@@ -66,23 +70,83 @@ function verifiedObjectHeader(r: QsfRecord) {
     8: { 28: 0x007b694a, 32: 0x10001, 112: 0x10001 },
     16: { 28: 0x0052472e, 104: 0x01010100, 108: 0x10101, 112: 0x10001 },
     17: { 28: 0x007b694a, 32: 1, 112: 0x10003 },
+    // Fitted primitives (cylinder 10, sphere 11, cone 23), as all 42 read so far.
+    10: { 28: 0x007b694a, 32: 0x10001, 116: 1 },
+    11: { 28: 0x007b694a, 32: 0x10001 },
+    23: { 28: 0x007b694a, 32: 0x10001, 116: 1 },
   }
   if (r.bytes.length < 120) throw Error('Truncated object header')
   const v = new DataView(r.bytes.buffer, r.bytes.byteOffset, r.bytes.byteLength)
   if (v.getUint32(8, true) !== 0) throw Error('Unverified object header state')
   for (let offset = 28; offset < 120; offset += 4) {
     if (r.type === 16 && offset === 32 && v.getUint32(offset, true) <= 1) continue
+    // A plane's shown/hidden flag (decodeQsfPlane reads it).
+    if ([8, 10, 11, 23].includes(r.type) && offset === 32 && (v.getUint32(offset, true) & ~1) === 0x10000) continue
     if (v.getUint32(offset, true) !== (fields[r.type][offset] ?? 0)) throw Error('Unverified object pose/display header variant')
   }
 }
-function sketchFeature(s: ReturnType<typeof decodeQsfSketch>, id: number): SketchFeature {
-  if (!s.frame.supported || s.entities.some(e => e.kind === 'arc')) throw Error(s.limitations.join('; ') || 'Unverified sketch settings')
+/** A native constraint as Quick Scan's, when the sketch as QUICKSURFACE
+ *  saved it already satisfies it — the drawing is solved, so a relation read
+ *  the right way holds on it to rounding. One that does not hold, or whose
+ *  pieces are not lines and circles as read, is left out (and said): read
+ *  the wrong way it would move the drawing the first time it is solved. */
+function nativeConstraint(c: ReturnType<typeof decodeQsfSketch>['constraints'][number], entities: SketchEntity[], id: number): Sketch['constraints'][number] | null {
+  const [ea, eb] = c.entityIndices.map(i => entities[i])
+  const [pa, pb] = c.pointIndices
+  const size = Math.max(1, ...entities.flatMap(e => e.kind === 'line' ? [...e.a, ...e.b].map(Math.abs) : e.kind === 'circle' ? [...e.c.map(Math.abs), e.r] : []))
+  const tol = 1e-6 * size
+  const end = (e: SketchEntity | undefined, at: number): [number, number] | null => e?.kind === 'line' && (at === 0 || at === 1) ? (at === 0 ? e.a : e.b) : null
+  const at = (n: number) => (n === 0 ? 'a' : 'b') as 'a' | 'b'
+  switch (c.semantic) {
+    case 'coincident': {
+      const p = end(ea, pa), q = end(eb, pb)
+      if (!p || !q || ea === eb || Math.hypot(p[0] - q[0], p[1] - q[1]) > tol) return null
+      return { id, kind: 'coincident', p: { entity: ea.id, at: at(pa) }, q: { entity: eb.id, at: at(pb) } }
+    }
+    case 'horizontal':
+    case 'vertical': {
+      if (ea?.kind !== 'line' || (eb && eb !== ea)) return null
+      const off = c.semantic === 'horizontal' ? Math.abs(ea.a[1] - ea.b[1]) : Math.abs(ea.a[0] - ea.b[0])
+      return off <= tol ? { id, kind: c.semantic, entity: ea.id } : null
+    }
+    case 'distance': {
+      // A line's length: its two ends, one line.
+      if (ea?.kind === 'line' && ea === eb && pa !== pb && (pa === 0 || pa === 1) && (pb === 0 || pb === 1) && c.value > 0 &&
+        Math.abs(Math.hypot(ea.b[0] - ea.a[0], ea.b[1] - ea.a[1]) - c.value) <= tol) return { id, kind: 'length', entity: ea.id, value: c.value }
+      const p = end(ea, pa), q = end(eb, pb)
+      if (p && q && ea !== eb && c.value > 0 && Math.abs(Math.hypot(p[0] - q[0], p[1] - q[1]) - c.value) <= tol) return { id, kind: 'distance', p: { entity: ea.id, at: at(pa) }, q: { entity: eb.id, at: at(pb) }, value: c.value }
+      return null
+    }
+    case 'radius': {
+      if (ea?.kind !== 'circle' || !(c.value > 0) || Math.abs(ea.r - c.value) > tol) return null
+      return { id, kind: 'diameter', entity: ea.id, value: 2 * c.value }
+    }
+    default:
+      return null
+  }
+}
+
+function sketchFeature(s: ReturnType<typeof decodeQsfSketch>, id: number, dropped: string[] = []): SketchFeature {
+  if (s.entities.some(e => e.kind === 'arc')) throw Error(s.limitations.join('; ') || 'Unverified sketch settings')
   const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]
-  if (s.entities.some(e => e.transform.some((x, i) => Math.abs(x - identity[i]) > 1e-12))) throw Error('Entity-local transform is not verified')
+  const same = (a: readonly number[], b: readonly number[]) => a.every((x, i) => Math.abs(x - b[i]) <= 1e-12)
+  // A sketch on a tilted plane: the frame's columns are its x, y and normal
+  // in the world, and its pieces are in that frame — each piece carries the
+  // frame again, not a transform of its own. Read so, the lines Fit Line
+  // made on the rear plane of mixed-part's basic part lie on the section
+  // they were fitted to (467 and 656 of its points within 0.1 mm; mirrored,
+  // none). The section, in world coordinates, must lie on the plane the
+  // frame says (checked below), or the sketch is not read.
+  if (s.entities.some(e => !same(e.transform, identity) && !same(e.transform, s.frame.transform))) throw Error('Entity-local transform is not verified')
   const { origin, normal, basisU, basisV } = s.frame
   const frame = { origin, normal, basisU, basisV }
-  // Only the empty rotated section has been independently calibrated so far.
-  if (s.entities.length && s.frame.transform.some((x, i) => ![3, 7, 11].includes(i) && Math.abs(x - identity[i]) > 1e-12)) throw Error('Populated rotated sketch conversion is not verified')
+  if (!s.frame.supported) {
+    const dot = (a: readonly number[], b: readonly number[]) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+    const cross = [basisU[1] * basisV[2] - basisU[2] * basisV[1], basisU[2] * basisV[0] - basisU[0] * basisV[2], basisU[0] * basisV[1] - basisU[1] * basisV[0]]
+    const orthonormal = [basisU, basisV, normal].every(a => Math.abs(dot(a, a) - 1) <= 1e-9) && Math.abs(dot(basisU, basisV)) <= 1e-9 && cross.every((x, i) => Math.abs(x - normal[i]) <= 1e-9)
+    const onPlane = s.references.reduce((n, r) => n + r.points.length / 3, 0) >= 3
+    if (!orthonormal || !onPlane || s.references.some(r => !same(r.transform, identity) && !same(r.transform, s.frame.transform))) throw Error('Rotated frame convention is not verified')
+  }
   const entities: SketchEntity[] = s.entities.map((e, i) => {
     if (e.kind === 'line') {
       if (Math.abs(e.points[2]) > 1e-9 || Math.abs(e.points[5]) > 1e-9) throw Error('Nonplanar sketch line')
@@ -94,15 +158,12 @@ function sketchFeature(s: ReturnType<typeof decodeQsfSketch>, id: number): Sketc
     }
     throw Error('Unverified sketch entity conversion')
   })
-  const constraints = s.constraints.map((c, index) => {
-    if (s.constraints.length === 1 && isVerifiedQsfCoincidentEndpoints(c, s.entities)) {
-      return { id: entities.length + index + 1, kind: 'coincident' as const,
-        p: { entity: entities[0].id, at: 'a' as const }, q: { entity: entities[1].id, at: 'a' as const } }
-    }
-    const entity = entities[c.entityIndices[0]]
-    if (!isVerifiedQsfDrivingDiameter(c) || entity?.kind !== 'circle' || Math.abs(entity.r - c.value) > 1e-8) throw Error('Constraint metadata mapping is not verified')
-    return { id: entities.length + index + 1, kind: 'diameter' as const, entity: entity.id, value: 2 * c.value }
-  })
+  const constraints: Sketch['constraints'] = []
+  for (const c of s.constraints) {
+    const made = nativeConstraint(c, entities, entities.length + constraints.length + 1)
+    if (made) constraints.push(made)
+    else dropped.push(`${s.name}: a ${c.semantic} relation`)
+  }
   const referenceChains: [number, number][][] = s.references.map(r => {
     const points: [number, number][] = []
     for (let i = 0; i < r.points.length; i += 3) {
@@ -121,8 +182,9 @@ function prepare(bytes: Uint8Array, name: string) {
   if (bytes.byteLength > 128 * 1024 * 1024) throw Error('QSF conversion exceeds the 128 MiB limit.')
   const container = readQsfContainer(bytes)
   if (container.records.length > 4096) throw Error('QSF conversion exceeds the 4096-record limit.')
-  const report: QsfInspection = { name, supported: true, records: [], notes: [] }
+  const report: QsfInspection = { name, supported: true, records: [], notes: [], dropped: [] }
   const planes: ReturnType<typeof decodeQsfPlane>[] = []
+  const primitives: QsfPrimitive[] = []
   const features: Feature[] = [], sketches = new Map<string, { source: ReturnType<typeof decodeQsfSketch>; feature: SketchFeature }>()
   const featureOrder = new Map<number, number>()
   const consumed = new Set<number>()
@@ -131,20 +193,22 @@ function prepare(bytes: Uint8Array, name: string) {
   const meshes = container.records.filter(r => r.type === 4)
   let mesh: ReturnType<typeof decodeQsfMesh> | undefined
   let meshGuid: string | undefined
-  if (meshes.length === 1) {
-    try { meshGuid = validateQsfMeshState(meshes[0].bytes).guid } catch { /* Specific error is captured per record below. */ }
+  // The scan is the first mesh read whole; Quick Scan holds one, so any
+  // other is left out (and said).
+  for (const m of meshes) {
+    try { meshGuid = validateQsfMeshState(m.bytes).guid; break } catch { /* Specific error is captured per record below. */ }
   }
   for (let i = 0; i < container.records.length; i++) {
     const r = container.records[i]
     try {
-      if ([4, 8, 16, 17].includes(r.type)) {
+      if ([4, 8, 10, 11, 16, 17, 23].includes(r.type)) {
         const identity = guid(r)
         if (identity.length !== 32 || /^0+$/.test(identity) || objectGuids.has(identity)) throw Error('Invalid or duplicate native object identity')
         objectGuids.add(identity)
       }
       if (r.type === 4) {
-        if (meshes.length !== 1) throw Error('Exactly one scan mesh is supported')
         validateQsfMeshState(r.bytes)
+        if (guid(r) !== meshGuid) throw Error('Quick Scan opens one scan mesh; this is another')
         mesh = decodeQsfMesh(r.bytes)
         if (mesh.positions.length < 9 || mesh.triangles.length < 3) throw Error('Empty scan geometry is unsupported')
         if (mesh.positions.length > 3_000_000 || mesh.triangles.length > 6_000_000) throw Error('QSF conversion exceeds the scan vertex/triangle limit')
@@ -157,9 +221,14 @@ function prepare(bytes: Uint8Array, name: string) {
       }
       if (r.type === 16) {
         verifiedObjectHeader(r)
-        const source = decodeQsfSketch(r.bytes), feature = sketchFeature(source, features.length + 1)
+        const source = decodeQsfSketch(r.bytes), dropped: string[] = [], feature = sketchFeature(source, features.length + 1, dropped)
         if (sketches.has(source.guid)) throw Error('Duplicate sketch identity')
         sketches.set(source.guid, { source, feature }); features.push(feature); featureOrder.set(feature.id, i); consumed.add(i)
+        report.dropped.push(...dropped)
+      }
+      if (isQsfPrimitiveType(r.type)) {
+        verifiedObjectHeader(r)
+        primitives.push(decodeQsfPrimitive(r.type, r.bytes)); consumed.add(i)
       }
       if (r.type === 8) {
         verifiedObjectHeader(r)
@@ -192,7 +261,8 @@ function prepare(bytes: Uint8Array, name: string) {
   for (const s of sketches.values()) {
     if (s.source.links.some(link => !container.records.some((r, index) => r.type === 17 && consumed.has(index) && guid(r) === link && !report.records.some(x => x.index === index && !x.supported)))) {
       const index = container.records.findIndex(r => r.type === 16 && guid(r) === s.source.guid)
-      reject(index, 'Sketch has an unresolved native dependency')
+      // The sketch comes across as drawn; what was built on it does not.
+      if (index >= 0) { report.dropped.push(`${s.feature.name}: the extrusion built on it`); report.supported = false }
     }
   }
   for (let i = 0; i < container.records.length; i++) {
@@ -201,16 +271,48 @@ function prepare(bytes: Uint8Array, name: string) {
   }
   for (let i = 0; i < container.records.length; i++) if (!report.records.some(r => r.index === i)) report.records.push({ index: i, type: container.records[i].type, supported: true })
   report.records.sort((a, b) => a.index - b.index)
-  if (!mesh || meshes.length !== 1) report.supported = false
+  if (!mesh) report.supported = false
   features.sort((a, b) => featureOrder.get(a.id)! - featureOrder.get(b.id)!)
-  return { report, mesh, features, planes }
+  return { report, mesh, features, planes, primitives }
 }
 
 export function inspectQsfProject(bytes: Uint8Array, name: string): QsfInspection { return prepare(bytes, name).report }
 
-export async function readQsfProject(bytes: Uint8Array, name: string): Promise<UnpackedProject> {
-  const { report, mesh, features, planes } = prepare(bytes, name)
-  if (!report.supported || !mesh) throw new QsfProjectUnsupportedError(report)
+/** What of a QUICKSURFACE project would not come across, in words, by kind. */
+export function qsfLeftOut(report: QsfInspection): string[] {
+  const words: Record<number, [string, string]> = {
+    4: ['scan mesh', 'scan meshes'], 7: ['freeform curve or patch', 'freeform curves and patches'], 8: ['plane', 'planes'],
+    10: ['cylinder', 'cylinders'], 11: ['sphere', 'spheres'], 16: ['sketch', 'sketches'], 17: ['extrusion', 'extrusions'],
+    23: ['cone', 'cones'], 25: ['freeform surface', 'freeform surfaces'], 33: ['freeform body', 'freeform bodies'],
+  }
+  const counts = new Map<string, number>()
+  for (const r of report.records) {
+    if (r.supported) continue
+    const key = words[r.type] ? r.type : -1
+    counts.set(String(key), (counts.get(String(key)) ?? 0) + 1)
+  }
+  const out: string[] = []
+  for (const [key, n] of counts) {
+    const w = words[Number(key)]
+    out.push(w ? `${n} ${n === 1 ? w[0] : w[1]}` : `${n} other item${n === 1 ? '' : 's'} (history, display or project data)`)
+  }
+  if (report.dropped.length) out.push(`${report.dropped.length} sketch relation${report.dropped.length === 1 ? '' : 's'} (the sketch comes across as drawn)`)
+  return out
+}
+
+/** A QUICKSURFACE project opened as far as it can be read: its scan, and
+ *  every plane, primitive, sketch and extrusion read as QUICKSURFACE has
+ *  it. What is not read is said first and the person asked (`ask`); the
+ *  original file goes into the saved project whole either way. Without the
+ *  scan — or a yes — nothing is opened and the session stays as it was. */
+export async function readQsfProject(bytes: Uint8Array, name: string, ask?: (message: string) => boolean): Promise<UnpackedProject> {
+  const { report, mesh, features, planes, primitives } = prepare(bytes, name)
+  if (!mesh) throw new QsfProjectUnsupportedError(report)
+  const leftOut = qsfLeftOut(report)
+  if (leftOut.length > 0) {
+    const question = `Not all of this QuickSurface project can be brought into Quick Scan. These will not come across:\n\n- ${leftOut.join('\n- ')}\n\nOpen the rest? The scan and everything else comes across as QuickSurface has it, and the original file is kept inside the Quick Scan project when you save it.`
+    if (!ask || !ask(question)) throw new QsfProjectUnsupportedError(report)
+  }
   const manifest = blankManifest(APP_VERSION), defaults = useStore.getInitialState()
   manifest.name = name.replace(/^.*[\\/]/, '').replace(/\.qsf$/i, '') || 'Imported QSF'
   manifest.workspace = 'reverse'
@@ -223,9 +325,20 @@ export async function readQsfProject(bytes: Uint8Array, name: string): Promise<U
   const modelSize = Math.hypot(...min.map((x, i) => max[i] - x)) / 2
   manifest.scan.elements = planes.map((p, i) => {
     const params = [...p.normal, ...p.origin]
-    return { id: i + 1, kind: 'plane', name: p.name, color: '#66bbff', status: 'done', visible: true, source: { type: 'constructed', method: 'plane-coords', refs: [], params }, fit: evaluateConstruction('plane-coords', [], params, modelSize) }
+    return { id: i + 1, kind: 'plane', name: p.name, color: '#66bbff', status: 'done', visible: p.visible, source: { type: 'constructed', method: 'plane-coords', refs: [], params }, fit: evaluateConstruction('plane-coords', [], params, modelSize) }
   })
-  manifest.scan.nextId = planes.length + 1; manifest.scan.nextNumber = planes.length + 1; manifest.scan.nextOfKind = { plane: planes.length + 1 }
+  // The primitives QUICKSURFACE fitted, as it fitted them: what it measured
+  // stands, with its fit RMS; nothing is fitted again on the scan here.
+  for (const p of primitives) {
+    const method = `${p.kind}-imported`
+    const params = p.kind === 'cylinder' ? [...p.start, ...p.axis, p.radius, p.length, p.fitRms]
+      : p.kind === 'cone' ? [...p.apex, ...p.axis, p.halfAngle, p.from, p.length, p.fitRms]
+        : [...p.center, p.radius, p.fitRms]
+    manifest.scan.elements.push({ id: manifest.scan.elements.length + 1, kind: p.kind, name: p.name, color: elementColor(manifest.scan.elements.length + 1), status: 'done', visible: p.visible, source: { type: 'constructed', method, refs: [], params }, fit: evaluateConstruction(method, [], params, modelSize) })
+  }
+  const count = (kind: string) => manifest.scan!.elements.filter(e => e.kind === kind).length + 1
+  manifest.scan.nextId = manifest.scan.elements.length + 1; manifest.scan.nextNumber = manifest.scan.elements.length + 1
+  manifest.scan.nextOfKind = { plane: count('plane'), ...(primitives.length ? { cylinder: count('cylinder'), sphere: count('sphere'), cone: count('cone') } : {}) }
   for (const f of features) validateFeatureJson(f as unknown as Record<string, unknown>)
   manifest.reverse = { version: PART_VERSION, features: features.map(featureToJson), nextFeatureId: features.length + 1, nextOfKind: { sketch: features.filter(f => f.kind === 'sketch').length + 1, extrude: features.filter(f => f.kind === 'extrude').length + 1 }, elementsShown: true } satisfies ReversePart
   manifest.qsfSource = { version: 1, member: QSF_SOURCE_MEMBER, fileName: name } satisfies QsfSource

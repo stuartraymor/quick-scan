@@ -5,7 +5,9 @@ import type { UnpackedProject } from '../core/project/archive'
 export interface ProjectReader {
   extension: string
   label: string
-  read(bytes: Uint8Array, name: string): Promise<UnpackedProject>
+  /** `ask` puts a yes/no question to the person opening the file — what
+   *  of it would not come across, say — before anything is changed. */
+  read(bytes: Uint8Array, name: string, ask?: (message: string) => boolean): Promise<UnpackedProject>
   /** Finish derived geometry before framing a newly converted document. */
   settled?(): Promise<void>
 }

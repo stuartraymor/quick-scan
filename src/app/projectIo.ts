@@ -139,7 +139,7 @@ export function createProjectIo(deps: ProjectIoDeps) {
     try {
       const reader = projectReaderFor(file.name)
       const bytes = new Uint8Array(await file.arrayBuffer())
-      const { manifest, members } = reader ? await reader.read(bytes, file.name) : await archive.unpack(bytes)
+      const { manifest, members } = reader ? await reader.read(bytes, file.name, deps.confirm) : await archive.unpack(bytes)
       const applyState = prepareProjectState(manifest, members)
       const memberFile = (member: string, name: string) => {
         const bytes = members.get(member)

@@ -7,7 +7,7 @@
 // is carried as a parameter, so the element rebuilds, moves and saves exactly
 // like one typed in by hand.
 
-import type { CircleFit, ElementKind, FitData, LineFit, PlaneFit, PointFit, Vec3 } from '../types'
+import type { CircleFit, ConeFit, CylinderFit, ElementKind, SphereFit, FitData, LineFit, PlaneFit, PointFit, Vec3 } from '../types'
 import {
   acuteAngle,
   add,
@@ -67,6 +67,10 @@ export interface CreationMethod {
   /** A construction that searches the scan and can be confined to a surface
    *  marked by hand — the same brush a fit is confined with. */
   surface?: boolean
+  /** False for a method no one picks: a QUICKSURFACE project's fitted
+   *  primitives come in through it (qsfProject), and it is offered in no
+   *  list — the Cylinder panel's methods stay as they were. */
+  listed?: false
 }
 
 /** Whether a method's draft can take a hand-marked surface: every fit, and
@@ -341,10 +345,61 @@ export const CREATION_METHODS: readonly CreationMethod[] = [
       ...XYZ.map((p) => ({ ...p, key: 'c' + p.key, label: 'Center ' + p.label })),
     ],
   },
+  {
+    id: 'cylinder-imported',
+    kind: 'cylinder',
+    mode: 'construct',
+    label: 'From a QUICKSURFACE project',
+    hint: 'A cylinder QUICKSURFACE fitted, as its project file holds it: a point on the axis where the surface starts, the axis, the radius, the length and the fit RMS.',
+    slots: [],
+    listed: false,
+    params: [
+      ...XYZ.map((p) => found({ ...p, key: 'p' + p.key, label: 'Start ' + p.label })),
+      found({ key: 'ax', label: 'Axis X' }),
+      found({ key: 'ay', label: 'Axis Y' }),
+      found({ key: 'az', label: 'Axis Z' }),
+      found({ key: 'r', label: 'Radius', unit: 'mm' }), // units-ok: an id
+      found({ key: 'len', label: 'Length', unit: 'mm' }), // units-ok: an id
+      found({ key: 'rms', label: 'Fit RMS', unit: 'mm' }), // units-ok: an id
+    ],
+  },
+  {
+    id: 'cone-imported',
+    kind: 'cone',
+    mode: 'construct',
+    label: 'From a QUICKSURFACE project',
+    hint: 'A cone QUICKSURFACE fitted, as its project file holds it: the apex, the axis, the half angle, how far from the apex the surface starts, its length and the fit RMS.',
+    slots: [],
+    listed: false,
+    params: [
+      ...XYZ.map((p) => found({ ...p, key: 'p' + p.key, label: 'Apex ' + p.label })),
+      found({ key: 'ax', label: 'Axis X' }),
+      found({ key: 'ay', label: 'Axis Y' }),
+      found({ key: 'az', label: 'Axis Z' }),
+      found({ key: 'half', label: 'Half angle (rad)' }),
+      found({ key: 'from', label: 'Start from apex', unit: 'mm' }), // units-ok: an id
+      found({ key: 'len', label: 'Length', unit: 'mm' }), // units-ok: an id
+      found({ key: 'rms', label: 'Fit RMS', unit: 'mm' }), // units-ok: an id
+    ],
+  },
+  {
+    id: 'sphere-imported',
+    kind: 'sphere',
+    mode: 'construct',
+    label: 'From a QUICKSURFACE project',
+    hint: 'A sphere QUICKSURFACE fitted, as its project file holds it: the centre, the radius and the fit RMS.',
+    slots: [],
+    listed: false,
+    params: [
+      ...XYZ.map((p) => found({ ...p, key: 'c' + p.key, label: 'Center ' + p.label })),
+      found({ key: 'r', label: 'Radius', unit: 'mm' }), // units-ok: an id
+      found({ key: 'rms', label: 'Fit RMS', unit: 'mm' }), // units-ok: an id
+    ],
+  },
 ]
 
 export function methodsForKind(kind: ElementKind): CreationMethod[] {
-  return CREATION_METHODS.filter((m) => m.kind === kind)
+  return CREATION_METHODS.filter((m) => m.kind === kind && m.listed !== false)
 }
 
 export function creationMethod(kind: ElementKind, id: string): CreationMethod {
@@ -573,6 +628,53 @@ export function evaluateConstruction(
       } satisfies PlaneFit
     }
 
+    case 'cylinder-imported': {
+      const [px, py, pz, ax, ay, az, r, len, rms] = params
+      if (![px, py, pz, ax, ay, az, r, len].every(Number.isFinite) || !(r > 0) || !(len >= 0))
+        throw new ConstructionError('The imported cylinder has no valid axis, radius or length.')
+      const axis = normalize([ax, ay, az])
+      if (!axis) throw new ConstructionError('The imported cylinder has no axis direction.')
+      return {
+        kind: 'cylinder',
+        center: [px + (axis[0] * len) / 2, py + (axis[1] * len) / 2, pz + (axis[2] * len) / 2],
+        axis,
+        radius: r,
+        length: len,
+        coverage: 360,
+        ...NO_FIT_STATS,
+        sigma: Number.isFinite(rms) && rms >= 0 ? rms : 0,
+      } satisfies CylinderFit
+    }
+
+    case 'cone-imported': {
+      const [px, py, pz, ax, ay, az, half, from, len, rms] = params
+      if (![px, py, pz, ax, ay, az, half, from, len].every(Number.isFinite) || !(half > 0) || !(half < Math.PI / 2) || !(from >= 0) || !(len > 0))
+        throw new ConstructionError('The imported cone has no valid apex, axis, angle or extent.')
+      const axis = normalize([ax, ay, az])
+      if (!axis) throw new ConstructionError('The imported cone has no axis direction.')
+      const tan = Math.tan(half), mid = from + len / 2
+      return {
+        kind: 'cone',
+        center: [px + axis[0] * mid, py + axis[1] * mid, pz + axis[2] * mid],
+        axis,
+        halfAngle: (half * 180) / Math.PI,
+        radius: mid * tan,
+        radius1: from * tan,
+        radius2: (from + len) * tan,
+        length: len,
+        coverage: 360,
+        ...NO_FIT_STATS,
+        sigma: Number.isFinite(rms) && rms >= 0 ? rms : 0,
+      } satisfies ConeFit
+    }
+
+    case 'sphere-imported': {
+      const [cx, cy, cz, r, rms] = params
+      if (![cx, cy, cz, r].every(Number.isFinite) || !(r > 0))
+        throw new ConstructionError('The imported sphere has no valid centre or radius.')
+      return { kind: 'sphere', center: [cx, cy, cz], radius: r, ...NO_FIT_STATS, sigma: Number.isFinite(rms) && rms >= 0 ? rms : 0 } satisfies SphereFit
+    }
+
     case 'plane-symmetry': {
       const [nx, ny, nz, px, py, pz, rms, matched, sampled] = params
       if (![nx, ny, nz, px, py, pz].every(Number.isFinite))
@@ -700,6 +802,12 @@ export function describeConstruction(
     case 'circle-plane-cylinder':
     case 'circle-plane-sphere':
       return `where ${b} crosses ${a}`
+    case 'cylinder-imported':
+      return `QUICKSURFACE cylinder, Ø ${fmtLen(2 * params[6], units, 3)} × ${fmtLen(params[7], units, 3)}, fit ${fmtLen(params[8], units, 4)} RMS`
+    case 'cone-imported':
+      return `QUICKSURFACE cone, ${((params[6] * 180) / Math.PI).toFixed(3)}° half angle × ${fmtLen(params[8], units, 3)}, fit ${fmtLen(params[9], units, 4)} RMS`
+    case 'sphere-imported':
+      return `QUICKSURFACE sphere, Ø ${fmtLen(2 * params[3], units, 3)}, fit ${fmtLen(params[4], units, 4)} RMS`
     case 'circle-coords':
       return `Ø ${fmtLen(params[0], units, 3)}, normal (${params
         .slice(1, 4)
