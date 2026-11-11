@@ -15,6 +15,9 @@ import { decodeQsfSketch } from '../core/qsfSketch'
 import { decodeQsfExtrude } from '../core/qsfExtrude'
 import { decodeQsfPlane } from '../core/qsfPlane'
 import { decodeQsfPrimitive, isQsfPrimitiveType, type QsfPrimitive } from '../core/qsfPrimitive'
+import { decodeQsfSurface } from '../core/qsfSurface'
+import { decodeQsfFitSurface } from '../core/qsfFitSurface'
+import { DEFAULT_SURFACE_FIT } from '../core/surfaceFit'
 import type { Feature, SketchFeature } from '../core/features'
 import { splineAnchor, type AnchorAt, type Sketch, type SketchEntity } from '../core/sketch'
 import { findRegions } from '../core/regions'
@@ -201,6 +204,37 @@ function sketchFeature(s: ReturnType<typeof decodeQsfSketch>, id: number, droppe
   return { id, kind: 'sketch', name: s.name, plane: { kind: 'fitted', frame }, frame, sketch, visible: s.visible }
 }
 
+/** For each point, the nearest scan vertex — through a grid of cells, each
+ *  point looking in its own cell and the 26 round it, then further out
+ *  until one is found; every vertex once, in order. */
+function nearestVertices(positions: Float32Array, points: Float32Array): Uint32Array {
+  const n = positions.length / 3
+  if (n === 0) return new Uint32Array(0)
+  const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity]
+  for (let i = 0; i < positions.length; i++) { min[i % 3] = Math.min(min[i % 3], positions[i]); max[i % 3] = Math.max(max[i % 3], positions[i]) }
+  const span = Math.max(1e-6, ...max.map((x, i) => x - min[i]))
+  const cell = Math.max(span / 256, 1e-3)
+  const key = (x: number, y: number, z: number) => `${Math.floor((x - min[0]) / cell)},${Math.floor((y - min[1]) / cell)},${Math.floor((z - min[2]) / cell)}`
+  const grid = new Map<string, number[]>()
+  for (let i = 0; i < n; i++) { const k = key(positions[3 * i], positions[3 * i + 1], positions[3 * i + 2]); const c = grid.get(k); if (c) c.push(i); else grid.set(k, [i]) }
+  const picked = new Set<number>()
+  for (let p = 0; p < points.length; p += 3) {
+    const [x, y, z] = [points[p], points[p + 1], points[p + 2]]
+    const [cx, cy, cz] = [Math.floor((x - min[0]) / cell), Math.floor((y - min[1]) / cell), Math.floor((z - min[2]) / cell)]
+    let best = -1, bestD = Infinity
+    for (let reach = 1; reach <= 4 && best < 0; reach++) {
+      for (let a = -reach; a <= reach; a++) for (let b = -reach; b <= reach; b++) for (let c = -reach; c <= reach; c++) {
+        for (const i of grid.get(`${cx + a},${cy + b},${cz + c}`) ?? []) {
+          const d = (positions[3 * i] - x) ** 2 + (positions[3 * i + 1] - y) ** 2 + (positions[3 * i + 2] - z) ** 2
+          if (d < bestD) { bestD = d; best = i }
+        }
+      }
+    }
+    if (best >= 0) picked.add(best)
+  }
+  return Uint32Array.from([...picked].sort((a, b) => a - b))
+}
+
 function prepare(bytes: Uint8Array, name: string) {
   if (bytes.byteLength > 128 * 1024 * 1024) throw Error('QSF conversion exceeds the 128 MiB limit.')
   const container = readQsfContainer(bytes)
@@ -279,6 +313,31 @@ function prepare(bytes: Uint8Array, name: string) {
       features.push({ id: features.length + 1, kind: 'extrude', name: ex.name, sketchId: s.feature.id, regions: regions.map(x => x.key), extent: { kind: 'distance', from: 0, to: ex.depth }, op: 'new', visible: true })
       featureOrder.set(features[features.length - 1].id, i)
       consumed.add(i); consumed.add(metadata[0].index); if (cache[0]) consumed.add(cache[0].index)
+    } catch (e) { reject(i, (e as Error).message); consumed.add(i) }
+  }
+  // Freeform cages (type 7) and Fit Surfaces (type 25), each a feature in
+  // its place in native order.
+  for (let i = 0; i < container.records.length; i++) {
+    const r = container.records[i]
+    if (consumed.has(i) || (r.type !== 7 && r.type !== 25)) continue
+    try {
+      const id = features.length + 1
+      if (r.type === 7) {
+        // A subdivision cage: its points (world coordinates — QUICKSURFACE's
+        // own quad OBJ export of Freeform(2) and (3) has them to 1e-13 mm)
+        // and quads. Refined three times, as From quad OBJ does; not snapped,
+        // so the surface is the cage's own, as QUICKSURFACE saved it.
+        const c = decodeQsfSurface(r.bytes)
+        features.push({ id, kind: 'freeform', name: c.name, positions: Array.from(c.vertices), faces: c.quads.map(q => [...q]), creases: [], steps: 3, snap: false, visible: c.visible })
+      } else {
+        if (!mesh) throw Error('A Fit Surface needs the scan it was fitted on')
+        // QUICKSURFACE's fitted surface itself, its control net held so
+        // nothing is fitted again; the region is the scan's vertices nearest
+        // the points it was fitted to (those lie on the scan's triangles).
+        const s = decodeQsfFitSurface(r.bytes)
+        features.push({ id, kind: 'surface', name: s.name, region: nearestVertices(mesh.positions, s.points), fit: { ...DEFAULT_SURFACE_FIT, net: s.net, degree: s.surface.u.degree }, controlSurface: s.surface, shape: 'freeform', visible: s.visible })
+      }
+      featureOrder.set(id, i); consumed.add(i)
     } catch (e) { reject(i, (e as Error).message); consumed.add(i) }
   }
   for (const s of sketches.values()) {
@@ -362,8 +421,11 @@ export async function readQsfProject(bytes: Uint8Array, name: string, ask?: (mes
   const count = (kind: string) => manifest.scan!.elements.filter(e => e.kind === kind).length + 1
   manifest.scan.nextId = manifest.scan.elements.length + 1; manifest.scan.nextNumber = manifest.scan.elements.length + 1
   manifest.scan.nextOfKind = { plane: count('plane'), ...(primitives.length ? { cylinder: count('cylinder'), sphere: count('sphere'), cone: count('cone') } : {}) }
-  for (const f of features) validateFeatureJson(f as unknown as Record<string, unknown>)
-  manifest.reverse = { version: PART_VERSION, features: features.map(featureToJson), nextFeatureId: features.length + 1, nextOfKind: { sketch: features.filter(f => f.kind === 'sketch').length + 1, extrude: features.filter(f => f.kind === 'extrude').length + 1 }, elementsShown: true } satisfies ReversePart
+  for (const f of features) validateFeatureJson(featureToJson(f) as unknown as Record<string, unknown>)
+  // A body QUICKSURFACE saved hidden (a freeform's or a fitted surface's
+  // eye shut) is put out of view: a body is named by its feature.
+  const hiddenBodies = features.filter(f => (f.kind === 'freeform' || f.kind === 'surface') && !f.visible).map(f => f.id)
+  manifest.reverse = { version: PART_VERSION, features: features.map(featureToJson), nextFeatureId: features.length + 1, nextOfKind: { sketch: features.filter(f => f.kind === 'sketch').length + 1, extrude: features.filter(f => f.kind === 'extrude').length + 1, freeform: features.filter(f => f.kind === 'freeform').length + 1, surface: features.filter(f => f.kind === 'surface').length + 1 }, elementsShown: true, ...(hiddenBodies.length ? { hiddenBodies } : {}) } satisfies ReversePart
   manifest.qsfSource = { version: 1, member: QSF_SOURCE_MEMBER, fileName: name } satisfies QsfSource
   validateManifest(manifest)
   return { manifest, members: new Map([['scan.obj', new TextEncoder().encode(obj.join('\n') + '\n')], [QSF_SOURCE_MEMBER, Uint8Array.from(bytes)]]) }

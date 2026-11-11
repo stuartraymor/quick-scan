@@ -1,3 +1,11 @@
+## 0.0.205 — QuickSurface freeforms and Fit Surfaces come across
+
+- Freeform, Auto Freeform and Freeform from 3D Sketch surfaces in a QuickSurface project now open as Quick Scan freeforms. They use QuickSurface's own cages: the same points, which match QuickSurface's quad OBJ export of the same cages.
+- A QuickSurface Fit Surface opens as a Quick Scan fitted surface. It keeps QuickSurface's exact surface (degree, knots and control points), so nothing is fitted again. Its region is the scan around the points QuickSurface fitted it to.
+- Freeforms and fitted surfaces QuickSurface saved hidden open hidden.
+- QuickSurface's CAD bodies are still left out: QuickSurface stores them only in a format Quick Scan does not read. They are named in the question asked before opening.
+- Two of the largest Auto Freeform cages in one model come across, but Quick Scan cannot make bodies from them yet. Their features say so.
+
 ## 0.0.204 — QuickSurface spline sketches come across
 
 - Fitted curves in QuickSurface sketches now open as Quick Scan control-point splines. They use the same control points and knots that QuickSurface stores, so they draw QuickSurface's curve exactly: within 0.00001 mm of its own IGES export of the same sketch. Before, a sketch holding a spline was left out.

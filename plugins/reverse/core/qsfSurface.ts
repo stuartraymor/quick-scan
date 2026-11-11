@@ -11,6 +11,7 @@ export interface DecodedQsfSurface {
   /** XYZ in stored coordinates. No transform interpretation has been verified. */
   vertices: Float64Array
   quads: [number, number, number, number][]
+  visible: boolean
 }
 
 const MAX_BYTES = 32 * 1024 * 1024
@@ -44,7 +45,11 @@ export function decodeQsfSurface(record: Uint8Array): DecodedQsfSurface {
   zero(8, 4, 'header flags')
   const guid = guidAt(12)
   if (u32(28) !== 0x007b694a) fail('unmapped common metadata variant')
-  zero(32, 88, 'common metadata or transform')
+  // The word at 32 is shown (1) or hidden (0), as a plane's or a sketch's
+  // (native-start-audit.qsf has these cages shown, native-preserved.qsf hidden).
+  const shown = u32(32)
+  if (shown > 1) fail('unmapped visibility word')
+  zero(36, 84, 'common metadata or transform')
   const chars = u32(120)
   if (chars === 0 || chars > 1024) fail('invalid name length')
   bound(124, chars * 2)
@@ -94,5 +99,5 @@ export function decodeQsfSurface(record: Uint8Array): DecodedQsfSurface {
     quads.push(quad)
   }
   zero(faceStart + faceCount * 21, vertexCount, 'per-vertex tail flags')
-  return { name, guid, links, vertices, quads }
+  return { name, guid, links, vertices, quads, visible: shown === 1 }
 }

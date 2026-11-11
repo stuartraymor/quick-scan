@@ -11,6 +11,7 @@ import { readQsfProject, inspectQsfProject, qsfLeftOut } from '../app/qsfProject
 import { entityPolyline, type SketchEntity } from '../core/sketch'
 import { readQsfContainer } from '../core/qsfContainer'
 import { decodeQsfSketch } from '../core/qsfSketch'
+import { decodeQsfFitSurface } from '../core/qsfFitSurface'
 import type { Vec2 } from '../../../src/core/flat/types'
 
 type El = { kind: string; name: string; visible: boolean; fit: Record<string, unknown> & { center?: number[]; axis?: number[]; radius?: number; length?: number; sigma?: number } }
@@ -133,10 +134,48 @@ describe.skipIf(!real('native-preserved.qsf').exists)('a full model with freefor
     await expect(open('native-preserved.qsf', false)).rejects.toThrow('The current project was not changed')
     const { asked, members, features } = await open('native-preserved.qsf')
     expect(asked).toHaveLength(1)
-    expect(asked[0]).toMatch(/freeform curves and patches/)
+    // Its freeform cages and Fit Surface come across; QUICKSURFACE's CAD
+    // body, held only as Parasolid, does not.
+    expect(asked[0]).toMatch(/1 freeform body/)
+    expect(asked[0]).not.toMatch(/freeform curves and patches|freeform surface/)
     expect(asked[0]).toMatch(/original file is kept/)
     expect(members.get('scan.obj')!.byteLength).toBeGreaterThan(1_000_000)
     expect(features.filter(f => f.kind === 'sketch').length).toBeGreaterThan(5)
+  })
+  it('brings its 20 freeform cages and its Fit Surface across, hidden where QUICKSURFACE hid them', async () => {
+    const f = real('native-preserved.qsf')
+    const { manifest } = await readQsfProject(new Uint8Array(readFileSync(f.path)), 'native-preserved.qsf', () => true)
+    const part = manifest.reverse as { features: { id: number; kind: string; name: string; positions?: number[]; faces?: number[][]; steps?: number; snap?: boolean; controlSurface?: { u: { degree: number; count: number }; v: { count: number } }; region?: number[] }[]; hiddenBodies?: number[] }
+    const ff = part.features.filter(x => x.kind === 'freeform')
+    expect(ff).toHaveLength(20)
+    expect(ff.every(x => x.steps === 3 && x.snap === false)).toBe(true)
+    const surface = part.features.find(x => x.kind === 'surface')!
+    expect(surface.name).toBe('Fit Surface(1)')
+    expect(surface.controlSurface!.u).toMatchObject({ degree: 4, count: 5 })
+    expect(surface.region!.length).toBeGreaterThan(10_000)
+    // Every freeform hidden, the Fit Surface shown — as saved.
+    expect(part.hiddenBodies).toEqual(ff.map(x => x.id))
+    // Freeform(2) and (3): the cages QUICKSURFACE exported as quads.
+    const obj = real('native-wrap-quads.obj')
+    if (obj.exists) {
+      const v = readFileSync(obj.path, 'utf8').split(/\r?\n/).filter(l => l.startsWith('v ')).map(l => l.split(/\s+/).slice(1, 4).map(Number))
+      for (const name of ['Freeform(2)', 'Freeform(3)']) {
+        const c = ff.find(x => x.name === name)!
+        for (let i = 0; i < c.positions!.length; i += 3) expect(Math.min(...v.map(p => Math.hypot(p[0] - c.positions![i], p[1] - c.positions![i + 1], p[2] - c.positions![i + 2])))).toBeLessThan(1e-9)
+      }
+    }
+  })
+  it('a cut or damaged Fit Surface record fails with a reason, never a crash', () => {
+    const rec = readQsfContainer(new Uint8Array(readFileSync(real('native-preserved.qsf').path))).records.find(r => r.type === 25)!.bytes
+    for (let n = 0; n < rec.length; n += 9973) expect(() => decodeQsfFitSurface(rec.subarray(0, n))).toThrow(Error)
+    let seed = 11
+    for (let k = 0; k < 300; k++) {
+      const b = Uint8Array.from(rec)
+      seed = (seed * 1103515245 + 12345) % 2 ** 31
+      const at = k % 2 ? seed % 700 : rec.length - 1 - (seed % 5000) // the header and the BREP's surface
+      b[at] ^= 1 + (seed % 255)
+      try { const d = decodeQsfFitSurface(b); expect(d.surface.poles.flat().every(Number.isFinite)).toBe(true) } catch (e) { expect(e).toBeInstanceOf(Error) }
+    }
   })
   it('a QUICKSURFACE 8.0.127 project opens whole', async () => {
     const f = real('reference-baseline.qsf')
