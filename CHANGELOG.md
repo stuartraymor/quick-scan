@@ -1,3 +1,8 @@
+## 0.0.206 — Large open freeform cages make bodies
+
+- A freeform cage that ends in a tiny corner quad, where the surface's edge hooks back on itself, now makes a body. Before, Quick Scan refused such a cage when it could not be refined further. The two largest Auto Freeforms in a QuickSurface model on basic_part were like this; both now build as valid surfaces.
+- How: the one piece that no smooth face follows is cut into its sample cells, each a simple face through its four corner samples. This happens only when the cage cannot be refined any more; a cage that can be refined still is, as before.
+
 ## 0.0.205 — QuickSurface freeforms and Fit Surfaces come across
 
 - Freeform, Auto Freeform and Freeform from 3D Sketch surfaces in a QuickSurface project now open as Quick Scan freeforms. They use QuickSurface's own cages: the same points, which match QuickSurface's quad OBJ export of the same cages.

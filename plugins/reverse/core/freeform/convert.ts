@@ -65,7 +65,12 @@ const MIN_PIECE = 5
  *  surface swings off the samples between them at some sizes and not at
  *  others; two halves of the same samples sit apart from the swing). The
  *  pieces share the line they were cut along, so they sew. */
-function facesThrough(k: ReKernel, g: PatchGrid, out: Shape[], index: number): void {
+function facesThrough(k: ReKernel, g: PatchGrid, out: Shape[], index: number, cells: boolean, last = false): void {
+  // A cell of four samples is its bilinear face: it cannot swing off them.
+  if (last && g.rows === 2 && g.cols === 2) {
+    out.push(k.surfaceThrough(g.points, 2, 2))
+    return
+  }
   const face = k.surfaceThrough(g.points, g.rows, g.cols)
   const off = k.surfaceArea(face) / Math.max(gridArea(g), 1e-12)
   if (!(off > GRID_AREA_SLACK)) {
@@ -73,27 +78,39 @@ function facesThrough(k: ReKernel, g: PatchGrid, out: Shape[], index: number): v
     return
   }
   k.release(face)
-  const alongRows = g.rows >= g.cols
+  // Below the smallest piece, the cage's own shape is at fault — a corner
+  // of an open cage where the limit surface's edge hooks back on itself
+  // within a millimetre (QUICKSURFACE's Auto Freeform on basic_part: a
+  // quad with two corners of the cage on it, its samples' edge rising
+  // 0.5 mm and back). The piece is cut on, to its cells if need be: faces
+  // that follow the samples where one smooth face through them cannot.
+  const small = (g.rows >= g.cols ? g.rows : g.cols) < 2 * MIN_PIECE - 1
+  // Cells only when the cage cannot be refined further (cells): refined,
+  // its pieces are smooth faces again.
+  if (small && !last && !cells) throw new Error(`The kernel's surface through block ${index} of the cage does not follow it: ${off > 100 ? `${Math.round(off)} times` : `${Math.round((off - 1) * 100)} % more than`} its area, down to a piece of ${g.rows} × ${g.cols} samples. Refine the cage more (steps) or move its points.`)
+  const alongRows = small || last ? (g.rows >= g.cols ? g.rows > 2 : g.cols <= 2) : g.rows >= g.cols
   const n = alongRows ? g.rows : g.cols
-  if (n < 2 * MIN_PIECE - 1) {
-    throw new Error(`The kernel's surface through block ${index} of the cage does not follow it: ${off > 100 ? `${Math.round(off)} times` : `${Math.round((off - 1) * 100)} % more than`} its area, down to a piece of ${g.rows} × ${g.cols} samples. Refine the cage more (steps) or move its points.`)
-  }
+  if (n < 3) throw new Error(`The kernel's surface through block ${index} of the cage does not follow it: ${off > 100 ? `${Math.round(off)} times` : `${Math.round((off - 1) * 100)} % more than`} its area, down to a piece of ${g.rows} × ${g.cols} samples. Refine the cage more (steps) or move its points.`)
+  const deeper = last || small
   const cut = Math.floor((n - 1) / 2)
   if (alongRows) {
-    facesThrough(k, piece(g, 0, cut, 0, g.cols - 1), out, index)
-    facesThrough(k, piece(g, cut, g.rows - 1, 0, g.cols - 1), out, index)
+    facesThrough(k, piece(g, 0, cut, 0, g.cols - 1), out, index, cells, deeper)
+    facesThrough(k, piece(g, cut, g.rows - 1, 0, g.cols - 1), out, index, cells, deeper)
   } else {
-    facesThrough(k, piece(g, 0, g.rows - 1, 0, cut), out, index)
-    facesThrough(k, piece(g, 0, g.rows - 1, cut, g.cols - 1), out, index)
+    facesThrough(k, piece(g, 0, g.rows - 1, 0, cut), out, index, cells, deeper)
+    facesThrough(k, piece(g, 0, g.rows - 1, cut, g.cols - 1), out, index, cells, deeper)
   }
 }
 
 /** The body made of a cage's patches, or why not. The shape is the
  *  caller's to release. */
-export function patchesBody(k: ReKernel, patches: PatchSet): { shape: Shape; report: ConvertReport } {
+/** `cells`: a piece that will not follow its samples at the smallest size
+ *  is cut to its cells rather than refused — for a cage that cannot be
+ *  refined further. */
+export function patchesBody(k: ReKernel, patches: PatchSet, cells = false): { shape: Shape; report: ConvertReport } {
   const faces: Shape[] = []
   try {
-    for (const [index, grid] of patches.grids.entries()) facesThrough(k, grid, faces, index)
+    for (const [index, grid] of patches.grids.entries()) facesThrough(k, grid, faces, index, cells)
     if (faces.length === 0) throw new Error('The cage has no faces to convert.')
     let shape = faces.length === 1 ? k.copy(faces[0]) : k.sewPatches(faces, SEW_TOLERANCE, patches.closed)
     if (patches.closed && faces.length > 1 && !k.isClosedSolid(shape)) {
