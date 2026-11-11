@@ -146,6 +146,12 @@ export function createReverseSession({
   let stopping: Promise<Stopped | null> | null = null
   /** The store's build version the last build that landed was made for. */
   let landed: number | null = null
+  /** The last build asked for, by count. A build of sketches alone, or of
+   *  nothing, lands at once without the kernel; the kernel's answer to one
+   *  asked before it is then overtaken and must not land after it — it
+   *  would put the old bodies back and mark the old version landed, and a
+   *  wait for the new one (an opened project's) would never end. */
+  let latestBuild = 0
   /** Builds held back while changes are made one after another, to build
    *  once after the last of them (see hold); the timer lets them go should
    *  nothing else — a caller gone before its last change. */
@@ -233,6 +239,7 @@ export function createReverseSession({
     const re = useReverse.getState()
     if (!client || re.kernelStatus !== 'ready') return
     const version = re.buildVersion
+    const ticket = ++latestBuild
     if (re.features.length === 0) {
       meshes.clear()
       topologies.clear()
@@ -276,7 +283,7 @@ export function createReverseSession({
         // what waits on the store finds the session idle when it looks.
         running--
         kernelBuilds--
-        if (!answer) return
+        if (!answer || ticket !== latestBuild) return
         // A body the build left as it was comes back the very object it
         // was, so what the viewport made of its mesh stays.
         meshes.clear()
@@ -306,6 +313,7 @@ export function createReverseSession({
         if (c !== client) return
         running--
         kernelBuilds--
+        if (ticket !== latestBuild) return
         landed = version
         useReverse.getState().failBuild(message(e))
       })
