@@ -115,6 +115,20 @@ export function secondaryAlongPrimary(primary: FitData, secondary: FitData): boo
   return !!a && !!b && acuteAngle(normalize(a)!, b) < MIN_CLOCK_ANGLE
 }
 
+/** Whether the tertiary clocks the rotation, as QUICKSURFACE lets it: the
+ *  secondary runs the primary's way, and the tertiary is a plane or an axis
+ *  that does not. */
+export function tertiaryClocks(primary: FitData, secondary: FitData, tertiary: FitData): boolean {
+  return tertiaryTileKind(tertiary) !== null && secondaryAlongPrimary(primary, secondary) && !secondaryAlongPrimary(primary, tertiary)
+}
+
+/** The tiles QUICKSURFACE shows for a tertiary feature: Top / Right / Front
+ *  for a plane, X / Y / Z Axis for a cylinder, cone or line, none for a
+ *  point or anything else without a direction. */
+export function tertiaryTileKind(fit: FitData): 'plane' | 'axis' | null {
+  return fit.kind === 'plane' ? 'plane' : fit.kind === 'cylinder' || fit.kind === 'cone' || fit.kind === 'line' ? 'axis' : null
+}
+
 export interface DatumSpec {
   fit: FitData
   axis: AxisDir
@@ -144,12 +158,17 @@ const MIN_CLOCK_ANGLE = 0.2
  * arbitrary offset. Without it, anything unconstrained keeps its position:
  * the rotation pivots about the primary datum's centre so the part does not
  * fly off screen.
+ *
+ * `tertiaryAxis` is the axis the tertiary's direction becomes when the
+ * secondary runs the primary's way and so cannot clock the rotation: the
+ * tertiary clocks it instead (see tertiaryClocks).
  */
 export function computeDatumAlignment(
   primary: DatumSpec,
   secondary: DatumSpec | null,
   origin: FitData | null,
   centerOf?: Vec3 | null,
+  tertiaryAxis?: AxisDir | null,
 ): Rigid {
   const d1raw = datumDirection(primary.fit)
   if (!d1raw)
@@ -171,18 +190,28 @@ export function computeDatumAlignment(
       throw new AlignmentError("This feature runs the primary's way — it can only become the primary's own axis.")
   }
   const datum = primary.fit.kind === 'plane' ? primary.fit.datum : undefined
-  if (secondary && !along) {
-    const d2raw = datumDirection(secondary.fit)
+  // What clocks the rotation: the secondary, or — when it runs the primary's
+  // way — the tertiary, on its own tile's axis. QUICKSURFACE 8.0.128
+  // (controlled fixtures, 2026-11-11: Cylinder Z Axis, its cap plane Top,
+  // a side plane tertiary) turns the side plane's normal onto Right or Front
+  // as its tile says, and onto the negative side with Flip.
+  const clock: DatumSpec | null =
+    secondary && !along ? secondary
+      : secondary && along && origin && tertiaryAxis && tertiaryClocks(primary.fit, secondary.fit, origin) && axisIndex(tertiaryAxis) !== axisIndex(primary.axis)
+        ? { fit: origin, axis: tertiaryAxis }
+        : null
+  if (clock) {
+    const d2raw = datumDirection(clock.fit)
     if (!d2raw)
       throw new AlignmentError(
         'The rotation step needs a direction — use a plane, cylinder, line, or two picked points.',
       )
-    if (axisIndex(secondary.axis) === axisIndex(primary.axis))
+    if (axisIndex(clock.axis) === axisIndex(primary.axis))
       throw new AlignmentError('Levelling and rotation cannot use the same axis.')
     // Project the secondary direction perpendicular to the primary: the
     // primary always wins exactly, the secondary only clocks.
     const d2 = normalize(addScaled(d2raw, d1, -dot(d2raw, d1)))!
-    const e2 = axisVector(secondary.axis)
+    const e2 = axisVector(clock.axis)
     const d3 = cross(d1, d2)
     const e3 = cross(e1, e2)
     // R = Σₖ eₖ ⊗ dₖ maps the datum frame onto the global one.

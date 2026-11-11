@@ -20,7 +20,7 @@ import {
   useStore,
   type Element,
 } from '../state/store'
-import { alignmentReferences, alignmentTileAxis } from '../state/alignModel'
+import { alignDraftTertiaryTiles, alignmentReferences, alignmentTileAxis, chosenTertiaryTile } from '../state/alignModel'
 import { secondaryAlongPrimary } from '../core/alignment'
 import { InfoDot } from './InfoDot'
 import { providersFor } from './RefSelect'
@@ -75,6 +75,7 @@ function AlignSelect({
   referencePicking,
   onFlip,
   flipDisabled = false,
+  flipPressed,
 }: {
   label: string
   roles: readonly RefRole[]
@@ -93,6 +94,8 @@ function AlignSelect({
   onFlip?: () => void
   /** Shown but unavailable — the tertiary feature, as QUICKSURFACE greys it for a point. */
   flipDisabled?: boolean
+  /** A Flip that stays pressed, as the tertiary's does in QUICKSURFACE. */
+  flipPressed?: boolean
 }) {
   const options = providersFor(roles, alignmentReferences(elements))
   const selectValue = picking
@@ -132,7 +135,7 @@ function AlignSelect({
         </option>
       </select>
       <button type="button" data-test={`${testId}-pick`} aria-pressed={referencePicking} onClick={onReferencePick}>{referencePicking ? 'Picking…' : 'Pick…'}</button>
-      {onFlip && <button type="button" data-test={`${testId}-flip`} disabled={flipDisabled || (value === null && picks < need)} onClick={onFlip}>Flip</button>}
+      {onFlip && <button type="button" data-test={`${testId}-flip`} disabled={flipDisabled || (value === null && picks < need)} aria-pressed={flipPressed} className={flipPressed ? 'on' : undefined} onClick={onFlip}>Flip</button>}
     </div>
   )
 }
@@ -213,6 +216,11 @@ export function AlignmentSection({
     if (secondaryAlong && !same) setAlignmentAxis('secondary', primaryAxisNow)
     else if (!secondaryAlong && same && secondaryFit) setAlignmentAxis('secondary', axisIndex(primaryAxisNow) === 1 ? 'z+' : 'y+')
   }, [secondaryAlong, primaryAxisNow, secondaryAxisNow, secondaryFit, setAlignmentAxis])
+  // QUICKSURFACE's tertiary row: its tiles turn the part only when the
+  // secondary runs the primary's way (see tertiaryTiles).
+  const tertiary = alignDraft ? alignDraftTertiaryTiles(alignDraft, elements, modelSize) : null
+  const tertiaryTile = alignDraft && tertiary ? chosenTertiaryTile(alignDraft, tertiary) : null
+  const tertiaryFilled = !!alignDraft && (alignDraft.origin !== null || alignDraft.originPicks.length >= ALIGN_PICK_COUNT.origin)
   const manualNums = manual?.map((v) => (Number.isFinite(v) ? v : 0)) ?? null
   const manualIdentity = manualNums === null || manualNums.every((v) => v === 0)
 
@@ -406,6 +414,7 @@ export function AlignmentSection({
               onClick={() => {
                 const st = useStore.getState()
                 for (const slot of ['primary', 'secondary', 'origin'] as const) st.setAlignmentRef(slot, null)
+                useStore.setState((x) => (x.alignDraft ? { alignDraft: { ...x.alignDraft, tertiaryAxis: undefined, tertiaryFlip: false } } : {}))
                 st.beginAlignmentReferencePick('primary')
                 setShift(['0', '0', '0'])
               }}
@@ -435,6 +444,7 @@ export function AlignmentSection({
                 key={t.label}
                 data-test={`align-tile-${t.label.toLowerCase().replace(' ', '-')}`}
                 aria-pressed={axisIndex(alignDraft.primaryAxis) === axisIndex(t.axis)}
+                className={axisIndex(alignDraft.primaryAxis) === axisIndex(t.axis) ? 'on' : undefined}
                 onClick={() => setAlignmentAxis('primary', t.axis)}
               >
                 {t.label}
@@ -486,9 +496,18 @@ export function AlignmentSection({
             onPick={() => beginAlignmentPick('origin')}
             onReferencePick={() => useStore.getState().beginAlignmentReferencePick('origin')}
             referencePicking={alignDraft.referencePickSlot === 'origin'}
-            onFlip={() => {}}
-            flipDisabled
+            onFlip={() => useStore.setState((st) => (st.alignDraft ? { alignDraft: { ...st.alignDraft, tertiaryFlip: !st.alignDraft.tertiaryFlip } } : {}))}
+            flipDisabled={!tertiary?.kind}
+            flipPressed={Boolean(alignDraft.tertiaryFlip) && !!tertiary?.kind}
           />
+          {tertiaryFilled && tertiary?.kind && <div className="toolrow" role="group" aria-label="Tertiary feature becomes" data-test="align-tertiary-tiles">
+            {(tertiary.kind === 'axis' ? AXIS_TILES : PLANE_TILES).map(({ label, axis }) => <button key={label} type="button"
+              data-test={`align-tertiary-${label.toLowerCase().replace(' ', '-')}`}
+              disabled={!tertiary.enabled[axisIndex(axis)]}
+              className={tertiaryTile === axis ? 'on' : undefined}
+              aria-pressed={tertiaryTile === axis}
+              onClick={() => useStore.setState((st) => (st.alignDraft ? { alignDraft: { ...st.alignDraft, tertiaryAxis: axis } } : {}))}>{label}</button>)}
+          </div>}
           <div className="field" data-test="align-translate" style={{ flexWrap: "wrap", gap: 6 }}>
             <span>Translate</span>
             {(['X', 'Y', 'Z'] as const).map((axis, i) => (

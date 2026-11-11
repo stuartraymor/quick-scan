@@ -349,14 +349,19 @@ describe('alignment', () => {
   })
 
   it('align.datum takes points on the scan, and align.clear takes the alignment off', async () => {
-    await run('align.datum', { primary: { points: [[-10, -10, -20], [10, -10, -20], [0, 10, -20]] }, origin: { point: [-20, -20, -20] } })
+    // With a primary and no secondary the origin is ignored, as in QuickSurface.
+    const ignored = await run<{ origin?: { set: string[]; note?: string } }>('align.datum', { primary: { points: [[-10, -10, -20], [10, -10, -20], [0, 10, -20]] }, origin: { point: [-20, -20, -20] } })
+    expect(ignored.origin?.set).toEqual([])
+    expect(ignored.origin?.note).toMatch(/^Ignored/)
+    await run('align.clear')
+    await run('align.datum', { primary: { points: [[-10, -10, -20], [10, -10, -20], [0, 10, -20]] }, secondary: { points: [[-10, -20, -20], [10, -20, -20]] }, origin: { point: [-20, -20, -20] } })
     expect(useStore.getState().appliedAlignment).not.toBeNull()
     const state = await run<{ scan: { bounds: { min: Vec3 } } }>('session.state')
     for (const c of state.scan.bounds.min) expect(c).toBeCloseTo(0, 3)
     await run('align.clear')
     expect(useStore.getState().appliedAlignment).toBeNull()
     expect((await refused('align.clear')).code).toBe('invalid_state')
-    expect(undoLabels()).toEqual(['Agent: datum alignment', 'Agent: reset alignment'])
+    expect(undoLabels()).toEqual(['Agent: datum alignment', 'Agent: reset alignment', 'Agent: datum alignment', 'Agent: reset alignment'])
   })
 
   it('align.auto and align.symmetry apply the pose read off the scan, a step each', async () => {

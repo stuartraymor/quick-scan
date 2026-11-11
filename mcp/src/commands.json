@@ -1,6 +1,6 @@
 {
-  "app": "0.0.207",
-  "saved": "2026-11-10T17:19:28.542Z",
+  "app": "0.0.208",
+  "saved": "2026-11-11T22:49:30.344Z",
   "commands": [
     {
       "name": "align.auto",
@@ -57,7 +57,7 @@
     {
       "name": "align.datum",
       "title": "Align the part to datums",
-      "description": "A 3-2-1 alignment, as the panel’s alignment box sets it up: primary levels the part — a plane (or 3 points) whose outward normal becomes primaryAxis (default z-); secondary turns it — a line or axis (or 2 points) laid along secondaryAxis (default x+), or a plane; origin is the zero point — a point, sphere or circle (or 1 point). Elements by id or name, or points in mm used as given, not snapped. Trap: a plane as secondary puts its outward NORMAL on secondaryAxis, not its face along it. Each datum zeroes the coordinates it owns, the origin only those left open; an origin alone moves without turning. On a first alignment, open coordinates are centred on the fitted primary plane’s patch, or on the scan’s box for other datums (keepFree: true leaves them). Returns the transform applied, how many elements moved, centred, origin { set, at, note } and parallelFace when a face parallel to the levelling plane within 5 mm holds more of the scan. One undo step.",
+      "description": "A 3-2-1 alignment, as the panel’s alignment box sets it up: primary levels the part — a plane (or 3 points) whose outward normal becomes primaryAxis (default z-); secondary turns it — a line or axis (or 2 points) laid along secondaryAxis (default x+), or a plane; origin is the zero point — a point, sphere or circle (or 1 point). Elements by id or name, or points in mm used as given, not snapped. Trap: a plane as secondary puts its outward NORMAL on secondaryAxis, not its face along it. Each datum zeroes the coordinates it owns, the origin only those left open; an origin alone moves without turning, and an origin with a primary but no secondary is ignored, as in QuickSurface. On a first alignment, open coordinates are centred on the fitted primary plane’s patch, or on the scan’s box for other datums (keepFree: true leaves them). Returns the transform applied, how many elements moved, centred, origin { set, at, note } and parallelFace when a face parallel to the levelling plane within 5 mm holds more of the scan. One undo step.",
       "input": {
         "type": "object",
         "properties": {
@@ -237,6 +237,18 @@
               }
             ],
             "description": "The zero point: an element, or a point on the scan."
+          },
+          "originAxis": {
+            "type": "string",
+            "enum": [
+              "x+",
+              "x-",
+              "y+",
+              "y-",
+              "z+",
+              "z-"
+            ],
+            "description": "The tertiary row’s tile and Flip: when the secondary runs the primary’s way (a cylinder and its end face), the axis the origin plane’s normal or axis becomes, which turns the part about the primary. Otherwise unused. Default: the first tile available, + side."
           },
           "keepFree": {
             "type": "boolean",

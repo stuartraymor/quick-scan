@@ -8,7 +8,15 @@ const rad=d=>d*Math.PI/180, c=Math.cos(rad(5)),s=Math.sin(rad(5))
 const plane=(center,normal,basisU=[1,0,0])=>({kind:'plane',center,normal,basisU,basisV:[normal[1]*basisU[2]-normal[2]*basisU[1],normal[2]*basisU[0]-normal[0]*basisU[2],normal[0]*basisU[1]-normal[1]*basisU[0]],extentU:35,extentV:35,sigma:0,usedPoints:0,regionSize:0})
 const fits=[{...plane([10,20,5],[0,0,1]),datum:{origin:[10,20,5],u:[1,0,0],frontU:[1,0,0]}},plane([10,7-20*Math.tan(rad(3)),25],[0,Math.cos(rad(3)),Math.sin(rad(3))]),plane([3-15*Math.tan(rad(5)),8,20],[c,0,s],[0,1,0]),{kind:'cylinder',center:[10,20,10],axis:[0,0,1],radius:5,length:40,coverage:360,sigma:0,usedPoints:0,regionSize:0},{kind:'cylinder',center:[10+20*c,20,5+20*s],axis:[c,0,s],radius:5,length:20,coverage:360,sigma:0,usedPoints:0,regionSize:0}]
 const I=[1,0,0,0,1,0,0,0,1], apply=(r,t,p)=>[0,1,2].map(i=>r[i*3]*p[0]+r[i*3+1]*p[1]+r[i*3+2]*p[2]+t[i])
-const cases=[{name:'two-planes',p:1,q:2,axis:'front',t:[-10,-7,-5]},{name:'three-planes',p:1,q:2,o:3,axis:'front',t:[-3,-7,-5]},{name:'cylinder-primary',p:4,t:[-10,-20,-10]},{name:'cylinder-cap',p:4,q:1,axis:'top',t:[-10,-20,-5]},{name:'plane-cylinder-plane',p:1,q:5,o:3,axis:'x axis',t:[-3,-20,-5]},{name:'plane-plane-cylinder',p:1,q:2,o:5,axis:'front',t:[-10,-7,-5]},{name:'right-flipped',p:1,q:2,o:3,primary:'right',flip:true,axis:'top',r:[0,0,-1,-1,0,0,0,1,0],t:[5,3,-7]}]
+const cases=[{name:'two-planes',p:1,q:2,axis:'front',t:[-10,-7,-5]},{name:'three-planes',p:1,q:2,o:3,axis:'front',t:[-3,-7,-5]},{name:'cylinder-primary',p:4,t:[-10,-20,-10]},{name:'cylinder-cap',p:4,q:1,axis:'top',t:[-10,-20,-5]},{name:'plane-cylinder-plane',p:1,q:5,o:3,axis:'x axis',t:[-3,-20,-5]},{name:'plane-plane-cylinder',p:1,q:2,o:5,axis:'front',t:[-10,-7,-5]},{name:'right-flipped',p:1,q:2,o:3,primary:'right',flip:true,axis:'top',r:[0,0,-1,-1,0,0,0,1,0],t:[5,3,-7]},
+ // The tertiary row (QUICKSURFACE 8.0.128, analysis/quick-scan-v0.0.208/tertiary-native): with the cap as secondary the side plane or the lying cylinder turns the part, on its tile, Flip to the negative side.
+ {name:'tertiary-right',p:4,q:1,o:2,axis:'top',tiles:{top:false,right:true,front:true},pressed:'right',r:[0,1,0,-1,0,0,0,0,1],t:[-20,10,-5]},
+ {name:'tertiary-right-flip',p:4,q:1,o:2,axis:'top',oflip:true,r:[0,-1,0,1,0,0,0,0,1],t:[20,-10,-5]},
+ {name:'tertiary-front',p:4,q:1,o:2,axis:'top',ot:'front',t:[-10,-20,-5]},
+ {name:'tertiary-front-flip',p:4,q:1,o:2,axis:'top',ot:'front',oflip:true,r:[-1,0,0,0,-1,0,0,0,1],t:[10,20,-5]},
+ {name:'tertiary-axis',p:4,q:1,o:5,axis:'top',tiles:{'x-axis':true,'y-axis':true,'z-axis':false},pressed:'x-axis',t:[-10,-20,-5]},
+ {name:'tertiary-no-secondary',p:1,o:3,oflip:true,tiles:{top:false,right:false,front:false},t:[-10,-20,-5]},
+ {name:'tertiary-no-effect',p:1,q:2,o:3,axis:'front',ot:'right',oflip:true,tiles:{top:true,right:true,front:true},t:[-3,-7,-5]}]
 function box(offset=0) {const v=[[0,0,-100],[60,0,-100],[60,40,-100],[0,40,-100],[0,0,-80],[60,0,-80],[60,40,-80],[0,40,-80]].map(p=>[p[0]+offset,p[1],p[2]]);return {v,f:[[0,2,1],[0,3,2],[4,5,6],[4,6,7],[0,1,5],[0,5,4],[1,2,6],[1,6,5],[2,3,7],[2,7,6],[3,0,4],[3,4,7]]}}
 function writeMesh(name,parts){let n=0;const lines=[];for(const {v,f} of parts){lines.push(...v.map(p=>'v '+p.join(' ')),...f.map(f=>'f '+f.map(x=>x+n+1).join(' ')));n+=v.length}const file=shotPath(name);fs.writeFileSync(file,lines.join('\n'));return file}
 const one=process.env.ALIGN_MESH??writeMesh('alignment-part.obj',[box()]),two=process.env.ALIGN_ASSEMBLY??writeMesh('alignment-two-parts.obj',[box(),box(250)])
@@ -26,6 +34,10 @@ try {
   if(test.flip)await page.click('[data-test=align-primary-flip]')
   if(test.q){await page.select('[data-test=align-secondary]',String(test.q));await page.click(`[data-test="align-secondary-${test.axis}"]`)}
   if(test.o)await page.select('[data-test=align-origin]',String(test.o))
+  if(test.tiles){const got=await page.$$eval('[data-test=align-tertiary-tiles] button',bs=>Object.fromEntries(bs.map(b=>[b.dataset.test.replace('align-tertiary-',''),!b.disabled])));assert.deepEqual(got,test.tiles,`${test.name} tertiary tiles`)}
+  if(test.pressed)assert.equal(await page.$eval(`[data-test=align-tertiary-${test.pressed}]`,b=>b.getAttribute('aria-pressed')),'true',`${test.name} default tile`)
+  if(test.ot)await page.click(`[data-test=align-tertiary-${test.ot}]`)
+  if(test.oflip){await page.click('[data-test=align-origin-flip]');assert.equal(await page.$eval('[data-test=align-origin-flip]',b=>b.getAttribute('aria-pressed')),'true')}
   const before=await page.evaluate(async()=>{const {useStore,alignmentPreview,alignCenterOf}=await import('/src/state/store.ts');const st=useStore.getState(),p=alignmentPreview(st.alignDraft,st.elements,st.modelSize,alignCenterOf(st));const a=window.__scanruler.scene().marking.ctx.mesh().geometry.getAttribute('position').array;return {error:p.error,r:[...p.preview.rigid.r],t:[...p.preview.rigid.t],vertices:Array.from(a),applied:st.appliedAlignment}})
   assert.equal(before.error,null);assert.equal(before.applied,null)
   for(let i=0;i<3;i++)assert.ok(Math.abs(before.t[i]-test.t[i])<1e-8,`${test.name} translation ${i}: ${before.t}`)

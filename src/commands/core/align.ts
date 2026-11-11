@@ -127,6 +127,8 @@ function originPoint(origin: Slot): Vec3 | null {
  *  stands, with a note when the datums kept it off zero. */
 function originReport(input: Parameters<typeof originCoords>[0] & { origin?: Slot }, before: Vec3 | null, step: Rigid) {
   if (!input.origin) return {}
+  // A primary with no secondary: the origin is ignored, as QUICKSURFACE does.
+  if (input.primary && !input.secondary) return { origin: { set: [], note: 'Ignored: with a primary and no secondary the tertiary sets nothing, as in QuickSurface. Give a secondary, or call align.datum with origin alone afterwards.' } }
   const set = originCoords(input)
   const names = set.map((i) => 'xyz'[i])
   if (!before) return { origin: { set: names } }
@@ -149,7 +151,7 @@ function originReport(input: Parameters<typeof originCoords>[0] & { origin?: Slo
  *  the datums nor an origin set. None once the part has been aligned or
  *  moved, or when told to keep them. */
 function centredCoords(input: Parameters<typeof originCoords>[0] & { origin?: Slot; keepFree?: boolean }): string[] {
-  if (input.keepFree || !input.primary || input.origin || !alignCenterOf(useStore.getState())) return []
+  if (input.keepFree || !input.primary || (input.origin && input.secondary) || !alignCenterOf(useStore.getState())) return []
   return originCoords(input).map((i) => 'xyz'[i])
 }
 
@@ -194,19 +196,21 @@ const datum: Command<{
   secondary?: Slot
   secondaryAxis?: AxisDir
   origin?: Slot
+  originAxis?: AxisDir
   keepFree?: boolean
   detail?: Detail
 }> = {
   name: 'datum',
   title: 'Align the part to datums',
   description:
-    'A 3-2-1 alignment, as the panel’s alignment box sets it up: primary levels the part — a plane (or 3 points) whose outward normal becomes primaryAxis (default z-); secondary turns it — a line or axis (or 2 points) laid along secondaryAxis (default x+), or a plane; origin is the zero point — a point, sphere or circle (or 1 point). Elements by id or name, or points in mm used as given, not snapped. Trap: a plane as secondary puts its outward NORMAL on secondaryAxis, not its face along it. Each datum zeroes the coordinates it owns, the origin only those left open; an origin alone moves without turning. On a first alignment, open coordinates are centred on the fitted primary plane’s patch, or on the scan’s box for other datums (keepFree: true leaves them). Returns the transform applied, how many elements moved, centred, origin { set, at, note } and parallelFace when a face parallel to the levelling plane within 5 mm holds more of the scan. One undo step.',
+    'A 3-2-1 alignment, as the panel’s alignment box sets it up: primary levels the part — a plane (or 3 points) whose outward normal becomes primaryAxis (default z-); secondary turns it — a line or axis (or 2 points) laid along secondaryAxis (default x+), or a plane; origin is the zero point — a point, sphere or circle (or 1 point). Elements by id or name, or points in mm used as given, not snapped. Trap: a plane as secondary puts its outward NORMAL on secondaryAxis, not its face along it. Each datum zeroes the coordinates it owns, the origin only those left open; an origin alone moves without turning, and an origin with a primary but no secondary is ignored, as in QuickSurface. On a first alignment, open coordinates are centred on the fitted primary plane’s patch, or on the scan’s box for other datums (keepFree: true leaves them). Returns the transform applied, how many elements moved, centred, origin { set, at, note } and parallelFace when a face parallel to the levelling plane within 5 mm holds more of the scan. One undo step.',
   input: obj({
     primary: slotSchema('levelling', 3, 'they span the face'),
     primaryAxis: enumOf(AXES, 'The axis the primary’s outward normal becomes; default z-.'),
     secondary: slotSchema('rotation', 2, 'they run along the edge'),
     secondaryAxis: enumOf(AXES, 'The axis the secondary runs along (a plane: its normal); default x+.'),
     origin: slotSchema('the zero point', 1, ''),
+    originAxis: enumOf(AXES, 'The tertiary row’s tile and Flip: when the secondary runs the primary’s way (a cylinder and its end face), the axis the origin plane’s normal or axis becomes, which turns the part about the primary. Otherwise unused. Default: the first tile available, + side.'),
     keepFree: bool('First alignment: leave the coordinates nothing sets where they are instead of centring.'),
     detail: detailIn,
   }),
@@ -223,6 +227,10 @@ const datum: Command<{
       if (input.secondary) await fillSlot('secondary', input.secondary)
       if (input.secondaryAxis) useStore.getState().setAlignmentAxis('secondary', input.secondaryAxis)
       if (input.origin) await fillSlot('origin', input.origin)
+      if (input.originAxis) {
+        const a = input.originAxis
+        useStore.setState((st) => (st.alignDraft ? { alignDraft: { ...st.alignDraft, tertiaryAxis: `${a[0]}+` as AxisDir, tertiaryFlip: a[1] === '-' } } : {}))
+      }
       const before = input.origin ? originPoint(input.origin) : null
       const centred = centredCoords(input)
       const parallel = await parallelFace()

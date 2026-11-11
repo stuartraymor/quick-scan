@@ -1,3 +1,12 @@
+## 0.0.208 — Align’s tertiary feature has QuickSurface’s tiles and Flip
+
+- The tertiary feature in Align by Coordinate System has Top / Right / Front tiles for a plane and X Axis / Y Axis / Z Axis for a cylinder, cone or line, and a Flip that stays pressed, as QuickSurface 8.0.128 has.
+- When the secondary runs the primary’s way (a cylinder and its end face), the tertiary turns the part about the primary: its normal or axis lands on the chosen tile’s axis, Flip on the negative side. The tile on the primary’s axis is greyed and the first available one is chosen. Checked against QuickSurface’s saved results on its controlled fixtures: the same transform with each tile, with and without Flip.
+- Otherwise the tiles turn nothing, as in QuickSurface. They are greyed with no secondary, and for an axis after a secondary that turns the part; a plane’s stay available.
+- With a primary and no secondary, the tertiary is ignored, as in QuickSurface: a plane, axis or point chosen there no longer sets any coordinate, and the part lands on the primary alone. A zero point with no primary still moves the origin. `align.datum` reports such an origin as ignored.
+- The primary row shows its chosen tile pressed, as the secondary row and QuickSurface do.
+- The `align.datum` command takes `originAxis` for the tertiary tile and Flip.
+
 ## 0.0.207 — Extract primitives and Align match QuickSurface on four test parts
 
 - Checked against QuickSurface 8.0.128 on four saved test parts (basic_part, bearinghousing, machine_part, lego): the same wand regions, constraints, primitives and alignment, compared on the numbers QuickSurface saves and exports.
