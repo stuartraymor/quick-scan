@@ -81,8 +81,14 @@ export function buildTriangleGraph(
 
 /** The own vertices of the smoothly turning patch around triangle `seed`. */
 export function wandGrow(graph: TriangleGraph, seed: number, degrees: number): Uint32Array {
+  return wandGrowBoth(graph, seed, degrees).vertices
+}
+
+/** The wand's patch as the triangles it took (what QUICKSURFACE selects and
+ *  fits a primitive to) and the vertices they cover. */
+export function wandGrowBoth(graph: TriangleGraph, seed: number, degrees: number): { vertices: Uint32Array; triangles: Uint32Array } {
   const { count, normals, corners, next, vertexSpan } = graph
-  if (!(seed >= 0 && seed < count) || !Number.isFinite(degrees)) return new Uint32Array(0)
+  if (!(seed >= 0 && seed < count) || !Number.isFinite(degrees)) return { vertices: new Uint32Array(0), triangles: new Uint32Array(0) }
   // A small tolerance so an exact fold at the slider's value is taken.
   const limit = Math.cos((Math.min(Math.max(degrees, 0), 180) * Math.PI) / 180) - 1e-9
   const taken = new Uint8Array(count)
@@ -104,8 +110,10 @@ export function wandGrow(graph: TriangleGraph, seed: number, degrees: number): U
   }
   const on = new Uint8Array(vertexSpan)
   let found = 0
+  let tris = 0
   for (let t = 0; t < count; t++) {
     if (!taken[t]) continue
+    tris++
     for (let k = 0; k < 3; k++) {
       const v = corners[t * 3 + k]
       if (!on[v]) {
@@ -117,7 +125,10 @@ export function wandGrow(graph: TriangleGraph, seed: number, degrees: number): U
   const out = new Uint32Array(found)
   let w = 0
   for (let v = 0; v < vertexSpan && w < found; v++) if (on[v]) out[w++] = v
-  return out
+  const triangles = new Uint32Array(tris)
+  let k = 0
+  for (let t = 0; t < count && k < tris; t++) if (taken[t]) triangles[k++] = t
+  return { vertices: out, triangles }
 }
 
 /** One-shot form: build the graph and grow from `seed` (tests, small meshes). */

@@ -200,6 +200,8 @@ export function AlignmentSection({
   const primaryIsAxis = !!primaryFit && (primaryFit.kind === 'cylinder' || primaryFit.kind === 'cone' || primaryFit.kind === 'line')
   const primaryTiles = primaryIsAxis ? AXIS_TILES : PLANE_TILES
   const secondaryAlong = !!primaryFit && !!secondaryFit && secondaryAlongPrimary(primaryFit, secondaryFit)
+  // QUICKSURFACE names what an axis secondary (a cylinder, cone or line) becomes as it names an axis primary: X Axis, Y Axis, Z Axis (basic_part, 2026-11-11).
+  const secondaryIsAxis = secondaryFit?.kind === 'cylinder' || secondaryFit?.kind === 'cone' || secondaryFit?.kind === 'line'
   // A secondary running the primary's way takes the primary's own axis, as
   // QUICKSURFACE selects it (Top for a cylinder standing on Z Axis); one that
   // was there and no longer runs that way moves off it.
@@ -464,7 +466,7 @@ export function AlignmentSection({
             onFlip={() => useStore.getState().flipAlignmentAxis('secondary')}
           />
           {(alignDraft.secondary !== null || alignDraft.secondaryPicks.length >= ALIGN_PICK_COUNT.secondary) && <div className="toolrow" role="group" aria-label="Secondary feature becomes" data-test="align-secondary-tiles">
-            {PLANE_TILES.map(({ label, axis }) => <button key={label} type="button"
+            {(secondaryIsAxis ? AXIS_TILES : PLANE_TILES).map(({ label, axis }) => <button key={label} type="button"
               data-test={`align-secondary-${label.toLowerCase()}`} disabled={secondaryAlong ? axisIndex(axis) !== axisIndex(alignDraft.primaryAxis) : axisIndex(axis) === axisIndex(alignDraft.primaryAxis)}
               className={axisIndex(alignDraft.secondaryAxis) === axisIndex(axis) ? 'on' : undefined}
               aria-pressed={axisIndex(alignDraft.secondaryAxis) === axisIndex(axis)}

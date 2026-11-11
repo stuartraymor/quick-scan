@@ -28,18 +28,27 @@ export function planeDatum(
   const u = normalize(cross(up, normal)) ?? normalize(addScaled(right, normal, -dot(right, normal)))
   if (!u || region.length === 0) return undefined
   const frontU = normalize(addScaled(right, normal, -dot(right, normal))) ?? u
-  const v = cross(normal, u)
+  // The origin is the centre of the patch's bounding rectangle, boxed in the
+  // frame of the coordinate axis least along the normal (up first on a tie),
+  // as QUICKSURFACE 8.0.128 places a plane's point. For most planes that is
+  // up, the frame u already gives; test-models/bearinghousing Plane(3), its
+  // normal 2.4° off Y, is boxed along X: its point lands within 5e-6 mm.
+  const axes: Vec3[] = [up, right, cross(right, up)]
+  let along = axes[0]
+  for (const a of axes) if (Math.abs(dot(a, normal)) < Math.abs(dot(along, normal)) - 1e-12) along = a
+  const fu = along === up ? u : normalize(addScaled(along, normal, -dot(along, normal))) ?? u
+  const fv = cross(normal, fu)
   let uMin = Infinity, uMax = -Infinity, vMin = Infinity, vMax = -Infinity
   for (let i = 0; i < region.length; i++) {
     const j = 3 * region[i]
     const dx = positions[j] - onPlane[0], dy = positions[j + 1] - onPlane[1], dz = positions[j + 2] - onPlane[2]
-    const x = dx * u[0] + dy * u[1] + dz * u[2]
-    const y = dx * v[0] + dy * v[1] + dz * v[2]
+    const x = dx * fu[0] + dy * fu[1] + dz * fu[2]
+    const y = dx * fv[0] + dy * fv[1] + dz * fv[2]
     uMin = Math.min(uMin, x); uMax = Math.max(uMax, x)
     vMin = Math.min(vMin, y); vMax = Math.max(vMax, y)
   }
   if (!Number.isFinite(uMin + uMax + vMin + vMax)) return undefined
-  return { u, frontU, origin: addScaled(addScaled(onPlane, u, (uMin + uMax) / 2), v, (vMin + vMax) / 2) }
+  return { u, frontU, origin: addScaled(addScaled(onPlane, fu, (uMin + uMax) / 2), fv, (vMin + vMax) / 2) }
 }
 
 /** The tightest rectangle around the measured patch, in the plane itself, so

@@ -33,7 +33,9 @@ interface ExtractState {
 
 export const useExtract = create<ExtractState>((set) => ({
   constraint: 'none',
-  autoConstrain: false,
+  // On, as a fresh QUICKSURFACE 8.0.128 starts (2026-11-11: settings never
+  // changed — Auto Constrain ticked, 0.5° and 1 mm).
+  autoConstrain: true,
   coincidentAxis: false,
   tiltDeg: DEFAULT_TOLERANCES.tiltDeg,
   coincidenceMm: DEFAULT_TOLERANCES.coincidenceMm,

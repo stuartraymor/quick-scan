@@ -31,8 +31,8 @@ const tests = (html: string) => [...html.matchAll(/data-test="(extract-[a-z-]+)"
 describe('Extract primitives — QUICKSURFACE parity', () => {
   useShell.setState({ extractOpen: true })
 
-  it('defaults the Magic Wand to 1 degree, as QUICKSURFACE 8.0.128 opens (live, 2026-11-03)', () => {
-    expect(useMark.getState().wandDegrees).toBe(1)
+  it('defaults the Magic Wand to 10 degrees, as a fresh QUICKSURFACE 8.0.128 opens (2026-11-11)', () => {
+    expect(useMark.getState().wandDegrees).toBe(10)
   })
 
   it('has the selection options in QUICKSURFACE’s order, ending with Select all', () => {
@@ -81,8 +81,10 @@ describe('Extract primitives — QUICKSURFACE parity', () => {
     expect(at.every((i, n) => i >= 0 && (n === 0 || i > at[n - 1]))).toBe(true)
     const options = [...html.matchAll(/<option[^>]*>([^<]*)<\/option>/g)].map((m) => m[1].replace(/&#x27;/g, "'"))
     expect(options).toEqual(['Not constrained', 'Parallel to (OXY)', 'Parallel to (OYZ)', 'Parallel to (OXZ)', 'Perpendicular to (OXY)', 'Perpendicular to (OYZ)', 'Perpendicular to (OXZ)'])
-    // The tolerances start at QUICKSURFACE's 0.5 degrees and 1 mm, off until Auto Constrain is on; Analysis starts at 0.1 mm.
-    expect(html).toMatch(/data-test="extract-tilt"[^>]*value="0.5"[^>]*disabled|disabled[^>]*data-test="extract-tilt"/)
+    // Auto Constrain starts on, as in a fresh QUICKSURFACE 8.0.128 (2026-11-11), with its 0.5 degrees and 1 mm; Analysis starts at 0.1 mm.
+    expect(html).toMatch(/data-test="extract-auto-constrain"[^>]*checked/)
+    expect(html).toMatch(/data-test="extract-tilt"[^>]*value="0.5"/)
+    expect(html).not.toMatch(/data-test="extract-tilt"[^>]*disabled/)
     expect(html).toMatch(/data-test="extract-analysis-tolerance"[^>]*value="0.1"/)
     expect(html).toMatch(/data-test="extract-analysis-apply"[^>]*disabled/)
   })

@@ -252,6 +252,7 @@ export function computeDatumAlignment(
   // stands off that corner by tan(tilt) × its height above the other datums.
   // Other datum kinds and degenerate crossings keep the centroid.
   const planeChain = primary.fit.kind === 'plane'
+  const axisSecondary = planeChain && secondary !== null && !along && (secondary.fit.kind === 'cylinder' || secondary.fit.kind === 'cone' || secondary.fit.kind === 'line')
   if (secondary) {
     const k = axisIndex(secondary.axis)
     const v = planeChain && !along && secondary.fit.kind === 'plane' ? planeCrossing(rigid, secondary.fit, k, constrained) : null
@@ -268,7 +269,22 @@ export function computeDatumAlignment(
         ? planeCrossing(rigid, origin, open[0], constrained)
         : null
     if (v !== null) zeroCoord(open[0], v)
-    else zeroAt(originAnchor(rigid, origin, primary), [0, 1, 2])
+    // A plane tertiary square to the one coordinate still open (Plane(1)
+    // again, which QUICKSURFACE fills in itself) cannot fix it: it is left
+    // to the secondary axis below, as QUICKSURFACE leaves it.
+    else if (!(planeChain && origin.kind === 'plane' && open.length === 1 && axisSecondary)) zeroAt(originAnchor(rigid, origin, primary), [0, 1, 2])
+  }
+  // A cylinder or line secondary after a plane primary fixes its own
+  // coordinate where its axis crosses the primary plane, when nothing else
+  // has: QUICKSURFACE (basic_part, 2026-11-11: Plane Top, Cylinder X Axis,
+  // tertiary Plane(1)) puts x = 0 where the cylinder's axis meets z = 0 —
+  // 1049 mm from the part's middle for an axis tilted 3.3° off the plane.
+  if (axisSecondary && secondary) {
+    const k = axisIndex(secondary.axis)
+    if (!constrained.has(k)) {
+      const at = originAnchor(rigid, secondary.fit, primary)
+      if (at !== secondary.fit.center) zeroAt(at, [k])
+    }
   }
   // What is still open is centred on the primary itself where it has a
   // measured centre: a plane's datum origin, or a cylinder's mid-axis point —

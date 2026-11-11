@@ -22,12 +22,14 @@ it('recovers the same partial cylinder after translation by 100000 mm',()=>{
   expect(f).toBeTruthy();expect(Math.abs(f.radius-10)).toBeLessThan(.01);expect(f.sigma).toBeLessThan(.005);expect(f.length).toBe(16)
  }
 })
-it('minimizes perpendicular plane RMS on correlated heights instead of projecting the previous normal',()=>{
+it('holds a plane perpendicular by projecting its own normal, as QUICKSURFACE does',()=>{
+ // QUICKSURFACE 8.0.128 turns the fitted normal square to the other
+ // direction (test-models/bearinghousing: Plane(2) held perpendicular to
+ // Plane(1) lands on native within 2e-5 degrees this way, 0.008 degrees off
+ // when the normal is refitted across the points). The points here would
+ // pull a refit towards (1,-1,0); the projection keeps (1,0,0).
  const p:number[]=[]
- // The true unconstrained plane is x + z = 0. When forced vertical,
- // the best normal on the xy projection is close to (1,-1,0).
  for(let y=-20;y<=20;y++)for(const t of [-.1,.1])p.push(y+t,y,-y-t)
  const f=constrainFit({...plane,normal:[Math.SQRT1_2,0,Math.SQRT1_2]},Float32Array.from(p),ids(p),'perpendicular-oxy') as PlaneFit
- console.log('held vertical plane RMS (mm)',f.sigma)
- expect(f.normal[2]).toBeCloseTo(0,10);expect(f.sigma).toBeLessThan(.071)
+ expect(f.normal[2]).toBeCloseTo(0,10);expect(Math.abs(f.normal[0])).toBeCloseTo(1,10);expect(f.normal[1]).toBeCloseTo(0,10)
 })

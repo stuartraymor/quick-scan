@@ -54,6 +54,9 @@ try {
 
   await page.click('[data-test=ribbon-extract-primitives]')
   if (await page.$eval('[data-test=extract-tool-wand]', el => el.getAttribute('aria-pressed') !== 'true')) await page.click('[data-test=extract-tool-wand]')
+  // Auto Constrain opens on, as QUICKSURFACE's does; this script makes its
+  // first plane free and turns Auto Constrain on itself.
+  await page.evaluate(async () => (await import('/src/state/extractStore.ts')).useExtract.getState().setAutoConstrain(false))
 
   // Plane 1: the first patch, unconstrained.
   await clickAt(12, 12, 3 + 12 * T1)

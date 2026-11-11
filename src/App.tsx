@@ -1062,6 +1062,10 @@ export default function App() {
     // While Analysis shows only the far points, the marked area is the one the
     // preview was fitted to.
     const selection = (useExtract.getState().analysed && extractPreview ? extractPreview.selection : sceneRef.current?.paintedVertices()) ?? new Uint32Array(0)
+    // What is fitted, as QUICKSURFACE fits it: every marked vertex, each once,
+    // no outliers dropped (test-models: basic_part's and bearinghousing's
+    // planes; machine_part's hole, whose held cylinder lands on native's radius
+    // and axis within 2e-6 mm and on the fit RMS QUICKSURFACE saves to 2e-11).
     useExtract.getState().setAnalysed(null)
     const store = useStore.getState()
     if (extractFitting) return
@@ -1073,6 +1077,7 @@ export default function App() {
       store.startDraft(kind)
       if (kind === 'line') store.setDraftMethod('fit')
       store.setSelectMode('paint')
+      useStore.setState((s) => (s.draft ? { draft: { ...s.draft, settings: { ...s.draft.settings, sigma: 0 } } } : {}))
       await runDraftPaintFit(kind, selection)
       let d = useStore.getState().draft
       const held = d && d.status !== 'failed' && d.fit ? constrainedPreview(d.fit, selection) : null

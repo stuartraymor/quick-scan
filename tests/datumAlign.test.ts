@@ -67,7 +67,11 @@ describe('computeDatumAlignment', () => {
     const uv = [[-6,-4], [10,-4], [-6,8], [-5,-3], [-5,-3]]
     const pos = Float32Array.from(uv.flatMap(([x,y]) => p.center.map((a,i) => a+x*u[i]+y*v[i])))
     p.datum = planeDatum(pos, [0,1,2,3,4], n, p.center)!
-    const origin = p.center.map((a,i) => a+2*u[i]+2*v[i])
+    // The patch is boxed along the axis least along the normal, as QUICKSURFACE
+    // places a plane's point: here X (0.3 against Y's 0.5).
+    const nn = normalize(n)!, fu = normalize([1-nn[0]*nn[0], -nn[0]*nn[1], -nn[0]*nn[2]])!, fv = cross(nn, fu)
+    const along = (w: number[]) => { const k = [0,1,2,3,4].map(j => [0,1,2].reduce((t,c) => t+(pos[3*j+c]-p.center[c])*w[c], 0)); return (Math.min(...k)+Math.max(...k))/2 }
+    const origin = p.center.map((a,i) => a+along(fu)*fu[i]+along(fv)*fv[i])
     p.datum.origin.forEach((x,i) => expect(x).toBeCloseTo(origin[i],4))
     const m = computeDatumAlignment({fit:p,axis},null,null,[100,200,-50])
     const moved = transformFit(p,m) as PlaneFit

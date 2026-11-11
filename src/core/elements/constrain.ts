@@ -209,16 +209,6 @@ export function withDirection(fit: FitData, pos: Float32Array, idx: ArrayLike<nu
   return null
 }
 
-/** Minimize squared orthogonal distances with a normal constrained to the
- * plane across ref. For isotropic scatter the initial orientation is as good. */
-function bestNormalAcross(pos:Float32Array, idx:ArrayLike<number>, ref:Vec3, initial:Vec3):Vec3 {
- const [u,v]=orthoBasis(ref), c=centroid(pos,idx)
- let xx=0,xy=0,yy=0
- for(let i=0;i<idx.length;i++){const p=sub(point(pos,idx[i]),c),x=dot(p,u),y=dot(p,v);xx+=x*x;xy+=x*y;yy+=y*y}
- if(Math.hypot(xx-yy,2*xy)<=1e-12*(xx+yy))return initial
- const t=.5*Math.atan2(2*xy,xx-yy)
- return alike(add(scale(u,-Math.sin(t)),scale(v,Math.cos(t))),initial)
-}
 /** Step 2's dropdown: the fit held parallel or perpendicular to a coordinate
  *  plane, or null when it cannot be (no direction, or it lies along the
  *  datum's normal and perpendicular is then undetermined). */
@@ -243,8 +233,11 @@ export function constrainFit(fit: FitData, pos: Float32Array, idx: ArrayLike<num
     if (ref) return withDirection(fit, pos, idx, dir, { through: ref.center })
     if (WORLD_AXIS_IDS.includes(constraint)) return withDirection(fit, pos, idx, dir, { through: [0, 0, 0] })
   }
-  const axis=ref ? directionOf(ref) : DATUM_NORMAL[target as keyof typeof DATUM_NORMAL]
-  return withDirection(fit,pos,idx,fit.kind==='plane' && axis && Math.abs(dot(axis,dir))<1e-8 ? bestNormalAcross(pos,idx,axis,dir) : dir)
+  // A plane held perpendicular keeps its own normal turned square to the
+  // other direction (the free normal projected), as QUICKSURFACE 8.0.128 does:
+  // test-models/bearinghousing, Plane(2) perpendicular to Plane(1), lands on
+  // its normal within 2e-5° this way and 0.008° off when refitted across.
+  return withDirection(fit,pos,idx,dir)
 }
 
 export interface Neighbour { id?: number; name: string; fit: FitData }
@@ -341,8 +334,12 @@ export function autoConstrainFit(fit: FitData, pos: Float32Array, idx: ArrayLike
     }
   }
   if (!best) return { fit, notes: [] }
-  const notes: string[] = [`${best.how} to ${best.to.name}${best.off > 0.005 ? ` (${best.off.toFixed(2)}° off)` : ''}`]
-  if(fit.kind==="plane" && best.how==="perpendicular") best.dir=bestNormalAcross(pos,idx,directionOf(best.to.fit)!,best.dir)
+  // For an axis and a plane, parallel *directions* mean that the axis is
+  // perpendicular to the plane — said so, as QUICKSURFACE's dropdown says it
+  // ("Perpendicular to Plane(1)" for a cylinder standing on it).
+  const mixed = (fit.kind === 'plane') !== (best.to.fit.kind === 'plane');
+  const parallel = (best.how === 'parallel') !== mixed;
+  const notes: string[] = [`${parallel ? 'parallel' : 'perpendicular'} to ${best.to.name}${best.off > 0.005 ? ` (${best.off.toFixed(2)}° off)` : ''}`]
   let out = withDirection(fit, pos, idx, best.dir)
   if (!out) return { fit, notes: [] }
   if (best.how === 'parallel') {
@@ -362,10 +359,6 @@ export function autoConstrainFit(fit: FitData, pos: Float32Array, idx: ArrayLike
       }
     }
   }
-  // For an axis and a plane, parallel *directions* mean that the axis is
-  // perpendicular to the plane. The dropdown describes the actual entities.
-  const mixed = (fit.kind === 'plane') !== (best.to.fit.kind === 'plane');
-  const parallel = (best.how === 'parallel') !== mixed;
   const mode = parallel ? 'parallel' : 'perpendicular';
   const choice: AutoChoice | undefined = best.to.id === undefined ? undefined : {
     id: `${mode}-el${best.to.id}`, label: `${parallel ? 'Parallel' : 'Perpendicular'} to ${best.to.name}`,

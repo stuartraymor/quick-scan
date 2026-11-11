@@ -89,9 +89,11 @@ export const useMark = create<MarkState>((set) => ({
   diameter: 2,
   count: 0,
   inverts: 0,
-  // QUICKSURFACE 8.0.128 opens both Extract primitives and Edit Scan on 1°
-  // (recorded live, 2026-11-03).
-  wandDegrees: 1,
+  // QUICKSURFACE 8.0.128 opens both Extract primitives and Edit Scan on 10°,
+  // the slider at its end (2026-11-11, twice: a session of its own and one
+  // started fresh after a crash; it keeps no tool settings between runs — the
+  // 1° recorded on 2026-11-03 was a value set in that session).
+  wandDegrees: 10,
   wandConnected: false,
   quickTools: true,
   resizes: { n: 0, direction: 1 },

@@ -1,3 +1,13 @@
+## 0.0.207 — Extract primitives and Align match QuickSurface on four test parts
+
+- Checked against QuickSurface 8.0.128 on four saved test parts (basic_part, bearinghousing, machine_part, lego): the same wand regions, constraints, primitives and alignment, compared on the numbers QuickSurface saves and exports.
+- A plane held perpendicular to another (by Auto Constrain or the constraint list) keeps its own fitted normal, turned square to the other, as QuickSurface does. Before, the normal was fitted again across the points, up to 0.008° off QuickSurface on bearinghousing.
+- A plane’s point (the centre of its patch, used as the origin when a plane sets it) is boxed along the coordinate axis least along the plane’s normal, as QuickSurface does. A plane whose normal is within a few degrees of Y was 0.07 mm off on bearinghousing.
+- Planes and cylinders are fitted on the marked vertices, each once, as QuickSurface does: a hole on machine_part lands on QuickSurface’s radius and axis within 0.000002 mm and on the fit RMS it saves.
+- A cylinder, cone or line as the secondary feature in Align offers X Axis, Y Axis and Z Axis, as QuickSurface does, and the origin goes where its axis crosses the primary plane.
+- Extract primitives starts with the Magic Wand at 10 degrees and Auto Constrain on, as a fresh QuickSurface does. Auto Constrain says “parallel to” or “perpendicular to” as QuickSurface’s list does.
+- Extract fits use every marked point. Before, points far from the fit were dropped as outliers; QuickSurface keeps them.
+
 ## 0.0.206 — Large open freeform cages make bodies
 
 - A freeform cage that ends in a tiny corner quad, where the surface's edge hooks back on itself, now makes a body. Before, Quick Scan refused such a cage when it could not be refined further. The two largest Auto Freeforms in a QuickSurface model on basic_part were like this; both now build as valid surfaces.
