@@ -3,7 +3,7 @@
 // hands it, what each slot holds, and the preview of where the part would go.
 // The actions that change it are the store's.
 
-import { AlignmentError, type AlignSlot, type AxisDir, axisIndex, computeDatumAlignment, describeRigid, fitFromAlignPicks, secondaryAlongPrimary, tertiaryClocks, tertiaryTileKind, translationToOrigin } from '../core/alignment'
+import { AlignmentError, type AlignSlot, type AxisDir, axisIndex, computeDatumAlignment, describeRigid, fitFromAlignPicks, hasDatumDirection, secondaryAlongPrimary, secondaryRole, tertiaryTileKind, translationToOrigin } from '../core/alignment'
 import type { Rigid } from '../core/deviation/rigid'
 import type { FitData, Vec3 } from '../core/types'
 import type { Element } from './elementModel'
@@ -45,13 +45,15 @@ export interface AlignDraft {
   tertiaryFlip?: boolean
 }
 
-/** QUICKSURFACE's tertiary row (8.0.128, controlled fixtures 2026-11-11):
- *  which tiles it shows, which are available and whether the choice turns
- *  the part. With no secondary the tiles are greyed and the tertiary is not
- *  used for the turn; with a secondary that clocks the rotation a plane's
- *  tiles stay available but change nothing, and an axis's are greyed; with a
- *  secondary running the primary's way the tertiary clocks the rotation, and
- *  only the tile on the primary's axis is greyed. A point has no tiles. */
+/** QUICKSURFACE's tertiary row (8.0.128, controlled fixtures 2026-11-11;
+ *  align sweep 2, 2026-11-12): which tiles it shows, which are available and
+ *  whether the choice turns the part. With no secondary, or one it ignores
+ *  (see secondaryRole), the tiles are greyed and the tertiary is not used;
+ *  with a secondary that clocks the rotation a plane's tiles stay available
+ *  but change nothing, and an axis's are greyed; after a 'cap' or point
+ *  secondary the tertiary clocks the rotation, and only the tile on the
+ *  primary's axis is greyed. After a point primary the secondary stands in
+ *  for the primary. A point tertiary has no tiles. */
 export interface TertiaryTiles {
   kind: 'plane' | 'axis' | null
   /** Tile axes in QUICKSURFACE's order. */
@@ -64,16 +66,17 @@ export interface TertiaryTiles {
 const PLANE_ORDER: AxisDir[] = ['z+', 'x+', 'y+']
 const AXIS_ORDER: AxisDir[] = ['x+', 'y+', 'z+']
 
-export function tertiaryTiles(primary: FitData | null, secondary: FitData | null, tertiary: FitData | null, primaryAxis: AxisDir): TertiaryTiles {
+export function tertiaryTiles(primary: FitData | null, secondary: FitData | null, tertiary: FitData | null, primaryAxis: AxisDir, secondaryAxis?: AxisDir): TertiaryTiles {
   const kind = tertiary ? tertiaryTileKind(tertiary) : null
   const order = kind === 'axis' ? AXIS_ORDER : PLANE_ORDER
   const none = { kind, order, enabled: [false, false, false] as [boolean, boolean, boolean], clocks: false }
   if (!kind || !primary || !secondary || !tertiary) return none
-  if (!secondaryAlongPrimary(primary, secondary))
-    return kind === 'plane' ? { ...none, enabled: [true, true, true] } : none
-  const p = axisIndex(primaryAxis)
-  const enabled = [0, 1, 2].map((i) => i !== p) as [boolean, boolean, boolean]
-  return { kind, order, enabled, clocks: tertiaryClocks(primary, secondary, tertiary) }
+  const clocking = (axis: AxisDir, by: FitData) => ({ kind, order, enabled: [0, 1, 2].map((i) => i !== axisIndex(axis)) as [boolean, boolean, boolean], clocks: !secondaryAlongPrimary(by, tertiary) })
+  if (!hasDatumDirection(primary)) return hasDatumDirection(secondary) && secondaryAxis ? clocking(secondaryAxis, secondary) : none
+  const role = secondaryRole(primary, primaryAxis, secondary, secondaryAxis)
+  if (role === 'turns') return kind === 'plane' ? { ...none, enabled: [true, true, true] } : none
+  if (role === 'cap' || role === 'point') return clocking(primaryAxis, primary)
+  return none
 }
 
 /** The tile shown chosen: the one picked if it is available, else the first
@@ -140,7 +143,7 @@ function alignSlotFit(ad: AlignDraft, elements: Element[], modelSize: number, sl
 /** The tertiary row for a draft, from the same fits the preview uses. */
 export function alignDraftTertiaryTiles(ad: AlignDraft, elements: Element[], modelSize: number): TertiaryTiles {
   const fit = (slot: AlignSlot, ref: number | null) => { try { return alignSlotFit(ad, elements, modelSize, slot, ref) } catch { return null } }
-  return tertiaryTiles(fit('primary', ad.primary), fit('secondary', ad.secondary), fit('origin', ad.origin), ad.primaryAxis)
+  return tertiaryTiles(fit('primary', ad.primary), fit('secondary', ad.secondary), fit('origin', ad.origin), ad.primaryAxis, ad.secondaryAxis)
 }
 
 export function alignmentPreview(
@@ -171,7 +174,7 @@ export function alignmentPreview(
       secondary ? { fit: secondary, axis: ad.secondaryAxis } : null,
       origin,
       centerOf,
-      tertiaryTurnAxis(ad, tertiaryTiles(primary, secondary, origin, ad.primaryAxis)),
+      tertiaryTurnAxis(ad, tertiaryTiles(primary, secondary, origin, ad.primaryAxis, ad.secondaryAxis)),
     )
     if (ad.keepOrigin && !origin) rigid.t.fill(0)
     return { preview: { rigid, ...describeRigid(rigid) }, error: null }
@@ -252,8 +255,11 @@ export function alignmentReferences(elements: Element[]): Element[] {
 export function alignmentSlotAccepts(slot: AlignSlot, element: Element): boolean {
   // The tertiary (zero point) takes any feature, as QUICKSURFACE lists them
   // all: a point, or the centre of a plane, axis or other primitive.
+  // QUICKSURFACE lists every feature in all three rows (align sweep 2,
+  // 2026-11-12): a sphere or point primary moves its centre to the origin, a
+  // point secondary sets the coordinates still open.
   return Boolean(element.fit) && (slot === 'origin' ? true
-    : providesRole(element.kind,'plane') || providesRole(element.kind,'axis'))
+    : providesRole(element.kind,'plane') || providesRole(element.kind,'axis') || providesRole(element.kind,'point'))
 }
 
 export function flippedAlignmentAxis(axis: AxisDir): AxisDir {

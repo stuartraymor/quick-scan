@@ -21,7 +21,7 @@ import {
   type Element,
 } from '../state/store'
 import { alignDraftTertiaryTiles, alignmentReferences, alignmentTileAxis, chosenTertiaryTile } from '../state/alignModel'
-import { secondaryAlongPrimary } from '../core/alignment'
+import { hasDatumDirection, secondaryAlongPrimary, secondaryRole } from '../core/alignment'
 import { InfoDot } from './InfoDot'
 import { providersFor } from './RefSelect'
 import { useLength } from '../app/useUnits'
@@ -203,6 +203,15 @@ export function AlignmentSection({
   const primaryIsAxis = !!primaryFit && (primaryFit.kind === 'cylinder' || primaryFit.kind === 'cone' || primaryFit.kind === 'line')
   const primaryTiles = primaryIsAxis ? AXIS_TILES : PLANE_TILES
   const secondaryAlong = !!primaryFit && !!secondaryFit && secondaryAlongPrimary(primaryFit, secondaryFit)
+  // QUICKSURFACE 8.0.128 (align sweep 2, 2026-11-12): a point or sphere
+  // primary has no tiles and no Flip, and leaves every secondary tile free; a
+  // point secondary has none either; a secondary it ignores for running the
+  // primary's way (an axis along an axis, a plane along a plane) has every
+  // tile greyed and none chosen.
+  const primaryIsPoint = !!primaryFit && !hasDatumDirection(primaryFit)
+  const secondaryIsPoint = !!secondaryFit && !hasDatumDirection(secondaryFit)
+  const secondaryRoleNow = primaryFit && !primaryIsPoint && alignDraft ? secondaryRole(primaryFit, alignDraft.primaryAxis, secondaryFit, alignDraft.secondaryAxis) : null
+  const secondaryAlongIgnored = secondaryAlong && secondaryRoleNow === 'ignored'
   // QUICKSURFACE names what an axis secondary (a cylinder, cone or line) becomes as it names an axis primary: X Axis, Y Axis, Z Axis (basic_part, 2026-11-11).
   const secondaryIsAxis = secondaryFit?.kind === 'cylinder' || secondaryFit?.kind === 'cone' || secondaryFit?.kind === 'line'
   // A secondary running the primary's way takes the primary's own axis, as
@@ -213,8 +222,8 @@ export function AlignmentSection({
   useEffect(() => {
     if (!primaryAxisNow || !secondaryAxisNow) return
     const same = axisIndex(secondaryAxisNow) === axisIndex(primaryAxisNow)
-    if (secondaryAlong && !same) setAlignmentAxis('secondary', primaryAxisNow)
-  }, [secondaryAlong, primaryAxisNow, secondaryAxisNow, secondaryFit, setAlignmentAxis])
+    if (secondaryAlong && !secondaryAlongIgnored && !primaryIsPoint && !same) setAlignmentAxis('secondary', primaryAxisNow)
+  }, [secondaryAlong, secondaryAlongIgnored, primaryIsPoint, primaryAxisNow, secondaryAxisNow, secondaryFit, setAlignmentAxis])
   // QUICKSURFACE's tertiary row: its tiles turn the part only when the
   // secondary runs the primary's way (see tertiaryTiles).
   const tertiary = alignDraft ? alignDraftTertiaryTiles(alignDraft, elements, modelSize) : null
@@ -424,7 +433,7 @@ export function AlignmentSection({
           <StepHead text="Primary feature" />
           <AlignSelect
             label={primaryIsAxis ? 'Axis' : 'Face'}
-            roles={['plane', 'axis']}
+            roles={['plane', 'axis', 'point']}
             value={alignDraft.primary}
             picks={alignDraft.primaryPicks.length}
             need={ALIGN_PICK_COUNT.primary}
@@ -436,8 +445,9 @@ export function AlignmentSection({
             onReferencePick={() => useStore.getState().beginAlignmentReferencePick('primary')}
             referencePicking={alignDraft.referencePickSlot === 'primary'}
             onFlip={() => useStore.getState().flipAlignmentAxis('primary')}
+            flipDisabled={primaryIsPoint}
           />
-          {(alignDraft.primary !== null || alignDraft.primaryPicks.length >= ALIGN_PICK_COUNT.primary) && <div className="toolrow" role="group" aria-label="Primary feature becomes" data-test="align-primary-tiles">
+          {!primaryIsPoint && (alignDraft.primary !== null || alignDraft.primaryPicks.length >= ALIGN_PICK_COUNT.primary) && <div className="toolrow" role="group" aria-label="Primary feature becomes" data-test="align-primary-tiles">
             {primaryTiles.map((t) => (
               <button
                 key={t.label}
@@ -461,7 +471,7 @@ export function AlignmentSection({
           <StepHead text="Secondary feature" />
           <AlignSelect
             label="Direction"
-            roles={['plane', 'axis']}
+            roles={['plane', 'axis', 'point']}
             value={alignDraft.secondary}
             picks={alignDraft.secondaryPicks.length}
             need={ALIGN_PICK_COUNT.secondary}
@@ -473,15 +483,16 @@ export function AlignmentSection({
             onReferencePick={() => useStore.getState().beginAlignmentReferencePick('secondary')}
             referencePicking={alignDraft.referencePickSlot === 'secondary'}
             onFlip={() => useStore.getState().flipAlignmentAxis('secondary')}
+            flipDisabled={secondaryIsPoint}
           />
-          {(alignDraft.secondary !== null || alignDraft.secondaryPicks.length >= ALIGN_PICK_COUNT.secondary) && <div className="toolrow" role="group" aria-label="Secondary feature becomes" data-test="align-secondary-tiles">
+          {!secondaryIsPoint && (alignDraft.secondary !== null || alignDraft.secondaryPicks.length >= ALIGN_PICK_COUNT.secondary) && <div className="toolrow" role="group" aria-label="Secondary feature becomes" data-test="align-secondary-tiles">
             {/* The primary's own axis is greyed. A secondary left on it (the
                 primary moved there afterwards) is ignored, as QUICKSURFACE
                 ignores it (see computeDatumAlignment). */}
             {(secondaryIsAxis ? AXIS_TILES : PLANE_TILES).map(({ label, axis }) => <button key={label} type="button"
-              data-test={`align-secondary-${label.toLowerCase()}`} disabled={secondaryAlong ? axisIndex(axis) !== axisIndex(alignDraft.primaryAxis) : axisIndex(axis) === axisIndex(alignDraft.primaryAxis)}
-              className={axisIndex(alignDraft.secondaryAxis) === axisIndex(axis) ? 'on' : undefined}
-              aria-pressed={axisIndex(alignDraft.secondaryAxis) === axisIndex(axis)}
+              data-test={`align-secondary-${label.toLowerCase()}`} disabled={primaryIsPoint ? false : secondaryAlongIgnored ? true : secondaryAlong ? axisIndex(axis) !== axisIndex(alignDraft.primaryAxis) : axisIndex(axis) === axisIndex(alignDraft.primaryAxis)}
+              className={!secondaryAlongIgnored && axisIndex(alignDraft.secondaryAxis) === axisIndex(axis) ? 'on' : undefined}
+              aria-pressed={!secondaryAlongIgnored && axisIndex(alignDraft.secondaryAxis) === axisIndex(axis)}
               onClick={() => setAlignmentAxis('secondary', alignmentTileAxis(alignDraft.secondaryAxis, axis))}>{label}</button>)}
           </div>}
           <StepHead text="Tertiary feature" />

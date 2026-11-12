@@ -109,17 +109,58 @@ function datumDirection(fit: FitData): Vec3 | null {
 }
 
 /** Whether a secondary runs the primary's way — too near parallel to clock
- *  a rotation — so it can only stand on the primary's own axis. */
+ *  a rotation. QUICKSURFACE 8.0.128 counts directions within 5° as running
+ *  the same way (align sweep 2, 2026-11-12: a cylinder 4.99° off the
+ *  primary's axis has every tile greyed and does not turn the part; 5.01°
+ *  turns it). */
 export function secondaryAlongPrimary(primary: FitData, secondary: FitData): boolean {
   const a = datumDirection(primary), b = datumDirection(secondary)
-  return !!a && !!b && acuteAngle(normalize(a)!, b) < MIN_CLOCK_ANGLE
+  return !!a && !!b && acuteAngle(normalize(a)!, b) < ALONG_ANGLE
 }
 
-/** Whether the tertiary clocks the rotation, as QUICKSURFACE lets it: the
- *  secondary runs the primary's way, and the tertiary is a plane or an axis
- *  that does not. */
-export function tertiaryClocks(primary: FitData, secondary: FitData, tertiary: FitData): boolean {
-  return tertiaryTileKind(tertiary) !== null && secondaryAlongPrimary(primary, secondary) && !secondaryAlongPrimary(primary, tertiary)
+const ALONG_ANGLE = 5
+
+/** Whether a datum has a direction (a plane, axis or circle) rather than
+ *  being a point (a point, a sphere's centre). */
+export function hasDatumDirection(fit: FitData): boolean {
+  return datumDirection(fit) !== null
+}
+
+/** What a secondary does, as QUICKSURFACE 8.0.128 treats it (align sweeps,
+ *  2026-11-11 and -12):
+ *  - 'turns': it clocks the rotation;
+ *  - 'cap': it runs the primary's way but is the other sort (a plane across
+ *    an axis primary, or an axis square to a plane primary) — it stands on
+ *    the primary's axis, sets its own zero, and the tertiary clocks;
+ *  - 'point': a point or sphere — it sets the coordinates still open, and
+ *    the tertiary clocks;
+ *  - 'ignored': an axis along an axis primary, a plane parallel to a plane
+ *    primary, or a secondary left on the primary's own axis — the part lands
+ *    on the primary alone and the tertiary is ignored with it;
+ *  - 'none': there is no secondary. */
+export type SecondaryRole = 'none' | 'ignored' | 'turns' | 'cap' | 'point'
+
+export function secondaryRole(primary: FitData, primaryAxis: AxisDir, secondary: FitData | null, secondaryAxis?: AxisDir): SecondaryRole {
+  if (!secondary) return 'none'
+  if (!hasDatumDirection(secondary)) return 'point'
+  if (secondaryAlongPrimary(primary, secondary)) return (secondary.kind === 'plane') === (primary.kind === 'plane') ? 'ignored' : 'cap'
+  return secondaryAxis && axisIndex(secondaryAxis) === axisIndex(primaryAxis) ? 'ignored' : 'turns'
+}
+
+/** Where an axis primary is zero along itself when nothing else sets it: a
+ *  cylinder's middle, a cone's apex (align sweep 2: Cone primary alone, on
+ *  X or Z Axis, with or without Flip — the apex lands on 0). */
+function axialZeroOf(fit: FitData): Vec3 | null {
+  if (fit.kind === 'cylinder') return fit.center
+  if (fit.kind === 'cone') {
+    const tan = Math.tan((fit.halfAngle * Math.PI) / 180)
+    const a = normalize(fit.axis)
+    if (!a || !(tan > 1e-9)) return fit.center
+    const d = fit.radius / tan
+    if (!Number.isFinite(d)) return fit.center
+    return [fit.center[0] - a[0] * d, fit.center[1] - a[1] * d, fit.center[2] - a[2] * d]
+  }
+  return null
 }
 
 /** The tiles QUICKSURFACE shows for a tertiary feature: Top / Right / Front
@@ -159,9 +200,9 @@ const MIN_CLOCK_ANGLE = 0.2
  * the rotation pivots about the primary datum's centre so the part does not
  * fly off screen.
  *
- * `tertiaryAxis` is the axis the tertiary's direction becomes when the
- * secondary runs the primary's way and so cannot clock the rotation: the
- * tertiary clocks it instead (see tertiaryClocks).
+ * `tertiaryAxis` is the axis the tertiary's direction becomes when it clocks
+ * the rotation — after a 'cap' or 'point' secondary (see secondaryRole and
+ * alignModel's tertiaryTiles); null when it does not.
  */
 export function computeDatumAlignment(
   primary: DatumSpec,
@@ -170,42 +211,58 @@ export function computeDatumAlignment(
   centerOf?: Vec3 | null,
   tertiaryAxis?: AxisDir | null,
 ): Rigid {
-  // A secondary set on the primary's own axis (Front after a Front primary —
-  // QUICKSURFACE greys only Top and starts a plane secondary on Front) is
-  // ignored, rotation and zero alike, unless it runs the primary's way:
-  // QUICKSURFACE lands the part on the primary alone (align sweep,
-  // 2026-11-11: bearinghousing, machine_part and lego, to 1e-4).
-  const secondary = secondaryIn && axisIndex(secondaryIn.axis) === axisIndex(primary.axis) && !secondaryAlongPrimary(primary.fit, secondaryIn.fit) ? null : secondaryIn
-  const d1raw = datumDirection(primary.fit)
-  if (!d1raw)
-    throw new AlignmentError(
-      'Levelling needs a direction — use a plane, cylinder, line, or three picked points.',
-    )
-  const d1 = normalize(d1raw)!
+  // A point or sphere as the primary: QUICKSURFACE moves its centre to the
+  // origin, and the secondary turns the part as a primary on its own would,
+  // the tertiary clocking it (align sweep 2, 2026-11-12: Sphere primary
+  // alone, with a cylinder on X or Y Axis, and with a Front tertiary).
+  if (!hasDatumDirection(primary.fit)) {
+    const rigid = secondaryIn && hasDatumDirection(secondaryIn.fit)
+      ? computeDatumAlignment(secondaryIn, origin && tertiaryAxis ? { fit: origin, axis: tertiaryAxis } : null, null)
+      : identityRigid()
+    const c = primary.fit.center, out = new Float64Array(3)
+    rigidRotate(rigid, c[0], c[1], c[2], out)
+    rigid.t[0] = -out[0]
+    rigid.t[1] = -out[1]
+    rigid.t[2] = -out[2]
+    return rigid
+  }
+  const role = secondaryRole(primary.fit, primary.axis, secondaryIn?.fit ?? null, secondaryIn?.axis ?? primary.axis)
+  // An ignored secondary takes the tertiary with it: QUICKSURFACE lands the
+  // part on the primary alone (align sweeps: a secondary left on the
+  // primary's axis; cylinders and cones along the primary cylinder, with a
+  // sphere, cone, cylinder, Origin or plane tertiary; Top along a Top plane
+  // with a plane tertiary — all as the primary alone, to 1e-4).
+  const secondary = role === 'ignored' || role === 'none' ? null : secondaryIn
+  const d1 = normalize(datumDirection(primary.fit)!)!
   const e1 = axisVector(primary.axis)
 
   const m = identityRigid()
 
-  // A secondary running the primary's way — the top face of a cylinder taken
-  // as primary, say — cannot clock the rotation, but QUICKSURFACE takes it as
-  // the primary's own axis: the primary turns the part, and the secondary only
-  // sets the zero along that axis.
-  const along = secondary !== null && secondaryAlongPrimary(primary.fit, secondary.fit)
-  if (secondary && along) {
-    if (axisIndex(secondary.axis) !== axisIndex(primary.axis))
-      throw new AlignmentError("This feature runs the primary's way — it can only become the primary's own axis.")
-  }
+  // A 'cap' secondary — the top face of a cylinder taken as primary, say —
+  // cannot clock the rotation, but QUICKSURFACE takes it as the primary's own
+  // axis: the primary turns the part, and the secondary only sets the zero
+  // along that axis.
+  const along = role === 'cap'
+  if (secondary && along && axisIndex(secondary.axis) !== axisIndex(primary.axis))
+    throw new AlignmentError("This feature runs the primary's way — it can only become the primary's own axis.")
   const datum = primary.fit.kind === 'plane' ? planeDatumOf(primary.fit) : undefined
-  // What clocks the rotation: the secondary, or — when it runs the primary's
-  // way — the tertiary, on its own tile's axis. QUICKSURFACE 8.0.128
-  // (controlled fixtures, 2026-11-11: Cylinder Z Axis, its cap plane Top,
-  // a side plane tertiary) turns the side plane's normal onto Right or Front
-  // as its tile says, and onto the negative side with Flip.
+  // What clocks the rotation: a turning secondary, or — after a 'cap' or a
+  // point secondary — the tertiary, on its own tile's axis. QUICKSURFACE
+  // 8.0.128 (controlled fixtures, 2026-11-11: Cylinder Z Axis, its cap plane
+  // Top, a side plane tertiary; align sweep 2: Origin or a sphere as the
+  // secondary, after a cylinder or a tilted plane) turns the tertiary onto
+  // its tile, and onto the negative side with Flip.
   const clock: DatumSpec | null =
-    secondary && !along ? secondary
-      : secondary && along && origin && tertiaryAxis && tertiaryClocks(primary.fit, secondary.fit, origin) && axisIndex(tertiaryAxis) !== axisIndex(primary.axis)
+    role === 'turns' ? secondary
+      : (role === 'cap' || role === 'point') && origin && tertiaryAxis && hasDatumDirection(origin) && axisIndex(tertiaryAxis) !== axisIndex(primary.axis)
         ? { fit: origin, axis: tertiaryAxis }
         : null
+  // The tertiary sets coordinates only after a turning secondary; after the
+  // others it clocks or is ignored (align sweep 2: a sphere tertiary after a
+  // cylinder along the primary changes nothing). With no secondary at all the
+  // panel drops the tertiary before it gets here, as QUICKSURFACE ignores it;
+  // a caller that passes one still has it set what is open.
+  const zeroPoint = role === 'turns' || role === 'none' ? origin : null
   // R = Σₖ eₖ ⊗ dₖ maps the datum frame onto the global one: d1 onto e1 and
   // d2, square to d1, onto e2.
   const turn = (d2: Vec3, e2: Vec3) => {
@@ -222,7 +279,9 @@ export function computeDatumAlignment(
       throw new AlignmentError('Levelling and rotation cannot use the same axis.')
     // Project the secondary direction perpendicular to the primary: the
     // primary always wins exactly, the secondary only clocks.
-    turn(normalize(addScaled(d2raw, d1, -dot(d2raw, d1)))!, axisVector(clock.axis))
+    const d2 = normalize(addScaled(d2raw, d1, -dot(d2raw, d1)))
+    if (!d2) throw new AlignmentError("This feature runs the primary's way — it cannot turn the part.")
+    turn(d2, axisVector(clock.axis))
   } else {
     // Nothing clocks the rotation: QUICKSURFACE keeps the old axis least along
     // the primary's direction (leaving out the axis the primary lands on; Y,
@@ -281,40 +340,41 @@ export function computeDatumAlignment(
   // stands off that corner by tan(tilt) × its height above the other datums.
   // Other datum kinds and degenerate crossings keep the centroid.
   const planeChain = primary.fit.kind === 'plane'
-  const axisSecondary = planeChain && secondary !== null && !along && (secondary.fit.kind === 'cylinder' || secondary.fit.kind === 'cone' || secondary.fit.kind === 'line')
-  if (secondary) {
+  const pd = primary.fit.kind === 'cylinder' || primary.fit.kind === 'cone' ? primary.fit.axis : primary.fit.kind === 'line' ? primary.fit.dir : null
+  const kp = axisIndex(primary.axis)
+  const axisSecondary = planeChain && role === 'turns' && secondary !== null && (secondary.fit.kind === 'cylinder' || secondary.fit.kind === 'cone' || secondary.fit.kind === 'line')
+  // Where a turning secondary puts the zero along an axis primary, when the
+  // tertiary does not (align sweep 2: a sphere tertiary wins over both):
+  // a plane where the axis crosses it, or — parallel to the axis — at its
+  // own point (Cylinder Z Axis, Front: z = 0 at Front's origin); an axis at
+  // the foot of the common perpendicular on the primary's axis (a cylinder
+  // 5.01° off: z = −54.921, not its middle's −49.6).
+  let axialFallback: Vec3 | null = null
+  if (secondary && role === 'point') zeroAt(secondary.fit.center, [0, 1, 2])
+  else if (secondary) {
     const k = axisIndex(secondary.axis)
     const v = planeChain && !along && secondary.fit.kind === 'plane' ? planeCrossing(rigid, secondary.fit, k, constrained) : null
     if (v !== null) zeroCoord(k, v)
+    else if (pd && !along) zeroAt(secondary.fit.center, datumCoords(secondary).filter((i) => i !== kp))
     else zeroAt(secondary.fit.center, datumCoords(secondary))
-    // A plane secondary after an axis primary sets the coordinate along the
-    // axis where the axis crosses the plane, as QUICKSURFACE does (align
-    // sweep, 2026-11-11: lego and machine_part, cylinder on X or Z Axis,
-    // within 0.001 mm). Before, the cylinder's own middle stayed at zero.
-    const pd = primary.fit.kind === 'cylinder' || primary.fit.kind === 'cone' ? primary.fit.axis : primary.fit.kind === 'line' ? primary.fit.dir : null
-    if (pd && !along && secondary.fit.kind === 'plane') {
-      const n = secondary.fit.normal, c = primary.fit.center, den = dot(pd, n)
-      if (Math.abs(den) > Math.sin((MIN_CLOCK_ANGLE * Math.PI) / 180) * Math.hypot(...pd) * Math.hypot(...n)) {
-        const sAt = (dot(secondary.fit.center, n) - dot(c, n)) / den
-        zeroAt([c[0] + sAt * pd[0], c[1] + sAt * pd[1], c[2] + sAt * pd[2]], [axisIndex(primary.axis)])
-      }
-    }
+    if (pd && !along) axialFallback = axialZeroFromSecondary(primary.fit.center, pd, secondary.fit)
   }
-  if (origin) {
+  if (zeroPoint) {
     const open = [0, 1, 2].filter((i) => !constrained.has(i))
     const v =
       // A cylinder secondary too (native 0.0.198: Plane Top, tilted Cylinder
       // to X, tilted Plane tertiary → the tertiary's crossing). Only after a
       // plane primary: cylinder-primary combinations remain a separate case.
-      planeChain && (secondary === null || secondary.fit.kind === 'plane' || secondary.fit.kind === 'cylinder') && origin.kind === 'plane' && open.length === 1
-        ? planeCrossing(rigid, origin, open[0], constrained)
+      planeChain && secondary !== null && (secondary.fit.kind === 'plane' || secondary.fit.kind === 'cylinder') && zeroPoint.kind === 'plane' && open.length === 1
+        ? planeCrossing(rigid, zeroPoint, open[0], constrained)
         : null
     if (v !== null) zeroCoord(open[0], v)
     // A plane tertiary square to the one coordinate still open (Plane(1)
     // again, which QUICKSURFACE fills in itself) cannot fix it: it is left
     // to the secondary axis below, as QUICKSURFACE leaves it.
-    else if (!(planeChain && origin.kind === 'plane' && open.length === 1 && axisSecondary)) zeroAt(originAnchor(rigid, origin, primary), [0, 1, 2])
+    else if (!(planeChain && zeroPoint.kind === 'plane' && open.length === 1 && axisSecondary)) zeroAt(originAnchor(rigid, zeroPoint, primary), [0, 1, 2])
   }
+  if (axialFallback) zeroAt(axialFallback, [kp])
   // A cylinder or line secondary after a plane primary fixes its own
   // coordinate where its axis crosses the primary plane, when nothing else
   // has: QUICKSURFACE (basic_part, 2026-11-11: Plane Top, Cylinder X Axis,
@@ -328,13 +388,40 @@ export function computeDatumAlignment(
     }
   }
   // What is still open is centred on the primary itself where it has a
-  // measured centre: a plane's datum origin, or a cylinder's mid-axis point —
-  // QUICKSURFACE (Cylinder primary on Z Axis alone, 0.0.198 QSF fixture) puts
-  // the cylinder's centre at z = 0, not the scan's box centre. Others keep
-  // centring on the box.
-  if (centerOf) zeroAt(datum?.origin ?? (primary.fit.kind === 'cylinder' ? primary.fit.center : centerOf), [0, 1, 2])
+  // measured centre: a plane's datum origin, a cylinder's mid-axis point or
+  // a cone's apex — QUICKSURFACE (Cylinder primary on Z Axis alone, 0.0.198
+  // QSF fixture) puts the cylinder's centre at z = 0, not the scan's box
+  // centre. Others keep centring on the box.
+  if (centerOf) zeroAt(datum?.origin ?? axialZeroOf(primary.fit) ?? centerOf, [0, 1, 2])
 
   return rigid
+}
+
+/** The point on an axis primary (through `c` along `pd`) where a turning
+ *  secondary puts its zero: where the axis crosses a plane secondary, the
+ *  plane's own point projected onto the axis when it runs alongside, or the
+ *  foot of the common perpendicular with an axis secondary. Null for anything
+ *  else. */
+function axialZeroFromSecondary(c: Vec3, pd: Vec3, s: FitData): Vec3 | null {
+  const a = normalize(pd)
+  if (!a) return null
+  const at = (t: number): Vec3 | null => (Number.isFinite(t) ? [c[0] + t * a[0], c[1] + t * a[1], c[2] + t * a[2]] : null)
+  const rel = (p: Vec3): Vec3 => [p[0] - c[0], p[1] - c[1], p[2] - c[2]]
+  if (s.kind === 'plane') {
+    const n = normalize(s.normal)
+    if (!n) return null
+    const den = dot(a, n)
+    // MIN_CLOCK_ANGLE is in degrees, as acuteAngle returns.
+    if (Math.abs(den) > Math.sin((MIN_CLOCK_ANGLE * Math.PI) / 180)) return at(dot(rel(s.center), n) / den)
+    return at(dot(rel(s.center), a))
+  }
+  const sd = s.kind === 'cylinder' || s.kind === 'cone' ? s.axis : s.kind === 'line' ? s.dir : null
+  const b = sd ? normalize(sd) : null
+  if (!b) return null
+  // Closest points of the two lines c + t·a and q + u·b.
+  const w = rel(s.center), ab = dot(a, b), den = 1 - ab * ab
+  if (!(den > 1e-12)) return at(dot(w, a))
+  return at((dot(w, a) - ab * dot(w, b)) / den)
 }
 
 /** A plane's alignment datum: its own, or — for a plane without one (opened
