@@ -78,8 +78,16 @@ describe('computeDatumAlignment', () => {
     moved.datum!.origin.forEach(x=>expect(x).toBeCloseTo(0,7))
     const i = axis === 'x+' ? 0 : axis === 'y+' ? 1 : 2
     expect(moved.normal[i]).toBeCloseTo(1,8)
-    if (axis === 'y+') expect(moved.datum!.frontU[0]).toBeCloseTo(1,8)
-    else expect(cross(moved.normal,moved.datum!.u)[1]).toBeCloseTo(1,8)
+    // QUICKSURFACE keeps the old axis least along the normal, leaving out the
+    // one the plane lands on, where it was (align sweep 2026-11-11, planes
+    // tilted about two axes): here X for z+ and y+ (0.3), Y for x+ (0.5
+    // against Z's 0.81). It stays in the plane square to the other one.
+    const keep = axis === 'x+' ? 1 : 0, other = 3 - i - keep
+    const old = [0, 0, 0]; old[keep] = 1
+    const turned = transformFit(pointFit(old as Vec3), m) as PointFit, zero = transformFit(pointFit([0, 0, 0]), m) as PointFit
+    const kept = turned.center.map((x, j) => x - zero.center[j])
+    expect(kept[other]).toBeCloseTo(0, 8)
+    expect(kept[keep]).toBeGreaterThan(0)
     const again = computeDatumAlignment({fit:moved,axis},null,null)
     expect(rigidRotationAngle(again)).toBeCloseTo(0,6)
     expect(Math.hypot(...again.t)).toBeCloseTo(0,7)
@@ -159,12 +167,13 @@ describe('computeDatumAlignment', () => {
     ).toThrow(AlignmentError)
   })
 
-  it('refuses a secondary datum on the same axis letter', () => {
+  it('ignores a secondary datum left on the primary’s own axis, as QUICKSURFACE does', () => {
     const p = planeFit([0, 0, 0], TILTED)
     const c = cylinderFit([5, 5, 5], SKEWED)
-    expect(() =>
-      computeDatumAlignment({ fit: p, axis: 'z+' }, { fit: c, axis: 'z-' }, null),
-    ).toThrow(AlignmentError)
+    const alone = computeDatumAlignment({ fit: p, axis: 'z+' }, null, null)
+    const ignored = computeDatumAlignment({ fit: p, axis: 'z+' }, { fit: c, axis: 'z-' }, null)
+    expect(Array.from(ignored.r)).toEqual(Array.from(alone.r))
+    expect(Array.from(ignored.t)).toEqual(Array.from(alone.t))
   })
 
   it('handles an antiparallel primary (180° flip)', () => {
@@ -211,17 +220,14 @@ describe('computeDatumAlignment', () => {
     expect(up.kind === 'plane' && up.normal[2]).toBeGreaterThan(0)
   })
 
-  it('centres the open coordinates on centerOf, without touching the constrained ones', () => {
+  it('centres the open coordinates on a plane’s own point, not on centerOf', () => {
+    // A plane with no fitted patch (constructed, or opened from a
+    // QUICKSURFACE project) is centred on its own point, as QUICKSURFACE
+    // centres on a plane's stored point (align sweep 2026-11-11).
     const p = planeFit([12, -3, 7], TILTED)
-    const center: Vec3 = [10, 20, 30]
-    const m = computeDatumAlignment({ fit: p, axis: 'z+' }, null, null, center)
+    const m = computeDatumAlignment({ fit: p, axis: 'z+' }, null, null, [10, 20, 30])
     const movedPlane = transformFit(p, m) as PlaneFit
-    const movedCenter = transformFit(pointFit(center), m) as PointFit
-    // The plane still owns Z and lands at 0; the part centre lands on the
-    // origin in the two coordinates the datum left open.
-    expect(movedPlane.center[2]).toBeCloseTo(0, 9)
-    expect(movedCenter.center[0]).toBeCloseTo(0, 9)
-    expect(movedCenter.center[1]).toBeCloseTo(0, 9)
+    movedPlane.center.forEach((x) => expect(x).toBeCloseTo(0, 9))
   })
 
   it('an origin point given, centerOf has nothing left to centre', () => {

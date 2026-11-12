@@ -214,7 +214,6 @@ export function AlignmentSection({
     if (!primaryAxisNow || !secondaryAxisNow) return
     const same = axisIndex(secondaryAxisNow) === axisIndex(primaryAxisNow)
     if (secondaryAlong && !same) setAlignmentAxis('secondary', primaryAxisNow)
-    else if (!secondaryAlong && same && secondaryFit) setAlignmentAxis('secondary', axisIndex(primaryAxisNow) === 1 ? 'z+' : 'y+')
   }, [secondaryAlong, primaryAxisNow, secondaryAxisNow, secondaryFit, setAlignmentAxis])
   // QUICKSURFACE's tertiary row: its tiles turn the part only when the
   // secondary runs the primary's way (see tertiaryTiles).
@@ -476,6 +475,9 @@ export function AlignmentSection({
             onFlip={() => useStore.getState().flipAlignmentAxis('secondary')}
           />
           {(alignDraft.secondary !== null || alignDraft.secondaryPicks.length >= ALIGN_PICK_COUNT.secondary) && <div className="toolrow" role="group" aria-label="Secondary feature becomes" data-test="align-secondary-tiles">
+            {/* The primary's own axis is greyed. A secondary left on it (the
+                primary moved there afterwards) is ignored, as QUICKSURFACE
+                ignores it (see computeDatumAlignment). */}
             {(secondaryIsAxis ? AXIS_TILES : PLANE_TILES).map(({ label, axis }) => <button key={label} type="button"
               data-test={`align-secondary-${label.toLowerCase()}`} disabled={secondaryAlong ? axisIndex(axis) !== axisIndex(alignDraft.primaryAxis) : axisIndex(axis) === axisIndex(alignDraft.primaryAxis)}
               className={axisIndex(alignDraft.secondaryAxis) === axisIndex(axis) ? 'on' : undefined}

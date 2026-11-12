@@ -165,11 +165,17 @@ const MIN_CLOCK_ANGLE = 0.2
  */
 export function computeDatumAlignment(
   primary: DatumSpec,
-  secondary: DatumSpec | null,
+  secondaryIn: DatumSpec | null,
   origin: FitData | null,
   centerOf?: Vec3 | null,
   tertiaryAxis?: AxisDir | null,
 ): Rigid {
+  // A secondary set on the primary's own axis (Front after a Front primary —
+  // QUICKSURFACE greys only Top and starts a plane secondary on Front) is
+  // ignored, rotation and zero alike, unless it runs the primary's way:
+  // QUICKSURFACE lands the part on the primary alone (align sweep,
+  // 2026-11-11: bearinghousing, machine_part and lego, to 1e-4).
+  const secondary = secondaryIn && axisIndex(secondaryIn.axis) === axisIndex(primary.axis) && !secondaryAlongPrimary(primary.fit, secondaryIn.fit) ? null : secondaryIn
   const d1raw = datumDirection(primary.fit)
   if (!d1raw)
     throw new AlignmentError(
@@ -189,7 +195,7 @@ export function computeDatumAlignment(
     if (axisIndex(secondary.axis) !== axisIndex(primary.axis))
       throw new AlignmentError("This feature runs the primary's way — it can only become the primary's own axis.")
   }
-  const datum = primary.fit.kind === 'plane' ? primary.fit.datum : undefined
+  const datum = primary.fit.kind === 'plane' ? planeDatumOf(primary.fit) : undefined
   // What clocks the rotation: the secondary, or — when it runs the primary's
   // way — the tertiary, on its own tile's axis. QUICKSURFACE 8.0.128
   // (controlled fixtures, 2026-11-11: Cylinder Z Axis, its cap plane Top,
@@ -200,6 +206,12 @@ export function computeDatumAlignment(
       : secondary && along && origin && tertiaryAxis && tertiaryClocks(primary.fit, secondary.fit, origin) && axisIndex(tertiaryAxis) !== axisIndex(primary.axis)
         ? { fit: origin, axis: tertiaryAxis }
         : null
+  // R = Σₖ eₖ ⊗ dₖ maps the datum frame onto the global one: d1 onto e1 and
+  // d2, square to d1, onto e2.
+  const turn = (d2: Vec3, e2: Vec3) => {
+    const d3 = cross(d1, d2), e3 = cross(e1, e2)
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) m.r[i * 3 + j] = e1[i] * d1[j] + e2[i] * d2[j] + e3[i] * d3[j]
+  }
   if (clock) {
     const d2raw = datumDirection(clock.fit)
     if (!d2raw)
@@ -210,41 +222,29 @@ export function computeDatumAlignment(
       throw new AlignmentError('Levelling and rotation cannot use the same axis.')
     // Project the secondary direction perpendicular to the primary: the
     // primary always wins exactly, the secondary only clocks.
-    const d2 = normalize(addScaled(d2raw, d1, -dot(d2raw, d1)))!
-    const e2 = axisVector(clock.axis)
-    const d3 = cross(d1, d2)
-    const e3 = cross(e1, e2)
-    // R = Σₖ eₖ ⊗ dₖ maps the datum frame onto the global one.
-    for (let i = 0; i < 3; i++) {
-      for (let j = 0; j < 3; j++) {
-        m.r[i * 3 + j] = e1[i] * d1[j] + e2[i] * d2[j] + e3[i] * d3[j]
-      }
-    }
-  } else if (datum) {
-    // A Front alignment keeps the projected X direction along X. Top
-    // and Right keep the projected Y direction along Y.
-    const front = axisIndex(primary.axis) === 1
-    const localU = front ? datum.frontU : datum.u
-    const localV = cross(d1, localU)
-    const targetU: Vec3 = front ? [1, 0, 0] : cross([0, 1, 0], e1)
-    const targetV = cross(e1, targetU)
-    for (let i = 0; i < 3; i++) {
-      for (let j = 0; j < 3; j++) {
-        m.r[i * 3 + j] = targetU[i] * localU[j] + targetV[i] * localV[j] + e1[i] * d1[j]
-      }
-    }
+    turn(normalize(addScaled(d2raw, d1, -dot(d2raw, d1)))!, axisVector(clock.axis))
   } else {
-    // Minimal rotation carrying d1 onto e1.
-    const axis = cross(d1, e1)
-    const sin = Math.hypot(...axis)
-    const cos = dot(d1, e1)
-    if (sin < 1e-12) {
-      if (cos < 0) {
-        // Antiparallel: a half-turn about any perpendicular.
-        setRotationAxisAngle(m, orthoBasis(d1)[0], Math.PI)
-      }
-    } else {
-      setRotationAxisAngle(m, axis, Math.atan2(sin, cos))
+    // Nothing clocks the rotation: QUICKSURFACE keeps the old axis least along
+    // the primary's direction (leaving out the axis the primary lands on; Y,
+    // then X, then Z on a tie) where it was, squared to the primary, and
+    // Flip turns the part half round it. Align sweep, 2026-11-11: planes
+    // tilted about two axes on Top, Right and Front and a 27° cylinder on X,
+    // Y and Z Axis, each with and without Flip, all to 1e-4.
+    const k1 = axisIndex(primary.axis)
+    let keep = -1
+    for (const i of [1, 0, 2]) if (i !== k1 && (keep < 0 || Math.abs(d1[i]) < Math.abs(d1[keep]) - 1e-12)) keep = i
+    const old: Vec3 = [0, 0, 0]
+    old[keep] = 1
+    const d2 = normalize(addScaled(old, d1, -dot(old, d1)))
+    if (d2) turn(d2, old)
+    else {
+      // Minimal rotation carrying d1 onto e1.
+      const axis = cross(d1, e1)
+      const sin = Math.hypot(...axis)
+      const cos = dot(d1, e1)
+      if (sin < 1e-12) {
+        if (cos < 0) setRotationAxisAngle(m, orthoBasis(d1)[0], Math.PI)
+      } else setRotationAxisAngle(m, axis, Math.atan2(sin, cos))
     }
   }
   const rigid = reorthonormalize(m)
@@ -287,6 +287,18 @@ export function computeDatumAlignment(
     const v = planeChain && !along && secondary.fit.kind === 'plane' ? planeCrossing(rigid, secondary.fit, k, constrained) : null
     if (v !== null) zeroCoord(k, v)
     else zeroAt(secondary.fit.center, datumCoords(secondary))
+    // A plane secondary after an axis primary sets the coordinate along the
+    // axis where the axis crosses the plane, as QUICKSURFACE does (align
+    // sweep, 2026-11-11: lego and machine_part, cylinder on X or Z Axis,
+    // within 0.001 mm). Before, the cylinder's own middle stayed at zero.
+    const pd = primary.fit.kind === 'cylinder' || primary.fit.kind === 'cone' ? primary.fit.axis : primary.fit.kind === 'line' ? primary.fit.dir : null
+    if (pd && !along && secondary.fit.kind === 'plane') {
+      const n = secondary.fit.normal, c = primary.fit.center, den = dot(pd, n)
+      if (Math.abs(den) > Math.sin((MIN_CLOCK_ANGLE * Math.PI) / 180) * Math.hypot(...pd) * Math.hypot(...n)) {
+        const sAt = (dot(secondary.fit.center, n) - dot(c, n)) / den
+        zeroAt([c[0] + sAt * pd[0], c[1] + sAt * pd[1], c[2] + sAt * pd[2]], [axisIndex(primary.axis)])
+      }
+    }
   }
   if (origin) {
     const open = [0, 1, 2].filter((i) => !constrained.has(i))
@@ -323,6 +335,22 @@ export function computeDatumAlignment(
   if (centerOf) zeroAt(datum?.origin ?? (primary.fit.kind === 'cylinder' ? primary.fit.center : centerOf), [0, 1, 2])
 
   return rigid
+}
+
+/** A plane's alignment datum: its own, or — for a plane without one (opened
+ *  from a QUICKSURFACE project, or constructed) — the heading planeDatum
+ *  takes from the normal, about the plane's own point. QUICKSURFACE aligns
+ *  on a plane's stored point and heading (align sweep, 2026-11-11: its
+ *  projects' planes centred off that point by up to 3 mm, and a flipped Top
+ *  turned about X, not Y, without it). */
+function planeDatumOf(fit: PlaneFit): PlaneFit['datum'] {
+  if (fit.datum) return fit.datum
+  const n = normalize(fit.normal)
+  if (!n) return undefined
+  const right: Vec3 = [1, 0, 0]
+  const frontU = normalize(addScaled(right, n, -dot(right, n)))
+  const u = normalize(cross([0, 1, 0], n)) ?? frontU
+  return u ? { u, frontU: frontU ?? u, origin: fit.center } : undefined
 }
 
 /** A plane datum's crossing of the coordinates already zeroed: the value

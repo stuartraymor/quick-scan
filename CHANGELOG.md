@@ -1,3 +1,13 @@
+## 0.0.209 — Align lands the part where QuickSurface does
+
+- Align by Coordinate System was checked against QuickSurface 8.0.128 on 53 set-ups across basic_part, bearinghousing, machine_part, lego and a fixture with planes tilted about two axes. Each was set up in QuickSurface's dialog and in Quick Scan's panel, and QuickSurface's transform was read back from its saved mesh. All 53 now give the same pose (rotation within 1e-6, position within 0.001 mm), apart from two that only QuickSurface's own stale tile greying allows (below). Before these fixes, 15 of the first 25 came out differently.
+- A primary on its own, plane or cylinder: QuickSurface keeps the old axis least along the primary's direction where it was, leaving out the axis the primary lands on, and Flip turns the part half round that axis. Quick Scan kept Y for Top and Right and X for Front, and turned a cylinder by the smallest rotation.
+- A cylinder primary with a plane secondary: the coordinate along the axis is zero where the axis crosses the plane, as in QuickSurface. Before, it stayed at the cylinder's middle, up to 17 mm off.
+- A secondary starts on QuickSurface's tile: Front for a plane and X Axis for a cylinder, cone or line, or Top / Z Axis when that one is the primary's own. Before, a cylinder started on Y Axis and the part came out turned 90°.
+- Changing the primary's tile no longer moves the secondary. A secondary left on the primary's own axis is then ignored, and the part lands on the primary alone, as in QuickSurface. Before, the secondary jumped to another axis.
+- Not copied: QuickSurface greys the secondary's tiles for the primary as it was when the secondary was chosen, and does not update them when the primary's tile changes afterwards, so there the primary's own axis can be clicked (and is then ignored). Quick Scan greys the primary's current axis.
+- A plane opened from a QuickSurface project, or constructed, aligns on its own point and its normal, as QuickSurface does. Before, it was centred on the scan's box, up to 14 mm off, and Flip turned it about another axis.
+
 ## 0.0.208 — Align’s tertiary feature has QuickSurface’s tiles and Flip
 
 - The tertiary feature in Align by Coordinate System has Top / Right / Front tiles for a plane and X Axis / Y Axis / Z Axis for a cylinder, cone or line, and a Flip that stays pressed, as QuickSurface 8.0.128 has.

@@ -193,6 +193,26 @@ export function withSlotRef(ad: AlignDraft, slot: AlignSlot, id: number | null):
   return { ...base, origin: id, originPicks: [] }
 }
 
+/** The tile QUICKSURFACE starts a secondary on: Front for a plane, X Axis
+ *  for a cylinder, cone or line (align sweep, 2026-11-11: Quick Scan started
+ *  a cylinder on Y Axis and the part came out turned 90°). */
+export function defaultSecondaryAxis(fit: FitData | undefined, current: AxisDir, primaryAxis: AxisDir): AxisDir {
+  if (!fit) return current
+  // With that tile greyed (the primary's own axis), Top or Z Axis: align
+  // sweep, primary set first: Front primary → plane on Top; Right primary →
+  // cylinder on Z Axis.
+  const order: AxisDir[] | null = fit.kind === 'plane' ? ['y+', 'z+', 'x+'] : fit.kind === 'cylinder' || fit.kind === 'cone' || fit.kind === 'line' ? ['x+', 'z+', 'y+'] : null
+  return order?.find((a) => a[0] !== primaryAxis[0]) ?? current
+}
+
+/** A slot filled with an element, the secondary starting on its default tile. */
+export function withSlotElement(ad: AlignDraft, slot: AlignSlot, id: number | null, elements: Element[]): AlignDraft {
+  const next = withSlotRef(ad, slot, id)
+  if (slot !== 'secondary' || id === null) return next
+  const fit = alignmentReferences(elements).find((e) => e.id === id)?.fit
+  return { ...next, secondaryAxis: defaultSecondaryAxis(fit, next.secondaryAxis, next.primaryAxis) }
+}
+
 export function withSlotPicks(
   ad: AlignDraft,
   slot: AlignSlot,

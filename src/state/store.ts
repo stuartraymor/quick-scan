@@ -81,7 +81,7 @@ import type {
   Vec3,
 } from '../core/types'
 import { blockedRefs, defaultMethod, dependentsOf, type DimensionDraft, type Draft, draftFromElement, type Element, elementColor, evalConstructDraft, freshCounters, freshDraft, keptOf, nextPointPick, reevaluateConstructions, type SelectMode, transformSource, withoutRegion } from './elementModel'
-import { alignmentReferences, alignmentSlotAccepts, flippedAlignmentAxis, type AlignDraft, type AlignmentProposal, alignSlotPicks, withSlotPicks, withSlotRef } from './alignModel'
+import { alignmentReferences, alignmentSlotAccepts, flippedAlignmentAxis, type AlignDraft, type AlignmentProposal, alignSlotPicks, withSlotElement, withSlotPicks, withSlotRef } from './alignModel'
 import { centreShadowDraft, dimensionRefsOf, type Section, sectionMeasureRefs, type SectionDraft, sectionDraftReady, sectionKeyOf, type SectionKind, specFields, settleSectionDraft } from './sectionModel'
 export { type Section, type SectionDraft, sectionDraftColorOf, sectionDraftReady } from './sectionModel'
 export { alignCenterOf, type AlignDraft, alignmentPreview, type AlignmentProposal, type AlignPreview, alignSlotPicks } from './alignModel'
@@ -1371,7 +1371,7 @@ export const useStore = create<AppState>()((set, get) => ({
       if (!s.alignDraft) return {}
       const el = id === null ? null : alignmentReferences(s.elements).find(e => e.id === id)
       if (id !== null && (!el || !alignmentSlotAccepts(slot, el))) return {statusText:'That reference is not valid for this alignment slot.'}
-      return { alignDraft: withSlotRef(s.alignDraft, slot, id) }
+      return { alignDraft: withSlotElement(s.alignDraft, slot, id, s.elements) }
     }),
 
   beginAlignmentReferencePick: (slot) => set(s => s.alignDraft
@@ -1433,14 +1433,9 @@ export const useStore = create<AppState>()((set, get) => ({
     set((s) => {
       if (!s.alignDraft) return {}
       if (slot === 'secondary') return { alignDraft: { ...s.alignDraft, secondaryAxis: axis } }
-      // The secondary axis dodges out of the way rather than colliding.
-      const secondaryAxis =
-        axis[0] === s.alignDraft.secondaryAxis[0]
-          ? axis[0] === 'z'
-            ? ('x+' as AxisDir)
-            : ('z+' as AxisDir)
-          : s.alignDraft.secondaryAxis
-      return { alignDraft: { ...s.alignDraft, primaryAxis: axis, secondaryAxis } }
+      // The secondary keeps its tile, as in QUICKSURFACE: one left on the
+      // primary's axis is then ignored (see computeDatumAlignment).
+      return { alignDraft: { ...s.alignDraft, primaryAxis: axis } }
     }),
 
   selectAlignmentElement: (id) =>
@@ -1451,7 +1446,7 @@ export const useStore = create<AppState>()((set, get) => ({
       if (!el?.fit) return {}
       if (ad.referencePickSlot) {
         if (!alignmentSlotAccepts(ad.referencePickSlot, el)) return {statusText:'That reference is not valid for the active alignment slot.'}
-        const next = withSlotRef(ad, ad.referencePickSlot, id)
+        const next = withSlotElement(ad, ad.referencePickSlot, id, s.elements)
         // The modeless datum picker proceeds primary → secondary → tertiary.
         // Explicit Pick can still revisit any slot; raw scan-point collection
         // remains a separate operation.
@@ -1469,7 +1464,7 @@ export const useStore = create<AppState>()((set, get) => ({
       // taken the pick replaces the rotation, so the levelling stays put.
       if (ad.primary === null && ad.primaryPicks.length === 0)
         return { alignDraft: withSlotRef(ad, 'primary', id) }
-      return { alignDraft: withSlotRef(ad, 'secondary', id) }
+      return { alignDraft: withSlotElement(ad, 'secondary', id, s.elements) }
     }),
 
   applyAlignment: (m) =>
