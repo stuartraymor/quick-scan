@@ -3,12 +3,13 @@
 // hands it, what each slot holds, and the preview of where the part would go.
 // The actions that change it are the store's.
 
-import { AlignmentError, type AlignSlot, type AxisDir, axisIndex, computeDatumAlignment, describeRigid, fitFromAlignPicks, hasDatumDirection, secondaryAlongPrimary, secondaryRole, tertiaryTileKind, translationToOrigin } from '../core/alignment'
+import { AlignmentError, type AlignSlot, type AxisDir, axisIndex, computeDatumAlignment, describeRigid, fitFromAlignPicks, hasDatumDirection, sameDatum, secondaryAlongPrimary, secondaryRole, tertiaryTileKind, translationToOrigin } from '../core/alignment'
 import type { Rigid } from '../core/deviation/rigid'
 import type { FitData, Vec3 } from '../core/types'
 import type { Element } from './elementModel'
 import { providesRole } from '../core/elements/refs'
 import { orthoBasis } from '../core/fit/linalg'
+import { dot, normalize } from '../core/vec'
 
 /** The 3-2-1 alignment being set up: per slot either an existing element or
  *  points picked straight on the scan (3 span the levelling plane, 2 the
@@ -43,6 +44,13 @@ export interface AlignDraft {
   tertiaryAxis?: AxisDir
   /** The tertiary row's Flip: the tile's axis taken on its negative side. */
   tertiaryFlip?: boolean
+  /** The secondary row's greyed tile (0, 1, 2 for x, y, z): the primary's
+   *  axis when the secondary was chosen. QUICKSURFACE 8.0.128 works it out
+   *  then and leaves it when the primary's tile changes afterwards, so the
+   *  primary's new axis can be clicked there (and the secondary is then
+   *  ignored) while its old one stays grey (align sweeps 1 and 3: h14, m7,
+   *  b7, b18). Unset: the primary's current axis. */
+  secondaryGreyAxis?: number
 }
 
 /** QUICKSURFACE's tertiary row (8.0.128, controlled fixtures 2026-11-11;
@@ -71,10 +79,24 @@ export function tertiaryTiles(primary: FitData | null, secondary: FitData | null
   const order = kind === 'axis' ? AXIS_ORDER : PLANE_ORDER
   const none = { kind, order, enabled: [false, false, false] as [boolean, boolean, boolean], clocks: false }
   if (!kind || !primary || !secondary || !tertiary) return none
+  // The primary chosen again: ignored, its tiles greyed (align sweep 3, h2).
+  if (sameDatum(tertiary, primary)) return none
   const clocking = (axis: AxisDir, by: FitData) => ({ kind, order, enabled: [0, 1, 2].map((i) => i !== axisIndex(axis)) as [boolean, boolean, boolean], clocks: !secondaryAlongPrimary(by, tertiary) })
   if (!hasDatumDirection(primary)) return hasDatumDirection(secondary) && secondaryAxis ? clocking(secondaryAxis, secondary) : none
   const role = secondaryRole(primary, primaryAxis, secondary, secondaryAxis)
-  if (role === 'turns') return kind === 'plane' ? { ...none, enabled: [true, true, true] } : none
+  // After a turning secondary the tiles turn nothing. A plane's are
+  // available. An axis's are available when it stands well off a primary
+  // plane (68° and 90° measured) and greyed when it lies near it (0° and 5°);
+  // after an axis primary, available unless it runs the primary's way (align
+  // sweep 3: c13, d9, f2, f3, f8 available, d8 and f1 greyed; 0.0.208's
+  // cylinder 5° off the plane greyed). Where between 5° and 68° QUICKSURFACE
+  // changes over was not measured; 45° is taken.
+  if (role === 'turns') {
+    const dir = tertiary.kind === 'line' ? tertiary.dir : tertiary.kind === 'cylinder' || tertiary.kind === 'cone' ? tertiary.axis : null
+    const a = dir ? normalize(dir) : null, n = primary.kind === 'plane' ? normalize(primary.normal) : null
+    const offered = kind === 'plane' || (!!a && (n ? Math.abs(dot(a, n)) > Math.SQRT1_2 : !secondaryAlongPrimary(primary, tertiary)))
+    return offered ? { ...none, enabled: [true, true, true] } : none
+  }
   if (role === 'cap' || role === 'point') return clocking(primaryAxis, primary)
   return none
 }
@@ -199,21 +221,57 @@ export function withSlotRef(ad: AlignDraft, slot: AlignSlot, id: number | null):
 /** The tile QUICKSURFACE starts a secondary on: Front for a plane, X Axis
  *  for a cylinder, cone or line (align sweep, 2026-11-11: Quick Scan started
  *  a cylinder on Y Axis and the part came out turned 90°). */
-export function defaultSecondaryAxis(fit: FitData | undefined, current: AxisDir, primaryAxis: AxisDir): AxisDir {
+export function defaultSecondaryAxis(fit: FitData | undefined, current: AxisDir, primaryAxis: AxisDir, primary?: FitData | null): AxisDir {
   if (!fit) return current
-  // With that tile greyed (the primary's own axis), Top or Z Axis: align
-  // sweep, primary set first: Front primary → plane on Top; Right primary →
-  // cylinder on Z Axis.
-  const order: AxisDir[] | null = fit.kind === 'plane' ? ['y+', 'z+', 'x+'] : fit.kind === 'cylinder' || fit.kind === 'cone' || fit.kind === 'line' ? ['x+', 'z+', 'y+'] : null
-  return order?.find((a) => a[0] !== primaryAxis[0]) ?? current
+  // After a sphere or point primary, which has no tiles, a plane starts on
+  // Top (align sweep 3: e6, e9, g7, g8 — Sphere(1) or Origin, then a plane).
+  if (primary && !hasDatumDirection(primary) && fit.kind === 'plane') return 'z+'
+  // A plane starts on Front after a Top primary and on Top otherwise; an
+  // axis on X Axis, or Z Axis after a primary on X (align sweeps: Front
+  // primary → plane on Top; Right primary → cylinder on Z Axis; sweep 3's
+  // tile probes: Right primary → plane on Top).
+  if (fit.kind === 'plane') return primaryAxis[0] === 'z' ? 'y+' : 'z+'
+  if (fit.kind === 'cylinder' || fit.kind === 'cone' || fit.kind === 'line') return primaryAxis[0] === 'x' ? 'z+' : 'x+'
+  return current
+}
+
+/** The draft after the primary's tile changes to `axis` (always positive:
+ *  a tile clears the primary's Flip). QUICKSURFACE 8.0.128 then puts the
+ *  secondary back on its starting tile and greys a tile in its row — both
+ *  worked out from the primary's tile *before* the change; the secondary's
+ *  Flip stays (align sweep 3's tile probes g1–g13, and h14, m7, b7, b18). A
+ *  secondary running the primary's way keeps its tile. */
+export function withPrimaryTile(ad: AlignDraft, axis: AxisDir, elements: Element[]): AlignDraft {
+  const old = ad.primaryAxis
+  const next = { ...ad, primaryAxis: axis }
+  if (axisIndex(old) === axisIndex(axis) || ad.secondary === null) return next
+  const refs = alignmentReferences(elements)
+  const fit = refs.find((e) => e.id === ad.secondary)?.fit
+  const primary = ad.primary === null ? null : refs.find((e) => e.id === ad.primary)?.fit ?? null
+  if (!fit || (primary && secondaryAlongPrimary(primary, fit))) return next
+  const tile = defaultSecondaryAxis(fit, ad.secondaryAxis, old, primary)
+  return { ...next, secondaryAxis: alignmentTileAxis(ad.secondaryAxis, tile), secondaryGreyAxis: axisIndex(old) }
 }
 
 /** A slot filled with an element, the secondary starting on its default tile. */
 export function withSlotElement(ad: AlignDraft, slot: AlignSlot, id: number | null, elements: Element[]): AlignDraft {
   const next = withSlotRef(ad, slot, id)
+  // Another primary in place of one starts on Top (Z Axis for an axis), its
+  // Flip off; the secondary's row is left as it was (align sweep 3's tile
+  // probes g1, g12). The first one keeps the tile the dialog opened on.
+  if (slot === 'primary' && id !== null && ad.primary !== null && id !== ad.primary) return { ...next, primaryAxis: 'z+' }
   if (slot !== 'secondary' || id === null) return next
-  const fit = alignmentReferences(elements).find((e) => e.id === id)?.fit
-  return { ...next, secondaryAxis: defaultSecondaryAxis(fit, next.secondaryAxis, next.primaryAxis) }
+  const refs = alignmentReferences(elements)
+  const fit = refs.find((e) => e.id === id)?.fit
+  const primary = next.primary === null ? null : refs.find((e) => e.id === next.primary)?.fit ?? null
+  // The secondary's Flip stays when another feature is chosen there (align
+  // sweep 3's tile probe g13).
+  return { ...next, secondaryAxis: alignmentTileAxis(next.secondaryAxis, defaultSecondaryAxis(fit, next.secondaryAxis, next.primaryAxis, primary)), secondaryGreyAxis: axisIndex(next.primaryAxis) }
+}
+
+/** The secondary tile greyed for a draft: see AlignDraft.secondaryGreyAxis. */
+export function secondaryGreyedTile(ad: Pick<AlignDraft, 'primaryAxis' | 'secondaryGreyAxis'>): number {
+  return ad.secondaryGreyAxis ?? axisIndex(ad.primaryAxis)
 }
 
 export function withSlotPicks(

@@ -175,9 +175,29 @@ export interface DatumSpec {
   axis: AxisDir
 }
 
-/** Below this angle two datum directions cannot clock a rotation. Matches the
- *  plane-intersection threshold in the constructions. */
-const MIN_CLOCK_ANGLE = 0.2
+/** The sine below which an axis counts as lying along a plane, and a plane
+ *  as unable to fix a coordinate it is nearly square to: QUICKSURFACE 8.0.128
+ *  takes no crossing from them. Align sweep 3 (2026-11-12): a cylinder 0.5°
+ *  and 0.55° off a plane primary gives no crossing, 1° and more one 3.4 m
+ *  away; 0.4° and 0.25° off-parallel pairs give none. */
+const CROSS_SIN = 0.01
+
+/** Whether a direction crosses a plane with this normal steeply enough to
+ *  give QUICKSURFACE's crossing point. */
+export function crossesPlane(dir: Vec3, normal: Vec3): boolean {
+  const a = normalize(dir), n = normalize(normal)
+  return !!a && !!n && Math.abs(dot(a, n)) >= CROSS_SIN
+}
+
+/** The same feature twice (QUICKSURFACE ignores the primary chosen again as
+ *  the tertiary: align sweep 3, h2). */
+export function sameDatum(a: FitData, b: FitData): boolean {
+  if (a === b) return true
+  if (a.kind !== b.kind) return false
+  const da = datumDirection(a), db = datumDirection(b)
+  const near = (u: Vec3, v: Vec3) => Math.abs(u[0] - v[0]) + Math.abs(u[1] - v[1]) + Math.abs(u[2] - v[2]) < 1e-9
+  return near(a.center, b.center) && (!da || !db || near(da, db))
+}
 
 /**
  * The rigid transform that carries the part into the global system defined by
@@ -262,7 +282,8 @@ export function computeDatumAlignment(
   // cylinder along the primary changes nothing). With no secondary at all the
   // panel drops the tertiary before it gets here, as QUICKSURFACE ignores it;
   // a caller that passes one still has it set what is open.
-  const zeroPoint = role === 'turns' || role === 'none' ? origin : null
+  // The primary chosen again as the tertiary is ignored (align sweep 3, h2).
+  const zeroPoint = (role === 'turns' || role === 'none') && origin && !sameDatum(origin, primary.fit) ? origin : null
   // R = Σₖ eₖ ⊗ dₖ maps the datum frame onto the global one: d1 onto e1 and
   // d2, square to d1, onto e2.
   const turn = (d2: Vec3, e2: Vec3) => {
@@ -361,18 +382,52 @@ export function computeDatumAlignment(
   }
   if (zeroPoint) {
     const open = [0, 1, 2].filter((i) => !constrained.has(i))
-    const v =
-      // A cylinder secondary too (native 0.0.198: Plane Top, tilted Cylinder
-      // to X, tilted Plane tertiary → the tertiary's crossing). Only after a
-      // plane primary: cylinder-primary combinations remain a separate case.
-      planeChain && secondary !== null && (secondary.fit.kind === 'plane' || secondary.fit.kind === 'cylinder') && zeroPoint.kind === 'plane' && open.length === 1
-        ? planeCrossing(rigid, zeroPoint, open[0], constrained)
-        : null
-    if (v !== null) zeroCoord(open[0], v)
-    // A plane tertiary square to the one coordinate still open (Plane(1)
-    // again, which QUICKSURFACE fills in itself) cannot fix it: it is left
-    // to the secondary axis below, as QUICKSURFACE leaves it.
-    else if (!(planeChain && zeroPoint.kind === 'plane' && open.length === 1 && axisSecondary)) zeroAt(originAnchor(rigid, zeroPoint, primary), [0, 1, 2])
+    const td = datumDirection(zeroPoint)
+    if (pd && td) {
+      // An axis primary: the tertiary sets the zero along the axis — a plane
+      // where the axis crosses it, an axis at the foot of the common
+      // perpendicular on the primary's axis (align sweep 3: c16, c17, h9,
+      // d9). An axis parallel to the primary's sets nothing, and the
+      // secondary's zero stands (d8). A plane running alongside the axis
+      // cannot set it, and QUICKSURFACE then moves the part not at all: it is
+      // only turned, about the world origin (c14, f6, g10).
+      const at = zeroPoint.kind === 'plane'
+        ? crossesPlane(pd, zeroPoint.normal) ? axialZeroFromSecondary(primary.fit.center, pd, zeroPoint) : null
+        : secondaryAlongPrimary(primary.fit, zeroPoint) ? null : axialZeroFromSecondary(primary.fit.center, pd, zeroPoint)
+      if (at) zeroAt(at, [kp])
+      else if (zeroPoint.kind === 'plane') {
+        rigid.t.fill(0)
+        return rigid
+      }
+    } else if (planeChain && zeroPoint.kind === 'plane' && open.length === 1) {
+      // A plane tertiary after a plane primary zeroes the one coordinate still
+      // open where it crosses the planes already set (native 0.0.198). One
+      // nearly square to that coordinate cannot fix it, and QUICKSURFACE then
+      // keeps only the primary plane's own zero: the secondary's goes too,
+      // and the part is otherwise only turned (align sweep 3: b17, h1, h4,
+      // h5, h6 — the tertiary the secondary again, or a plane through the
+      // secondary's line).
+      const v = planeCrossing(rigid, zeroPoint, open[0], constrained)
+      if (v !== null) zeroCoord(open[0], v)
+      else {
+        const own = rigid.t[kp]
+        rigid.t.fill(0)
+        rigid.t[kp] = own
+        return rigid
+      }
+    } else if (planeChain && td && open.length === 1) {
+      // An axis tertiary after a plane primary: where it crosses the primary
+      // plane; lying along that plane, its own centre if it runs square to
+      // the open coordinate, nothing if it runs along it — the part is then
+      // centred on the primary as with no tertiary (align sweep 3: f1).
+      const at = originAnchor(rigid, zeroPoint, primary)
+      if (at !== zeroPoint.center) zeroAt(at, open)
+      else {
+        const q = new Float64Array(3)
+        rigidRotate(rigid, td[0], td[1], td[2], q)
+        if (Math.abs(q[open[0]]) < CROSS_SIN * Math.hypot(q[0], q[1], q[2])) zeroAt(zeroPoint.center, open)
+      }
+    } else zeroAt(originAnchor(rigid, zeroPoint, primary), [0, 1, 2])
   }
   if (axialFallback) zeroAt(axialFallback, [kp])
   // A cylinder or line secondary after a plane primary fixes its own
@@ -411,8 +466,9 @@ function axialZeroFromSecondary(c: Vec3, pd: Vec3, s: FitData): Vec3 | null {
     const n = normalize(s.normal)
     if (!n) return null
     const den = dot(a, n)
-    // MIN_CLOCK_ANGLE is in degrees, as acuteAngle returns.
-    if (Math.abs(den) > Math.sin((MIN_CLOCK_ANGLE * Math.PI) / 180)) return at(dot(rel(s.center), n) / den)
+    // Below QUICKSURFACE's crossing cut-off the plane runs alongside the axis
+    // (align sweep 3: c7, a plane 0.4° off parallel).
+    if (Math.abs(den) >= CROSS_SIN) return at(dot(rel(s.center), n) / den)
     return at(dot(rel(s.center), a))
   }
   const sd = s.kind === 'cylinder' || s.kind === 'cone' ? s.axis : s.kind === 'line' ? s.dir : null
@@ -452,8 +508,9 @@ function planeCrossing(rigid: Rigid, plane: PlaneFit, k: number, constrained: Re
   rigidApply(rigid, plane.center[0], plane.center[1], plane.center[2], p)
   rigidRotate(rigid, plane.normal[0], plane.normal[1], plane.normal[2], q)
   const len = Math.hypot(q[0], q[1], q[2])
-  // MIN_CLOCK_ANGLE is in degrees, as acuteAngle returns.
-  if (!(Math.abs(q[k]) >= Math.sin((MIN_CLOCK_ANGLE * Math.PI) / 180) * len)) return null
+  // QUICKSURFACE's crossing cut-off (align sweep 3: b17's chamfer, square to
+  // the coordinate it was to fix).
+  if (!(Math.abs(q[k]) >= CROSS_SIN * len)) return null
   let s = 0
   for (const j of constrained) if (j !== k) s += q[j] * p[j]
   const v = p[k] + s / q[k]
@@ -473,7 +530,9 @@ function originAnchor(rigid: Rigid, origin: FitData, primary: DatumSpec): Vec3 {
   const p = new Float64Array(3), q = new Float64Array(3)
   rigidApply(rigid, origin.center[0], origin.center[1], origin.center[2], p)
   rigidRotate(rigid, dir[0], dir[1], dir[2], q)
-  if (!(Math.abs(q[k]) > 1e-6)) return origin.center
+  // An axis lying along the plane (below QUICKSURFACE's crossing cut-off:
+  // align sweep 3, c3, c5 and the tilted-cylinder cases) gives no crossing.
+  if (!(Math.abs(q[k]) >= CROSS_SIN * Math.hypot(q[0], q[1], q[2]))) return origin.center
   const t = -p[k] / q[k]
   return [origin.center[0] + t * dir[0], origin.center[1] + t * dir[1], origin.center[2] + t * dir[2]]
 }

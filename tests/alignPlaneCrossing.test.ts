@@ -141,11 +141,16 @@ describe('invariants: what keeps its legacy anchor', () => {
     expect(c[1]).toBeCloseTo(0, 9)
   })
 
-  it('a tertiary plane that hardly faces the open axis keeps its centroid (no new rejection)', () => {
-    // |n_x| ≈ 0.002 < sin(0.2°) ≈ 0.00349: below MIN_CLOCK_ANGLE (degrees).
+  it('a tertiary plane that hardly faces the open axis keeps only the primary plane’s zero', () => {
+    // |n_x| ≈ 0.002, below QUICKSURFACE's crossing cut-off (0.01): it cannot
+    // fix x, and QUICKSURFACE then keeps only the primary's own zero — the
+    // part is otherwise only turned (align sweep 3, 2026-11-12: b17, h1, h4,
+    // h5, h6).
     const tert = planeFit([17, 3, 40], [0.002, 0, 1])
     const m = computeDatumAlignment({ fit: nativePrimary(), axis: 'z+' }, { fit: planeFit([0, 7, 5], [0, 1, 0]), axis: 'y+' }, tert)
-    expect(at(m, tert.center)[0]).toBeCloseTo(0, 9)
+    expect(m.t[0]).toBeCloseTo(0, 9)
+    expect(m.t[1]).toBeCloseTo(0, 9)
+    expect(at(m, nativePrimary().center)[2]).toBeCloseTo(0, 9)
   })
 
   it('reads the fits and never writes them', () => {

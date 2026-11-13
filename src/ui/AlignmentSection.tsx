@@ -20,7 +20,7 @@ import {
   useStore,
   type Element,
 } from '../state/store'
-import { alignDraftTertiaryTiles, alignmentReferences, alignmentTileAxis, chosenTertiaryTile } from '../state/alignModel'
+import { alignDraftTertiaryTiles, alignmentReferences, alignmentTileAxis, chosenTertiaryTile, secondaryGreyedTile } from '../state/alignModel'
 import { hasDatumDirection, secondaryAlongPrimary, secondaryRole } from '../core/alignment'
 import { InfoDot } from './InfoDot'
 import { providersFor } from './RefSelect'
@@ -490,7 +490,7 @@ export function AlignmentSection({
                 primary moved there afterwards) is ignored, as QUICKSURFACE
                 ignores it (see computeDatumAlignment). */}
             {(secondaryIsAxis ? AXIS_TILES : PLANE_TILES).map(({ label, axis }) => <button key={label} type="button"
-              data-test={`align-secondary-${label.toLowerCase()}`} disabled={primaryIsPoint ? false : secondaryAlongIgnored ? true : secondaryAlong ? axisIndex(axis) !== axisIndex(alignDraft.primaryAxis) : axisIndex(axis) === axisIndex(alignDraft.primaryAxis)}
+              data-test={`align-secondary-${label.toLowerCase()}`} disabled={primaryIsPoint ? false : secondaryAlongIgnored ? true : secondaryAlong ? axisIndex(axis) !== axisIndex(alignDraft.primaryAxis) : axisIndex(axis) === secondaryGreyedTile(alignDraft)}
               className={!secondaryAlongIgnored && axisIndex(alignDraft.secondaryAxis) === axisIndex(axis) ? 'on' : undefined}
               aria-pressed={!secondaryAlongIgnored && axisIndex(alignDraft.secondaryAxis) === axisIndex(axis)}
               onClick={() => setAlignmentAxis('secondary', alignmentTileAxis(alignDraft.secondaryAxis, axis))}>{label}</button>)}

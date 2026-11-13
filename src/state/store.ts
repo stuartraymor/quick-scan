@@ -81,7 +81,7 @@ import type {
   Vec3,
 } from '../core/types'
 import { blockedRefs, defaultMethod, dependentsOf, type DimensionDraft, type Draft, draftFromElement, type Element, elementColor, evalConstructDraft, freshCounters, freshDraft, keptOf, nextPointPick, reevaluateConstructions, type SelectMode, transformSource, withoutRegion } from './elementModel'
-import { alignmentReferences, alignmentSlotAccepts, flippedAlignmentAxis, type AlignDraft, type AlignmentProposal, alignSlotPicks, withSlotElement, withSlotPicks, withSlotRef } from './alignModel'
+import { alignmentReferences, alignmentSlotAccepts, flippedAlignmentAxis, type AlignDraft, type AlignmentProposal, alignSlotPicks, withPrimaryTile, withSlotElement, withSlotPicks, withSlotRef } from './alignModel'
 import { centreShadowDraft, dimensionRefsOf, type Section, sectionMeasureRefs, type SectionDraft, sectionDraftReady, sectionKeyOf, type SectionKind, specFields, settleSectionDraft } from './sectionModel'
 export { type Section, type SectionDraft, sectionDraftColorOf, sectionDraftReady } from './sectionModel'
 export { alignCenterOf, type AlignDraft, alignmentPreview, type AlignmentProposal, type AlignPreview, alignSlotPicks } from './alignModel'
@@ -1433,9 +1433,11 @@ export const useStore = create<AppState>()((set, get) => ({
     set((s) => {
       if (!s.alignDraft) return {}
       if (slot === 'secondary') return { alignDraft: { ...s.alignDraft, secondaryAxis: axis } }
-      // The secondary keeps its tile, as in QUICKSURFACE: one left on the
-      // primary's axis is then ignored (see computeDatumAlignment).
-      return { alignDraft: { ...s.alignDraft, primaryAxis: axis } }
+      // A new tile puts the secondary back on its starting tile, worked out
+      // from the primary's old tile, as QUICKSURFACE does (withPrimaryTile);
+      // a secondary that lands on the primary's axis is then ignored (see
+      // computeDatumAlignment). Flip keeps the tile and changes nothing else.
+      return { alignDraft: withPrimaryTile(s.alignDraft, axis, s.elements) }
     }),
 
   selectAlignmentElement: (id) =>
