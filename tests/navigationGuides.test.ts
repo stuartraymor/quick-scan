@@ -63,6 +63,7 @@ describe('navigation guide geometry and lifetime', () => {
   it('keeps enabled grid geometry alive through a complete orbit without rebuilding or disabling depth testing', () => {
     const scene = new THREE.Scene(), guides = new NavigationGuides(scene)
     const camera = principalCamera()
+    guides.setCoordinates(true)
     guides.setGrid(true, 10)
     guides.update(camera, new THREE.Vector3(), 1000, 600)
     const grid = gridGroup(scene), original = resources(grid)
@@ -86,11 +87,13 @@ describe('navigation guide geometry and lifetime', () => {
   it('draws lines at requested world-unit multiples and leaves the plane at world zero', () => {
     const scene = new THREE.Scene()
     const guides = new NavigationGuides(scene)
+    guides.setCoordinates(true)
     guides.setGrid(true, 10)
     guides.update(principalCamera(), new THREE.Vector3(30, 40, 50), 1000, 600)
     const group = gridGroup(scene)
     expect(group.visible).toBe(true)
-    expect(group.children).toHaveLength(4)
+    // Solid grey lines only: the coordinate system draws the axes.
+    expect(group.children).toHaveLength(1)
     for (const child of group.children) {
       const points = (child as THREE.LineSegments).geometry.getAttribute('position')
       for (let i = 0; i < points.count; i += 2) {
@@ -142,7 +145,7 @@ describe('navigation guide geometry and lifetime', () => {
     guides.dispose()
   })
 
-  it('shows automatic coarse coordinate ruling with Grid disabled, including isometric XY', () => {
+  it('shows the coordinate system’s own solid cells with Grid disabled, fixed through zoom, including isometric XY', () => {
     const scene = new THREE.Scene()
     const guides = new NavigationGuides(scene)
     const camera = principalCamera()
@@ -152,9 +155,15 @@ describe('navigation guide geometry and lifetime', () => {
     const coarse = scene.getObjectByName('navigation-coordinate-ruling') as THREE.Group
     expect(coarse.visible).toBe(true)
     expect(gridGroup(scene).visible).toBe(false)
-    const lines = coarse.children[0] as THREE.LineSegments<THREE.BufferGeometry, THREE.LineDashedMaterial>
-    expect(lines.material.isLineDashedMaterial).toBe(true)
-    // 0.1 mm/pixel -> 15 mm desired -> next 1/2/5 spacing, 20 mm.
+    const lines = coarse.children[0] as THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>
+    expect(lines.material.type).toBe('LineBasicMaterial')
+    // A 100 mm square: about 16 cells, 12.5 mm -> the next 1/2/5 step, 20 mm,
+    // whatever the zoom (QUICKSURFACE's cells stay put as it zooms).
+    const before = resources(coarse)
+    camera.zoom = 7
+    camera.updateProjectionMatrix()
+    guides.update(camera, new THREE.Vector3(), 1000, 600)
+    expect(resources(coarse)).toEqual(before)
     const points = lines.geometry.getAttribute('position')
     for (let i = 0; i < points.count; i += 2) {
       const sameX = points.getX(i) === points.getX(i + 1)
@@ -172,7 +181,7 @@ describe('navigation guide geometry and lifetime', () => {
     guides.dispose()
   })
 
-  it('keeps fine XY ruling in iso independent of coordinate-system visibility', () => {
+  it('draws Grid only with the coordinate system shown, in place of its own cells, as QUICKSURFACE does', () => {
     const scene = new THREE.Scene()
     const guides = new NavigationGuides(scene)
     const camera = principalCamera()
@@ -180,12 +189,12 @@ describe('navigation guide geometry and lifetime', () => {
     camera.lookAt(0, 0, 0)
     guides.setGrid(true, 7)
     guides.update(camera, new THREE.Vector3(), 1000, 600)
-    expect(gridGroup(scene).visible).toBe(true)
+    expect(gridGroup(scene).visible).toBe(false)
     guides.setCoordinates(true)
     guides.update(camera, new THREE.Vector3(), 1000, 600)
     const fine = gridGroup(scene)
     expect(fine.visible).toBe(true)
-    expect(scene.getObjectByName('navigation-coordinate-ruling')!.visible).toBe(true)
+    expect(scene.getObjectByName('navigation-coordinate-ruling')!.visible).toBe(false)
     expect(fine.children).toHaveLength(1)
     const lines = fine.children[0] as THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>
     expect(lines.material.type).toBe('LineBasicMaterial')
@@ -197,14 +206,14 @@ describe('navigation guide geometry and lifetime', () => {
       const ruling = sameX ? points.getX(i) : points.getY(i)
       expect(ruling / 7).toBeCloseTo(Math.round(ruling / 7))
     }
-    guides.setCoordinates(false)
-    guides.update(camera, new THREE.Vector3(), 1000, 600)
-    expect(fine.visible).toBe(true)
     // Returning to a principal view must not change the plane or hide the grid.
     camera.position.set(0, 0, 100)
     camera.lookAt(0, 0, 0)
     guides.update(camera, new THREE.Vector3(), 1000, 600)
     expect(fine.visible).toBe(true)
+    guides.setCoordinates(false)
+    guides.update(camera, new THREE.Vector3(), 1000, 600)
+    expect(fine.visible).toBe(false)
     guides.dispose()
   })
 

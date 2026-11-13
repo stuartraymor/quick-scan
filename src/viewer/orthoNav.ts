@@ -43,6 +43,10 @@ const PUCK_SETTLE_MS = 250
 export interface ClipSphere {
   center: THREE.Vector3
   radius: number
+  /** A reach about the world origin to keep between the clip planes too —
+   *  the coordinate system and its grid, which sit at 0, 0, 0 however far
+   *  away the part is. 0 or unset: none. */
+  originReach?: number
 }
 
 export class OrthoNavigator {
@@ -289,8 +293,16 @@ export class OrthoNavigator {
     const axis = this.tmp2.set(0, 0, -1).applyQuaternion(this.camera.quaternion)
     const d = this.tmp.copy(this.clipSphere.center).sub(this.camera.position).dot(axis)
     const r = this.clipSphere.radius * 1.5 + 1e-3
-    this.camera.near = d - r
-    this.camera.far = d + r
+    let near = d - r, far = d + r
+    const reach = this.clipSphere.originReach ?? 0
+    if (reach > 0) {
+      // The origin's depth along the view axis, bracketed by its reach.
+      const d0 = -this.camera.position.dot(axis)
+      near = Math.min(near, d0 - reach)
+      far = Math.max(far, d0 + reach)
+    }
+    this.camera.near = near
+    this.camera.far = far
     this.camera.updateProjectionMatrix()
   }
 

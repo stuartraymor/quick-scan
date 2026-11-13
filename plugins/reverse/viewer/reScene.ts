@@ -11,6 +11,8 @@ import type { PoleFrame } from './poleFrameGizmo'
 
 import { cageLines } from '../core/freeform/cageLines'
 import { SliceArrow } from './sliceArrow'
+import { boxPoint, StackSlab } from './stackSlab'
+import { StackHandles, type Rect } from './stackHandles'
 import { SurfacePoleDrag } from './surfacePoleDrag'
 import { surfacePolePreview } from './surfacePolePreview'
 import type { PolynomialSurface } from '../core/surfaceStep'
@@ -167,6 +169,12 @@ export class ReScene {
     }, index => this.bodyPicks.selectControlPole(index))
     this.removeLayers.push(scene.addLayer(this.poleDrag.layer()))
     this.sliceArrow = new SliceArrow(host)
+    this.stackArrow = new SliceArrow(host, 0x2ea8ff)
+    this.stackSlab = new StackSlab(host.partGroup, () => host.invalidate(), () => host.scanGeometry?.() ?? null)
+    this.stackHandles = new StackHandles(host)
+    this.stackLowerArrow = new SliceArrow(host)
+    this.removeLayers.push(scene.addLayer(this.stackLowerArrow.layer()))
+    this.removeLayers.push(scene.addLayer(this.stackArrow.layer()), scene.addLayer(this.stackHandles.layer()))
     this.removeLayers.push(scene.addLayer(this.sliceArrow.layer()), scene.addLayer(this.sketchLayer()), scene.addLayer(this.bodyLayer()), scene.addLayer(this.planesLayer()))
   }
 
@@ -415,7 +423,7 @@ export class ReScene {
   /** The arrow on the sketch's plane, dragged to carry the plane through the
    *  part. The arrow stands where the plane crosses the part's centre. */
   private sliceArrow: SliceArrow
-  setSliceArrow(frame: SectionFrame | null, offset: number, onOffset?: (offset: number) => void): void {
+  setSliceArrow(frame: SectionFrame | null, offset: number, onOffset?: (offset: number) => void, direction: 1 | -1 = 1, opts: { at?: { u: number; v: number }; snaps?: readonly number[]; color?: number } = {}): void {
     if (!frame) {
       this.sliceArrow.set(null)
       return
@@ -423,12 +431,53 @@ export class ReScene {
     const c = this.host.modelCenter()
     const [nx, ny, nz] = frame.normal
     const d = (c[0] - frame.origin[0]) * nx + (c[1] - frame.origin[1]) * ny + (c[2] - frame.origin[2]) * nz
-    this.sliceArrow.set({ origin: [c[0] - nx * d, c[1] - ny * d, c[2] - nz * d], normal: frame.normal, offset }, onOffset)
+    const p = opts.at ? boxPoint(frame, opts.at.u, opts.at.v, 0) : null
+    this.sliceArrow.set({ origin: p ? [p.x, p.y, p.z] : [c[0] - nx * d, c[1] - ny * d, c[2] - nz * d], normal: frame.normal, offset, direction, snaps: opts.snaps, color: opts.color }, onOffset)
+  }
+
+  /** Stacked sections in the view: the upper plane's own (blue) arrow, the
+   *  box between it and the sketch's plane (the lower one) over the footprint
+   *  `rect` (in the frame's u, v), the cut planes across it, the scan inside
+   *  tinted, and the handles that size the box. `top` and `cuts` are
+   *  distances along the normal from the sketch's plane; `onTop` is told
+   *  where the upper arrow is dragged to, `onRect` the box's new footprint.
+   *  Null takes it all away. */
+  private stackArrow: SliceArrow
+  private stackSlab: StackSlab
+  private stackHandles: StackHandles
+  private stackLowerArrow: SliceArrow
+  setStack(frame: SectionFrame | null, bottom = 0, top = 0, cuts: readonly number[] = [], rect: Rect | null = null, onBottom?: (bottom: number) => void, onTop?: (top: number) => void, onRect?: (rect: Rect) => void): void {
+    if (!frame || !rect) {
+      this.stackLowerArrow.set(null)
+      this.stackArrow.set(null)
+      this.stackSlab.set(null)
+      this.stackHandles.set(null, null, 0)
+      return
+    }
+    // The box's two arrows at its centre, one on each plane, pointing away
+    // from each other: the yellow moves its lower plane, the blue its upper,
+    // in the same way.
+    const cu = (rect.u0 + rect.u1) / 2, cv = (rect.v0 + rect.v1) / 2, up: 1 | -1 = top >= bottom ? 1 : -1
+    const hi = boxPoint(frame, cu, cv, top), lo = boxPoint(frame, cu, cv, bottom)
+    this.stackArrow.set({ origin: [hi.x, hi.y, hi.z], normal: frame.normal, offset: top, direction: up }, onTop)
+    this.stackLowerArrow.set({ origin: [lo.x, lo.y, lo.z], normal: frame.normal, offset: bottom, direction: up === 1 ? -1 : 1 }, onBottom)
+    this.stackSlab.set({ frame, rect, bottom, top, cuts })
+    this.stackHandles.set(frame, rect, (bottom + top) / 2, onRect)
+  }
+
+  /** Where the box's handles stand, in the part's coordinates (see
+   *  StackHandles.positions). */
+  stackHandlePositions() {
+    return this.stackHandles.positions()
   }
 
   /** Take the layers out of the viewport. */
   dispose(): void {
     this.sliceArrow.dispose()
+    this.stackArrow.dispose()
+    this.stackSlab.dispose()
+    this.stackHandles.dispose()
+    this.stackLowerArrow.dispose()
     this.setSketchImage(null)
     this.removeLayers.forEach((remove) => remove())
     this.removeLayers = []

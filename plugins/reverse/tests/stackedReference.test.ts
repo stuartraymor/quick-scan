@@ -19,13 +19,13 @@ function steppedMesh() {
 }
 
 describe('one-sketch stacked reference collection', () => {
-  it('uses actual bounded cell-centre planes and projects every cut onto one frame', async () => {
+  it('cuts from the lower to the upper plane, ends included, and projects every cut onto one frame', async () => {
     const mesh = steppedMesh(), calls: Vec3[] = []
     const frame = { ...XY, origin: [0, 0, 2] as Vec3 }
     const source = { bounds: async () => ({ min: [-10, -5, -10] as Vec3, max: [10, 5, 10] as Vec3 }), section: async (origin: Vec3, normal: Vec3) => { calls.push(origin); return sliceMesh(mesh.positions, mesh.indices, origin, normal) } }
-    const result = await collectExtrudedReference(source, frame, 4)
-    expect(calls.map((p) => p[2])).toEqual([-7.5, -2.5, 2.5, 7.5])
-    expect(result.extent).toEqual({ min: -12, max: 8 })
+    const result = await collectExtrudedReference(source, frame, 4, { extent: { min: -11, max: 7 } })
+    expect(calls.map((p) => p[2])).toEqual([-9, -3, 3, 9])
+    expect(result.extent).toEqual({ min: -11, max: 7 })
     expect(result.chains).toHaveLength(4)
     expect(result.chains.slice(0, 2).flat().some(([x]) => Math.abs(x) === 10)).toBe(true)
     expect(result.chains.slice(2).flat().some(([x]) => Math.abs(x) === 6)).toBe(true)
@@ -37,10 +37,10 @@ describe('one-sketch stacked reference collection', () => {
     const n = Math.SQRT1_2, frame = { ...XY, normal: [n, 0, n] as Vec3 }
     const extent = stackExtentOf({ min: [-2, -3, -4], max: [2, 3, 4] }, frame)
     expect(extent.min).toBeCloseTo(-6 * n, 12); expect(extent.max).toBeCloseTo(6 * n, 12)
-    expect(stackDistances({ min: -2, max: 2 }, 4)).toEqual([-1.5, -0.5, 0.5, 1.5])
+    expect(stackDistances({ min: -3, max: 3 }, 4)).toEqual([-3, -1, 1, 3])
     const cuts: Vec3[] = []
     const result = await collectExtrudedReference({ bounds: async () => { throw new Error('explicit range must not request bounds') }, section: async (p) => { cuts.push(p); return { points: new Float32Array(0), offsets: new Uint32Array([0]) } } }, XY, 2, { extent: { min: 2, max: 6 } })
-    expect(cuts.map((p) => p[2])).toEqual([3, 5])
+    expect(cuts.map((p) => p[2])).toEqual([2, 6])
     expect(result.points).toBe(0)
   })
   it('stops on cancellation after the in-flight cut, returning no partial cloud', async () => {

@@ -9,6 +9,8 @@
 // (reSession.ts), which the commands work through too; this hook draws them
 // and does the rest of the asynchronous work.
 
+import { useStack } from '../state/stackStore'
+import { stackDistances } from '../core/stackedReference'
 import { useSectionLine } from '../state/sectionLineStore'
 import { edgesThroughSelection, longChains, sectionModeKey } from '../core/selectionCut'
 import { reSceneOf } from '../viewer/reScene'
@@ -608,6 +610,7 @@ export function useReverseWorkspace({
   // sketch being drawn, in the sketch's colour, so the model beside the
   // sheet says where the sheet lies on it.
   const hint = useReverse((s) => s.hint)
+  const stackOn = useStack((s) => s.on), stackCount = useStack((s) => s.count), stackUpper = useStack((s) => s.upper), stackLower = useStack((s) => s.lower), stackRect = useStack((s) => s.rect)
   useEffect(() => {
     const scene = sceneRef.current
     if (!scene) return
@@ -630,7 +633,15 @@ export function useReverseWorkspace({
       }
       reSceneOf(scene).setPlaneHint(draft.frame, '#ffffff', '', 0.25)
       // The arrow that walks the plane through the part, while the plane takes an offset.
-      reSceneOf(scene).setSliceArrow(planeTakesOffset(draft.plane) ? draft.frame : null, planeOffset(draft.plane), (v) => useReverse.getState().setSketchOffset(v))
+      // With Stacked sections on, the box has its own two arrows (yellow
+      // lower, blue upper); the sketch's plane keeps an arrow of its own, in
+      // green, just outside the box, and snaps onto the bottom, middle and
+      // top sections as it is dragged near them.
+      const st = useStack.getState()
+      const stacking = st.on && st.upper !== null && st.lower !== null && st.rect !== null
+      const box = stacking ? st.rect! : null
+      reSceneOf(scene).setSliceArrow(planeTakesOffset(draft.plane) ? draft.frame : null, planeOffset(draft.plane), (v) => useReverse.getState().setSketchOffset(v), 1,
+        box ? { at: { u: box.u1 + 0.12 * (box.u1 - box.u0), v: (box.v0 + box.v1) / 2 }, snaps: [st.lower!, (st.lower! + st.upper!) / 2, st.upper!], color: 0x46d36a } : {})
       scene.setHintedElements([])
       return clear
     }
@@ -652,7 +663,27 @@ export function useReverseWorkspace({
     scene.setHintedElements(hint.ref.kind === 'element' ? [hint.ref.id] : [])
     return clear
     // Runs on the listed dependencies only, not on everything it reads.
-  }, [hint, onReverse, sketchFrameKey, sketchName, sketchPlacing, sceneRef])
+  }, [hint, onReverse, sketchFrameKey, sketchName, sketchPlacing, sceneRef, stackOn, stackUpper, stackLower, stackRect])
+
+  // ---- Stacked sections in the view -------------------------------------------------------
+  // While a sketch is being placed with Stacked sections on: the upper plane
+  // with its own (blue) arrow and the slab between it and the sketch's plane,
+  // the cut planes across it — dragged, it moves the upper plane where the
+  // panel reads it, and the cuts follow (PlaceSketch).
+  useEffect(() => {
+    const scene = sceneRef.current
+    if (!scene) return
+    const draft = useReverse.getState().sketchDraft
+    if (!onReverse || !stackOn || stackUpper === null || stackLower === null || stackRect === null || !draft?.placing || draft.plane.kind === 'radial') {
+      reSceneOf(scene).setStack(null)
+      return
+    }
+    const at = planeOffset(draft.plane), top = stackUpper - at, bottom = stackLower - at
+    let cuts: number[] = []
+    try { cuts = stackDistances({ min: Math.min(bottom, top), max: Math.max(bottom, top) }, stackCount) } catch { cuts = [] }
+    reSceneOf(scene).setStack(draft.frame, bottom, top, cuts, stackRect, (v) => useStack.getState().setLower(at + v), (v) => useStack.getState().setUpper(at + v), (r) => useStack.getState().setRect(r))
+    return () => { reSceneOf(scene).setStack(null) }
+  }, [onReverse, stackOn, stackCount, stackUpper, stackLower, stackRect, sketchFrameKey, sketchPlacing, sceneRef])
 
   // ---- the sketches on the part ----------------------------------------------------------
   // Every visible committed sketch, stood up in its plane, with its closed

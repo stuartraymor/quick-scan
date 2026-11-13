@@ -493,8 +493,21 @@ export class SceneManager {
         // The section curves are fat lines sized in pixels and need the canvas.
         const el = this.viewport.renderer.domElement
         this.sections.setResolution(el.clientWidth || 1, el.clientHeight || 1)
-        this.navigationGuides.update(this.camera, this.controls.target, el.clientWidth || 1, el.clientHeight || 1,
-          Math.max(100, this.modelRadius * 1.5 + Math.hypot(...this.modelCenter())))
+        const guideReach = Math.max(100, this.modelRadius * 1.5 + Math.hypot(...this.modelCenter()))
+        this.navigationGuides.update(this.camera, this.controls.target, el.clientWidth || 1, el.clientHeight || 1, guideReach)
+        // The coordinate system and its grid sit at the world origin, which
+        // can lie far outside the part's own depth: keep them between the
+        // clip planes while they are shown (a part 300 mm up had them cut
+        // away, the grid with them).
+        const originReach = this.navigationGuides.shown() ? guideReach * 1.5 : 0
+        // The clip planes were set earlier this frame: set them again for
+        // the new range before it is drawn, or the grid only appears after
+        // the next move.
+        if (originReach !== (this.clipSphere.originReach ?? 0)) {
+          this.clipSphere.originReach = originReach
+          this.viewport.refreshClipPlanes()
+          this.invalidate()
+        }
         for (const layer of this.layers) layer.tick?.(el.clientWidth || 1, el.clientHeight || 1)
         // A viewport that follows a sheet re-reads its scale when its own
         // size changes — shown again after being put away, or the window
@@ -3369,6 +3382,7 @@ export class SceneManager {
       modelRadius: () => this.modelRadius,
       modelCenter: () => this.modelCenter(),
       hasScan: () => this.mesh !== null,
+      scanGeometry: () => this.scanGeometry(),
       pickScan: (x, y) => this.pick(x, y),
       scanDistanceAt: (x, y) => this.scanDistanceAt(x, y),
       clipPlanes: () => this.slicePlanes,

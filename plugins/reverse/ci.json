@@ -24,6 +24,8 @@
     "scripts/e2e-sketch-part-view.mjs",
     "scripts/e2e-full-sketch-workflow.mjs",
     "scripts/e2e-sketch-corner-paint.mjs",
-    "scripts/e2e-qsf-project.mjs"
+    "scripts/e2e-qsf-project.mjs",
+    "scripts/e2e-stacked-reference.mjs",
+    "scripts/e2e-stack-box.mjs"
   ]
 }

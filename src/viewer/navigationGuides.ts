@@ -35,9 +35,12 @@ export function navigationGridLayout(_camera: THREE.OrthographicCamera, spacing:
     firstU: -last, lastU: last, firstV: -last, lastV: last }
 }
 
-/** Rounded 1/2/5 scale, independent of the user's exact fine-grid spacing. */
-function coarseSpacing(worldPerPixel: number): number {
-  const wanted = worldPerPixel * 150
+/** The Coordinate System's own cells: a round 1/2/5 step giving about 16
+ *  across the square, fixed in the model, not following the zoom —
+ *  QUICKSURFACE 8.0.128 draws 16 to 20 solid cells over the square whatever
+ *  the zoom (2026-11-13, basic_part, bearinghousing, a cone, lego). */
+export function coordinateGridStep(halfExtent: number): number {
+  const wanted = halfExtent / 8
   const power = 10 ** Math.floor(Math.log10(wanted))
   const fraction = wanted / power
   return (fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 5 ? 5 : 10) * power
@@ -89,6 +92,16 @@ export class NavigationGuides {
     if (!this.gridEnabled) this.grid.visible = false
   }
 
+  /** Whether anything is drawn at the world origin: the coordinate system,
+   *  and with it its grid. */
+  shown(): boolean {
+    return this.coordinates.visible
+  }
+
+  /** QUICKSURFACE 8.0.128 (2026-11-13): Coordinate System shows the axes and
+   *  a grid square on XY about the origin, solid lines, fixed in the model;
+   *  Grid… draws its own spacing over that square instead; neither grid is
+   *  drawn with Coordinate System off, Grid on or not. */
   update(camera: THREE.OrthographicCamera, target: THREE.Vector3, w: number, h: number, halfExtent = 100): void {
     if (w <= 0 || h <= 0) return
     const worldPerPixel = Math.abs(camera.top - camera.bottom) / (camera.zoom * h)
@@ -98,28 +111,29 @@ export class NavigationGuides {
     // clipping supplies the viewport edge without attaching the axis to it.
     const extent = camera.position.length() + target.length() + worldPerPixel * Math.hypot(w, h)
     this.coordinates.scale.setScalar(extent)
-    const coarseStep = coarseSpacing(worldPerPixel)
-    const coarseLayout = coordinatesOn ? navigationGridLayout(camera, coarseStep, 2, halfExtent) : null
+    const fine = coordinatesOn && this.gridEnabled ? navigationGridLayout(camera, this.spacing, 2, halfExtent) : null
+    const coarseStep = coordinateGridStep(halfExtent)
+    const coarseLayout = coordinatesOn && !fine ? navigationGridLayout(camera, coarseStep, 2, halfExtent) : null
     this.coarseGrid.visible = coarseLayout !== null
     if (coarseLayout) {
       const key = JSON.stringify([coarseLayout, coarseStep])
       if (key !== this.coarseKey) {
         this.coarseKey = key
         this.clear(this.coarseGrid, this.coarseResources)
-        this.coarseResources = this.drawGrid(this.coarseGrid, coarseLayout, coarseStep, true, false, worldPerPixel)
+        this.coarseResources = this.drawGrid(this.coarseGrid, coarseLayout, coarseStep)
       }
     }
-    const layout = this.gridEnabled ? navigationGridLayout(camera, this.spacing, 2, halfExtent) : null
-    this.grid.visible = layout !== null
-    if (!layout) return
-    const key = JSON.stringify([layout, this.spacing, coordinatesOn])
+    this.grid.visible = fine !== null
+    if (!fine) return
+    const key = JSON.stringify([fine, this.spacing])
     if (key === this.gridKey) return
     this.gridKey = key
     this.clear(this.grid, this.gridResources)
-    this.gridResources = this.drawGrid(this.grid, layout, this.spacing, false, !coordinatesOn, worldPerPixel)
+    this.gridResources = this.drawGrid(this.grid, fine, this.spacing)
   }
 
-  private drawGrid(group: THREE.Group, layout: NavigationGridLayout, spacing: number, dashed: boolean, axes: boolean, worldPerPixel: number): Disposable[] {
+  private drawGrid(group: THREE.Group, layout: NavigationGridLayout, spacing: number): Disposable[] {
+    const dashed = false, axes = false, worldPerPixel = 1
     const { u, v, minU, maxU, minV, maxV, firstU, lastU, firstV, lastV } = layout
     const regular: number[] = [], alongU: number[] = [], alongV: number[] = [], negative: number[] = []
     const append = (array: number[], a: number, b: number, c: number, d: number) => {

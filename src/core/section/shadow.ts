@@ -57,7 +57,8 @@ import { loopShape, maskLoops, type LoopShape, type Pt } from '../geometry/outli
 import type { Vec3 } from '../types'
 import type { FlatFit } from '../flat/types'
 import type { SectionFrame } from './frame'
-import type { SectionCut } from './slice'
+import { sliceMesh, type SectionCut } from './slice'
+import * as THREE from 'three'
 import { fmtArea, fmtLen, unitWord, type DisplayUnits } from '../units'
 
 /** The tolerance a shadow is read to unless told otherwise, mm. The raster
@@ -251,6 +252,78 @@ function traceSilhouette(positions: Float32Array, indices: Uint32Array, frame: S
   }))
 
   return { exact, cell, widened, extent }
+}
+
+/** The part of a mesh between two planes parallel to the frame's, at
+ *  distances `min` and `max` along its normal from its origin: triangles
+ *  wholly inside kept, those across a plane clipped to it, the rest left
+ *  out — so an outline of it is the outline of that slab of the part
+ *  (Create Sketch → Stacked sections with Outline Mesh). */
+export function clipToSlab(positions: Float32Array, indices: Uint32Array, frame: SectionFrame, min: number, max: number): { positions: Float32Array; indices: Uint32Array } {
+  const len = Math.hypot(...frame.normal) || 1
+  const n = frame.normal.map((v) => v / len)
+  const o = frame.origin
+  const height = (i: number) => (positions[3 * i] - o[0]) * n[0] + (positions[3 * i + 1] - o[1]) * n[1] + (positions[3 * i + 2] - o[2]) * n[2]
+  const lo = Math.min(min, max), hi = Math.max(min, max)
+  const out: number[] = []
+  const clip = (poly: { p: number[]; h: number }[], keep: (h: number) => number) => {
+    const res: { p: number[]; h: number }[] = []
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i], b = poly[(i + 1) % poly.length], da = keep(a.h), db = keep(b.h)
+      if (da >= 0) res.push(a)
+      if ((da >= 0) !== (db >= 0)) {
+        const t = da / (da - db)
+        res.push({ p: a.p.map((v, k) => v + (b.p[k] - v) * t), h: a.h + (b.h - a.h) * t })
+      }
+    }
+    return res
+  }
+  for (let t = 0; t + 2 < indices.length; t += 3) {
+    const ids = [indices[t], indices[t + 1], indices[t + 2]]
+    const hs = ids.map(height)
+    if (hs.every((h) => h < lo) || hs.every((h) => h > hi)) continue
+    let poly = ids.map((i, k) => ({ p: [positions[3 * i], positions[3 * i + 1], positions[3 * i + 2]], h: hs[k] }))
+    if (hs.some((h) => h < lo)) poly = clip(poly, (h) => h - lo)
+    if (hs.some((h) => h > hi)) poly = clip(poly, (h) => hi - h)
+    for (let k = 1; k + 1 < poly.length; k++) out.push(...poly[0].p, ...poly[k].p, ...poly[k + 1].p)
+  }
+  // The slab's two cut faces, filled (holes left open): a wall running along
+  // the normal shows no area seen along it, so without its caps a straight-
+  // sided slab would have no outline at all.
+  for (const h of [lo, hi]) capAt(positions, indices, frame, n as Vec3, h, out)
+  return { positions: Float32Array.from(out), indices: Uint32Array.from({ length: out.length / 3 }, (_, i) => i) }
+}
+
+/** The mesh's cross-section `h` along the unit normal `n` from the frame's
+ *  origin as filled triangles, appended to `out`: each outer loop with the
+ *  loops directly inside it as holes (even-odd nesting). */
+function capAt(positions: Float32Array, indices: Uint32Array, frame: SectionFrame, n: Vec3, h: number, out: number[]): void {
+  const o = frame.origin, u = frame.basisU, v = frame.basisV
+  const origin: Vec3 = [o[0] + n[0] * h, o[1] + n[1] * h, o[2] + n[2] * h]
+  const cut = sliceMesh(positions, indices, origin, n)
+  const loops: THREE.Vector2[][] = []
+  for (let c = 0; c + 1 < cut.offsets.length; c++) {
+    const pts: THREE.Vector2[] = []
+    for (let i = cut.offsets[c]; i < cut.offsets[c + 1]; i++) {
+      const x = cut.points[3 * i] - origin[0], y = cut.points[3 * i + 1] - origin[1], z = cut.points[3 * i + 2] - origin[2]
+      pts.push(new THREE.Vector2(x * u[0] + y * u[1] + z * u[2], x * v[0] + y * v[1] + z * v[2]))
+    }
+    if (pts.length > 3 && pts[0].distanceTo(pts[pts.length - 1]) < 1e-6) pts.pop()
+    if (pts.length >= 3) loops.push(pts)
+  }
+  const inside = (p: THREE.Vector2, poly: THREE.Vector2[]) => {
+    let c = false
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) if ((poly[i].y > p.y) !== (poly[j].y > p.y) && p.x < ((poly[j].x - poly[i].x) * (p.y - poly[i].y)) / (poly[j].y - poly[i].y) + poly[i].x) c = !c
+    return c
+  }
+  const depth = loops.map((l, i) => loops.reduce((d, m, j) => d + (j !== i && inside(l[0], m) ? 1 : 0), 0))
+  const to3 = (p: THREE.Vector2) => [origin[0] + p.x * u[0] + p.y * v[0], origin[1] + p.x * u[1] + p.y * v[1], origin[2] + p.x * u[2] + p.y * v[2]]
+  loops.forEach((outer, i) => {
+    if (depth[i] % 2 !== 0) return
+    const holes = loops.filter((m, j) => depth[j] === depth[i] + 1 && inside(m[0], outer))
+    const all = [outer, ...holes].flat()
+    for (const [a, b, c] of THREE.ShapeUtils.triangulateShape(outer, holes)) out.push(...to3(all[a]), ...to3(all[b]), ...to3(all[c]))
+  })
 }
 
 export function projectedMeshOutline(positions: Float32Array, indices: Uint32Array, frame: SectionFrame): SectionCut {

@@ -21,7 +21,11 @@ import { createPortal } from 'react-dom'
 import { cornerBoxPlace } from '../../../src/ui/cornerBox'
 import { commandHost } from '../../../src/commands/host'
 import { cloneSketch } from '../core/sketch'
-import { collectExtrudedReference, ReferenceCancelled, type StackExtent } from '../core/stackedReference'
+import { clipChainsToRect, collectExtrudedReference, ReferenceCancelled, stackExtentOf, type StackExtent } from '../core/stackedReference'
+import { useStack } from '../state/stackStore'
+import { chainsOfEdges } from '../core/segment'
+import { longChains } from '../core/selectionCut'
+import { projectCut } from '../../../src/core/section/slice'
 import { sectionModeKey } from '../core/selectionCut'
 import type { SketchChains } from '../app/useReverseWorkspace'
 import { frameKey } from '../../../src/core/section/frame'
@@ -85,20 +89,27 @@ export function PlaceSketch({ chainsOf }: { chainsOf: () => SketchChains | null 
   const len = useLength()
   const [typed, setTyped] = useState<string | null>(null)
   const [onSlicingPlane, setOnSlicingPlane] = useState(true)
-  const [stacked, setStacked] = useState(false)
-  const [count, setCount] = useState(20)
+  const stacked = useStack((s) => s.on), count = useStack((s) => s.count), upper = useStack((s) => s.upper), lower = useStack((s) => s.lower), rect = useStack((s) => s.rect)
+  const setStacked = (on: boolean) => useStack.getState().setOn(on)
+  const setCount = (n: number) => useStack.getState().setCount(n)
   const [hideScan, setHideScan] = useState(false)
   const [ignoreScan, setIgnoreScan] = useState(false)
-  const [extent, setExtent] = useState<StackExtent | undefined>()
   const [working, setWorking] = useState<string | null>(null)
   const sectionLine = useSectionLine()
   const [referenceMessage, setReferenceMessage] = useState<string | null>(null)
   const run = useRef(0)
   const appliedStack = useRef<string | null>(null)
+  const stackKeyRef = useRef<(() => string) | null>(null)
   const collectStack = useRef<(() => Promise<boolean>) | null>(null)
   const previousFrame = useRef<string | null>(null)
   const [typedAngle, setTypedAngle] = useState<string | null>(null)
+  // The upper plane's distance as typed: kept while the field is in use, so a
+  // half-typed "12." is not tidied away under the cursor.
+  const [upperText, setUpperText] = useState<string | null>(null)
+  const [lowerText, setLowerText] = useState<string | null>(null)
   useEffect(() => () => { run.current++ }, [])
+  // Leaving Create Sketch puts the stack's planes away.
+  useEffect(() => () => useStack.getState().setOn(false), [])
   const pickArmed = usePlacePick((s) => s.armed)
   const picked = usePlacePick((s) => s.picked)
   // Leaving Create Sketch lets go of an armed pick.
@@ -108,15 +119,15 @@ export function PlaceSketch({ chainsOf }: { chainsOf: () => SketchChains | null 
   useEffect(() => { if (picked) { const ref = usePlacePick.getState().take(); if (ref) placeRef.current?.(ref) } }, [picked])
   const currentFrame = draft?.placing ? frameKey(draft.frame) : null
   useEffect(() => {
-    const moved = previousFrame.current !== null && previousFrame.current !== currentFrame
     previousFrame.current = currentFrame
-    if (!moved || !currentFrame || !stacked || ignoreScan || draft?.plane.kind === 'radial') return
+    if (!currentFrame || !stacked || ignoreScan || draft?.plane.kind === 'radial') return
     run.current++; setWorking(null); appliedStack.current = null
-    // Moving the plane translates the bounded volume too. Recollect only
-    // when the arrow settles; no per-slice feature/history revisions.
-    const timer = setTimeout(() => { void collectStack.current?.() }, 220)
+    // Live: the cuts follow either plane and the count, collected again once
+    // the drag or the typing settles; no per-slice feature/history revisions.
+    // Skipped when Apply has already cut this very stack meanwhile.
+    const timer = setTimeout(() => { if (appliedStack.current !== stackKeyRef.current?.()) void collectStack.current?.() }, 250)
     return () => clearTimeout(timer)
-  }, [currentFrame, stacked, ignoreScan])
+  }, [currentFrame, stacked, ignoreScan, count, upper, lower, rect, sectionLine.outline, sectionLine.outlineMinPoints])
   if (!draft?.placing) return null
   const re = useReverse.getState()
   const plane = world(draft.plane)
@@ -134,7 +145,7 @@ export function PlaceSketch({ chainsOf }: { chainsOf: () => SketchChains | null 
   const referenceName = draft.plane.kind === 'plane' ? useStore.getState().elements.find((e) => e.id === (draft.plane as { id: number }).id)?.name
     : draft.plane.kind === 'section' ? useStore.getState().sections.find((x) => x.id === (draft.plane as { id: number }).id)?.name : undefined
   const place = (ref: PlaneRef) => {
-    run.current++; setWorking(null); setExtent(undefined); setStacked(false); setReferenceMessage(null); appliedStack.current = null
+    run.current++; setWorking(null); setStacked(false); setReferenceMessage(null); appliedStack.current = null
     // A new plane, the sketch drafted afresh on it, still placing.
     const { sections, elements, modelCenter } = useStore.getState()
     if (re.startSketchOn(placementPlaneRef(ref, { sections, elements, modelCenter }))) placing()
@@ -148,7 +159,8 @@ export function PlaceSketch({ chainsOf }: { chainsOf: () => SketchChains | null 
   }
   const stackKey = () => {
     const d = useReverse.getState().sketchDraft
-    return JSON.stringify([d?.plane, d?.frame, count, extent ?? null])
+    const { outline, outlineMinPoints } = useSectionLine.getState()
+    return JSON.stringify([d?.plane, d?.frame, useStack.getState().count, useStack.getState().upper, useStack.getState().lower, useStack.getState().rect, outline, outlineMinPoints])
   }
   /** Apply is one provisional reference-data change, never a feature loop. */
   const createStacked = async (): Promise<boolean> => {
@@ -163,16 +175,67 @@ export function PlaceSketch({ chainsOf }: { chainsOf: () => SketchChains | null 
     if (!worker || !useStore.getState().fileName) { setReferenceMessage('Load a scan before collecting stacked reference points.'); return false }
     const token = ++run.current, version = worker.scanVersion
     const current = () => run.current === token && useReverse.getState().sketchDraft === d && worker.scanVersion === version
+    const count = useStack.getState().count
     setWorking(`Stacked sections: 0 of ${count}`); setReferenceMessage(null)
     try {
+      // The upper plane starts just inside the far side of the scan from the
+      // sketch's plane — a cut exactly on the outermost face finds little.
+      const at = planeOffset(d.plane)
+      let up = useStack.getState().upper
+      let box = useStack.getState().rect
+      // The box's lower plane starts on the sketch's plane.
+      let down = useStack.getState().lower
+      if (down === null) { down = at; useStack.getState().setLower(down) }
+      if (up === null || box === null) {
+        const bounds = await worker.bounds()
+        if (!current()) return false
+        if (up === null) {
+          const e = stackExtentOf(bounds, d.frame)
+          const far = Math.abs(e.max) >= Math.abs(e.min) ? e.max : e.min
+          up = at + far * 0.98
+          useStack.getState().setUpper(up)
+        }
+        if (box === null) {
+          // The box starts on the part's own footprint on the plane, a little
+          // wider all round; its handles then size it.
+          const f = d.frame, us: number[] = [], vs: number[] = []
+          for (let c = 0; c < 8; c++) {
+            const p = [0, 1, 2].map((k) => ((c & (1 << k)) ? bounds.max[k] : bounds.min[k]) - f.origin[k])
+            us.push(p[0] * f.basisU[0] + p[1] * f.basisU[1] + p[2] * f.basisU[2]); vs.push(p[0] * f.basisV[0] + p[1] * f.basisV[1] + p[2] * f.basisV[2])
+          }
+          const pad = 0.05 * Math.max(Math.max(...us) - Math.min(...us), Math.max(...vs) - Math.min(...vs), 1)
+          box = { u0: Math.min(...us) - pad, u1: Math.max(...us) + pad, v0: Math.min(...vs) - pad, v1: Math.max(...vs) + pad }
+          useStack.getState().setRect(box)
+        }
+      }
+      const relUp = up - at, relDown = down - at
+      if (!(Math.abs(relUp - relDown) > 1e-6)) { setReferenceMessage('Drag the two planes apart to stack sections between them.'); return false }
+      const extent: StackExtent = { min: Math.min(relDown, relUp), max: Math.max(relDown, relUp) }
+      // Outline Mesh: the outline of the part between the two planes, seen
+      // along the normal, flattened onto the sketch — its short pieces left
+      // out as for a single section.
+      const { outline, outlineMinPoints } = useSectionLine.getState()
+      if (outline) {
+        setWorking('Stacked sections: outline between the planes…')
+        const cut = await worker.meshOutline(d.frame, extent)
+        if (!current()) return false
+        const chains = clipChainsToRect(chainsOfEdges(longChains(projectCut(cut, d.frame), outlineMinPoints)), box)
+        useReverse.setState((s) => (s.sketchDraft === d ? { sketchDraft: { ...d, sketch: { ...cloneSketch(d.sketch), referenceChains: chains } } } : {}))
+        appliedStack.current = JSON.stringify([d.plane, d.frame, count, up, down, box, true, outlineMinPoints])
+        const points = chains.reduce((sum, c) => sum + c.length, 0)
+        const message = `Outline of the part between the planes · ${points.toLocaleString()} reference points in one sketch. No primitives fitted.`
+        setReferenceMessage(message); useStore.getState().setStatus(message)
+        return true
+      }
       const result = await collectExtrudedReference(worker, d.frame, count, { extent, isCurrent: current, onProgress: (done, total) => { if (current()) setWorking(`Stacked sections: ${done} of ${total}`) } })
       if (!current()) return false
-      const sketch = cloneSketch(d.sketch)
-      sketch.referenceChains = result.chains
-      useReverse.getState().setSketch(sketch)
-      setExtent(result.extent)
-      appliedStack.current = JSON.stringify([d.plane, d.frame, count, result.extent])
-      const message = `${result.sections} sections · ${result.points.toLocaleString()} reference points in one sketch. No primitives fitted.`
+      // Reference points only, re-cut as the planes move: written into the
+      // draft without an undo step each time.
+      // Only what lies inside the box: its handles isolate part of the scan.
+      const kept = clipChainsToRect(result.chains, box)
+      useReverse.setState((s) => (s.sketchDraft === d ? { sketchDraft: { ...d, sketch: { ...cloneSketch(d.sketch), referenceChains: kept } } } : {}))
+      appliedStack.current = JSON.stringify([d.plane, d.frame, count, up, down, box, false, useSectionLine.getState().outlineMinPoints])
+      const message = `${result.sections} sections · ${kept.reduce((n, c) => n + c.length, 0).toLocaleString()} reference points in one sketch, inside the box. No primitives fitted.`
       setReferenceMessage(message); useStore.getState().setStatus(message)
       return true
     } catch (error) {
@@ -183,6 +246,7 @@ export function PlaceSketch({ chainsOf }: { chainsOf: () => SketchChains | null 
     }
   }
   collectStack.current = createStacked
+  stackKeyRef.current = stackKey
   const prepareReference = async (): Promise<boolean> => {
     const d = useReverse.getState().sketchDraft
     if (!d?.placing) return false
@@ -316,25 +380,33 @@ export function PlaceSketch({ chainsOf }: { chainsOf: () => SketchChains | null 
       <label className="checkrow">
         <input type="checkbox" data-test="place-stacked" disabled={!!radial || ignoreScan} checked={stacked && !radial} onChange={(e) => {
           const on = e.target.checked; setStacked(on); appliedStack.current = null
-          if (on) void createStacked()
-          else { run.current++; setWorking(null); setExtent(undefined); setReferenceMessage(null); const d = useReverse.getState().sketchDraft; if (d) { const sketch = cloneSketch(d.sketch); delete sketch.referenceChains; useReverse.getState().setSketch(sketch) } }
+          // On: the live effect collects once the box settles.
+          if (!on) { run.current++; setWorking(null); setReferenceMessage(null); const d = useReverse.getState().sketchDraft; if (d) { const sketch = cloneSketch(d.sketch); delete sketch.referenceChains; useReverse.getState().setSketch(sketch) } }
         }} />
         <span>Stacked sections</span>
       </label>
       <div className="toolrow re-place-stack">
         <label className="field">
           <span>Sections</span>
-          <input type="number" min={2} max={200} step={1} value={count} disabled={!stacked || !!working || !!radial || ignoreScan} data-test="place-stacked-count" onChange={(e) => { appliedStack.current = null; setCount(Number(e.target.value)) }} />
+          <input type="number" min={2} max={200} step={1} value={count} disabled={!stacked || !!radial || ignoreScan} data-test="place-stacked-count" onChange={(e) => { appliedStack.current = null; setCount(Number(e.target.value)) }} />
         </label>
         <button data-test="place-stacked-apply" disabled={!stacked || !!working || !!radial || ignoreScan || !useStore.getState().fileName} onClick={() => void createStacked()} title="Project all section points onto this one reference sketch. No primitives are fitted.">
           Apply
         </button>
       </div>
       {!!radial && <p className="hint" data-test="place-radial-stack-unavailable">Revolved stacked-section projection awaits reference verification. Single revolved sections are available.</p>}
-      {stacked && !radial && extent && <div className="toolrow re-place-stack-extent" data-test="place-stack-extent">
-        <label className="field"><span>Lower extent</span><input type="number" step="any" aria-label="Lower stack extent" value={Number(len.toDisplay(extent.min).toFixed(4))} disabled={!!working} onChange={(e) => { appliedStack.current = null; setExtent({ ...extent, min: len.fromDisplay(Number(e.target.value)) }) }} /></label>
-        <label className="field"><span>Upper extent</span><input type="number" step="any" aria-label="Upper stack extent" value={Number(len.toDisplay(extent.max).toFixed(4))} disabled={!!working} onChange={(e) => { appliedStack.current = null; setExtent({ ...extent, max: len.fromDisplay(Number(e.target.value)) }) }} /></label>
-        <span>{len.word()}</span>
+      {stacked && !radial && upper !== null && lower !== null && <div className="toolrow re-place-stack-extent" data-test="place-stack-extent">
+        <label className="field" title="The box's upper plane, measured from the sketch's plane along its normal. Drag its blue arrow in the view, or type it."><span>Upper plane</span><input type="number" step="any" aria-label="Upper plane distance" data-test="place-stack-upper" value={upperText ?? String(Number(len.toDisplay(upper - offset).toFixed(4)))} onBlur={() => setUpperText(null)} onChange={(e) => { setUpperText(e.target.value); const v = Number(e.target.value); if (e.target.value.trim() !== '' && Number.isFinite(v)) { appliedStack.current = null; useStack.getState().setUpper(offset + len.fromDisplay(v)) } }} /></label>
+        <label className="field" title="The box's lower plane, measured from the sketch's plane along its normal. Drag its yellow arrow in the view, or type it."><span>Lower plane</span><input type="number" step="any" aria-label="Lower plane distance" data-test="place-stack-lower" value={lowerText ?? String(Number(len.toDisplay(lower - offset).toFixed(4)))} onBlur={() => setLowerText(null)} onChange={(e) => { setLowerText(e.target.value); const v = Number(e.target.value); if (e.target.value.trim() !== '' && Number.isFinite(v)) { appliedStack.current = null; useStack.getState().setLower(offset + len.fromDisplay(v)) } }} /></label>
+        <span>{len.word()} from the sketch plane</span>
+      </div>}
+      {stacked && !radial && upper !== null && lower !== null && <div className="toolrow re-place-stack-snap" data-test="place-stack-snap" style={{ flexWrap: 'nowrap', alignItems: 'center' }} title="Put the sketch's plane on the stack's bottom section, its middle, or its top section. Dragging its green arrow snaps there too.">
+        <span style={{ whiteSpace: 'nowrap' }}>Sketch plane on</span>
+        <div style={{ display: 'flex', gap: 4, flex: 1, minWidth: 0 }}>
+        {([['bottom', 'Bottom', lower], ['middle', 'Middle', (lower + upper) / 2], ['top', 'Top', upper]] as const).map(([key, label, at]) => (
+          <button key={key} type="button" style={{ flex: '1 1 0', minWidth: 0, padding: '2px 4px' }} data-test={`place-stack-snap-${key}`} aria-pressed={Math.abs(offset - at) < 1e-6} className={Math.abs(offset - at) < 1e-6 ? 'on' : undefined} onClick={() => { run.current++; appliedStack.current = null; re.setSketchOffset(at) }}>{label}</button>
+        ))}
+        </div>
       </div>}
       <label className="checkrow" title="Sketch on the part's outline through the plane instead of the cut">
         <input type="checkbox" data-test="place-outline-mode" checked={sectionLine.outline} onChange={(e) => sectionLine.setOutline(e.target.checked)} />

@@ -422,9 +422,11 @@ export class MeshWorkerClient {
     return { points: res.points, offsets: res.offsets, ...(res.normals ? { normals: res.normals } : {}) }
   }
 
-  async meshOutline(frame: SectionFrame): Promise<SectionCut> {
+  /** The scan's outline seen along the frame's normal; with `range`, only of
+   *  the part between those distances along it (Stacked sections' slab). */
+  async meshOutline(frame: SectionFrame, range?: { min: number; max: number }): Promise<SectionCut> {
     const res = await this.request<Extract<WorkerResponse, { type: 'section-ok' }>>({
-      type: 'mesh-outline', requestId: this.nextId++, frame,
+      type: 'mesh-outline', requestId: this.nextId++, frame, ...(range ? { range } : {}),
     })
     return { points: res.points, offsets: res.offsets }
   }

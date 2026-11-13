@@ -11,6 +11,8 @@ import type { Vec3 } from '../../../src/core/types'
 
 const COLOR = 0xffff00
 const HOVER = 0xffff00
+/** How near, in pixels, a drag comes to a snap offset before landing on it. */
+const SNAP_PX = 10
 
 export interface SliceArrowSpec {
   /** A point on the plane, in the part's coordinates — where the arrow stands. */
@@ -19,6 +21,15 @@ export interface SliceArrowSpec {
   normal: Vec3
   /** The plane's offset along its normal now. */
   offset: number
+  /** Which way the arrow points: along the normal (1, the default) or
+   *  against it (−1) — Stacked sections points its two arrows away from each
+   *  other. Dragging carries the plane the way the hand goes either way. */
+  direction?: 1 | -1
+  /** Offsets the drag snaps to when it comes within a few pixels of one —
+   *  Stacked sections' bottom, middle and top sections for the sketch's plane. */
+  snaps?: readonly number[]
+  /** The arrow's colour; its own by default. */
+  color?: number
 }
 
 export class SliceArrow {
@@ -33,7 +44,9 @@ export class SliceArrow {
   private length = 1
   private scratch = new THREE.Vector3()
 
-  constructor(private host: SceneLayerHost) {
+  /** `color`: yellow for the sketch's own plane; Stacked sections' upper
+   *  plane has its own. */
+  constructor(private host: SceneLayerHost, private color = COLOR) {
     this.group.visible = false
     host.partGroup.add(this.group)
   }
@@ -52,7 +65,8 @@ export class SliceArrow {
     const n = new THREE.Vector3(...spec.normal)
     if (!(n.length() > 0)) return this.set(null)
     n.normalize()
-    this.spec = { origin: spec.origin, normal: [n.x, n.y, n.z], offset: spec.offset }
+    this.spec = { origin: spec.origin, normal: [n.x, n.y, n.z], offset: spec.offset, direction: spec.direction ?? 1, snaps: spec.snaps, color: spec.color }
+    if (this.material) this.material.color.setHex(this.hovered || this.dragging ? this.hoverColor() : this.baseColor())
     if (!this.sprite) this.build()
     this.group.position.set(...spec.origin)
     this.updateScreenSize()
@@ -71,7 +85,7 @@ export class SliceArrow {
     this.texture = new THREE.DataTexture(pixels, width, height)
     this.texture.magFilter = THREE.LinearFilter; this.texture.minFilter = THREE.LinearFilter
     this.texture.needsUpdate = true
-    this.material = new THREE.SpriteMaterial({ map: this.texture, color: COLOR, depthTest: false, depthWrite: false, toneMapped: false, transparent: true })
+    this.material = new THREE.SpriteMaterial({ map: this.texture, color: this.baseColor(), depthTest: false, depthWrite: false, toneMapped: false, transparent: true })
     this.sprite = new THREE.Sprite(this.material)
     this.sprite.center.set(0.5, 0)
     this.sprite.renderOrder = 12
@@ -90,7 +104,7 @@ export class SliceArrow {
   }
 
   private paint(): void {
-    this.material?.color.setHex(this.hovered || this.dragging ? HOVER : COLOR)
+    this.material?.color.setHex(this.hovered || this.dragging ? this.hoverColor() : this.baseColor())
     this.host.invalidate()
   }
 
@@ -109,7 +123,7 @@ export class SliceArrow {
     const camera = this.host.camera()
     const rect = this.host.canvas.getBoundingClientRect()
     const base = new THREE.Vector3(...this.spec.origin)
-    const tip = base.clone().addScaledVector(new THREE.Vector3(...this.spec.normal), this.length)
+    const tip = base.clone().addScaledVector(new THREE.Vector3(...this.spec.normal), this.length * (this.spec.direction ?? 1))
     this.host.partGroup.updateWorldMatrix(true, false)
     const toClient = (p: THREE.Vector3) => {
       const v = this.scratch.copy(p)
@@ -119,6 +133,15 @@ export class SliceArrow {
     const a = toClient(base)
     const b = toClient(tip)
     return { x: b.x - a.x, y: b.y - a.y }
+  }
+
+  private baseColor(): number {
+    return this.spec?.color ?? this.color
+  }
+
+  private hoverColor(): number {
+    const c = this.baseColor()
+    return c === COLOR ? HOVER : 0xffffff
   }
 
   private release(): void {
@@ -161,8 +184,12 @@ export class SliceArrow {
         this.host.setCursor('grabbing')
         this.paint()
         const move = (ev: PointerEvent) => {
-          if (endOn) this.onOffset?.(start.offset + (start.y - ev.clientY) * mmPerPx)
-          else this.onOffset?.(start.offset + (((ev.clientX - start.x) * axis.x + (ev.clientY - start.y) * axis.y) / px) * this.length)
+          const dir = this.spec?.direction ?? 1
+          let next = endOn ? start.offset + (start.y - ev.clientY) * mmPerPx * dir : start.offset + (((ev.clientX - start.x) * axis.x + (ev.clientY - start.y) * axis.y) / px) * this.length * dir
+          // Within SNAP_PX of a snap offset, the plane lands on it.
+          const snap = (this.spec?.snaps ?? []).reduce<number | null>((best, s) => (Math.abs(s - next) <= SNAP_PX * mmPerPx && (best === null || Math.abs(s - next) < Math.abs(best - next)) ? s : best), null)
+          if (snap !== null) next = snap
+          this.onOffset?.(next)
         }
         const up = () => {
           window.removeEventListener('pointermove', move)

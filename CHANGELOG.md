@@ -1,3 +1,47 @@
+## 1.1.1 — Stacked sections between two planes in the view, and the coordinate grid back
+
+Everything from 0.0.212 to 0.0.215 (local builds), released together.
+
+- **Stacked sections (Create Sketch)** is now set up in the view.
+  - A translucent box runs between two planes, its yellow arrow moving the bottom and its blue arrow the top, both at its centre and pointing apart.
+  - Handles on its corners, sides and centre size it and move it, to isolate part of the scan or take in more. The scan inside the box is tinted orange.
+  - Sections sets how many cuts: one on each plane, the rest evenly between, kept inside the box and flattened onto the sketch. They are re-cut live as anything is dragged or typed.
+  - The sketch's own plane keeps a green arrow beside the box. It snaps to the bottom, middle and top sections, and the Sketch plane on: Bottom / Middle / Top buttons put it there in one click.
+- **Outline Mesh with Stacked sections** gives the outline of the part between the planes, inside the box.
+- **Coordinate System shows its grid again**, a fixed solid-line square about the origin, and Grid … draws over it only while Coordinate System is shown, as in QuickSurface.
+- Two browser tests drive all this with the mouse as a person would (e2e-stacked-reference, e2e-stack-box) and now run in CI.
+
+## 0.0.215 — The sketch's plane keeps its own arrow while stacking, and snaps to the stack's sections
+
+- With Stacked sections on, the sketch's plane has its own arrow again, in green, just outside the box's side, beside the box's yellow (lower) and blue (upper) arrows.
+- Dragged, it snaps onto the stack's bottom section, its middle or its top section once it comes within about 10 pixels of one.
+- The panel's Sketch plane on: Bottom / Middle / Top buttons put it there in one click. The box's planes stay where they are.
+- e2e-stack-box drags the green arrow to 0.3 mm short of the middle with the mouse and checks that it lands exactly on it, then that Top and Bottom put it exactly on those sections, with all ten cuts kept.
+
+## 0.0.214 — Stacked sections' yellow arrow moves the box's lower plane
+
+- With Stacked sections on, the box has its own lower plane. It starts on the sketch's plane, and its yellow arrow moves it the way the blue arrow moves the upper plane. Both arrows stand at the box's centre, one above the other, pointing apart.
+- The sketch's plane (its big sheet) stays where it is: the cuts run between the box's two planes and are flattened onto it. The Offset field still moves the sketch's plane.
+- The panel shows Lower plane beside Upper plane, both measured from the sketch's plane, and either can be typed.
+- e2e-stack-box drags the yellow arrow with the mouse: only the lower plane moves, and the sketch's plane and the upper plane stay put.
+
+## 0.0.213 — Stacked sections' box can be sized and moved
+
+- The box between the planes has handles: a square on each corner, one on each side and one at its centre, halfway up the box. A corner moves its two sides, a side handle its own side, the centre the whole box, across the plane; sides never pass each other.
+- The box isolates part of the scan: the cuts (or, with Outline Mesh, the outline) keep only what lies inside it, and only the scan inside is tinted orange. It starts on the part's own footprint, a little wider all round.
+- Checked as a person would use it (e2e-stack-box): 2D Sketch from the ribbon, plane and offset typed, Stacked sections ticked, then handles dragged with the mouse — the cuts stop at a side pulled in, a corner moves its two sides only, the centre moves the box with its size kept, a middle-button orbit leaves the box alone, and unticking takes the box away. Both stack tests now run in CI.
+
+## 0.0.212 — Stacked sections between two planes in the view; the coordinate grid shows again
+
+- **Stacked sections (Create Sketch).**
+  - Ticking it puts a second, blue plane in the view with its own drag arrow. The sketch's plane, with its yellow arrow, is the lower one. The two arrows point away from each other, one at each end.
+  - The region between the planes is a translucent box with its edges drawn and the planes of the cuts across it. The scan inside the box is tinted orange, so it shows at a glance which part of the mesh the stack goes through.
+  - Sections sets how many cuts (10 by default): one on the lower plane, one on the upper, the rest evenly between. They are flattened onto the sketch as reference points, as before.
+  - Dragging either arrow, typing the upper plane's distance, or changing Sections re-cuts the stack live. Apply still re-cuts at once. Moving the sketch's plane leaves the upper plane where it is in the part.
+  - The upper plane starts just inside the far side of the scan. The live re-cuts no longer add undo steps to the sketch.
+- **Outline Mesh with Stacked sections** gives the outline of the part between the two planes, its two cut faces filled in so straight walls show. Before, Outline Mesh was silently ignored while stacking. Outline Mesh on a single section is unchanged.
+- **Coordinate System shows its grid again.** The axes and grid at the origin were cut away by the camera's depth range whenever the part sat away from the origin; they now stay in view. The grid is a fixed, solid-line square about the origin sized to the scan, about 16 cells, no longer rescaling with the zoom. Grid … draws its own spacing over the same square, and only while Coordinate System is shown, as in QuickSurface.
+
 ## 0.0.211 — Align with several primitives at once, as in QuickSurface
 
 - Align by Coordinate System was checked against QuickSurface 8.0.128 on 124 more set-ups, run in QuickSurface's own dialog and in Quick Scan's panel from the same saved project. The project holds one part with four planes (one a 30° chamfer), three cylinders, two spheres and two cones, turned to an arbitrary pose with small fitting errors. Copies of it tilt a cylinder 0.5–3° out of the base plane and move and tilt a side plane. The set-ups use several primitives in every row, in every order, with tiles and Flips. QuickSurface applied 120 of them (it greys the tiles for the other four, and so does Quick Scan). Before these fixes, 31 of the 120 came out in a different pose, up to 9 m off or turned. Now all 120 land in QuickSurface's pose (rotation within 1e-6, position within 0.001 mm). The tests that hold the 102 set-ups of 0.0.209 and 0.0.210 still pass.

@@ -34,9 +34,10 @@ export function stackExtentOf(bounds: { min: Vec3; max: Vec3 }, frame: SectionFr
 export function stackDistances(extent: StackExtent, count: number): number[] {
   if (!Number.isInteger(count) || count < 2 || count > 200) throw new Error('Sections must be a whole number from 2 to 200.')
   if (![extent.min, extent.max].every(Number.isFinite) || !(extent.max > extent.min)) throw new Error('The upper stack extent must be greater than the lower extent.')
-  // Cell centres avoid coincident boundary faces and include equal volumes
-  // at either end. Exact QS end-plane policy is not established.
-  return Array.from({ length: count }, (_, i) => extent.min + (extent.max - extent.min) * (i + 0.5) / count)
+  // Both ends included, the rest evenly between: 10 sections are a cut on the
+  // lower plane, one on the upper and eight between (the user's choice,
+  // 2026-11-13, as Geomagic Design X stacks a mesh sketch).
+  return Array.from({ length: count }, (_, i) => extent.min + (extent.max - extent.min) * i / (count - 1))
 }
 
 export async function collectExtrudedReference(source: SectionSource, frame: SectionFrame, count: number, options: { extent?: StackExtent; isCurrent?: () => boolean; onProgress?: (done: number, total: number) => void } = {}): Promise<{ chains: Vec2[][]; extent: StackExtent; sections: number; points: number }> {
@@ -78,4 +79,41 @@ export function referenceCut(chains: readonly (readonly Vec2[])[], frame: Sectio
   const edges = referenceEdges(chains), points = new Float32Array(edges.points.length / 2 * 3)
   for (let i = 0; i < edges.points.length / 2; i++) for (let k = 0; k < 3; k++) points[i * 3 + k] = frame.origin[k] + edges.points[i * 2] * frame.basisU[k] + edges.points[i * 2 + 1] * frame.basisV[k]
   return { points, offsets: edges.offsets }
+}
+
+/** The polylines kept inside a rectangle of the plane (u0..u1 × v0..v1): each
+ *  cut where it crosses a side, the pieces inside kept — Stacked sections'
+ *  box isolating part of the scan. */
+export function clipChainsToRect(chains: readonly (readonly Vec2[])[], rect: { u0: number; u1: number; v0: number; v1: number }): Vec2[][] {
+  const u0 = Math.min(rect.u0, rect.u1), u1 = Math.max(rect.u0, rect.u1), v0 = Math.min(rect.v0, rect.v1), v1 = Math.max(rect.v0, rect.v1)
+  const inside = (p: Vec2) => p[0] >= u0 && p[0] <= u1 && p[1] >= v0 && p[1] <= v1
+  // Where the segment a→b leaves (or enters) the box: the parameter of the
+  // first side crossed, by Liang–Barsky.
+  const cross = (a: Vec2, b: Vec2): Vec2 => {
+    const dx = b[0] - a[0], dy = b[1] - a[1]
+    let t = 1
+    for (const [d, lo, hi, c] of [[dx, u0, u1, a[0]], [dy, v0, v1, a[1]]] as const) {
+      if (d > 0) t = Math.min(t, (hi - c) / d)
+      if (d < 0) t = Math.min(t, (lo - c) / d)
+    }
+    t = Math.max(0, Math.min(1, t))
+    return [a[0] + dx * t, a[1] + dy * t]
+  }
+  const out: Vec2[][] = []
+  for (const chain of chains) {
+    let run: Vec2[] = []
+    for (let i = 0; i < chain.length; i++) {
+      const p = chain[i], prev = i > 0 ? chain[i - 1] : null
+      if (inside(p)) {
+        if (prev && !inside(prev) && run.length === 0) run.push(cross(p, prev))
+        run.push([p[0], p[1]])
+      } else if (prev && inside(prev)) {
+        run.push(cross(prev, p))
+        if (run.length >= 2) out.push(run)
+        run = []
+      }
+    }
+    if (run.length >= 2) out.push(run)
+  }
+  return out
 }

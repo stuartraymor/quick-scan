@@ -13,7 +13,7 @@ import { spreadLabels } from './labelSpread'
 import type { LinkedView } from './cameraLink'
 import type { ProjectView } from './projectView'
 import type { ControlScheme } from './navSchemes'
-import { OrthoNavigator } from './orthoNav'
+import { OrthoNavigator, type ClipSphere } from './orthoNav'
 import {
   aimSpaceMouse,
   listenForSpaceMouse,
@@ -160,7 +160,7 @@ export class OrthoViewport {
   readonly raycaster = new THREE.Raycaster()
   /** Sphere enclosing everything drawn, handed to the navigator by reference so
    *  re-framing a new model just writes to it. */
-  readonly clipSphere = { center: new THREE.Vector3(), radius: 1 }
+  readonly clipSphere: ClipSphere = { center: new THREE.Vector3(), radius: 1 }
   /** Skips rendering entirely while the viewport is hidden (behind the
    *  split-screen picker); everything loaded stays loaded. */
   paused = false
@@ -325,6 +325,12 @@ export class OrthoViewport {
    *  draws its own (see commands' nextFrame). */
   pump(): void {
     this.frame()
+  }
+
+  /** Re-bracket the clip planes now — for an owner that changed what they
+   *  must hold during its tick, after this frame already bracketed them. */
+  refreshClipPlanes(): void {
+    this.nav.updateClipPlanes()
   }
 
   private frame(): void {

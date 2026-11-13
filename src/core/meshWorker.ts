@@ -34,7 +34,7 @@ import { rigidApplyToPoints, rigidInvert, rigidRotateVectors, type Rigid } from 
 import { meshArea, meshLongEdges, readReference, sampleSpacing, subdivideForMap } from './deviation/onReference'
 import { buildSolidIndex, computeThickness, suggestThicknessScale } from './thickness/thickness'
 import { sliceMesh } from './section/slice'
-import { projectedMeshOutline, shadowMesh } from './section/shadow'
+import { clipToSlab, projectedMeshOutline, shadowMesh } from './section/shadow'
 import { meshCentroid } from './geometry/centroid'
 import { trianglesWithin } from './geometry/region'
 import { floodByNormal } from './fit/regionGrow'
@@ -744,7 +744,9 @@ function handle(msg: Exclude<WorkerRequest, { type: 'align-abort' }>): void {
     try {
       // On the aligned vertices, as a cut is.
       const cut = msg.type === 'mesh-outline'
-        ? projectedMeshOutline(graph.positions, graph.indices, msg.frame)
+        ? msg.range
+          ? (() => { const slab = clipToSlab(graph.positions, graph.indices, msg.frame, msg.range.min, msg.range.max); return projectedMeshOutline(slab.positions, slab.indices, msg.frame) })()
+          : projectedMeshOutline(graph.positions, graph.indices, msg.frame)
         : shadowMesh(graph.positions, graph.indices, msg.frame, { tolerance: msg.tolerance, play: msg.play, smoothDeg: msg.smoothDeg })
       post(
         { type: 'section-ok', requestId: msg.requestId, points: cut.points, offsets: cut.offsets, normals: cut.normals, shadow: cut.shadow },

@@ -55,6 +55,10 @@ export interface SceneLayerHost {
   modelCenter(): Vec3
   /** Whether a scan is loaded. */
   hasScan(): boolean
+  /** The scan's geometry as drawn (the edited copy while it is shown), in
+   *  the part's coordinates; null with no scan. Read only — for a layer
+   *  that draws over a part of the scan. */
+  scanGeometry?(): THREE.BufferGeometry | null
   /** The scan under a client point, as a click reports it. Null off it, or
    *  with the scan hidden. */
   pickScan(clientX: number, clientY: number): PickHit | null
