@@ -1,0 +1,79 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+.ff-editor, .ff-auto { font: 12px/1.35 "Segoe UI", sans-serif; }
+.ff-accessible-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.ff-editor > label:has(select), .ff-editor > label:has(input[type=range]), .ff-auto fieldset > label { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ff-editor select { width: 132px; }
+.ff-editor input[type=range] { width: 132px; min-width: 0; }
+.ff-icon-toolbar { display: flex; flex-wrap: wrap; gap: 3px; padding: 6px 0; border-bottom: 1px solid #777; }
+.ff-icon-toolbar button, .freeform-context-menu .ff-icon-toolbar button { display: inline-flex; align-items: center; justify-content: center; width: 25px; min-width: 25px; height: 25px; padding: 1px; color: var(--accent); background: var(--well); border: 1px solid var(--line-strong); border-radius: 0; }
+.ff-icon-toolbar button:disabled { opacity: .4; }
+.ff-editor button[aria-pressed=true], .ff-display button[aria-pressed=true] { background: var(--accent-soft); color: var(--ink); border-color: var(--accent); }
+.freeform-context-menu > button { display: flex; justify-content: space-between; align-items: center; border: 0; background: transparent; border-radius: 0; }
+.freeform-context-menu > button:hover:not(:disabled) { background: var(--accent-soft); color: var(--ink); }
+.ff-shortcut { margin-left: auto; padding-left: 6px; font-size: 10px; }
+.freeform-context-menu hr { width: 100%; margin: 1px 0; border: 0; border-top: 1px solid #8886; }
+.ff-auto fieldset > label > select { width: 140px; min-width: 0; }
+.ff-auto fieldset > label:has(input) { display: grid; grid-template-columns: 1fr 76px 58px; gap: 5px; }
+.ff-auto fieldset > label:has(input) > select, .ff-auto input { width: 100%; min-width: 0; box-sizing: border-box; }
+.ff-preview-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ff-preview-actions > button:first-child { grid-column: 1 / -1; height: 30px; }
+.ff-preview-actions > button:last-child { grid-column: 2; }
+.ff-auto footer button { min-width: 72px; }
+.ff-display { display: flex; align-items: center; gap: 4px; padding: 4px 6px; border: 1px solid #8886; margin: 0; }
+.ff-display button { display: inline-flex; align-items: center; justify-content: center; padding: 2px; min-width: 26px; height: 27px; }
+.ff-display button:last-child { margin-left: auto; min-width: 84px; }
+/* Use Quick Scan's existing light/dark palette; workflow parity does not override the user's theme. */
+.modal.ff-editor, .modal.ff-auto, .ff-native-menu {
+  color: var(--ink); background: var(--panel) !important;
+  border: 1px solid var(--line-strong); border-radius: 5px; box-shadow: 1px 3px 8px #0003;
+  font: 12px/1.35 "Segoe UI", sans-serif;
+}
+.ff-editor button, .ff-auto button, .ff-editor select, .ff-auto select, .ff-auto input {
+  font: inherit; color: var(--ink); background: var(--well); border: 1px solid var(--line-strong);
+  border-radius: 2px; box-shadow: none;
+}
+.ff-editor button, .ff-auto button { min-height: 23px; padding: 2px 7px; }
+.ff-editor select, .ff-auto select { height: 22px; padding: 1px 3px; }
+.ff-editor button:disabled, .ff-auto button:disabled, .ff-native-menu button:disabled {
+  color: var(--dim); background: var(--panel); opacity: 1; cursor: default;
+}
+.ff-title { display: flex; align-items: center; justify-content: space-between; margin: -7px -7px 5px; height: 25px; font-weight: 400; color: var(--dim); }
+.ff-title button { min-width: 19px; width: 19px; height: 19px; min-height: 19px; padding: 0; background: var(--well-deep); color: var(--ink); border: 0; }
+.ff-title button:hover { background: #c44; }
+.ff-main-tools { border-bottom: 2px solid #777; padding: 0 0 10px; margin-bottom: 7px; }
+.ff-main-tools .ff-icon-toolbar { border: 0; padding: 2px 0; gap: 4px; flex-wrap: wrap; }
+.ff-main-tools .ff-icon-toolbar button, .ff-floating-tools button { width: 25px; min-width: 25px; height: 25px; padding: 1px; background: var(--well); color: var(--accent); border: 1px solid var(--line-strong); }
+.ff-main-tools .ff-icon-toolbar button:disabled { background: var(--panel); color: var(--dim); }
+.ff-editor > label { min-height: 22px; }
+.ff-editor input[type=checkbox] { margin: 0 3px 0 0; vertical-align: middle; accent-color: #087bc4; }
+.ff-editor input[type=range] { accent-color: #0089d7; height: 22px; margin: 0; }
+.ff-snap-row { display: flex; align-items: center; justify-content: space-between; }
+.ff-snap-row button { width: 63px; border-color: #888; border-radius: 0; }
+.ff-editor .ff-right-control { width: 132px; justify-self: end; }
+.ff-editor > .ff-transparency { display: grid; grid-template-columns: 1fr; gap: 8px; margin: 4px 0; }
+.ff-editor > .ff-transparency input { width: 100%; }
+.ff-editor-footer { display: flex; justify-content: flex-end; border-top: 2px solid #888; padding-top: 9px; margin-top: 14px; }
+.ff-editor-footer button { width: 72px; }
+.ff-native-menu { gap: 0 !important; padding: 4px !important; border-radius: 3px; background: var(--panel) !important; }
+.ff-native-menu > button { color: var(--ink); font: 12px "Segoe UI", sans-serif; padding: 0 4px 0 28px !important; min-height: 20px; height: 20px; line-height: 20px; }
+.ff-native-menu > button:disabled { background: transparent; }
+.ff-floating-tools { padding: 2px; border: 1px solid var(--line-strong); background: var(--panel); gap: 2px !important; box-shadow: 1px 2px 4px #0002; }
+.ff-auto fieldset { border-color: var(--line); }
+.ff-auto label { color: var(--ink); }
+
+.modal.ff-editor label, .modal.ff-editor small, .modal.ff-editor .ff-snap-row, .modal.ff-auto label, .modal.ff-auto small { color: var(--ink) !important; }
+.modal.ff-editor > .ff-transparency { display: grid !important; grid-template-columns: 1fr; }
+.modal.ff-editor input[type=range] { appearance: none; -webkit-appearance: none; background: transparent; border: 0; }
+.modal.ff-editor input[type=range]::-webkit-slider-runnable-track { height: 4px; background: var(--well-deep); border: 1px solid var(--line); }
+.modal.ff-editor input[type=range]::-webkit-slider-thumb { appearance: none; -webkit-appearance: none; width: 10px; height: 22px; margin-top: -10px; border-radius: 0; border: 0; background: #0089d7; }
+
+.modal.ff-auto legend, .modal.ff-editor legend { color: var(--ink) !important; }
+
+:root[data-theme='dark'] :is(.ff-editor, .ff-auto, .ff-native-menu) { color-scheme: dark; }
+:root[data-theme='light'] :is(.ff-editor, .ff-auto, .ff-native-menu) { color-scheme: light; }
+.ff-main-tools .ff-icon-toolbar button[aria-pressed=true], .ff-floating-tools button[aria-pressed=true] { background: var(--accent-soft); color: var(--ink); border-color: var(--accent); }
+:is(.ff-editor, .ff-auto, .ff-native-menu) button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ff-native-menu button[aria-checked=true] { color: var(--ink); background: var(--accent-soft); }
+.ff-floating-tools button:disabled { color: var(--dim); background: var(--panel); }
+
+.ff-floating-tools button { width: 22px; min-width: 22px; height: 22px; }

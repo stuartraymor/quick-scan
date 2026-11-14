@@ -4,8 +4,8 @@
 // and the refusals.
 import { describe, expect, it } from 'vitest'
 import type { Vec3 } from '../../../src/core/types'
-import { type Cage, faceArea, topology, vertexCount } from '../core/freeform/cage'
-import { addFace, addRectangle, align, boundaryLoops, bridge, closeHole, deleteFaces, deleteVertices, deviation, extrapolate, increaseResolution, mirror, movePoints, setCrease, smooth, snapCage, splitLoop } from '../core/freeform/edit'
+import { type Cage, edgeKey, faceArea, topology, vertexCount } from '../core/freeform/cage'
+import { addFace, addRectangle, align, boundaryLoops, bridge, closeHole, deleteFaces, deleteVertices, deviation, edgeLine, extrapolate, extrapolateEdges, increaseResolution, mirror, movePoints, setCrease, smooth, snapCage, splitLoop } from '../core/freeform/edit'
 import { cageVertexLimits } from '../core/freeform/limit'
 import { cylinderClosest } from '../core/freeform/snap'
 
@@ -164,6 +164,58 @@ describe('crease', () => {
 })
 
 describe('extrapolate', () => {
+  it('follows the measured outgoing directions of a deformed QUICKSURFACE cage', () => {
+    const c: Cage = {
+      positions: Float64Array.from([
+        -2.5356853,-14.8232613,17.6215649, 11.977066,0.8710759,15.8454599,
+        18.408493,-4.443119,6.0451589, 4.0189342,-21.3778801,7.4657478,
+        6.8172941,-2.9912672,21.9980392, 15.5340452,-11.2649670,7.3919067,
+      ]), faces: [[0,4,5,3],[4,1,2,5]], creases: [],
+    }
+    const edge=topology(c).edgeOf.get(edgeKey(0,3))!
+    const result=extrapolateEdges(c,[edge],[-4.5341529,-4.7575436,-0.9218929],true)
+    expect(vertexCount(result.cage)).toBe(8)
+    expect(result.cage.faces).toHaveLength(3)
+    const native=[[ -1.0396848,-25.8205109,7.4981866 ],[ -6.5453720,-19.8957176,15.7453403 ]]
+    for (let k=0;k<2;k++) expect(Math.hypot(...at(result.cage,6+k).map((v,i)=>v-native[k][i]))).toBeLessThan(0.09)
+    expect(Array.from(result.cage.positions.slice(0,c.positions.length))).toEqual(Array.from(c.positions))
+    const oblique=extrapolateEdges(c,[edge],[0,0,-4],true)
+    expect(Math.hypot(...at(oblique.cage,7).map((v,i)=>v-at(c,0)[i]))).toBeGreaterThan(3.5)
+    const explicitTranslation=extrapolateEdges(c,[edge],[0,0,-4])
+    expect(at(explicitTranslation.cage,7)).toEqual([at(c,0)[0],at(c,0)[1],at(c,0)[2]-4])
+    const repeated=extrapolateEdges(result.cage,result.edges,[-4.5341529,-4.7575436,-0.9218929],true)
+    expect(vertexCount(repeated.cage)).toBe(10)
+    expect(repeated.cage.faces).toHaveLength(4)
+    expect(consistent(repeated.cage)).toBe(true)
+  })
+  it('keeps copied vertices welded across two selected boundary edges', () => {
+    const c=patch(2,1), top=topology(c)
+    const edges=[top.edgeOf.get(edgeKey(0,1))!,top.edgeOf.get(edgeKey(1,2))!]
+    const result=extrapolateEdges(c,edges,[0,-0.5,0],true)
+    expect(vertexCount(result.cage)).toBe(vertexCount(c)+3)
+    expect(result.cage.faces).toHaveLength(c.faces.length+2)
+    expect(consistent(result.cage)).toBe(true)
+    expect(result.edges).toHaveLength(2)
+  })
+  it('selects straight or gently curved rows but stops at the reference sphere cage bend', () => {
+    const row = patch(2, 1)
+    const bottom = topology(row).edgeOf.get(edgeKey(0, 1))!
+    expect(edgeLine(row, bottom)).toHaveLength(2)
+    const gentle = movePoints(row, [{ vertex: 1, by: [0, -0.1, 0] }])
+    expect(edgeLine(gentle, bottom)).toHaveLength(2)
+    const bent = movePoints(row, [{ vertex: 1, by: [0, -0.3, 0] }])
+    expect(edgeLine(bent, bottom)).toEqual([bottom])
+
+    // Same six control points and faces as the visible QUICKSURFACE test copy.
+    const native: Cage = {
+      positions: Float64Array.from([3.188220262527466,-9.33298397064209,17.335430145263672, 11.977066040039062,0.8710759282112122,15.845459938049316, 18.408493041992188,-4.443119049072266,6.045158863067627, 9.742839813232422,-15.887602806091309,7.179612159729004, 6.817294120788574,-2.991267204284668,21.99803924560547, 15.534045219421387,-11.26496696472168,7.39190673828125]),
+      faces: [[0,4,5,3],[4,1,2,5]], creases: [],
+    }
+    for (const [a, b] of [[0,4],[3,5]] as const) {
+      const selected = topology(native).edgeOf.get(edgeKey(a, b))!
+      expect(edgeLine(native, selected)).toEqual([selected])
+    }
+  })
   it('pulls a boundary edge out into a quad, continuing the face beside it or by a step', () => {
     const c = patch()
     const d = extrapolate(c, 0, 1)

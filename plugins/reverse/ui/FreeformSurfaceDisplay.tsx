@@ -1,3 +1,5 @@
+import { FreeformIcon } from './FreeformIcon'
+import './freeformControls.css'
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useLength } from '../../../src/app/useUnits'
 import { useLengthDraft } from '../../../src/app/useLengthDraft'
@@ -66,11 +68,11 @@ export function FreeformSurfaceDisplay({ positions }: { positions: Float32Array 
   }, [surfaceOnly, options])
   const valid = Number.isFinite(Number(draft)) && Number(draft) > 0
   return <section data-test="freeform-surface-display" style={{ display: 'grid', gap: 8 }}>
-    <div style={{ display: 'flex', gap: 6 }}>
-      <button type="button" aria-pressed={!deviation} onClick={() => { setDeviation(false); setOptions(false) }}>Shaded</button>
-      <button type="button" aria-pressed={deviation} onClick={() => setDeviation(true)}>Deviation</button>
+    <fieldset className="ff-display"><legend>Surface Display</legend>
+      <button type="button" aria-label="Shaded" title="Shaded" aria-pressed={!deviation} onClick={() => { setDeviation(false); setOptions(false) }}><FreeformIcon name="shaded" /><span className="ff-accessible-label">Shaded</span></button>
+      <button type="button" aria-label="Deviation" title="Deviation" aria-pressed={deviation} onClick={() => setDeviation(true)}><FreeformIcon name="deviation" /><span className="ff-accessible-label">Deviation</span></button>
       <button ref={optionsButton} type="button" disabled={!deviation} onClick={() => { setDraft(String(len.toDisplay(tolerance))); setDraftColouring(colouring); setOptions(true) }}>Options</button>
-    </div>
+    </fieldset>
     <button type="button" aria-pressed={surfaceOnly} onClick={() => setSurfaceOnly(on => !on)}>Surface Only (Space)</button>
     {deviation && !values && !error && <small role="status">Measuring surface deviation…</small>}
     {error && <small role="alert">{error}</small>}

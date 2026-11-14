@@ -11,6 +11,7 @@
 import type { ReKernel, Shape } from '../kernel'
 import { GRID_AREA_SLACK, gridArea } from '../surfaceFit'
 import type { PatchGrid } from './patches'
+import { compactRepeatedGrid } from './compactGrid'
 
 /** What the kernel needs of the patches: their grids and, for the report, the shape of each block. */
 export interface PatchSet {
@@ -66,6 +67,7 @@ const MIN_PIECE = 5
  *  others; two halves of the same samples sit apart from the swing). The
  *  pieces share the line they were cut along, so they sew. */
 function facesThrough(k: ReKernel, g: PatchGrid, out: Shape[], index: number, cells: boolean, last = false): void {
+  g = compactRepeatedGrid(g)
   // A cell of four samples is its bilinear face: it cannot swing off them.
   if (last && g.rows === 2 && g.cols === 2) {
     out.push(k.surfaceThrough(g.points, 2, 2))

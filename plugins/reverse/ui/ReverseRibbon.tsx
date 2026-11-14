@@ -1,3 +1,4 @@
+import { useFreeformEditor } from './FreeformEditor'
 // SPDX-License-Identifier: AGPL-3.0-only
 // The CAD workspace exposes its own actions; the shell knows no plugin state.
 import { DEFAULT_SURFACE_FIT } from '../core/surfaceFit'
@@ -136,6 +137,7 @@ export function useReverseRibbonActions(onExport: () => void): NonNullable<Plugi
     freeformObj: action(chooseFreeformObj),
     freeformSketch: action(() => useFreeformSketchDialog.getState().setOpen(true), !!fileName && state.features.some(f => f.kind === 'network'), 'Create a 3D sketch on the scan first.'),
     wrapSurface: action(openWrapSurface, !!fileName && (reverseSession()?.sceneRef.current?.paintedVertices().length ?? 0) >= SURFACE_MIN_REGION, 'Select a region of the scan first.'),
+    newFreeform: action(() => useFreeformEditor.getState().setOpen(true), !!fileName, 'Import a scan first.'),
     autoFreeform: action(() => useAutoFreeformDialog.getState().setOpen(true), !!fileName, 'Import a scan first.'),
     surface: action(() => state.startFeature('surface', { fit: { ...DEFAULT_SURFACE_FIT, smoothingLevel: 1 } }), !!fileName, 'Import a scan first.'),
     network: action(() => state.startFeature('network'), !!fileName, 'Import a scan first.'),

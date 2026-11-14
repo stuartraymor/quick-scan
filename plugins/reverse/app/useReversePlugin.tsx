@@ -1,3 +1,4 @@
+import { FreeformEditor, useFreeformEditor } from '../ui/FreeformEditor'
 // SPDX-License-Identifier: AGPL-3.0-only
 // The Reverse engineer workspace's part in the app, for one render: the CAD
 // kernel's worker, the feature build and the bodies on the part (useReverseWorkspace),
@@ -474,6 +475,7 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
   // beside the viewport.
   const mapReport = useReverse((s) => s.mapReport)
   const pipeOpen = usePipeDialog((s) => s.open)
+  const freeformEditorOpen = useFreeformEditor(s => s.open)
   const autoFreeformOpen = useAutoFreeformDialog((s) => s.open)
   const wrapSelection = useWrapSurfaceDialog(s => s.selection)
   const freeformSketchOpen = useFreeformSketchDialog(s => s.open)
@@ -833,6 +835,7 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
     ),
     overlay: (
       <>
+        {freeformEditorOpen && <FreeformEditor />}
         {freeformSketchOpen && <FreeformSketchDialog />}
         {wrapSelection && <WrapSurfaceDialog />}
         {autoFreeformOpen && <AutoFreeformDialog onClose={() => useAutoFreeformDialog.getState().setOpen(false)} />}

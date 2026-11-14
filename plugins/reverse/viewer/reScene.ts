@@ -54,6 +54,9 @@ export class ReScene {
    *  put away. */
   private bodyGroup = new THREE.Group()
   readonly bodyMeshes = new Map<number, THREE.Mesh>()
+  /** Document/workspace visibility, before a temporary editor replaces a body. */
+  private bodyVisibility = new Map<number, boolean>()
+  private editingBodies = new Set<number>()
   /** The mesh each body's block was made from — see setBodies. */
   private bodySources = new WeakMap<THREE.Mesh, object>()
   private bodiesSolid = false
@@ -800,6 +803,7 @@ export class ReScene {
   setBodies(items: readonly { id: number; mesh: { positions: Float32Array; normals: Float32Array; indices: Uint32Array; faceHash?: Int32Array }; visible: boolean; color: string; topology?: BodyTopology }[]): void {
     this.stepped = null
     const wanted = new Map(items.map((item) => [item.id, item]))
+    this.bodyVisibility = new Map(items.map(item => [item.id, item.visible]))
     let reshaped = false
     for (const [id, mesh] of this.bodyMeshes) {
       if (this.bodySources.get(mesh) === wanted.get(id)?.mesh) continue
@@ -836,7 +840,7 @@ export class ReScene {
         this.bodySources.set(mesh, item.mesh)
         reshaped = true
       }
-      mesh.visible = item.visible
+      mesh.visible = item.visible && !this.editingBodies.has(item.id)
       picks.push({ id: item.id, mesh, faceHash: item.mesh.faceHash, topology: item.topology })
     }
     this.bodyPicks.setBodies(picks)
@@ -1135,9 +1139,27 @@ export class ReScene {
   }
 
   setBodyVisible(id: number, visible: boolean): void {
+    this.bodyVisibility.set(id, visible)
     const mesh = this.bodyMeshes.get(id)
-    if (mesh) mesh.visible = visible
+    if (mesh) mesh.visible = visible && !this.editingBodies.has(id)
     this.showOverlaps()
+    this.recap()
+    this.host.requestHover()
+    this.host.invalidate()
+  }
+
+  /** An editor's temporary geometry replaces these bodies without changing
+   * their document visibility. The mask survives rebuilds; clearing it restores
+   * the latest workspace visibility, never a cached pre-edit mesh value. */
+  setEditingBodies(ids: readonly number[]): void {
+    const next = new Set(ids)
+    if (next.size === this.editingBodies.size && [...next].every(id => this.editingBodies.has(id))) return
+    this.editingBodies = next
+    for (const [id, mesh] of this.bodyMeshes) mesh.visible = (this.bodyVisibility.get(id) ?? false) && !next.has(id)
+    this.stepped = null
+    this.showOverlaps()
+    this.recap()
+    this.host.requestHover()
     this.host.invalidate()
   }
 

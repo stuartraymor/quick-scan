@@ -68,11 +68,13 @@ export function freeformBody(k: ReKernel, cage: Cage, opts: { steps: number; sna
       let patches = patchesAt(used)
       // Refined no further, a piece that will not follow is cut to its cells.
       const last = used >= MAX_STEPS || cage.faces.length * 4 ** (used + 1) > MAX_SAMPLED_QUADS
-      made = patchesBody(k, patchSet(patches), last)
+      // Global refinement can collapse projected samples. Split a poorly fitting
+      // snapped grid locally while retaining the requested sample resolution.
+      made = patchesBody(k, patchSet(patches), snap || last)
       // A closed cage that would not sew shut in blocks: each quad its own face, the neighbours meeting edge to edge, none side to side.
       if (patches.closed && !made.report.solid) {
         const each = patchesAt(used, 0, 1)
-        const again = patchesBody(k, patchSet(each), last)
+        const again = patchesBody(k, patchSet(each), snap || last)
         if (again.report.solid) {
           k.release(made.shape)
           patches = each

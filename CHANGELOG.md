@@ -1,3 +1,112 @@
+## 1.1.19
+
+- Let a visible sloped face's boundary edge be selected throughout its seven-pixel pick band, including a few pixels inside the face.
+- Apply the matching depth allowance to nearby control points, with camera zoom included in the pixel-to-world conversion.
+- Track the hit face's ownership, keeping a vertex behind a separate foreground face unselectable even when that face is closer than the pixel-depth allowance.
+
+## 1.1.18
+
+- Make interactive New Freeform edge pulls follow each adjacent face's outgoing tangent. The same-cage normalized reference example reduces endpoint error from 1.134 to about 0.082 model units.
+- Preserve the visible extension distance for oblique D-handle drags. Repeated pulls keep copied vertices welded, with Undo restoring each step.
+- Exact pointer-to-model distance and native repeated-pull geometry remain unverified.
+
+## 1.1.17
+
+- Show the five contextual New Freeform tools only when right-clicking selectable geometry, matching the observed QUICKSURFACE edge and miss states.
+- Give the New Freeform context menu the reference application's readable width, row height, text size and top placement while retaining Quick Scan's dark theme.
+- Native D-handle extrusion and exact numeric geometry remain unverified; full New Freeform parity is incomplete.
+
+## 1.1.16
+
+- Stop New Freeform connected-edge double-click selection at significant 3D bends, matching the observed deformed two-quad QUICKSURFACE sphere cage while retaining straight-line selection.
+- Keep Show Hidden available in the New Freeform right-click menu when no faces are hidden; in that state it closes the menu without changing geometry or selection.
+- Exact bend threshold, native D-pull geometry and full interaction parity remain unverified.
+
+## 1.1.15
+
+- Give New Freeform a warmer, matte reference scan with a temporary opacity suited to surface editing; restore the prior scan presentation when the editor closes.
+- Keep the scan solid while placing the first four freeform corners, then show the completed patch over the scan during editing.
+- Same-model numeric geometry, all selection modifiers, Control Net behavior and full interaction parity remain unverified.
+
+## 1.1.14
+
+- Restore New Freeform selection across Undo and Redo, including Crease and repeated boundary duplication.
+- Match the observed additive right-click edge selection on the reference sphere.
+- Allow zero Drag Strength and keep a zero-strength edge drag out of geometry history.
+- Size the dark contextual menu and five-icon toolbar closer to QUICKSURFACE.
+- Temporarily show the reference scan with warm neutral, faceted shading in New Freeform and restore the prior appearance on close.
+- Native-equivalent geometry, all contextual states, viewport color and opacity, snapping and deviation accuracy remain open; no full parity claim.
+
+## 1.1.13
+
+- Add enclosed box selection with filters, cancellation and additive modifier behavior.
+- Suppress the D handle when its anchor is occluded by foreground cage geometry.
+- Preserve hidden faces during topology-preserving edits.
+- Retain Control Net choice across editor reopen within the session.
+- Remove a redundant toolbar action and arrange the 18 main tools more compactly.
+- Full paired-model, numerical and performance parity remains incomplete.
+
+## 1.1.12
+
+- Match the observed five-command contextual toolbar while retaining the dark theme.
+- Add Manipulate/Extrapolate modes, selected Smooth (Q), and one-shot Snap to Mesh with Undo.
+- Retain the floating toolbar on hover Escape and fit expanded tool rows inside the panel.
+- Native numerical equivalence and 120/100 paired acceptance remain incomplete.
+
+# 1.1.11 — Surface-mode picking and contextual refinement (unreleased)
+
+Control Net OFF retains sampled surface boundaries/seams and visible anchors, with matching picking. D follows the displayed edge and live extension preview. Main context menu supports keyboard navigation. Contextual Increase Resolution and Ctrl+R use the shared subdivision operation; shortcut recovers correctly after rebuild/Undo. Six related fixes; dark theme and AI preserved. Exact native inverse anchor editing, remaining floating-icon meanings and full120/100 parity remain open.
+
+# 1.1.10 — Connected-edge selection and duplication (unreleased)
+
+Double-click follows regular quad-net lines; boundary selections retain a D handle on the clicked segment. Dragging extends selected segments as one welded row, keeps new outer edges selected for repeated pulls, and shows a copy cursor over the handle. Dark theme and AI retained. Complex poles, exact native timing and full numerical parity remain unverified.
+
+# 1.1.9 — Dark freeform workspace and selection refinement (unreleased)
+
+Restore Quick Scan theme inheritance in Edit Surface, Auto Freeform and contextual controls. Add bounded side-popup manipulator frames, preserve their disabled inspection with Snap ON, and cache topology between unchanged frames. Existing AI code/settings preserved. Native Control Net, Feature aligned and full120/100 parity remain incomplete.
+
+# 1.1.8 — Freeform panel and manipulator refinement (unreleased)
+
+Light freeform panels with compact two-row tools, rectangular sliders and aligned inputs; separate repositioned contextual toolbar/menu; Boundary selection; Snap-dependent World/Screen/Local frame controls; constrained translation, rotation and scale handles; Auto header close and persistent initial Surface Display group. Existing geometry operations/history remain connected. Original vector assets.
+
+Known gaps: exact native toolbar mappings, planar manipulator handles, local frame/ring parity, Control Net representation, manual Zebra/deviation, Feature aligned reconstruction, performance and full 120-model/100-interaction comparisons remain incomplete. No full parity claim.
+
+# 1.1.7 — Freeform visual and display refinement (unreleased)
+
+Compact original command icons and context grouping; Auto target/preview/footer layout; shaded/deviation icon group; manual Control Net and transparency; white boundary feedback. Native manipulator, Feature aligned and full parity remain incomplete.
+
+## 1.1.6 — Auto Freeform correction batch
+
+- Use local adaptive splitting for snapped CAD conversion instead of increasing global subdivision; the captured Lego cage now converts to a valid sheet and STEP reads back valid. Topology, continuity, performance and exact native deviation parity remain incomplete; one tiny tessellation fault remains in the captured-cage validation.
+- Require a successful current preview before Auto Freeform OK.
+- Commit the exact previewed cage through the existing freeform creation command, without rerunning reconstruction.
+- Allow closing a pending preview and discard its late result. This does not preempt synchronous cage generation or terminate the CAD worker.
+- Keep the Auto Freeform panel scrollable and its controls reachable in short windows.
+
+Local validation candidate; not yet installed or published. Full120-model/100-interaction acceptance is not achieved.
+
+# v1.1.5 — Freeform selection submenu and picking reliability
+
+Adds the contextual Selection submenu with checked modes, keyboard navigation and retained selection. Fixes picking after viewport layout changes before a rendered frame. Removes exactly repeated sample strips before freeform CAD interpolation, preserving all distinct samples.
+
+Lego Basic remains blocked by wholly collapsed snapped patches; no valid full-model CAD or geometry/performance parity is claimed. Boundary selection and complete native feature parity remain incomplete. This is a local validation candidate, not an installed or published update.
+
+# v1.1.4 — Freeform selection and picking
+
+Adds Points only, Edges only and Point / Edge / Face filters, preserving existing selections when switching filters. Duplicate handles respect the active filter. Face picking follows the displayed subdivision surface rather than the raw cage polygon. Keeps the editor panel accessible at short window heights. Full native parity remains incomplete.
+
+# v1.1.3 — Freeform context-menu correction
+
+Preserves the manual editor increment from withheld local v1.1.2. Constrains contextual menus to the viewport, compacts command rows, and keeps overflow commands reachable. Adds small-window pointer regression coverage. Native workflow equivalence remains partial.
+
+## 1.1.2 — Interactive New Freeform editing (partial parity)
+
+- New Freeform now creates a real subdivision cage and CAD feature from four scan picks. Reopen existing freeform cages in Edit Surface.
+- Select points, edges or faces directly; Ctrl adds/removes selections. Context commands include Split, Crease, Remove Crease, boundary-edge Bridge, Close 4-sided hole, Delete, screen alignment and temporary Hide/Isolate/Show Hidden.
+- Drag selected geometry, or drag the boundary D handle to add a quad. Preview, Escape cancellation, Snap Mode and document Undo/Redo are connected to real geometry.
+- Editor overlays remain plugin-owned, with shared CAD building and history. Manual edits to a surface generated from a sketch detach its generating sketch dependency.
+- This is an incremental implementation, not full QUICKSURFACE parity. Exact contextual icons/tool modes, Local/World manipulators, native neighbour falloff, section clipping, display/deviation modes, general intersection checks, algorithm equivalence and the 120-model/100-interaction paired campaign remain incomplete. The editor's two-level triangle preview is not the final CAD B-spline tessellation. Deleting the last face is currently refused.
+
 ## 1.1.1 — Stacked sections between two planes in the view, and the coordinate grid back
 
 Everything from 0.0.212 to 0.0.215 (local builds), released together.

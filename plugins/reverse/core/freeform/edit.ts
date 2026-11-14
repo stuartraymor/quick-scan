@@ -256,6 +256,89 @@ export function setCrease(c: Cage, edges: [number, number][], on: boolean): Cage
 
 // ---- extrapolate --------------------------------------------------------------------
 
+/** Follow a quad-net line through regular vertices, stopping at corners,
+ * hidden faces, ambiguous poles and visibly bent control-net edges. The
+ * clicked edge stays first. */
+export function edgeLine(c: Cage, seed: number, hidden: number[] = []): number[] {
+  const top = topology(c), blocked = new Set(hidden), found = new Set<number>()
+  const visible = (i: number) => top.edges[i]?.faces.every(f => !blocked.has(f))
+  // The reference editor selects one edge on a deformed two-quad sphere cage
+  // whose adjacent boundary edges turn 31 degrees; straight rows continue.
+  // Keep this in 3D so rotating the camera does not change the result.
+  const straight = (first: number, second: number, vertex: number) => {
+    const a = top.edges[first], b = top.edges[second]
+    const otherA = a.a === vertex ? a.b : a.a, otherB = b.a === vertex ? b.b : b.a
+    const i = vertex * 3, j = otherA * 3, k = otherB * 3
+    const ax = c.positions[j] - c.positions[i], ay = c.positions[j + 1] - c.positions[i + 1], az = c.positions[j + 2] - c.positions[i + 2]
+    const bx = c.positions[k] - c.positions[i], by = c.positions[k + 1] - c.positions[i + 1], bz = c.positions[k + 2] - c.positions[i + 2]
+    const lengths = Math.hypot(ax, ay, az) * Math.hypot(bx, by, bz)
+    return lengths > 1e-12 && (ax * bx + ay * by + az * bz) / lengths <= -Math.cos(25 * Math.PI / 180)
+  }
+  if (!visible(seed)) return []
+  found.add(seed)
+  const walk = (start: number) => {
+    let edge = seed, vertex = start
+    while (true) {
+      const current = top.edges[edge], incident = top.vertexEdges[vertex]
+      if (incident.length !== (current.faces.length === 1 ? 3 : 4)) break
+      const candidates = incident.filter(i => i !== edge && visible(i) && top.edges[i].faces.length === current.faces.length && !top.edges[i].faces.some(f => current.faces.includes(f)))
+      if (candidates.length !== 1 || found.has(candidates[0]) || !straight(edge, candidates[0], vertex)) break
+      edge = candidates[0]; found.add(edge)
+      const next = top.edges[edge]; vertex = next.a === vertex ? next.b : next.a
+    }
+  }
+  walk(top.edges[seed].a); walk(top.edges[seed].b)
+  return [...found]
+}
+
+/** Extrude selected boundary segments together, sharing each copied vertex.
+ * Interactive pulls can follow each adjacent face's outgoing tangent instead
+ * of translating both endpoints by the same vector. */
+export function extrapolateEdges(c: Cage, indices: number[], by: Vec3, followFaceTangents = false): { cage: Cage; edges: number[] } {
+  finite(by, 'by')
+  const top = topology(c), selected = [...new Set(indices)]
+  if (!selected.length) return fail('Select a boundary edge to extend.')
+  const segments = selected.map(index => {
+    const e = top.edges[index]
+    if (!e || e.faces.length !== 1) return fail('Only boundary edges can be extended.')
+    const face = c.faces[e.faces[0]], k = face.findIndex((v, i) => edgeKey(v, face[(i + 1) % face.length]) === edgeKey(e.a, e.b))
+    const p = face[k], q = face[(k + 1) % face.length]
+    return { p, q, pTangent: sub(point(c, p), point(c, face[(k + face.length - 1) % face.length])), qTangent: sub(point(c, q), point(c, face[(k + 2) % face.length])) }
+  })
+  const tangents = new Map<number, Vec3>()
+  if (followFaceTangents) {
+    const counts = new Map<number, number>()
+    for (const { p, q, pTangent, qTangent } of segments) for (const [v, tangent] of [[p, pTangent], [q, qTangent]] as [number, Vec3][]) {
+      tangents.set(v, add(tangents.get(v) ?? [0, 0, 0], tangent))
+      counts.set(v, (counts.get(v) ?? 0) + 1)
+    }
+    for (const [v, tangent] of tangents) tangents.set(v, tangent.map(x => x / counts.get(v)!) as Vec3)
+  }
+  const directions = [...tangents.values()]
+  const average = directions.length ? directions.reduce(add, [0, 0, 0] as Vec3).map(x => x / directions.length) as Vec3 : null
+  const lengthSq = average?.reduce((sum, x) => sum + x * x, 0) ?? 0
+  const along = average?.reduce((sum, x, axis) => sum + x * by[axis], 0) ?? 0
+  // Preserve the pointer's travel distance even when the screen drag is
+  // oblique to the 3D tangent; projection alone makes a visible pull collapse.
+  const scale = lengthSq > 1e-20 && Math.abs(along) > 1e-12 ? Math.sign(along) * Math.hypot(...by) / Math.sqrt(lengthSq) : 0
+  const follow = followFaceTangents && Math.abs(scale) > 1e-8
+  const out = cloneCage(c), copies = new Map<number, number>()
+  const copy = (v: number) => {
+    const tangent = tangents.get(v)
+    const offset = follow && tangent ? tangent.map(x => x * scale) as Vec3 : by
+    if (!copies.has(v)) copies.set(v, pushPoint(out, add(point(c, v), offset)))
+    return copies.get(v)!
+  }
+  const outer: [number, number][] = []
+  for (const { p, q } of segments) {
+    const np = copy(p), nq = copy(q)
+    out.faces.push([q, p, np, nq]); outer.push([np, nq])
+  }
+  checked(out)
+  const result = topology(out)
+  return { cage: out, edges: outer.map(([a, b]) => result.edgeOf.get(edgeKey(a, b))!) }
+}
+
 /** Extrapolate: a boundary edge `a`–`b` pulled out into a new quad. The new
  *  edge lies at `by` from the old if given (one vector), else continues the
  *  face beside it: each end as far from the old end as that end is from

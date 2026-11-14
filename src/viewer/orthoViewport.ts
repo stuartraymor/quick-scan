@@ -338,8 +338,7 @@ export class OrthoViewport {
     if (spaceMouseAttached()) this.stepSpaceMouse()
     if (this.paused) return
     // These run every tick, rendered or not: a turn under way moves the
-    // camera a step, the clip planes track the camera (and let the
-    // navigator drop its cached canvas rect), update() is what notices
+    // camera a step, the clip planes track the camera, update() notices
     // camera motion and fires 'change', and the owner's tick is what
     // decides whether this frame has anything new to show at all.
     this.stepFlight()

@@ -414,6 +414,8 @@ export class SceneManager {
   private scanSeeThrough = false
   private referenceSeeThrough = false
   private scanGhost = false
+  private scanOpacityOverride: number | null = null
+  private scanMatteOverride = false
   /** Whether the reference is a ghost or a solid part — see setNominalGhost.
    *  A ghost until the workspace says otherwise, which is how it starts. */
   private nominalGhost = true
@@ -661,7 +663,7 @@ export class SceneManager {
     if (this.regions.setBaseColor(surfaced.surface)) this.surfaceRepainted()
     // The layout waiting out of sight is flagged when it comes back.
     this.other?.regions.setBaseColor(theme.surface)
-    if (this.mesh) applyFinish(this.mesh.material as THREE.MeshStandardMaterial, theme)
+    if (this.mesh) this.applyScanFinish(this.mesh.material as THREE.MeshStandardMaterial)
     // The caps wear the finish of the scheme, and a tool's the surface colour.
     this.updateCaps()
     if (this.nominalMesh) {
@@ -982,7 +984,7 @@ export class SceneManager {
       vertexColors: true,
       side: THREE.DoubleSide,
     })
-    applyFinish(material, this.theme)
+    this.applyScanFinish(material)
     patchScanShader(material, { backface: this.backface, paintColor: this.uPaintColor, surfaceColor: this.uSurfaceColor, surfaceOwn: this.uSurfaceOwn, deflect: this.uDeflect, wire: this.wire })
     setSurfaceOpacity(material, this.scanOpacity())
     const mesh = new THREE.Mesh(geometry, material)
@@ -1278,7 +1280,33 @@ export class SceneManager {
   }
 
   private scanOpacity(): number {
-    return this.scanSeeThrough || this.scanGhost ? SEE_THROUGH_OPACITY : 1
+    return this.scanOpacityOverride ?? (this.scanSeeThrough || this.scanGhost ? SEE_THROUGH_OPACITY : 1)
+  }
+
+  private applyScanFinish(material: THREE.MeshStandardMaterial): void {
+    applyFinish(material, this.theme)
+    if (this.scanMatteOverride) {
+      material.roughness = 1
+      material.metalness = 0
+    }
+  }
+
+  /** Temporarily soften the scan's specular highlight for surface editing. */
+  setScanMatteOverride(on: boolean): void {
+    if (this.scanMatteOverride === on) return
+    this.scanMatteOverride = on
+    if (this.mesh) this.applyScanFinish(this.mesh.material as THREE.MeshStandardMaterial)
+    this.invalidate()
+  }
+
+  /** Temporarily set reference-scan opacity during direct surface editing. */
+  setScanOpacityOverride(opacity: number | null): void {
+    if (this.scanOpacityOverride === opacity) return
+    this.scanOpacityOverride = opacity
+    if (this.mesh) setSurfaceOpacity(this.mesh.material as THREE.MeshStandardMaterial, this.scanOpacity())
+    for (const layer of this.layers) layer.opacityChanged?.(this.scanOpacity())
+    this.updateCaps()
+    this.invalidate()
   }
 
   /** The scan as a see-through reference over something modelled on it:
@@ -2633,6 +2661,23 @@ export class SceneManager {
   setScanTint(rgb: readonly [number, number, number] | null): void {
     this.scanTint = rgb
     this.setViewTheme(this.theme)
+    this.invalidate()
+  }
+
+  /** Read the current bare-scan tint so a temporary editing view can restore it. */
+  scanTintColor(): readonly [number, number, number] | null {
+    return this.scanTint
+  }
+
+  scanFlatShading(): boolean {
+    return Boolean((this.mesh?.material as THREE.MeshStandardMaterial | undefined)?.flatShading)
+  }
+
+  setScanFlatShading(on: boolean): void {
+    const material = this.mesh?.material as THREE.MeshStandardMaterial | undefined
+    if (!material || material.flatShading === on) return
+    material.flatShading = on
+    material.needsUpdate = true
     this.invalidate()
   }
 

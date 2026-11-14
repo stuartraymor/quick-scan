@@ -121,11 +121,6 @@ export class OrthoNavigator {
   private q2 = new THREE.Quaternion()
   private q3 = new THREE.Quaternion()
   private pickNdc = new THREE.Vector2()
-  /** The canvas rect, asked of the layout engine at most once per frame:
-   *  getBoundingClientRect can force a layout pass, and setPickRay runs for
-   *  every dab of a brush stroke. Cleared in updateClipPlanes, which the owner
-   *  already calls once per frame. */
-  private rect: DOMRect | null = null
 
   constructor(
     private camera: THREE.OrthographicCamera,
@@ -288,8 +283,6 @@ export class OrthoNavigator {
    *  from being sliced away after the pivot has walked the camera in. Rays cast
    *  into the scene compensate — see setPickRay. */
   updateClipPlanes(): void {
-    // A new frame may mean new layout; the rect is re-read on the next ray.
-    this.rect = null
     const axis = this.tmp2.set(0, 0, -1).applyQuaternion(this.camera.quaternion)
     const d = this.tmp.copy(this.clipSphere.center).sub(this.camera.position).dot(axis)
     const r = this.clipSphere.radius * 1.5 + 1e-3
@@ -326,8 +319,12 @@ export class OrthoNavigator {
   }
 
   private canvasRect(): DOMRect {
-    if (!this.rect) this.rect = this.canvas.getBoundingClientRect()
-    return this.rect
+    // Layout can move or resize the canvas between frames, and hidden
+    // windows may not render another frame at all. A frame-bound cache
+    // would then cast through the previous rectangle while the overlay's
+    // projected controls already use the new one. Read current layout for
+    // every pick/zoom; no layout writes occur in this coordinate conversion.
+    return this.canvas.getBoundingClientRect()
   }
 
   dispose(): void {
