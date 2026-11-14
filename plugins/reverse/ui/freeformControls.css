@@ -74,6 +74,7 @@
 .ff-main-tools .ff-icon-toolbar button[aria-pressed=true], .ff-floating-tools button[aria-pressed=true] { background: var(--accent-soft); color: var(--ink); border-color: var(--accent); }
 :is(.ff-editor, .ff-auto, .ff-native-menu) button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .ff-native-menu button[aria-checked=true] { color: var(--ink); background: var(--accent-soft); }
+.ff-native-menu[data-test=freeform-selection-submenu] > button { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ff-floating-tools button:disabled { color: var(--dim); background: var(--panel); }
 
 .ff-floating-tools button { width: 22px; min-width: 22px; height: 22px; }

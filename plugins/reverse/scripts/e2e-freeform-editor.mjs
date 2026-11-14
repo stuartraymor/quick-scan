@@ -62,7 +62,9 @@ try {
   await page.waitForSelector('[data-test=freeform-selection-submenu]')
   assert.equal(await page.$eval('[data-test=freeform-selection-points-edges]',e=>e.getAttribute('aria-checked')),'true')
   assert.equal(await page.$$eval('[data-test=freeform-selection-submenu] button',es=>es.length),6)
-  await pointerClick('[data-test=freeform-selection-'+value+']')
+  const option='[data-test=freeform-selection-'+value+']'
+  assert.equal(await page.$eval(option,e=>{const r=e.getBoundingClientRect();return document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)?.closest('button')===e}),true,`Selection option ${value} must be the pointer target`)
+  await pointerClick(option)
   assert.equal(await page.$eval('[aria-label="Freeform selection"]',e=>e.value),value)
   assert.equal(await selectionCount(),1)
   assert.equal(await page.$('[data-test=freeform-context]'),null)

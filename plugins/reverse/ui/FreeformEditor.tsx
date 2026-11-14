@@ -88,7 +88,7 @@ export function FreeformEditor() {
     focusSubmenu.current = focus
     const r = selectionTrigger.current?.getBoundingClientRect()
     if (!r) return
-    const width = Math.min(130, window.innerWidth - 16)
+    const width = Math.min(166, window.innerWidth - 16)
     setManipMenu(null)
     setSelectionMenu({ x: Math.max(8, r.right + width + 8 <= window.innerWidth ? r.right : r.left - width), y: Math.max(8, Math.min(r.top, window.innerHeight - 160)) })
   }
@@ -346,7 +346,7 @@ export function FreeformEditor() {
       if(e.key==='ArrowLeft'){e.preventDefault();setManipMenu(null);manipTrigger.current?.focus()}
       if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)){e.preventDefault();buttons[e.key==='Home'?0:e.key==='End'?buttons.length-1:(index+(e.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length]?.focus()}
     }}>{(['world','screen','local'] as const).map(f=><button key={f} role="menuitemradio" disabled={snap} aria-checked={frame===f} onClick={()=>{setFrame(f);setMenu(null)}}>{frame===f?'✓ ':'　'}{f[0].toUpperCase()+f.slice(1)}</button>)}</div>}
-    {menu && selectionMenu && <div ref={selectionPopup} id="freeform-selection-submenu" role="menu" aria-label="Selection" data-test="freeform-selection-submenu" className="freeform-context-menu ff-native-menu" style={{ position: 'fixed', left: selectionMenu.x, top: selectionMenu.y, width: 130, maxWidth: 'calc(100vw - 16px)', maxHeight: `calc(100dvh - ${selectionMenu.y + 8}px)`, overflowY: 'auto', boxSizing: 'border-box', padding: 4, display: 'grid', gap: 1, fontSize: 10, background: 'var(--panel, #25282c)', border: '1px solid #777', zIndex: 10001 }} onKeyDown={e => {
+    {menu && selectionMenu && <div ref={selectionPopup} id="freeform-selection-submenu" role="menu" aria-label="Selection" data-test="freeform-selection-submenu" className="freeform-context-menu ff-native-menu" style={{ position: 'fixed', left: selectionMenu.x, top: selectionMenu.y, width: 166, maxWidth: 'calc(100vw - 16px)', maxHeight: `calc(100dvh - ${selectionMenu.y + 8}px)`, overflowY: 'auto', boxSizing: 'border-box', padding: 4, display: 'grid', gap: 1, fontSize: 10, background: 'var(--panel, #25282c)', border: '1px solid #777', zIndex: 10001 }} onKeyDown={e => {
       const buttons = Array.from(selectionPopup.current?.querySelectorAll<HTMLButtonElement>('button') ?? [])
       const index = buttons.indexOf(document.activeElement as HTMLButtonElement)
       if (e.key === 'ArrowLeft') { e.preventDefault(); setSelectionMenu(null); selectionTrigger.current?.focus() }

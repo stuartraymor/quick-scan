@@ -1,3 +1,8 @@
+## 1.1.20
+
+- Widen the New Freeform right-click Selection submenu so every mode label fits its own 20-pixel row.
+- Prevent label wrapping and pointer overlap when the submenu is constrained by a small window. Verify all six modes by real pointer input.
+
 ## 1.1.19
 
 - Let a visible sloped face's boundary edge be selected throughout its seven-pixel pick band, including a few pixels inside the face.
