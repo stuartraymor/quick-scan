@@ -50,10 +50,22 @@
 .ff-snap-row { display: flex; align-items: center; justify-content: space-between; }
 .ff-snap-row button { width: 63px; border-color: #888; border-radius: 0; }
 .ff-editor .ff-right-control { width: 132px; justify-self: end; }
+.ff-editor-display { display: grid; grid-template-columns: 25px 25px 25px 1fr; align-items: center; gap: 4px; margin-top: 2px; }
+.ff-editor-display button:not(.ff-display-options) { width: 25px; min-width: 25px; height: 25px; min-height: 25px; padding: 1px; display: inline-flex; align-items: center; justify-content: center; }
+.ff-editor-display .ff-display-options { width: 132px; justify-self: end; }
+.modal.ff-editor .ff-editor-display .ff-display-current:disabled { background: var(--accent-soft); border-color: var(--accent); color: var(--ink); }
+.ff-mesh-row, .ff-symmetry-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 22px; }
+.ff-mesh-row select, .ff-symmetry-row select { width: 132px; }
+.ff-mesh-shading select { width: 98px; }
+.ff-mesh-shading input[type=range] { width: 132px; }
+.ff-symmetry-row label { white-space: nowrap; }
+.ff-symmetry-set { width: 100%; }
+.ff-editor .ff-planned-note { font-size: 10px; color: var(--dim) !important; }
 .ff-editor > .ff-transparency { display: grid; grid-template-columns: 1fr; gap: 8px; margin: 4px 0; }
 .ff-editor > .ff-transparency input { width: 100%; }
-.ff-editor-footer { display: flex; justify-content: flex-end; border-top: 2px solid #888; padding-top: 9px; margin-top: 14px; }
+.ff-editor-footer { display: flex; justify-content: space-between; align-items: center; border-top: 2px solid #888; padding-top: 9px; margin-top: 14px; }
 .ff-editor-footer button { width: 72px; }
+.ff-editor-footer .ff-help-placeholder { width: 21px; min-width: 21px; min-height: 21px; height: 21px; padding: 0; border-radius: 50%; font-size: 14px; font-weight: 600; }
 .ff-native-menu { gap: 0 !important; padding: 4px !important; border-radius: 3px; background: var(--panel) !important; }
 .ff-native-menu > button { color: var(--ink); font: 12px "Segoe UI", sans-serif; padding: 0 4px 0 28px !important; min-height: 20px; height: 20px; line-height: 20px; }
 .ff-native-menu > button:disabled { background: transparent; }

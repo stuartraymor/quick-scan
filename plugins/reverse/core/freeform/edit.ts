@@ -309,17 +309,25 @@ export function extrapolateEdges(c: Cage, indices: number[], by: Vec3, followFac
   if (followFaceTangents) {
     const counts = new Map<number, number>()
     for (const { p, q, pTangent, qTangent } of segments) for (const [v, tangent] of [[p, pTangent], [q, qTangent]] as [number, Vec3][]) {
-      tangents.set(v, add(tangents.get(v) ?? [0, 0, 0], tangent))
+      const length = Math.hypot(...tangent)
+      if (length <= 1e-12) continue
+      // Each face contributes a direction, independent of its edge length.
+      tangents.set(v, add(tangents.get(v) ?? [0, 0, 0], tangent.map(x => x / length) as Vec3))
       counts.set(v, (counts.get(v) ?? 0) + 1)
     }
-    for (const [v, tangent] of tangents) tangents.set(v, tangent.map(x => x / counts.get(v)!) as Vec3)
+    for (const [v, tangent] of tangents) {
+      const mean = tangent.map(x => x / counts.get(v)!) as Vec3
+      const length = Math.hypot(...mean)
+      if (length <= 1e-12) tangents.delete(v)
+      else tangents.set(v, mean.map(x => x / length) as Vec3)
+    }
   }
   const directions = [...tangents.values()]
   const average = directions.length ? directions.reduce(add, [0, 0, 0] as Vec3).map(x => x / directions.length) as Vec3 : null
   const lengthSq = average?.reduce((sum, x) => sum + x * x, 0) ?? 0
   const along = average?.reduce((sum, x, axis) => sum + x * by[axis], 0) ?? 0
-  // Preserve the pointer's travel distance even when the screen drag is
-  // oblique to the 3D tangent; projection alone makes a visible pull collapse.
+  // Preserve the pointer's mean travel while each copied vertex advances the
+  // same distance along its own unit tangent. Oblique screen drags still pull.
   const scale = lengthSq > 1e-20 && Math.abs(along) > 1e-12 ? Math.sign(along) * Math.hypot(...by) / Math.sqrt(lengthSq) : 0
   const follow = followFaceTangents && Math.abs(scale) > 1e-8
   const out = cloneCage(c), copies = new Map<number, number>()

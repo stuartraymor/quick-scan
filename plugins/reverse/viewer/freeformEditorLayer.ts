@@ -348,7 +348,14 @@ export class FreeformEditorLayer {
       canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',cancel);canvas.removeEventListener('lostpointercapture',cancel);window.removeEventListener('keydown',key,true)
       try{canvas.releasePointerCapture(e.pointerId)}catch{/* already released */}
       this.host.claimDrag(false)
-      if(accept){const picks=Math.hypot(lastX-e.clientX,lastY-e.clientY)>=3?this.boxPicks(e.clientX,e.clientY,lastX,lastY):[];this.select(e.ctrlKey||e.metaKey?[...original,...picks.filter(p=>!original.some(q=>same(p,q)))]:picks)}
+      if(accept){
+        const picks=Math.hypot(lastX-e.clientX,lastY-e.clientY)>=3?this.boxPicks(e.clientX,e.clientY,lastX,lastY):[]
+        this.select(e.shiftKey && !e.ctrlKey && !e.metaKey
+          ? original.filter(p=>!picks.some(q=>same(p,q)))
+          : e.ctrlKey||e.metaKey
+            ? [...original,...picks.filter(p=>!original.some(q=>same(p,q)))]
+            : picks)
+      }
     }
     const up=(ev:PointerEvent)=>{if(ev.pointerId===e.pointerId){move(ev);finish(true)}}
     const cancel=(ev:PointerEvent)=>{if(ev.pointerId===e.pointerId)finish(false)}
@@ -359,22 +366,36 @@ export class FreeformEditorLayer {
   }
   private begin(e: PointerEvent): boolean {
     if (this.options.enabled === false || this.cancelDrag) return e.button === 0
-    if (e.button !== 0 || e.shiftKey || e.altKey || !this.cage || this.options.creating) return false
+    if (e.button !== 0 || !this.cage || this.options.creating || (e.altKey && e.shiftKey)) return false
     const handle = this.duplicateAnchor()
     let duplicate = handle && Math.hypot(e.clientX - handle.at.x, e.clientY - handle.at.y) <= 11 ? handle : null
+    // QUICKSURFACE's D handle translates the copied edge with the pointer.
+    // Its contextual Extrapolate tool instead continues the face tangents.
+    let tangentExtension = false
     const grip = duplicate ? null : this.manipulator.hit(e.clientX, e.clientY)
     const hit = grip || duplicate ? this.selection[0] : this.pick(e.clientX, e.clientY)
     if (!hit) return this.beginBox(e)
-    if (e.ctrlKey || e.metaKey) {
+    if (e.shiftKey) {
+      this.select(this.selection.filter(p => !same(p, hit)))
+      return true
+    }
+    if ((e.ctrlKey || e.metaKey) && !e.altKey) {
       this.select(this.selection.some(p => same(p, hit)) ? this.selection.filter(p => !same(p, hit)) : [...this.selection, hit])
       return true
     }
     if (!this.selection.some(p => same(p, hit))) this.select([hit])
+    if (e.altKey && !grip && !duplicate && hit.kind === 'edge') {
+      const top = this.cageTopology(this.cage)
+      const picks = this.selection.filter(p => p.kind === 'edge')
+      if (picks.length !== this.selection.length || picks.some(p => top.edges[p.index].faces.length !== 1)) return true
+      duplicate = { edge: top.edges[hit.index], indices: picks.map(p => p.index), at: this.project(vertexAt(this.cage, top.edges[hit.index].a)) }
+    }
     if (!grip && !duplicate && this.options.extrapolate && hit.kind === 'edge') {
       const top = this.cageTopology(this.cage)
       const picks = this.selection.filter(p => p.kind === 'edge')
       if (picks.length !== this.selection.length || picks.some(p => top.edges[p.index].faces.length !== 1)) return true
       duplicate = { edge: top.edges[hit.index], indices: picks.map(p => p.index), at: this.project(vertexAt(this.cage, top.edges[hit.index].a)) }
+      tangentExtension = true
     }
     const original = this.cage, options = this.options, host = this.host, el = host.canvas
     const top = this.cageTopology(original)
@@ -404,7 +425,7 @@ export class FreeformEditorLayer {
         if (edge.clone().cross(delta).lengthSq() <= 1e-20 * Math.max(1, edge.lengthSq() * delta.lengthSq())) changed = false
       }
       if (changed && duplicate) {
-        const extended = extrapolateEdges(original, duplicate.indices, delta.toArray(), true)
+        const extended = extrapolateEdges(original, duplicate.indices, delta.toArray(), tangentExtension)
         current = extended.cage; nextSelection = extended.edges.map(index => ({ kind: 'edge', index }))
       } else current = changed ? movePoints(original, vertices.map(vertex => ({ vertex, by: delta.toArray() })), options.neighbourRadius ?? 0) : original
       if (changed && grip && grip.kind !== 'move') {

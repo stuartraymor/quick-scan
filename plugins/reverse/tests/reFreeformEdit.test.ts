@@ -101,6 +101,45 @@ describe('move', () => {
   })
 })
 
+it('matches two saved QUICKSURFACE D-handle pulls on the same sphere cage', () => {
+  // Decoded from saved test copies, with Snap Mode off and full Drag Strength.
+  const native: Cage = {
+    positions: Float64Array.from([
+      -2.5356853008270264,-14.823261260986328,17.621564865112305,
+      11.977066040039062,0.8710759282112122,15.845459938049316,
+      18.408493041992188,-4.443119049072266,6.045158863067627,
+      4.01893424987793,-21.377880096435547,7.465747833251953,
+      6.817294120788574,-2.991267204284668,21.99803924560547,
+      15.534045219421387,-11.26496696472168,7.39190673828125,
+      -1.039684772491455,-25.820510864257812,7.4981865882873535,
+      -6.545372009277344,-19.89571762084961,15.745340347290039,
+    ]),
+    faces: [[0,4,5,3],[4,1,2,5],[3,6,7,0]], creases: [],
+  }
+  const firstExpected: Vec3[] = [
+    [-5.384415149688721,-30.165241241455078,7.4981865882873535],
+    [-10.89010238647461,-24.240447998046875,15.745340347290039],
+  ]
+  const secondExpected: Vec3[] = [
+    [-9.729148864746094,-34.50997543334961,7.4981865882873535],
+    [-15.234835624694824,-28.585182189941406,15.745340347290039],
+  ]
+  const firstBy: Vec3 = firstExpected[0].map((v,i)=>v-at(native,6)[i]) as Vec3
+  const first = extrapolateEdges(native,[topology(native).edgeOf.get(edgeKey(6,7))!],firstBy)
+  expect(first.cage.faces).toHaveLength(4)
+  expect(first.cage.faces[3]).toEqual([7,6,8,9])
+  for(let k=0;k<2;k++) expect(Math.hypot(...at(first.cage,8+k).map((v,i)=>v-firstExpected[k][i]))).toBeLessThan(0.00001)
+  const secondBy: Vec3 = secondExpected[0].map((v,i)=>v-firstExpected[0][i]) as Vec3
+  const second = extrapolateEdges(first.cage,first.edges,secondBy)
+  expect(second.cage.faces).toHaveLength(5)
+  expect(second.cage.faces[4]).toEqual([9,8,10,11])
+  for(let k=0;k<2;k++) expect(Math.hypot(...at(second.cage,10+k).map((v,i)=>v-secondExpected[k][i]))).toBeLessThan(0.00001)
+  // The same displacement sent through contextual Extrapolate yields a
+  // different, tangent-following edge on this curved cage.
+  const contextual = extrapolateEdges(native,[topology(native).edgeOf.get(edgeKey(6,7))!],firstBy,true)
+  expect(Math.hypot(...at(contextual.cage,8).map((v,i)=>v-firstExpected[0][i]))).toBeGreaterThan(0.01)
+})
+
 describe('resolution and split', () => {
   it('increases the resolution without changing the surface: four times the faces, the same limit points', () => {
     const c = movePoints(patch(), [{ vertex: 4, by: [0, 0, 0.8] }])
@@ -177,7 +216,10 @@ describe('extrapolate', () => {
     expect(vertexCount(result.cage)).toBe(8)
     expect(result.cage.faces).toHaveLength(3)
     const native=[[ -1.0396848,-25.8205109,7.4981866 ],[ -6.5453720,-19.8957176,15.7453403 ]]
-    for (let k=0;k<2;k++) expect(Math.hypot(...at(result.cage,6+k).map((v,i)=>v-native[k][i]))).toBeLessThan(0.09)
+    for (let k=0;k<2;k++) expect(Math.hypot(...at(result.cage,6+k).map((v,i)=>v-native[k][i]))).toBeLessThan(0.00001)
+    const upperTravel=Math.hypot(...at(result.cage,7).map((v,i)=>v-at(c,0)[i]))
+    const lowerTravel=Math.hypot(...at(result.cage,6).map((v,i)=>v-at(c,3)[i]))
+    expect(upperTravel).toBeCloseTo(lowerTravel,9)
     expect(Array.from(result.cage.positions.slice(0,c.positions.length))).toEqual(Array.from(c.positions))
     const oblique=extrapolateEdges(c,[edge],[0,0,-4],true)
     expect(Math.hypot(...at(oblique.cage,7).map((v,i)=>v-at(c,0)[i]))).toBeGreaterThan(3.5)
@@ -196,6 +238,19 @@ describe('extrapolate', () => {
     expect(result.cage.faces).toHaveLength(c.faces.length+2)
     expect(consistent(result.cage)).toBe(true)
     expect(result.edges).toHaveLength(2)
+  })
+  it('averages unit tangents at a shared corner with unequal adjacent edge lengths', () => {
+    const c=movePoints(patch(1,1),[{vertex:1,by:[2,0,0]},{vertex:3,by:[2,0,0]}])
+    const top=topology(c)
+    const result=extrapolateEdges(c,[top.edgeOf.get(edgeKey(0,1))!,top.edgeOf.get(edgeKey(0,2))!],[-1,-1,0],true)
+    expect(vertexCount(result.cage)).toBe(vertexCount(c)+3)
+    expect(result.cage.faces).toHaveLength(3)
+    const shared=at(result.cage,4).map((v,i)=>v-at(c,0)[i])
+    expect(shared[0]).toBeCloseTo(shared[1],9)
+    const travels=[4,5,6].map((v,i)=>Math.hypot(...at(result.cage,v).map((x,k)=>x-at(c,[0,1,2][i])[k])))
+    expect(travels[0]).toBeCloseTo(travels[1],9)
+    expect(travels[1]).toBeCloseTo(travels[2],9)
+    expect(consistent(result.cage)).toBe(true)
   })
   it('selects straight or gently curved rows but stops at the reference sphere cage bend', () => {
     const row = patch(2, 1)

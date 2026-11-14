@@ -133,6 +133,36 @@ it('moves an edge normally and extends only the enabled duplicate handle', () =>
     s.editor.dispose()
   }
 })
+it('keeps D-handle travel uniform while contextual Extrapolate follows the face tangents', () => {
+  const bent: Cage = {
+    positions: Float64Array.from([0,0,0, 5,0,0, 6,5,3, 0,5,2]),
+    faces: [[0,1,2,3]], creases: [],
+  }
+  for (const contextual of [false, true]) {
+    const s = setup({
+      selection: [{kind:'edge',index:0}], duplicateHandle: !contextual,
+      extrapolate: contextual,
+    }, bent)
+    expect(s.layer.pointerDown!(s.event('pointerdown',125,100))).toBe(true)
+    s.canvas.dispatchEvent(s.event('pointermove',125,120))
+    const preview = s.onPreview.mock.lastCall?.[0] as Cage
+    expect(preview.faces).toHaveLength(2)
+    s.canvas.dispatchEvent(s.event('pointerup',125,120))
+    const result = s.onCommit.mock.lastCall?.[0] as Cage
+    expect(result.faces).toHaveLength(2)
+    if (!contextual) {
+      expect(result.positions[12]).toBeCloseTo(0)
+      expect(result.positions[13]).toBeCloseTo(-2)
+      expect(result.positions[15]).toBeCloseTo(5)
+      expect(result.positions[16]).toBeCloseTo(-2)
+      expect(result.positions[17]).toBeCloseTo(0)
+    } else {
+      expect(Math.abs(result.positions[14])).toBeGreaterThan(0.1)
+      expect(Math.abs(result.positions[17])).toBeGreaterThan(0.1)
+    }
+    s.editor.dispose()
+  }
+})
 it('selects faces and moves all their vertices together', () => {
   const s = setup({ mode: 'faces' })
   expect(s.layer.pointerDown!(s.event('pointerdown', 125, 75))).toBe(true)
@@ -461,6 +491,32 @@ it('box selection encloses edges in either direction and excludes partial edges'
 it('box selection filters points and faces and excludes hidden geometry', () => {
  for(const mode of ['points','faces'] as const){const s=setup({mode});s.layer.pointerDown!(s.event('pointerdown',90,40));s.canvas.dispatchEvent(s.event('pointerup',160,110));expect(s.onSelection.mock.lastCall?.[0]).toHaveLength(mode==='points'?4:1);s.editor.dispose()}
  const s=setup({mode:'all',hiddenFaces:[0]});s.layer.pointerDown!(s.event('pointerdown',90,40));s.canvas.dispatchEvent(s.event('pointerup',160,110));expect(s.onSelection.mock.lastCall?.[0]).toEqual([]);s.editor.dispose()
+})
+it('Shift click removes a selected point without starting a geometry drag', () => {
+ const s=setup({mode:'points',selection:[{kind:'vertex',index:0},{kind:'vertex',index:1}]})
+ expect(s.layer.pointerDown!(s.event('pointerdown',100,100,{shiftKey:true}))).toBe(true)
+ expect(s.onSelection.mock.lastCall?.[0]).toEqual([{kind:'vertex',index:1}])
+ s.canvas.dispatchEvent(s.event('pointerup',120,120,{shiftKey:true}))
+ expect(s.onCommit).not.toHaveBeenCalled();s.editor.dispose()
+})
+it('Shift rectangle removes enclosed points while Ctrl rectangle adds them', () => {
+ const s=setup({mode:'points',selection:[{kind:'vertex',index:0},{kind:'vertex',index:1}]})
+ s.layer.pointerDown!(s.event('pointerdown',90,90,{shiftKey:true}))
+ s.canvas.dispatchEvent(s.event('pointerup',110,110,{shiftKey:true}))
+ expect(s.onSelection.mock.lastCall?.[0]).toEqual([{kind:'vertex',index:1}])
+ s.layer.pointerDown!(s.event('pointerdown',90,90,{ctrlKey:true}))
+ s.canvas.dispatchEvent(s.event('pointerup',110,110,{ctrlKey:true}))
+ expect(s.onSelection.mock.lastCall?.[0]).toEqual([{kind:'vertex',index:1},{kind:'vertex',index:0}])
+ expect(s.onCommit).not.toHaveBeenCalled();s.editor.dispose()
+})
+it('Alt drag extends a boundary edge when the D handle is hidden', () => {
+ const s=setup({selection:[{kind:'edge',index:0}],duplicateHandle:false})
+ expect(s.layer.pointerDown!(s.event('pointerdown',125,100,{altKey:true}))).toBe(true)
+ s.canvas.dispatchEvent(s.event('pointermove',125,120,{altKey:true}))
+ expect((s.onPreview.mock.lastCall?.[0] as Cage).faces).toHaveLength(2)
+ s.canvas.dispatchEvent(s.event('pointerup',125,120,{altKey:true}))
+ expect((s.onCommit.mock.lastCall?.[0] as Cage).faces).toHaveLength(2)
+ expect(Array.from(s.cage.positions)).toEqual([0,0,0,5,0,0,5,5,0,0,5,0]);s.editor.dispose()
 })
 it('Escape cancels a box without replacing the existing selection', () => {
  const s=setup({mode:'points',selection:[{kind:'vertex',index:0}]});s.layer.pointerDown!(s.event('pointerdown',90,40));s.canvas.dispatchEvent(s.event('pointermove',160,110));s.win.dispatchEvent(Object.assign(new Event('keydown'),{key:'Escape'}));s.canvas.dispatchEvent(s.event('pointerup',160,110));expect(s.onSelection).not.toHaveBeenCalled();expect(s.onCommit).not.toHaveBeenCalled();s.editor.dispose()

@@ -1,3 +1,25 @@
+## 1.1.24
+
+- New Freeform: Shift-click removes a selected entity, and Shift rectangle selection subtracts enclosed entities while Ctrl rectangle selection adds them.
+- New Freeform: Alt-drag extends a boundary edge when the D handle is hidden, using the existing edge extension geometry and preview.
+- Retained the dark Edit Surface theme and AI tab. QUICKSURFACE 8 modifier parity and the broader geometry comparison remain under test.
+
+## 1.1.23
+
+- Add the missing New Freeform surface display strip from the reference Edit Surface panel. Shaded is shown as the current mode; tolerance, zebra/shadow and display options are clearly disabled until their editing behavior is implemented.
+- Add Mesh Display Offset, shading and level placeholders in the reference order, retaining the working Surface Transparency slider.
+- Add Symmetry plane and help placeholders, with explicit planned labels and a footer layout that stays reachable in short windows. Preserve the Quick Scan dark theme and AI tab.
+
+## 1.1.22
+
+- Make the New Freeform D handle translate copied boundary endpoints together, matching two consecutive saved QUICKSURFACE pulls on the same sphere cage.
+- Keep the contextual Extrapolate gesture on its separately observed outgoing face-tangent path. Both gestures retain live previews, selected new edges and undoable commits.
+
+## 1.1.21
+
+- Match the saved QUICKSURFACE edge pull's equal travel at both endpoints by normalizing each outgoing face tangent before extension.
+- Average normalized tangent directions at shared boundary vertices so a longer adjacent cage edge does not bias a multi-edge pull.
+
 ## 1.1.20
 
 - Widen the New Freeform right-click Selection submenu so every mode label fits its own 20-pixel row.

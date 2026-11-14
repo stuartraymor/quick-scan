@@ -308,11 +308,22 @@ export function FreeformEditor() {
       <label><input type="checkbox" checked={duplicate} onChange={e => setDuplicate(e.target.checked)} /> Show DUPLICATE handle</label>
       <label><input type="checkbox" checked={neighbours} onChange={e => setNeighbours(e.target.checked)} /> Don't move neighbours</label>
       <button className="ff-right-control" type="button" aria-pressed={controlNet} onClick={() => setControlNet(!controlNet)}>Control Net</button>
+      <div className="ff-editor-display" role="group" aria-label="Surface display">
+        <button type="button" className="ff-display-current" data-test="freeform-display-shaded" aria-label="Shaded display (current)" aria-pressed="true" disabled><FreeformIcon name="shaded" /></button>
+        <button type="button" data-test="freeform-display-deviation" aria-label="Tolerance display (planned)" title="Tolerance display is planned" disabled><FreeformIcon name="deviation" /></button>
+        <button type="button" data-test="freeform-display-zebra" aria-label="Zebra and shadow display (planned)" title="Zebra and shadow display is planned" disabled><FreeformIcon name="zebra" /></button>
+        <button type="button" className="ff-display-options" data-test="freeform-display-options" title="Surface display options are planned" disabled>Options …</button>
+      </div>
       <label className="ff-transparency">Surface Transparency <input aria-label="Surface Transparency" type="range" min="0" max="100" value={Math.round((1-opacity)*100)} onChange={e => setOpacity(1-Number(e.target.value)/100)} /></label>
+      <div className="ff-mesh-row"><label htmlFor="freeform-mesh-display">Mesh Display</label><select id="freeform-mesh-display" aria-label="Mesh Display (planned)" disabled><option>Offset</option></select></div>
+      <div className="ff-mesh-row ff-mesh-shading"><select aria-label="Mesh shading (planned)" disabled><option>Shaded</option></select><input aria-label="Mesh display level (planned)" type="range" min="0" max="100" defaultValue="70" disabled /></div>
+      <div className="ff-symmetry-row"><label><input type="checkbox" aria-label="Symmetry (planned)" disabled /> Symmetry</label><select aria-label="Symmetry plane (planned)" disabled><option value=""></option></select></div>
+      <button type="button" className="ff-symmetry-set" data-test="freeform-set-symmetry" title="Symmetry-plane placement is planned" disabled>Set on Symmetry Plane</button>
+      <small className="ff-planned-note">Tolerance, mesh display and symmetry controls are planned.</small>
       <label>Surface <select aria-label="Freeform surface" disabled={working} value={id ?? ''} onChange={e => { setId(e.target.value === '' ? null : Number(e.target.value)); setCorners([]) }}><option value="">New Freeform</option>{state.features.filter((f): f is FreeformFeature => f.kind === 'freeform').map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></label>
       <small data-test="freeform-status">{working ? 'Building surface…' : cage ? `${cage.faces.length} faces · ${selection.length} selected` : `Pick four corners on the scan (${corners.length}/4).`}</small>
       {error && <small role="alert">{error}</small>}
-      <footer className="ff-editor-footer"><button type="button" disabled={working} onClick={close}>Close</button></footer>
+      <footer className="ff-editor-footer"><button type="button" className="ff-help-placeholder" aria-label="Freeform help (planned)" title="Freeform help is planned" disabled>?</button><button type="button" disabled={working} onClick={close}>Close</button></footer>
     </form>
     {menu?.hit && <div role="toolbar" aria-label="Freeform contextual tools" className="ff-icon-toolbar ff-floating-tools" onMouseEnter={()=>{toolbarHover.current=true}} onMouseLeave={()=>{toolbarHover.current=false}} style={{position:'fixed',left:menu.x,top:Math.max(0,menu.y-28),display:'flex',gap:2,zIndex:10001}}>
         <button type="button" aria-label="Manipulate" title="Manipulate" aria-pressed={tool==='manipulate'} onClick={()=>chooseTool('manipulate')}><FreeformIcon name="select" /></button>

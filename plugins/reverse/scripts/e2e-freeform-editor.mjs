@@ -28,6 +28,22 @@ try {
  }
  console.log('PASS Edit Surface follows current light/dark theme without overriding preferences')
  assert.equal(await page.$$eval('[aria-label="Surface editing tools"] button svg',es=>es.length),18)
+ const placeholders=await page.$eval('.ff-editor',form=>{
+  const display=form.querySelector('.ff-editor-display'),transparency=form.querySelector('.ff-transparency'),mesh=form.querySelector('.ff-mesh-row'),symmetry=form.querySelector('.ff-symmetry-row')
+  return {order:[display,transparency,mesh,symmetry].map(el=>Array.from(form.children).indexOf(el)),
+    shaded:form.querySelector('[data-test=freeform-display-shaded]')?.getAttribute('aria-pressed'),
+    planned:[...form.querySelectorAll('[data-test=freeform-display-deviation],[data-test=freeform-display-zebra],[data-test=freeform-display-options],[data-test=freeform-set-symmetry],[aria-label="Mesh Display (planned)"],[aria-label="Mesh shading (planned)"],[aria-label="Mesh display level (planned)"],[aria-label="Symmetry (planned)"],[aria-label="Symmetry plane (planned)"],[aria-label="Freeform help (planned)"]')].map(el=>({name:el.getAttribute('aria-label')??el.textContent,disabled:el.disabled})),
+    note:form.querySelector('.ff-planned-note')?.textContent,
+  }
+ })
+ assert.deepEqual([...placeholders.order].sort((a,b)=>a-b),placeholders.order)
+ assert.equal(placeholders.shaded,'true')
+ assert.equal(placeholders.planned.length,10)
+ assert.ok(placeholders.planned.every(control=>control.disabled))
+ assert.match(placeholders.note,/planned/)
+ assert.deepEqual(await state(),beforeDisplay)
+ await page.screenshot({path:shotPath('manual-reference-placeholders.png')})
+ console.log('PASS reference display, mesh, symmetry and help placeholders are ordered, disabled and dark-themed')
  await page.evaluate(()=>Array.from(document.querySelectorAll('[data-test=freeform-editor] form button')).find(e=>e.textContent==='Control Net').click())
  assert.equal(await page.$eval('[data-test=freeform-editor] form',e=>Array.from(e.querySelectorAll('button')).find(b=>b.textContent==='Control Net').getAttribute('aria-pressed')),'false')
  await page.$eval('[aria-label="Surface Transparency"]',e=>{const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;set.call(e,'60');e.dispatchEvent(new Event('input',{bubbles:true}))})

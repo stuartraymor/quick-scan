@@ -22,6 +22,7 @@ export function FreeformIcon({ name }: { name: string }) {
     delete: 'M5 6h12l-1 14H6z M3 6h16 M8 6V3h6v3 M9 9v8 M13 9v8',
     shaded: 'M11 2l9 5v10l-9 5-9-5V7z M2 7l9 5 9-5 M11 12v10',
     deviation: 'M11 2l9 5v10l-9 5-9-5V7z M2 7l9 5 9-5 M11 12v10',
+    zebra: 'M11 2l9 5v10l-9 5-9-5V7z M3 8c6 1 10 5 17 2 M3 13c7 0 9 5 17 3 M7 20c3-5 8-5 12-4',
   }
-  return <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill={name === 'shaded' ? '#4f8ed0' : name === 'deviation' ? '#49c85c' : 'none'} stroke="currentColor" strokeWidth="1.35" strokeLinejoin="round"><path d={paths[name] ?? paths.select} /></svg>
+  return <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill={name === 'shaded' ? '#4f8ed0' : name === 'deviation' ? '#49c85c' : name === 'zebra' ? '#292d31' : 'none'} stroke="currentColor" strokeWidth="1.35" strokeLinejoin="round"><path d={paths[name] ?? paths.select} /></svg>
 }
