@@ -18,6 +18,7 @@ export interface ScanShaderUniforms {
   surfaceOwn: SurfaceOwnUniform
   deflect: DeflectionUniform
   wire: WireUniforms
+  depthOffset: { value: number }
 }
 
 /**
@@ -47,7 +48,9 @@ export function patchScanShader(material: THREE.Material, u: ScanShaderUniforms)
     shader.uniforms.uSurfaceColor = u.surfaceColor
     shader.uniforms.uSurfaceOwn = u.surfaceOwn
     shader.uniforms.uDeflect = u.deflect
+    shader.uniforms.uScanDepthOffset = u.depthOffset
     shader.vertexShader =
+      'uniform float uScanDepthOffset;\n' +
       TINT_GLSL_VERTEX +
       PAINT_GLSL_VERTEX +
       DEFLECT_GLSL_VERTEX +
@@ -59,6 +62,14 @@ export function patchScanShader(material: THREE.Material, u: ScanShaderUniforms)
         ${PAINT_GLSL_VERTEX_BODY}`,
         )
         .replace('#include <begin_vertex>', `#include <begin_vertex>\n\t${DEFLECT_GLSL_VERTEX_BODY}`)
+        .replace('#include <project_vertex>', `
+          #include <project_vertex>
+          if (uScanDepthOffset > 0.0 && gl_Position.w > 0.0 && gl_Position.z < gl_Position.w) {
+            vec4 offsetClip = projectionMatrix * (mvPosition - vec4(0.0, 0.0, uScanDepthOffset, 0.0));
+            // Keep the real scan silhouette, including at the far clip plane.
+            gl_Position.z = min(gl_Position.w * 0.999999, offsetClip.z * gl_Position.w / offsetClip.w);
+          }
+        `)
     shader.fragmentShader =
       BACKFACE_GLSL_PREAMBLE +
       PAINT_GLSL_PREAMBLE +

@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import type { SceneLayerHost } from '../../../src/viewer/sceneLayers'
 import type { Cage } from '../core/freeform/cage'
 import { vertexAt } from '../core/freeform/cage'
+import { cageVertexLimits } from '../core/freeform/limit'
 export type ManipulatorFrame = 'world' | 'screen' | 'local'
 export type ManipulatorHit = { kind: 'move' | 'rotate' | 'scale'; axis: THREE.Vector3; centre: THREE.Vector3; x: number; y: number; dx: number; dy: number; unit: number }
 const colors = ['#d51515', '#14a51c', '#1515bd']
@@ -19,17 +20,19 @@ export class FreeformManipulator {
     Object.assign(this.svg.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', pointerEvents: 'none', overflow: 'visible', zIndex: '6' })
     host.container.append(this.svg)
   }
-  update(cage: Cage | null, ids: number[], frame: ManipulatorFrame, enabled: boolean) {
+  update(cage: Cage | null, ids: number[], frame: ManipulatorFrame, enabled: boolean, surfaceAnchors = false) {
     const camera = this.host.camera(), rectKey = this.host.canvas.getBoundingClientRect()
     this.host.partGroup.updateWorldMatrix(true, false)
-    const key = [enabled, frame, ids.join(','), ...camera.matrixWorld.elements, ...camera.projectionMatrix.elements, ...this.host.partGroup.matrixWorld.elements, rectKey.left, rectKey.top, rectKey.width, rectKey.height].join('|')
+    const key = [enabled, frame, surfaceAnchors, ids.join(','), ...camera.matrixWorld.elements, ...camera.projectionMatrix.elements, ...this.host.partGroup.matrixWorld.elements, rectKey.left, rectKey.top, rectKey.width, rectKey.height].join('|')
     if (cage === this.lastCage && key === this.lastKey) return
     this.lastCage = cage; this.lastKey = key
     this.hits = []; this.svg?.replaceChildren()
     if (this.svg) this.svg.style.display = enabled && ids.length ? 'block' : 'none'
     if (!enabled || !cage || !ids.length) return
     const host = this.host, centre = new THREE.Vector3()
-    ids.forEach(i => centre.add(new THREE.Vector3(...vertexAt(cage, i)))); centre.divideScalar(ids.length)
+    const limit = surfaceAnchors ? cageVertexLimits(cage) : null
+    const at = (i: number) => limit?.[i] ?? vertexAt(cage, i)
+    ids.forEach(i => centre.add(new THREE.Vector3(...at(i)))); centre.divideScalar(ids.length)
     host.partGroup.updateWorldMatrix(true, false)
     const inverse = host.partGroup.getWorldQuaternion(new THREE.Quaternion()).invert()
     let axes = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1)]
@@ -38,7 +41,7 @@ export class FreeformManipulator {
     else {
       const chosen = new Set(ids), normal = new THREE.Vector3(); let tangent: THREE.Vector3 | null = null
       for (const f of cage.faces) if (f.some(i => chosen.has(i))) {
-        const a = new THREE.Vector3(...vertexAt(cage, f[0])), b = new THREE.Vector3(...vertexAt(cage, f[1])), c = new THREE.Vector3(...vertexAt(cage, f[2]))
+        const a = new THREE.Vector3(...at(f[0])), b = new THREE.Vector3(...at(f[1])), c = new THREE.Vector3(...at(f[2]))
         const edge = b.sub(a); normal.add(edge.clone().cross(c.sub(a)))
         if (!tangent && edge.lengthSq() > 1e-20) tangent = edge.normalize()
       }

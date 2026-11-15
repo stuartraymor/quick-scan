@@ -156,9 +156,24 @@ export class NominalSurface {
   private edgeOther: Uint32Array
   private probe = new THREE.Vector3()
   private target = { point: new THREE.Vector3(), distance: 0, faceIndex: 0 }
+  private projectionRay = new THREE.Ray()
   private scratch = new Float64Array(4)
   /** Closest point on the triangle currently under test by closestFacing. */
   private facingNear = new THREE.Vector3()
+
+  /** Closest intersection in either direction along a bounded line. */
+  projectAlong(point: readonly number[], axis: readonly number[], reach: number): [number, number, number] | null {
+    const ray = this.projectionRay
+    ray.origin.set(point[0], point[1], point[2])
+    ray.direction.set(axis[0], axis[1], axis[2])
+    if (!(ray.direction.lengthSq() > 1e-16 && reach > 0)) return null
+    ray.direction.normalize()
+    const front = this.bvh.raycastFirst(ray, THREE.DoubleSide, 0, reach)
+    ray.direction.negate()
+    const back = this.bvh.raycastFirst(ray, THREE.DoubleSide, 0, front?.distance ?? reach)
+    const hit = back ?? front
+    return hit ? [hit.point.x, hit.point.y, hit.point.z] : null
+  }
 
   constructor(positions: Float32Array, indices: Uint32Array) {
     this.positions = positions

@@ -16,9 +16,39 @@ try {
  await page.waitForSelector('[data-test=freeform-editor]',{timeout:120000})
  await page.evaluate(()=>window.__re.scene().viewFrom('top'))
  await new Promise(r=>setTimeout(r,800))
- for(const p of [[-15,-15,0],[15,-15,0],[15,15,0],[-15,15,0]]) await clickWorld(p)
+ const initialCorners=[[-15,-15,0],[15,-15,0],[15,15,0],[-15,15,0]]
+ const placementCount=name=>page.evaluate(name=>window.__re.scene().layerHost().partGroup.getObjectByName(name)?.geometry.getAttribute('position').count??0,name)
+ const expectPlacement=(name,count)=>page.waitForFunction(({name,count})=>{
+   const item=window.__re.scene().layerHost().partGroup.getObjectByName(name)
+   return (item?.geometry.getAttribute('position').count??0)===count
+ },{timeout:5000},{name,count})
+ const moveTo=async point=>{const p=await screen(point);await page.mouse.move(p.x,p.y)}
+ await moveTo(initialCorners[0])
+ await expectPlacement('freeform-placement-hover',1)
+ await clickWorld(initialCorners[0])
+ await expectPlacement('freeform-placed-corners',1)
+ await clickWorld(initialCorners[0])
+ assert.equal(await placementCount('freeform-placed-corners'),1)
+ assert.equal((await state()).features.length,0)
+ await page.keyboard.press('Escape')
+ await expectPlacement('freeform-placed-corners',0)
+ for(let i=0;i<3;i++){
+   await moveTo(initialCorners[i])
+   await clickWorld(initialCorners[i])
+   await expectPlacement('freeform-placed-corners',i+1)
+ }
+ await moveTo(initialCorners[3])
+ await expectPlacement('freeform-placement-boundary',5)
+ await page.screenshot({path:shotPath('first-quad-placement.png')})
+ await clickWorld(initialCorners[3])
+ await expectPlacement('freeform-placement-boundary',0)
+ console.log('PASS hover, incremental corner markers, closed preview, duplicate rejection and Escape on an empty Freeform workspace')
  await waitBuilt(1)
  assert.equal((await state()).features.length,1)
+ const assertOnPlane = positions => {
+   assert.ok(positions.every((coordinate, i) => i % 3 !== 2 || Math.abs(coordinate) < 1e-9))
+ }
+ assertOnPlane((await state()).features[0].positions)
  console.log('PASS four real scan clicks create one CAD freeform')
  const beforeDisplay=await state()
  for(const theme of ['light','dark']) {
@@ -27,31 +57,48 @@ try {
   assert.equal(palette.background,palette.expected);assert.equal(palette.scheme,theme);if(theme==='dark')assert.ok(Number(palette.background.match(/\d+/)[0])<80)
  }
  console.log('PASS Edit Surface follows current light/dark theme without overriding preferences')
- assert.equal(await page.$$eval('[aria-label="Surface editing tools"] button svg',es=>es.length),18)
+ assert.deepEqual(await page.$$eval('[aria-label="Surface editing tools"] .ff-icon-toolbar',
+  rows=>rows.map(row=>Array.from(row.querySelectorAll('button:has(svg)'),button=>button.getAttribute('aria-label')))),[
+   ['Manipulate','Add face','Add rectangular face','Brush select faces','Brush smooth','Extrapolate','Align Horizontally','Align Vertically','Commands'],
+   ['Split','Crease','Remove Crease','Increase Resolution','Smooth','Snap to Mesh','Bridge Edges'],
+ ])
  const placeholders=await page.$eval('.ff-editor',form=>{
-  const display=form.querySelector('.ff-editor-display'),transparency=form.querySelector('.ff-transparency'),mesh=form.querySelector('.ff-mesh-row'),symmetry=form.querySelector('.ff-symmetry-row')
+  const display=form.querySelector('.ff-editor-display'),transparency=form.querySelector('.ff-transparency'),mesh=form.querySelector('#freeform-mesh-display').parentElement,symmetry=form.querySelector('.ff-symmetry-row')
   return {order:[display,transparency,mesh,symmetry].map(el=>Array.from(form.children).indexOf(el)),
     shaded:form.querySelector('[data-test=freeform-display-shaded]')?.getAttribute('aria-pressed'),
-    planned:[...form.querySelectorAll('[data-test=freeform-display-deviation],[data-test=freeform-display-zebra],[data-test=freeform-display-options],[data-test=freeform-set-symmetry],[aria-label="Mesh Display (planned)"],[aria-label="Mesh shading (planned)"],[aria-label="Mesh display level (planned)"],[aria-label="Symmetry (planned)"],[aria-label="Symmetry plane (planned)"],[aria-label="Freeform help (planned)"]')].map(el=>({name:el.getAttribute('aria-label')??el.textContent,disabled:el.disabled})),
+    planned:[...form.querySelectorAll('[data-test=freeform-display-options],[data-test=freeform-set-symmetry],[aria-label="Symmetry (planned)"],[aria-label="Symmetry plane (planned)"],[aria-label="Freeform help (planned)"]')].map(el=>({name:el.getAttribute('aria-label')??el.textContent,disabled:el.disabled})),
     note:form.querySelector('.ff-planned-note')?.textContent,
   }
  })
  assert.deepEqual([...placeholders.order].sort((a,b)=>a-b),placeholders.order)
  assert.equal(placeholders.shaded,'true')
- assert.equal(placeholders.planned.length,10)
+ assert.equal(placeholders.planned.length,5)
  assert.ok(placeholders.planned.every(control=>control.disabled))
  assert.match(placeholders.note,/planned/)
  assert.deepEqual(await state(),beforeDisplay)
  await page.screenshot({path:shotPath('manual-reference-placeholders.png')})
+ await page.click('[data-test=freeform-display-deviation]')
+ await page.waitForFunction(() => /Min 0.*Max 0/.test(document.querySelector('.ff-tolerance')?.textContent ?? ''))
+ await page.screenshot({path:shotPath('manual-tolerance.png')})
+ await page.click('[data-test=freeform-display-options]')
+ await page.waitForSelector('[data-test=freeform-deviation-options]')
+ await page.keyboard.press('Escape')
+ await page.waitForSelector('[data-test=freeform-deviation-options]', { hidden: true })
+ await page.click('[data-test=freeform-display-zebra]')
+ await page.screenshot({path:shotPath('manual-zebra.png')})
+ await page.click('[data-test=freeform-display-shaded]')
+ assert.deepEqual(await state(),beforeDisplay)
+
  console.log('PASS reference display, mesh, symmetry and help placeholders are ordered, disabled and dark-themed')
- await page.evaluate(()=>Array.from(document.querySelectorAll('[data-test=freeform-editor] form button')).find(e=>e.textContent==='Control Net').click())
  assert.equal(await page.$eval('[data-test=freeform-editor] form',e=>Array.from(e.querySelectorAll('button')).find(b=>b.textContent==='Control Net').getAttribute('aria-pressed')),'false')
+ await page.evaluate(()=>Array.from(document.querySelectorAll('[data-test=freeform-editor] form button')).find(e=>e.textContent==='Control Net').click())
+ assert.equal(await page.$eval('[data-test=freeform-editor] form',e=>Array.from(e.querySelectorAll('button')).find(b=>b.textContent==='Control Net').getAttribute('aria-pressed')),'true')
+ await page.screenshot({path:shotPath('manual-control-net-on.png')})
+ await page.evaluate(()=>Array.from(document.querySelectorAll('[data-test=freeform-editor] form button')).find(e=>e.textContent==='Control Net').click())
  await page.$eval('[aria-label="Surface Transparency"]',e=>{const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;set.call(e,'60');e.dispatchEvent(new Event('input',{bubbles:true}))})
  assert.deepEqual(await state(),beforeDisplay)
  await page.screenshot({path:shotPath('manual-control-net-off.png')})
- await page.evaluate(()=>Array.from(document.querySelectorAll('[data-test=freeform-editor] form button')).find(e=>e.textContent==='Control Net').click())
- await page.screenshot({path:shotPath('manual-control-net-on.png')})
- console.log('PASS eighteen accessible icon commands; Control Net and transparency leave geometry/history unchanged')
+ console.log('PASS shared reference toolbar order; Control Net and transparency leave geometry/history unchanged')
 
  const selectionCount=()=>page.$eval('[data-test=freeform-status]',e=>Number(e.textContent.match(/(\d+) selected/)[1]))
  const mode=async value=>page.select('[aria-label="Freeform selection"]',value)
@@ -110,7 +157,6 @@ try {
  console.log('PASS selected edge contextual Split changes topology, invalid Bridge disabled')
  await page.screenshot({path:shotPath('manual-editor-split.png')})
  // Surface-mode selection must remain usable with Control Net off.
- await page.evaluate(()=>Array.from(document.querySelectorAll('[data-test=freeform-editor] form button')).find(e=>e.textContent==='Control Net').click())
  await clickWorld([-7.5,-15,0],'right');await page.waitForSelector('[data-test=freeform-context]')
  assert.equal(await selectionCount(),1)
  await page.keyboard.press('ArrowDown');assert.match(await page.evaluate(()=>document.activeElement.textContent),/Zoom to Fit/)
@@ -142,10 +188,12 @@ try {
  const firstChain=await state();assert.equal(firstChain.features[0].positions.length/3,9);assert.equal(firstChain.past,chainBefore.past+1)
  await page.screenshot({path:shotPath('manual-chain-extension.png')})
  await pullChain();await waitBuilt(6);assert.equal(await selectionCount(),2)
+ assert.equal((await state()).features[0].snap,true)
+ assertOnPlane((await state()).features[0].positions)
  console.log('PASS second D pull adds two faces and retains both outer edges')
  const undoChain = async faces => {
-   await page.waitForFunction(() => document.querySelector('[aria-label="Surface editing tools"] [aria-label="Undo"]:enabled'))
-   await page.$eval('[aria-label="Surface editing tools"] [aria-label="Undo"]', button => button.click())
+   await page.waitForFunction(() => document.querySelector('.ff-editor-history [aria-label="Undo"]:enabled'))
+   await page.$eval('.ff-editor-history [aria-label="Undo"]', button => button.click())
    await waitBuilt(faces)
    assert.equal(await selectionCount(),2)
  }

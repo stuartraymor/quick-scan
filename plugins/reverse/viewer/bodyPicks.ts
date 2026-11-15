@@ -477,6 +477,10 @@ export class BodyPicks {
     this.ctx.invalidate()
   }
 
+  bodyVisibilityChanged(): void {
+    this.rebuild()
+  }
+
   private placePreviewLine(line: LineSegments2): void {
     if (this.previewMatrix) {
       line.matrixAutoUpdate = false

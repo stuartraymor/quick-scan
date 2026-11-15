@@ -10,6 +10,7 @@
 // it.
 
 import { create } from 'zustand'
+import { useFreeformEditor } from './freeformEditorStore'
 import type { Vec2 } from '../../../src/core/flat/types'
 import type { Vec3 } from '../../../src/core/types'
 import type { EdgeInfo, FaceInfo, FeatureResult } from '../core/build'
@@ -517,6 +518,7 @@ export interface ReState {
   editNetwork: (change: (d: Extract<FeatureDraft, { kind: 'network' }>) => Extract<FeatureDraft, { kind: 'network' }>) => void
   /** A freeform cage added to the list (one undo step); its id. The cage is edited through the editor's tools
    *  (core/freeform/edit.ts), not through a box. */
+  addConvertedFreeform: (sourceId: number, file: StepFileRef) => number | null
   addFreeform: (data: FreeformData, name?: string) => number
   /** A Fill Surface added to the list (one undo step); its id. */
   addFill: (data: FillData, name?: string) => number
@@ -1034,6 +1036,7 @@ export function openFeatureEditor(id: number): void {
   if (f.kind === 'sketch') s.editSketch(id)
   else if (f.kind === 'extrude') s.editExtrude(id)
   else if (f.kind === 'revolve') s.editRevolve(id)
+  else if (f.kind === 'freeform') useFreeformEditor.getState().editFeature(id)
   else s.editFeature(id)
 }
 

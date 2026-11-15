@@ -109,10 +109,18 @@ function facesThrough(k: ReKernel, g: PatchGrid, out: Shape[], index: number, ce
 /** `cells`: a piece that will not follow its samples at the smallest size
  *  is cut to its cells rather than refused — for a cage that cannot be
  *  refined further. */
-export function patchesBody(k: ReKernel, patches: PatchSet, cells = false): { shape: Shape; report: ConvertReport } {
+export function patchesBody(k: ReKernel, patches: PatchSet, cells = false, sharedCellEdges = false): { shape: Shape; report: ConvertReport } {
   const faces: Shape[] = []
   try {
-    for (const [index, grid] of patches.grids.entries()) facesThrough(k, grid, faces, index, cells)
+    for (const [index, grid] of patches.grids.entries()) {
+      if (sharedCellEdges) {
+        for (let row = 0; row < grid.rows - 1; row++) {
+          for (let col = 0; col < grid.cols - 1; col++) {
+            facesThrough(k, piece(grid, row, row + 1, col, col + 1), faces, index, true, true)
+          }
+        }
+      } else facesThrough(k, grid, faces, index, cells)
+    }
     if (faces.length === 0) throw new Error('The cage has no faces to convert.')
     let shape = faces.length === 1 ? k.copy(faces[0]) : k.sewPatches(faces, SEW_TOLERANCE, patches.closed)
     if (patches.closed && faces.length > 1 && !k.isClosedSolid(shape)) {

@@ -1,4 +1,8 @@
-import { useFreeformEditor } from './FreeformEditor'
+import { useFreeformEditor } from '../state/freeformEditorStore'
+import { change } from '../app/reCommandCore'
+import { cagePatches } from '../core/freeform/patches'
+import { MAX_SAMPLED_QUADS, MAX_STEPS } from '../core/freeform/make'
+import type { FreeformFeature } from '../core/features'
 // SPDX-License-Identifier: AGPL-3.0-only
 // The CAD workspace exposes its own actions; the shell knows no plugin state.
 import { DEFAULT_SURFACE_FIT } from '../core/surfaceFit'
@@ -22,6 +26,47 @@ import { reverseSession } from '../app/reSession'
 import { useMark } from '../../../src/state/markStore'
 import { SURFACE_MIN_REGION } from '../core/features'
 
+let convertingFreeform = false
+
+async function convertFreeform(source: FreeformFeature) {
+  if (convertingFreeform) return
+  const client = reverseSession()?.client()
+  if (!client) return
+  convertingFreeform = true
+  const setStatus = useStore.getState().setStatus
+  setStatus('Converting editable cage to a CAD body…')
+  try {
+    const cage = { positions: Float64Array.from(source.positions), faces: source.faces, creases: source.creases }
+    let steps = source.steps
+    let result: Awaited<ReturnType<typeof client.freeformConvert>>
+    for (;;) {
+      try {
+        const patches = cagePatches(cage, steps)
+        result = await client.freeformConvert(patches, source.name, true)
+        break
+      } catch (error) {
+        if (!(error instanceof Error && /does not follow/.test(error.message) &&
+            steps < MAX_STEPS && cage.faces.length * 4 ** (steps + 1) <= MAX_SAMPLED_QUADS)) throw error
+        steps++
+      }
+    }
+    if (!result.report.valid || !result.step || !result.check?.ok) throw new Error('The converted CAD surface did not pass STEP verification.')
+    const text = result.step
+    await change(() => {
+      const store = useReverse.getState()
+      if (!store.features.includes(source) || store.building) throw new Error('The Freeform surface changed during conversion. Try again.')
+      const file = store.addStepFile(`${source.name} CAD Body.step`, text)
+      if (store.addConvertedFreeform(source.id, file) === null) throw new Error('The Freeform surface is no longer available.')
+      useFreeformEditor.getState().setOpen(false)
+    })
+    setStatus('CAD body created. Its editable Freeform is hidden in History.')
+  } catch (error) {
+    setStatus(error instanceof Error ? error.message : String(error))
+  } finally {
+    convertingFreeform = false
+  }
+}
+
 /** Shared workflow buttons still call plugin-owned verbs and prerequisites. */
 export function useReverseRibbonActions(onExport: () => void): NonNullable<PluginRuntime['ribbonActions']> {
   const state = useReverse()
@@ -32,6 +77,15 @@ export function useReverseRibbonActions(onExport: () => void): NonNullable<Plugi
   const locked = busy || state.building || state.playback !== null || picking || reEditorOpen(state)
   const ready = state.kernelStatus === 'ready'
   const sketches = state.features.filter((f) => f.kind === 'sketch').length
+  const editorOpen = useFreeformEditor(s => s.open)
+  const editedId = useFreeformEditor(s => s.targetId)
+  const selection = state.selection
+  const selectedId = selection && 'bodyId' in selection ? Math.floor(selection.bodyId) : null
+  const freeforms = state.features.filter((f): f is FreeformFeature => f.kind === 'freeform' && !f.suppressed && f.faces.length > 0)
+  const visibleFreeforms = freeforms.filter(f => f.visible)
+  const conversionTarget = editorOpen ? freeforms.find(f => f.id === editedId)
+    : selectedId !== null ? freeforms.find(f => f.id === selectedId)
+    : visibleFreeforms.length === 1 ? visibleFreeforms[0] : undefined
   const action = (run: () => void, requirement = true, reason = '') => ({
     run: () => {
       const now = useReverse.getState()
@@ -134,6 +188,8 @@ export function useReverseRibbonActions(onExport: () => void): NonNullable<Plugi
         useStore.getState().setStatus('Create Sketch: pick the plane, drag the yellow arrow through the part, then Create.')
       }
     }),
+    convertFreeform: action(() => { if (conversionTarget) void convertFreeform(conversionTarget) },
+      !!conversionTarget, 'Select one Freeform surface first.'),
     freeformObj: action(chooseFreeformObj),
     freeformSketch: action(() => useFreeformSketchDialog.getState().setOpen(true), !!fileName && state.features.some(f => f.kind === 'network'), 'Create a 3D sketch on the scan first.'),
     wrapSurface: action(openWrapSurface, !!fileName && (reverseSession()?.sceneRef.current?.paintedVertices().length ?? 0) >= SURFACE_MIN_REGION, 'Select a region of the scan first.'),

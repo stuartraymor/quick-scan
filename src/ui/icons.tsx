@@ -178,6 +178,9 @@ const ICONS = {
       <circle className="i-adt" cx="15" cy="12" r="1.5" />
     </>
   ),
+  autoFreeform: (
+    <path className="i-f" d="M13 2 4 14h7l-1 8 10-13h-7l3-7z" />
+  ),
   freeform: (
     <>
       <path className="i-g" d="M2 15Q4 5 10 4q6 5 12 4-1 7-7 13-7-1-13-6Z" />

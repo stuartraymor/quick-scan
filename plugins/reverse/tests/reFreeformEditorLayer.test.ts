@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import type { SceneLayerHost } from '../../../src/viewer/sceneLayers'
 import type { Cage } from '../core/freeform/cage'
+import { cageVertexLimits } from '../core/freeform/limit'
 import { FreeformEditorLayer, type FreeformEditorOptions, type FreeformSelectionMode } from '../viewer/freeformEditorLayer'
 
 afterEach(() => vi.unstubAllGlobals())
@@ -91,6 +92,116 @@ function setup(options: FreeformEditorOptions = {}, input?: Cage) {
   const event = (type: string, x = 100, y = 100, extra = {}) => Object.assign(new Event(type), { pointerId: 1, button: 0, clientX: x, clientY: y, ...extra }) as PointerEvent
   return { editor, layer: editor.layer(), cage, host, canvas, win, event, onCommit, onSelection, onPreview, onContext, partGroup }
 }
+it('reports finished CAD measurements and switches to live preview during a drag', async () => {
+  const finished = new THREE.BufferGeometry().setAttribute(
+    'position', new THREE.Float32BufferAttribute([0, 0, -2, 5, 0, 2, 0, 5, 4], 3),
+  )
+  const measureDeviation = vi.fn(async (positions: Float32Array) => positions.filter((_, i) => i % 3 === 2))
+  const onDeviation = vi.fn()
+  const cadRange = { min: -4, max: 2, rms: Math.sqrt((34 + Math.fround(4 / 3) ** 2) / 7), preview: false }
+  const readDeviationMesh = vi.fn(async () => ({
+    positions: new Float32Array([0, 0, -2, 5, 0, 2, 0, 5, 4]),
+    indices: new Uint32Array([0, 1, 2]),
+  }))
+  const s = setup({ display: 'deviation', finishedSurface: finished, readDeviationMesh, measureDeviation, onDeviation })
+  await vi.waitFor(() => expect(onDeviation).toHaveBeenLastCalledWith(cadRange))
+  expect(measureDeviation.mock.calls[0][0]).toHaveLength(21)
+  expect(s.layer.pointerDown!(s.event('pointerdown'))).toBe(true)
+  s.canvas.dispatchEvent(s.event('pointermove', 120))
+  await vi.waitFor(() => expect(onDeviation).toHaveBeenLastCalledWith({ min: 0, max: 0, rms: 0, preview: true }))
+  expect(s.onCommit).not.toHaveBeenCalled()
+  s.win.dispatchEvent(Object.assign(new Event('keydown'), { key: 'Escape' }))
+  await vi.waitFor(() => expect(onDeviation).toHaveBeenLastCalledWith(cadRange))
+  expect(readDeviationMesh).toHaveBeenCalledTimes(1)
+  s.editor.dispose()
+  finished.dispose()
+})
+it('shows quad outlines in a live Solid drag and removes them after cancel', () => {
+  const s = setup({ display: 'shaded', showEdges: false, controlNet: false })
+  const lines = () => s.partGroup.getObjectByName('freeform-cage-outlines') as THREE.LineSegments
+  expect(lines().geometry.getAttribute('position').count).toBe(0)
+  expect(s.layer.pointerDown!(s.event('pointerdown'))).toBe(true)
+  s.canvas.dispatchEvent(s.event('pointermove', 120))
+  expect(lines().geometry.getAttribute('position').count).toBeGreaterThan(8)
+  expect(lines().material).toMatchObject({ depthTest: true, depthWrite: false })
+  s.win.dispatchEvent(Object.assign(new Event('keydown'), { key: 'Escape' }))
+  expect(lines().geometry.getAttribute('position').count).toBe(0)
+  s.editor.dispose()
+})
+
+it.each([NaN, Infinity, -Infinity])('does not report a passing surface when one measured sample is %s', async missing => {
+  const measureDeviation = vi.fn(async (positions: Float32Array) => {
+    const values = new Float32Array(positions.length / 3)
+    values[0] = missing
+    return values
+  })
+  const onDeviation = vi.fn(), onDeviationError = vi.fn()
+  const s = setup({ display: 'deviation', measureDeviation, onDeviation, onDeviationError })
+  await vi.waitFor(() => expect(onDeviationError).toHaveBeenCalled())
+  expect(onDeviation.mock.calls.every(([value]) => value === null)).toBe(true)
+  expect(s.partGroup.getObjectByName('freeform-deviation-surface')?.visible).toBe(false)
+  s.editor.dispose()
+})
+
+it('reuses physical measurements across thresholds but invalidates them when the scan changes', async () => {
+  const finished = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([0,0,0,5,0,0,0,5,0],3))
+  const measureDeviation = vi.fn(async (positions: Float32Array) => new Float32Array(positions.length / 3).fill(.02))
+  const onDeviation = vi.fn()
+  const options = { display: 'deviation' as const, finishedSurface: finished, measureDeviation, onDeviation, tolerance: .01, deviationReference: {} }
+  const s = setup(options)
+  await vi.waitFor(() => expect(onDeviation).toHaveBeenCalledWith(expect.objectContaining({ max: expect.closeTo(-.02) })))
+  const range = onDeviation.mock.lastCall?.[0]
+  s.editor.set(s.cage, { ...options, tolerance: .1, colouring: 'pass-fail' })
+  await vi.waitFor(() => expect((s.partGroup.getObjectByName('freeform-deviation-surface') as THREE.Mesh).visible).toBe(true))
+  const mesh = s.partGroup.getObjectByName('freeform-deviation-surface') as THREE.Mesh
+  expect(mesh.geometry.getAttribute('signedDeviation').getX(0)).toBeCloseTo(-.2)
+  expect(onDeviation.mock.lastCall?.[0]).toEqual(range)
+  expect(measureDeviation).toHaveBeenCalledTimes(1)
+  measureDeviation.mockImplementation(async positions => new Float32Array(positions.length / 3).fill(.03))
+  s.editor.set(s.cage, { ...options, deviationReference: {} })
+  await vi.waitFor(() => expect(onDeviation).toHaveBeenLastCalledWith(expect.objectContaining({ max: expect.closeTo(-.03) })))
+  expect(measureDeviation).toHaveBeenCalledTimes(2)
+  s.editor.dispose(); finished.dispose()
+})
+it('draws Zebra and Shaded on finished CAD without disposing the body geometry when the mode changes', () => {
+  const finished = new THREE.BufferGeometry()
+    .setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 5, 0, 0, 0, 5, 0], 3))
+  finished.computeVertexNormals()
+  const dispose = vi.spyOn(finished, 'dispose')
+  const s = setup({ display: 'zebra', finishedSurface: finished })
+  const usesFinishedGeometry = () => {
+    let found = false
+    s.partGroup.traverse(object => { if (object instanceof THREE.Mesh && object.geometry === finished) found = true })
+    return found
+  }
+  expect(usesFinishedGeometry()).toBe(true)
+  s.editor.set(s.cage, { display: 'shaded', finishedSurface: finished })
+  expect(usesFinishedGeometry()).toBe(true)
+  s.editor.dispose()
+  expect(dispose).not.toHaveBeenCalled()
+  finished.dispose()
+})
+it('separates surface opacity, cage edges and Control Net', () => {
+  const finishedSurface = new THREE.BufferGeometry()
+    .setAttribute('position', new THREE.Float32BufferAttribute([0, 0, .1, 5, 0, .1, 0, 5, .1, 5, 5, .1], 3))
+    .setIndex([0, 1, 2, 1, 3, 2])
+  finishedSurface.computeVertexNormals()
+  const options = { display: 'shaded', finishedSurface, controlNet: false } as const
+  const s = setup({ ...options, showEdges: false })
+  const material = () => (s.partGroup.getObjectByName('freeform-finished-cad') as THREE.Mesh).material
+  const linePositions = () => (s.partGroup.getObjectByName('freeform-cage-outlines') as THREE.LineSegments).geometry.getAttribute('position')
+  expect(material()).toMatchObject({ opacity: 1, transparent: false, depthWrite: true })
+  expect(linePositions().count).toBe(0)
+  s.editor.set(s.cage, { ...options, showEdges: true })
+  expect(linePositions().count).toBeGreaterThan(0)
+  expect(linePositions().array.filter((_, index) => index % 3 === 2).every(z => Math.abs(z - .1) < 1e-6)).toBe(true)
+  s.editor.set(s.cage, { ...options, showEdges: false, opacity: .4, controlNet: true })
+  expect(material()).toMatchObject({ opacity: .4, transparent: true, depthWrite: false })
+  expect(linePositions().count).toBe(8)
+  expect(linePositions().array.filter((_, index) => index % 3 === 2).every(z => z === 0)).toBe(true)
+  s.editor.dispose()
+  finishedSurface.dispose()
+})
 it('moves a picked vertex on release only and preserves the source cage', () => {
   const s = setup()
   expect(s.layer.pointerDown!(s.event('pointerdown'))).toBe(true)
@@ -454,6 +565,28 @@ it('Control Net off picks a deformed boundary anchor at the surface limit, not t
  // Boundary limit mask: (left + 4*middle + right)/6 -> (5,-8,0).
  s.canvas.dispatchEvent(s.event('contextmenu',150,180));expect(s.onContext.mock.lastCall?.[2]).toEqual({kind:'vertex',index:1})
  s.canvas.dispatchEvent(s.event('contextmenu',150,220));expect(s.onContext.mock.lastCall?.[2]).toBeNull();s.editor.dispose()
+})
+it('Control Net off drags the picked surface anchor by the full cursor distance', () => {
+ const bent:Cage={...strip,positions:strip.positions.slice()};bent.positions[4]=-12
+ const s=setup({controlNet:false,mode:'points'},bent)
+ const before=cageVertexLimits(bent)[1]
+ s.layer.pointerDown!(s.event('pointerdown',150,180));s.canvas.dispatchEvent(s.event('pointerup',170,180))
+ expect(s.onCommit).toHaveBeenCalledTimes(1)
+ const next=s.onCommit.mock.calls[0][0] as Cage
+ expect(cageVertexLimits(next)[1][0]-before[0]).toBeCloseTo(2)
+ expect(next.positions[3]-bent.positions[3]).toBeGreaterThan(2)
+ s.editor.dispose()
+})
+it('Control Net off places the move manipulator at the selected surface anchor', () => {
+ const bent:Cage={...strip,positions:strip.positions.slice()};bent.positions[4]=-12
+ const s=setup({controlNet:false,mode:'points',selection:[{kind:'vertex',index:1}],manipulator:'world'},bent)
+ s.layer.tick!(200,200)
+ expect(s.layer.pointerDown!(s.event('pointerdown',207,180))).toBe(true)
+ s.canvas.dispatchEvent(s.event('pointerup',227,180))
+ expect(s.onCommit).toHaveBeenCalledTimes(1)
+ const next=s.onCommit.mock.calls[0][0] as Cage
+ expect(cageVertexLimits(next)[1][0]-cageVertexLimits(bent)[1][0]).toBeCloseTo(2)
+ s.editor.dispose()
 })
 it('hidden surface-mode geometry remains unpickable', () => {
  const s=setup({controlNet:false,hiddenFaces:[0],mode:'edges'});s.canvas.dispatchEvent(s.event('contextmenu',125,100));expect(s.onContext.mock.lastCall?.[2]).toBeNull();s.editor.dispose()

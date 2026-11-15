@@ -233,6 +233,7 @@ export function resolveFeatures(
   regionsOf: (sketch: SketchFeature) => Region[],
 ): BuildStep[] {
   const sketches = new Map<number, SketchFeature>()
+  const cages = new Map<number, Extract<BuildStep, { kind: 'freeform' }> | null>()
   const steps: BuildStep[] = []
   const failed = (f: Feature, message: string) => steps.push({ kind: 'failed', id: f.id, name: f.name, message })
   // The sketch map fills in the list's order: a sketch a feature names is
@@ -365,7 +366,15 @@ export function resolveFeatures(
       continue
     }
     if (f.kind === 'import') {
-      steps.push({ kind: 'import', id: f.id, name: f.name, file: f.file.key })
+      if (f.freeformSource === undefined) {
+        steps.push({ kind: 'import', id: f.id, name: f.name, file: f.file.key })
+      } else {
+        const source = cages.get(f.freeformSource)
+        if (source) {
+          const { positions, faces, creases, steps: refinement } = source
+          steps.push({ kind: 'freeform', id: f.id, name: f.name, positions, faces, creases, steps: refinement, snap: false })
+        } else if (source === undefined) failed(f, 'The original Freeform must stand above this conversion in History.')
+      }
       continue
     }
     if (f.kind === 'moveBody') {
@@ -445,8 +454,12 @@ export function resolveFeatures(
       continue
     }
     if (f.kind === 'freeform') {
-      if (f.faces.length === 0) failed(f, 'The cage has no faces: add one (reverse.freeform.edit add_face or add_rectangle).')
-      else steps.push({ kind: 'freeform', id: f.id, name: f.name, positions: f.positions, faces: f.faces, creases: f.creases, steps: f.steps, snap: f.snap, ...(f.ask ? { ask: f.ask } : {}), ...(f.snapRegion ? { snapRegion: f.snapRegion } : {}) })
+      if (f.faces.length === 0) cages.set(f.id, null)
+      else {
+        const cage = { kind: 'freeform' as const, id: f.id, name: f.name, positions: f.positions, faces: f.faces, creases: f.creases, steps: f.steps, snap: f.snap && f.fitToScan !== false, ...(f.snapType ? { snapType: f.snapType } : {}), ...(f.refitTolerance ? { refitTolerance: f.refitTolerance } : {}), ...(f.ask ? { ask: f.ask } : {}), ...(f.snapRegion ? { snapRegion: f.snapRegion } : {}) }
+        cages.set(f.id, cage)
+        steps.push(cage)
+      }
       continue
     }
     if (f.kind === 'fill') {

@@ -1,6 +1,12 @@
+import { NominalSurface } from '../../../src/core/deviation/surface'
+import { snapRayReach } from '../core/freeform/snap'
+import { regionSnap } from '../core/freeform/wrap'
+import { useStore } from '../../../src/state/store'
+import { previewDeviation } from '../core/freeform/previewDeviation'
+import { useLength } from '../../../src/app/useUnits'
+import type { FreeformDeviationRange } from '../viewer/freeformEditorLayer'
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { create } from 'zustand'
 import { useShell } from '../../../src/state/shellStore'
 import * as THREE from 'three'
 import type { Vec3 } from '../../../src/core/types'
@@ -9,22 +15,34 @@ import { reverseSession } from '../app/reSession'
 import { scanPaths } from '../app/reNetworkCommands'
 import type { FreeformFeature } from '../core/features'
 import { type Cage, topology, vertexAt } from '../core/freeform/cage'
-import { addFace, increaseResolution, smooth } from '../core/freeform/edit'
+import { addFace, increaseResolution, movePoints, offsetCage, smooth } from '../core/freeform/edit'
+import { cageVertexLimits, vertexNormals } from '../core/freeform/limit'
+import { offsetBoundaryToPlanes, offsetByPrimitives } from '../core/freeform/referenceOffset'
+import { surfaceAnchorDrag } from '../viewer/freeformAnchorDrag'
 import { regionClosestIn } from '../core/freeform/wrap'
 import { applyEditorAction, editorActions, selectedVertices, type EditorAction, type FreeformSelection } from '../core/freeform/editor'
 import { useReverse } from '../state/reStore'
 import { FreeformEditorLayer, type FreeformSelectionMode } from '../viewer/freeformEditorLayer'
 import { reSceneOf } from '../viewer/reScene'
 import { FreeformIcon } from './FreeformIcon'
+import { FreeformDeviationOptions } from './FreeformDeviationOptions'
 import './freeformControls.css'
 import type { ManipulatorFrame } from '../viewer/freeformManipulator'
 import { useFreeformNavigation } from './useFreeformNavigation'
+import { useFreeformEditor } from '../state/freeformEditorStore'
 
-export const useFreeformEditor = create<{ open: boolean; controlNet: boolean; setControlNet(value:boolean):void; setOpen(open: boolean): void }>(set => ({ open: false, controlNet:true, setControlNet:controlNet=>set({controlNet}), setOpen: open => set({ open }) }))
+export { useFreeformEditor } from '../state/freeformEditorStore'
 const empty = (): Cage => ({ positions: new Float64Array(), faces: [], creases: [] })
 const fromFeature = (f: FreeformFeature): Cage => ({ positions: Float64Array.from(f.positions), faces: f.faces.map(x => [...x]), creases: f.creases.map(e => [...e]) })
 const labels: Record<EditorAction, string> = { split: 'Split', bridge: 'Bridge Edges', close_hole: 'Close 4-sided hole', crease: 'Crease', remove_crease: 'Remove Crease', delete: 'Delete' }
 const FREEFORM_SCAN_TINT = [230, 215, 185] as const
+const offsetCommands = {
+  offset: { command: 'Offset …', title: 'Offset Quad Surface', field: 'Offset by', initial: 1 },
+  boundary: { command: 'Offset boundary to surface …', title: 'Offset boundary to surface', field: 'Extra distance', initial: .5 },
+  primitives: { command: 'Offset based on other primitives …', title: 'Offset based on other primitives', field: 'Tolerance ±', initial: .5 },
+}
+type OffsetCommand = keyof typeof offsetCommands
+type SurfaceView = 'solid' | 'solid-edges' | 'transparent'
 
 const selectionModes: { value: FreeformSelectionMode; label: string }[] = [
   { value: 'points-edges', label: 'Points / Edges' }, { value: 'points', label: 'Points only' },
@@ -35,9 +53,11 @@ const selectionModes: { value: FreeformSelectionMode; label: string }[] = [
 export function FreeformEditor() {
   const backdrop = useFreeformNavigation(true)
   const state = useReverse()
-  const [id, setId] = useState<number | null>(null)
+  const id = useFreeformEditor(s => s.targetId)
+  const setId = useFreeformEditor(s => s.setTargetId)
   const feature = state.features.find(f => f.id === id && f.kind === 'freeform') as FreeformFeature | undefined
-  const cage = useMemo(() => feature ? fromFeature(feature) : null, [feature])
+  const cage = useMemo(() => feature?.faces.length ? fromFeature(feature) : null, [feature])
+  const editedBodies = useMemo(() => state.bodies.filter(b => Math.floor(b.id) === id).map(b => b.id), [id, state.bodies])
   const selectionHistory = useRef(new WeakMap<FreeformFeature, FreeformSelection[]>())
   const [picked, setPicked] = useState<{ feature: FreeformFeature | undefined; items: FreeformSelection[] }>({ feature, items: [] })
   const selection = picked.feature === feature ? picked.items : feature ? selectionHistory.current.get(feature) ?? [] : []
@@ -46,14 +66,25 @@ export function FreeformEditor() {
   const [corners, setCorners] = useState<Vec3[]>([])
   const [hidden, setHidden] = useState<number[]>([])
   const [duplicate, setDuplicate] = useState(true)
-  const [tool, setTool] = useState<'manipulate' | 'extrapolate'>('manipulate')
+  const [tool, setTool] = useState<'manipulate' | 'extrapolate' | 'add-face' | 'rectangle' | 'brush-faces' | 'brush-smooth'>('manipulate')
+  const placementVertices = useRef<(number | undefined)[]>([])
+  const [brushArea, setBrushArea] = useState<'all' | 'convex' | 'concave'>('all')
+  const [brushRadius, setBrushRadius] = useState(25)
+  const [brushStrength, setBrushStrength] = useState(20)
+  const [brushFixBoundary, setBrushFixBoundary] = useState(false)
   const [menuText, setMenuText] = useState(true)
   const toolbarHover = useRef(false)
   const [strength, setStrength] = useState(100)
   const [neighbours, setNeighbours] = useState(false)
   const [snap, setSnap] = useState(true)
   const controlNet=useFreeformEditor(s=>s.controlNet), setControlNet=useFreeformEditor(s=>s.setControlNet)
-  const [opacity, setOpacity] = useState(.72)
+  const [surfaceOnly, setSurfaceOnly] = useState(false)
+  const [surfaceView, setSurfaceView] = useState<SurfaceView>('solid-edges')
+  const [transparency, setTransparency] = useState(28)
+  const opacity = surfaceView === 'transparent' ? 1 - transparency / 100 : 1
+  const [meshDisplay, setMeshDisplay] = useState<'offset' | 'transparent'>('offset')
+  const [meshOpacity, setMeshOpacity] = useState(85)
+  const [meshOffset, setMeshOffset] = useState(70)
   const [frame, setFrame] = useState<ManipulatorFrame>('local')
   const [manipMenu, setManipMenu] = useState<{x:number;y:number} | null>(null)
   const manipTrigger = useRef<HTMLButtonElement>(null)
@@ -61,8 +92,16 @@ export function FreeformEditor() {
   const [pending, setWorking] = useState(false)
   const working = pending || state.building
   const [error, setError] = useState('')
-  const [menu, setMenu] = useState<{ x: number; y: number; hit: boolean } | null>(null)
+  const [commandDialog, setCommandDialog] = useState<'delete-all' | OffsetCommand | null>(null)
+  const [offsetText, setOffsetText] = useState('')
+  const elements = useStore(s => s.elements)
+  const primitives = useMemo(() => elements.flatMap(({ fit }) =>
+    fit && fit.kind !== 'point' && fit.kind !== 'line' && fit.kind !== 'circle' ? [fit] : []), [elements])
+  const planes = useMemo(() => primitives.filter(fit => fit.kind === 'plane'), [primitives])
+  const offsetDialog = commandDialog && commandDialog !== 'delete-all' ? offsetCommands[commandDialog] : null
+  const [menu, setMenu] = useState<{ x: number; y: number; hit: boolean; commands?: boolean } | null>(null)
   const contextRef = useRef<HTMLDivElement>(null)
+  const commandsTrigger = useRef<HTMLButtonElement>(null)
   useLayoutEffect(() => {
     if (!menu || !contextRef.current) return
     const r = contextRef.current.getBoundingClientRect()
@@ -99,12 +138,67 @@ export function FreeformEditor() {
     window.addEventListener('resize', dismiss)
     return () => window.removeEventListener('resize', dismiss)
   }, [])
+  const [range, setRange] = useState<FreeformDeviationRange | null>(null)
+  const [deviationError, setDeviationError] = useState(false)
+  const [displayOptions, setDisplayOptions] = useState(false)
+  const { display, setDisplay, tolerance, colouring, setDeviationOptions } = useFreeformEditor()
+  const displayOptionsButton = useRef<HTMLButtonElement>(null)
+  const closeDisplayOptions = () => { setDisplayOptions(false); displayOptionsButton.current?.focus() }
+  const length = useLength()
   const layer = useRef<FreeformEditorLayer | null>(null)
   const busy = useRef(false)
   const alive = useRef(true)
   const current = useRef({ cage, id, selection, corners, working })
   current.current = { cage, id, selection, corners, working }
   const scene = reverseSession()?.sceneRef.current
+  const [bodyGeometryVersion, setBodyGeometryVersion] = useState(0)
+  useEffect(() => scene
+    ? reSceneOf(scene).subscribeBodyGeometry(() => setBodyGeometryVersion(version => version + 1))
+    : undefined, [scene])
+  const inspectWithoutScan = surfaceOnly && !!cage
+  useEffect(() => {
+    if (!scene || !inspectWithoutScan) return
+    scene.setScanVisible(false)
+    const unsubscribe = useStore.subscribe((next, previous) => {
+      if (next.scanHidden !== previous.scanHidden) scene.setScanVisible(false)
+    })
+    return () => { unsubscribe(); scene.setScanVisible(!useStore.getState().scanHidden) }
+  }, [scene, inspectWithoutScan])
+  const [newSnapType, setNewSnapType] = useState<'closest' | 'ray'>('closest')
+  const snapType = feature ? feature.snapType ?? 'closest' : newSnapType
+  const snapRegion = feature?.snapRegion
+  const scanName = useStore(state => state.fileName)
+  const scanTriangles = useStore(state => state.triangleCount)
+  const scanAlignment = useStore(state => state.appliedAlignment)
+  const deviationReference = useMemo(() => ({}), [scene, scanName, scanTriangles, scanAlignment])
+  const refitPreview = !!feature?.refitTolerance && !feature.ask && !snapRegion && feature.fitToScan !== false && snapType !== 'ray'
+  const raySurface = useMemo(() => {
+    if (!snap || (snapType !== 'ray' && !refitPreview) || !scanName || !scanTriangles) return null
+    const session = reverseSession()
+    if (!session) return null
+    const paths = scanPaths(session)
+    return new NominalSurface(paths.positions, paths.indices.slice())
+  }, [snap, snapType, refitPreview, scene, scanName, scanTriangles, scanAlignment])
+  const refitProjector = useMemo(() => refitPreview && raySurface
+    ? raySurface.projectAlong.bind(raySurface) : undefined, [refitPreview, raySurface])
+  const measureLiveDeviation = useMemo(() => refitPreview && raySurface
+    ? (positions: Float32Array) => previewDeviation(positions, raySurface) : undefined, [refitPreview, raySurface])
+  const rayProjector = useMemo(() => {
+    if (snapType !== 'ray' || !raySurface || !cage) return undefined
+    const reach = snapRayReach(cage)
+    return (p: Vec3, n: Vec3) => {
+      const cast = (point: Vec3) => raySurface.projectAlong(point, n, reach)
+      return snapRegion ? regionSnap(snapRegion, cast)(p) : cast(p)
+    }
+  }, [cage, raySurface, snapRegion, snapType])
+  const snapProjector = useMemo(() => {
+    if (!snap) return undefined
+    const session = reverseSession()
+    if (!session) return undefined
+    const closest = (point: Vec3) => scanPaths(session).closest(point)
+    const project = snapRegion ? regionClosestIn(snapRegion, closest) : closest
+    return (point: Vec3) => project(point)?.point ?? null
+  }, [snap, snapRegion, scene])
   useEffect(() => {
     if (!scene) return
     const previousFlatShading = scene.scanFlatShading()
@@ -120,9 +214,10 @@ export function FreeformEditor() {
   }, [scene])
   useEffect(() => {
     if (!scene) return
-    scene.setScanOpacityOverride(cage ? 0.85 : 1)
-    return () => scene.setScanOpacityOverride(null)
-  }, [scene, Boolean(cage)])
+    scene.setScanOpacityOverride(meshDisplay === 'offset' ? 1 : meshOpacity / 100)
+    scene.setScanDepthOffset(cage && meshDisplay === 'offset' ? scene.layerHost().modelRadius() * .06 * meshOffset / 100 : 0)
+    return () => { scene.setScanOpacityOverride(null); scene.setScanDepthOffset(0) }
+  }, [scene, Boolean(cage), meshDisplay, meshOpacity, meshOffset])
   const available = cage ? editorActions(cage, selection) : null
   const close = () => { if (!busy.current) useFreeformEditor.getState().setOpen(false) }
   useEffect(() => {
@@ -130,25 +225,26 @@ export function FreeformEditor() {
     useShell.getState().setInspectorOpen(false)
     return () => { useShell.getState().setInspectorOpen(wasOpen) }
   }, [])
-  async function commit(next: Cage, nextSelection: FreeformSelection[] = [], snapMode = snap) {
+  async function commit(next: Cage, nextSelection: FreeformSelection[] = [], snapMode = snap, projection = snapType, fitToScan = feature?.fitToScan, refitTolerance = feature?.refitTolerance) {
     if (busy.current || useReverse.getState().building) return
     const target = current.current.id
     busy.current = true; setWorking(true); setError(''); setMenu(null)
     try {
       topology(next)
       if (next.faces.length > 200_000) throw new Error('The cage exceeds the 200,000-face editing limit.')
-      const data = { positions: Array.from(next.positions), faces: next.faces, creases: next.creases }
+      const data = { positions: Array.from(next.positions), faces: next.faces, creases: next.creases,
+        ...(fitToScan === undefined ? {} : { fitToScan }), ...(refitTolerance === undefined ? {} : { refitTolerance }) }
       const result = await change(() => {
         const st = useReverse.getState()
         if (target === null) {
-          const created = st.addFreeform({ ...data, steps: 2, snap: snapMode })
+          const created = st.addFreeform({ ...data, steps: 2, snap: snapMode, snapType: projection === 'ray' ? 'ray' : undefined })
           // A failed kernel build retains its document feature for Undo.
           // Keep that feature selected rather than creating it again on retry.
           if (alive.current) { setId(created); setCorners([]) }
           return created
         }
         if (feature) selectionHistory.current.set(feature, current.current.selection)
-        if (!st.updateFreeform(target, { ...data, snap: snapMode, fromSketch: undefined })) throw new Error('The surface is no longer available.')
+        if (!st.updateFreeform(target, { ...data, snap: snapMode, snapType: projection === 'ray' ? 'ray' : undefined, fromSketch: undefined })) throw new Error('The surface is no longer available.')
         const edited = useReverse.getState().features.find(f => f.id === target)
         if (edited?.kind === 'freeform') selectionHistory.current.set(edited, nextSelection)
         return target
@@ -160,9 +256,49 @@ export function FreeformEditor() {
     finally { busy.current = false; if (alive.current) setWorking(false) }
   }
   const snapMode = (on: boolean) => { if (busy.current || on === snap) return; setSnap(on); if (cage) void commit(cage, selection, on) }
+  const applyOffset = () => {
+    if (!cage || !offsetText.trim() || !commandDialog || commandDialog === 'delete-all') return
+    const distance = length.fromDisplay(Number(offsetText))
+    if (!Number.isFinite(distance) || (commandDialog !== 'offset' && distance < 0)) return
+    setCommandDialog(null)
+    if (distance === 0) return
+    try {
+      const next = commandDialog === 'boundary' ? offsetBoundaryToPlanes(cage, planes, distance)
+        : commandDialog === 'primitives' ? offsetByPrimitives(cage, primitives, distance) : offsetCage(cage, distance)
+      if (next.positions.some((coordinate, i) => coordinate !== cage.positions[i])) {
+        const nextSelection: FreeformSelection[] = commandDialog === 'boundary'
+          ? topology(next).edges.flatMap((edge, index) => edge.faces.length === 1 ? [{ kind: 'edge', index }] : [])
+          : selection
+        void commit(next, nextSelection, snap, snapType, false)
+      } else if (commandDialog === 'boundary') {
+        setError('No boundary edges are within the extra distance of the reference planes.')
+      }
+    } catch (e) { setError((e as Error).message) }
+  }
   function action(name: EditorAction) {
     if (!cage || busy.current) return
-    try { const result = applyEditorAction(cage, selection, name); void commit(result.cage, name === 'crease' ? [] : result.selection) }
+    try {
+      const result = applyEditorAction(cage, selection, name)
+      if (name === 'split' && snapProjector) {
+        // Snap the new limit-surface anchors. Their poles can lie outside
+        // the scan because subdivision pulls the boundary back inward.
+        const next = result.cage
+        const first = cage.positions.length / 3
+        const vertices = Array.from({ length: next.positions.length / 3 - first }, (_, i) => first + i)
+        const anchors = cageVertexLimits(next)
+        const normals = rayProjector ? vertexNormals(next.positions, next.faces) : null
+        const travel = vertices.map(i => {
+          const point = anchors[i]
+          const projected = normals && rayProjector
+            ? rayProjector(point, [normals[i * 3], normals[i * 3 + 1], normals[i * 3 + 2]])
+            : snapProjector(point)
+          return projected?.every(Number.isFinite) ? projected.map((p, axis) => p - point[axis]) as Vec3 : [0, 0, 0] as Vec3
+        })
+        const poleTravel = surfaceAnchorDrag(next, vertices, 0)?.(travel) ?? travel
+        result.cage = movePoints(next, vertices.map((vertex, i) => ({ vertex, by: poleTravel[i] })), 0)
+      }
+      void commit(result.cage, name === 'crease' ? [] : result.selection)
+    }
     catch (e) { setError((e as Error).message) }
   }
   function smoothSelection() {
@@ -178,17 +314,32 @@ export function FreeformEditor() {
     try {
       const session=reverseSession()
       if (!session) throw new Error('The reference mesh is unavailable.')
-      const positions=cage.positions.slice(), paths=scanPaths(session)
-      for(const index of selectedVertices(cage,selection)) {
-        const result=paths.closest(vertexAt(cage,index))
+      const ids=selectedVertices(cage,selection), paths=scanPaths(session)
+      const anchors=controlNet ? null : cageVertexLimits(cage)
+      const travel=ids.map(index => {
+        const point=anchors?.[index] ?? vertexAt(cage,index)
+        const result=paths.closest(point)
         if(!result?.point?.every(Number.isFinite)) throw new Error('No reference mesh point was found for this selection.')
-        positions.set(result.point,index*3)
-      }
+        return result.point.map((v,axis)=>v-point[axis]) as Vec3
+      })
+      const radius=neighbours ? 0 : (scene?.layerHost().modelRadius() ?? 0) * .1
+      const poleTravel=anchors ? surfaceAnchorDrag(cage,ids,radius)?.(travel) ?? travel : travel
+      const next=movePoints(cage,ids.map((vertex,i)=>({vertex,by:poleTravel[i]})),radius)
       setMenu(null)
-      if(positions.some((v,i)=>Math.abs(v-cage.positions[i])>1e-12)) void commit({...cage,positions},selection)
+      if(next.positions.some((v,i)=>Math.abs(v-cage.positions[i])>1e-12)) void commit(next,selection)
     } catch(e) { setError((e as Error).message) }
   }
-  const chooseTool = (value: typeof tool) => {setTool(value);setMenu(null)}
+  const chooseTool = (value: typeof tool) => {
+    if (value !== tool) {
+      current.current.corners = []
+      placementVertices.current = []
+      layer.current?.cancelPlacement()
+      setCorners([])
+      setError('')
+    }
+    setTool(value)
+    setMenu(null)
+  }
   function visibility(isolate: boolean) {
     if (!cage) return
     const top = topology(cage), faces = new Set<number>()
@@ -203,11 +354,20 @@ export function FreeformEditor() {
     const host = scene.layerHost(), camera = host.camera()
     host.partGroup.updateWorldMatrix(true, false)
     const axis = new THREE.Vector3(horizontal ? 0 : 1, horizontal ? 1 : 0, 0).applyQuaternion(camera.quaternion)
-    const points = ids.map(i => host.partGroup.localToWorld(new THREE.Vector3(...vertexAt(cage, i))))
+    const anchors = controlNet ? null : cageVertexLimits(cage)
+    const points = ids.map(i => host.partGroup.localToWorld(new THREE.Vector3(...(anchors?.[i] ?? vertexAt(cage, i)))))
     const mean = points.reduce((a, p) => a + p.dot(axis), 0) / points.length
-    const positions = cage.positions.slice()
-    points.forEach((p, n) => { p.addScaledVector(axis, mean - p.dot(axis)); host.partGroup.worldToLocal(p); positions.set(p.toArray(), ids[n] * 3) })
-    void commit({ ...cage, positions }, selection)
+    const targets = points.map(p => host.partGroup.worldToLocal(p.addScaledVector(axis, mean - p.dot(axis))).toArray() as Vec3)
+    if (anchors) {
+      const radius = neighbours ? 0 : host.modelRadius() * .1
+      const travel = targets.map((p, n) => p.map((v, k) => v - anchors[ids[n]][k]) as Vec3)
+      const poleTravel = surfaceAnchorDrag(cage, ids, radius)?.(travel) ?? travel
+      void commit(movePoints(cage, ids.map((vertex, n) => ({ vertex, by: poleTravel[n] })), radius), selection)
+    } else {
+      const positions = cage.positions.slice()
+      targets.forEach((p, n) => positions.set(p, ids[n] * 3))
+      void commit({ ...cage, positions }, selection)
+    }
   }
   useEffect(() => {
     alive.current = true
@@ -217,35 +377,87 @@ export function FreeformEditor() {
     return () => { alive.current = false; remove(); layer.current = null }
   }, [scene])
   useEffect(() => {
+    if (!scene) return
+    const view = reSceneOf(scene)
+    view.setEditingBodies(editedBodies)
+    return () => { view.setEditingBodies([]) }
+  }, [scene, editedBodies])
+  useEffect(() => {
     if (!scene || !layer.current) return
     const editor = layer.current
+    const view = reSceneOf(scene)
+    const finishedSurface = !working && editedBodies.length === 1 ? view.bodyMeshes.get(editedBodies[0])?.geometry : undefined
+    if (display === 'deviation') { setRange(null); setDeviationError(false) }
     editor.set(cage, {
-      enabled: !working, extrapolate: tool === 'extrapolate', mode, selection, hiddenFaces: hidden, duplicateHandle: duplicate, controlNet, opacity, manipulator: snap ? undefined : frame,
+      enabled: !working && commandDialog === null, rebuilding: working, extrapolate: tool === 'extrapolate', mode, selection, hiddenFaces: hidden, duplicateHandle: duplicate, controlNet, opacity, showEdges: surfaceView === 'solid-edges', manipulator: snap ? undefined : frame,
       strength: strength / 100, neighbourRadius: neighbours ? 0 : scene.layerHost().modelRadius() * .1,
-      creating: !cage && !working,
+      creating: (!cage || tool === 'add-face' || tool === 'rectangle') && !working, creationCorners: corners,
+      creationTool: tool === 'rectangle' ? 'rectangle' : tool === 'add-face' ? 'face' : undefined,
+      onCancelCreation: () => chooseTool('manipulate'),
+      brush: tool === 'brush-faces' ? { kind: 'faces' } : tool === 'brush-smooth' ? {
+        kind: 'smooth', radius: brushRadius, onStroke: vertices => {
+          if (!cage || brushStrength === 0) return
+          try {
+            const next = smooth(cage, vertices, brushStrength / 100, 1, { area: brushArea, fixBoundary: brushFixBoundary })
+            setSelection([])
+            if (next.positions.some((v, i) => Math.abs(v - cage.positions[i]) > 1e-12)) void commit(next)
+          } catch (e) { setError((e as Error).message) }
+        },
+      } : undefined,
       onSelection: picks => { setSelection(picks); setMenu(null) },
       onContext: (x, y, hit) => {toolbarHover.current=false;setMenuText(true);setMenu({ x, y, hit: !!hit || selection.length > 0 })},
       onCommit: (next, picks) => { if (!busy.current) void commit(next, picks) },
       onError: e => setError(e.message),
-      onCreatePoint: point => {
-        if (busy.current) return
-        const next = [...current.current.corners, point]
-        if (next.length === 4) { try { void commit(addFace(empty(), next)) } catch (e) { setError((e as Error).message); setCorners([]) } }
-        else setCorners(next)
+      onCreateRectangle: points => {
+        try {
+          const next = addFace(cage ?? empty(), points)
+          chooseTool('manipulate')
+          void commit(next)
+        } catch (e) { setError((e as Error).message) }
       },
-      snapPoint: snap ? point => {
-        const session = reverseSession()
-        if (!session) return null
-        const closest = (p: Vec3) => scanPaths(session).closest(p)
-        return (feature?.snapRegion ? regionClosestIn(feature.snapRegion, closest)(point) : closest(point))?.point ?? null
-      } : undefined,
+      onCreatePoint: (point, vertex) => {
+        if (busy.current) return
+        const placed = current.current.corners
+        if (placed.some(p => Math.hypot(p[0]-point[0], p[1]-point[1], p[2]-point[2]) <= 1e-6)) {
+          setError('Choose a different point on the scan.')
+          return
+        }
+        setError('')
+        const next = [...placed, point]
+        const vertices = [...placementVertices.current, vertex]
+        // Keep rapid clicks in order before React has committed another render.
+        current.current.corners = next
+        if (next.length === 4) {
+          try {
+            const result = addFace(cage ?? empty(), next.map((p, i) => vertices[i] ?? p))
+            chooseTool('manipulate')
+            placementVertices.current = []
+            void commit(result)
+          }
+          catch (e) { current.current.corners = placed; setError((e as Error).message) }
+        } else {
+          placementVertices.current = vertices
+          setCorners(next)
+        }
+      },
+      snapPoint: snapProjector, rayPoint: rayProjector, refitPoint: refitProjector, fitToScan: feature?.fitToScan, display, tolerance, colouring, finishedSurface, deviationReference,
+      measureLiveDeviation,
+      readDeviationMesh: async () => {
+        const client = reverseSession()?.client()
+        if (!client) throw new Error('Finished CAD unavailable')
+        const [mesh] = await client.referenceMeshes(editedBodies, .001, true)
+        if (!mesh?.indices.length) throw new Error('Finished CAD has no triangles')
+        return mesh
+      },
+      measureDeviation: async positions => {
+        const client = reverseSession()?.client()
+        if (!client) throw new Error('Reference scan unavailable')
+        return client.previewSurfaceDeviation(positions)
+      },
+      onDeviation: value => { setRange(value); setDeviationError(false) },
+      onDeviationError: () => { setRange(null); setDeviationError(true) },
     })
-    // The editable subdivision display replaces this feature's committed body.
-    const view = reSceneOf(scene)
-    const ids = state.bodies.filter(b => Math.floor(b.id) === id).map(b => b.id)
-    view.setEditingBodies(ids)
-    return () => { view.setEditingBodies([]) }
-  }, [scene, cage, tool, mode, selection, hidden, duplicate, strength, neighbours, snap, frame, controlNet, opacity, working, state.bodies])
+  }, [scene, cage, corners, tool, mode, selection, hidden, duplicate, strength, neighbours, snap, snapProjector, rayProjector, refitProjector, frame, controlNet, opacity, surfaceView, display, tolerance, colouring, working, editedBodies, bodyGeometryVersion, brushArea, brushRadius, brushStrength, brushFixBoundary, commandDialog, feature?.fitToScan, measureLiveDeviation, deviationReference])
   useEffect(() => { setPicked({ feature, items: feature ? selectionHistory.current.get(feature) ?? [] : [] }); setMenu(null) }, [feature])
   const topologyKey=cage?JSON.stringify([cage.positions.length,cage.faces]):''
   useEffect(()=>{setHidden([])},[id,topologyKey])
@@ -255,6 +467,11 @@ export function FreeformEditor() {
   useEffect(() => { if (feature) setSnap(feature.snap) }, [id, feature?.snap])
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
+      if (displayOptions) return
+      if (commandDialog) {
+        if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); setCommandDialog(null) }
+        return
+      }
       if ((e.target as HTMLElement)?.closest('input,select,textarea')) return
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase()==='r') {
         e.preventDefault();e.stopImmediatePropagation()
@@ -267,10 +484,12 @@ export function FreeformEditor() {
       }
       if (e.key === 'Escape') {
         e.preventDefault(); e.stopImmediatePropagation()
+        if (layer.current?.cancelStroke()) return
         if (manipMenu) {setManipMenu(null);manipTrigger.current?.focus()}
         else if (selectionMenu) { setSelectionMenu(null); selectionTrigger.current?.focus() }
+        else if (menu?.commands) { setMenu(null); commandsTrigger.current?.focus() }
         else if(menu && menuText && toolbarHover.current) {setMenuText(false)}
-        else { setMenu(null); setCorners([]) }
+        else { chooseTool('manipulate'); current.current.corners = []; placementVertices.current = []; setCorners([]); setError('') }
         return
       }
       if (e.key.toLowerCase() === 'a' && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); e.stopImmediatePropagation(); scene?.fitToView(); setMenu(null); return }
@@ -280,51 +499,128 @@ export function FreeformEditor() {
     }
     document.addEventListener('keydown', key, true)
     return () => document.removeEventListener('keydown', key, true)
-  }, [cage, selection, selectionMenu, manipMenu, menu, menuText, working])
+  }, [cage, selection, selectionMenu, manipMenu, menu, menuText, working, tool, commandDialog, displayOptions])
   const history = (redo: boolean) => { if (busy.current || useReverse.getState().building) return; setMenu(null); redo ? state.redoFeatures() : state.undoFeatures() }
   const pickMode = (value: typeof mode) => { setMode(value); setSelectionMenu(null); setMenu(null) }
-  const commandButtons = (context = false) => (['crease', 'remove_crease', 'split', 'bridge', 'close_hole', 'delete'] as EditorAction[]).flatMap(name => [...(context && ['split','delete'].includes(name) ? [<hr key={`separator-${name}`} />] : []), <button key={name} type="button" role={context ? 'menuitem' : undefined} data-test={`freeform-${name}`} aria-label={labels[name]} title={labels[name]} disabled={working || !available?.[name]} onClick={() => action(name)}>{context ? <><span>{labels[name]}</span><span className="ff-shortcut">{name === 'split' ? 'S' : name === 'delete' ? 'Del' : name === 'bridge' ? 'D' : ''}</span></> : <FreeformIcon name={name} />}</button>])
+  const commandButton = (name: EditorAction, context = false) => <button key={name} type="button" role={context ? 'menuitem' : undefined}
+    data-test={`freeform-${name}`} aria-label={labels[name]} title={labels[name]} disabled={working || !available?.[name]}
+    onClick={() => action(name)}>{context ? <><span>{labels[name]}</span><span className="ff-shortcut">{name === 'split' ? 'S' : name === 'delete' ? 'Del' : name === 'bridge' ? 'D' : ''}</span></> : <FreeformIcon name={name} />}</button>
+  const visibilityItems = <>
+    <button role="menuitem" disabled={!selection.length} onClick={() => visibility(true)}><span className="ff-visibility-label"><FreeformIcon name="isolate" size={16} />Isolate</span></button>
+    <button role="menuitem" disabled={!selection.length} onClick={() => visibility(false)}><span className="ff-visibility-label"><FreeformIcon name="hide" size={16} />Hide Selected</span></button>
+    <button role="menuitem" onClick={() => { if (hidden.length) setHidden([]); setMenu(null) }}><span className="ff-visibility-label"><FreeformIcon name="show" size={16} />Show Hidden</span></button>
+  </>
   return <div ref={backdrop} className="modalback" data-test="freeform-editor" style={{ background: 'transparent', alignItems: 'flex-start', justifyContent: 'flex-start', paddingTop: 'min(176px, 25dvh)', paddingLeft: 'min(224px, max(8px, calc(100vw - 306px)))' }} onPointerDown={e => { if (e.target === e.currentTarget) setMenu(null) }}>
     <form tabIndex={-1} className="modal ff-editor" role="dialog" aria-label="Edit Surface" style={{ width: 290, maxHeight: 'calc(100dvh - min(176px, 25dvh) - 8px)', boxSizing: 'border-box', overflowY: 'auto', padding: 12, display: 'grid', gap: 8 }} onSubmit={e => e.preventDefault()} onKeyDown={e => e.stopPropagation()}>
+      {tool === 'brush-smooth' ? <>
+        <header className="ff-title">Smooth</header>
+        <select aria-label="Smooth areas" value={brushArea} onChange={event => setBrushArea(event.target.value as typeof brushArea)}>
+          <option value="all">All visible points within the circle</option><option value="convex">Convex areas only</option><option value="concave">Concave areas only</option>
+        </select>
+        <label>Circle size <input aria-label="Circle size" type="range" min="5" max="160" value={brushRadius} onChange={event => setBrushRadius(Number(event.target.value))} /></label>
+        <label>Smooth strength <input aria-label="Smooth strength" type="range" min="0" max="100" value={brushStrength} onChange={event => setBrushStrength(Number(event.target.value))} /></label>
+        <label><input type="checkbox" checked={brushFixBoundary} onChange={event => setBrushFixBoundary(event.target.checked)} /> Fix boundary points</label>
+        {error && <small role="alert">{error}</small>}
+        <button type="button" className="ff-right-control" disabled={working} onClick={() => chooseTool('manipulate')}>Back</button>
+      </> : <>
       <header className="ff-title"><span>Edit Surface</span><button type="button" aria-label="Close Edit Surface" disabled={working} onClick={close}>×</button></header>
       <div className="ff-main-tools" role="toolbar" aria-label="Surface editing tools">
-        <div className="ff-icon-toolbar"><button type="button" aria-label="Manipulate" title="Manipulate" aria-pressed={tool==='manipulate'} onClick={()=>chooseTool('manipulate')}><FreeformIcon name="select" /></button>{selectionModes.slice(1,4).map(m => <button type="button" key={m.value} title={m.label} aria-label={m.label} aria-pressed={mode===m.value} onClick={()=>pickMode(m.value)}><FreeformIcon name={m.value==='points-edges'?'select':m.value} /></button>)}
+        <div className="ff-icon-toolbar"><button type="button" aria-label="Manipulate" title="Manipulate" aria-pressed={tool==='manipulate'} onClick={()=>chooseTool('manipulate')}><FreeformIcon name="select" /></button>
+        <button type="button" aria-label="Add face" title="Add face" aria-pressed={tool==='add-face'} disabled={working || !scanTriangles && !cage} onClick={()=>chooseTool('add-face')}><FreeformIcon name="add-face" /></button>
+        <button type="button" aria-label="Add rectangular face" title="Add rectangular face" aria-pressed={tool==='rectangle'} disabled={working || !scanTriangles} onClick={()=>chooseTool('rectangle')}><FreeformIcon name="rectangle" /></button>
+        <button type="button" aria-label="Brush select faces" title="Brush select faces" aria-pressed={tool==='brush-faces'} disabled={working || !cage} onClick={()=>chooseTool('brush-faces')}><FreeformIcon name="brush-faces" /></button>
+        <button type="button" aria-label="Brush smooth" title="Brush smooth" disabled={working || !cage} onClick={()=>chooseTool('brush-smooth')}><FreeformIcon name="brush-smooth" /></button>
+        <button type="button" className="ff-extrapolate-tool" aria-label="Extrapolate" title="Extrapolate" aria-pressed={tool==='extrapolate'} disabled={!cage || working} onClick={()=>chooseTool('extrapolate')}><FreeformIcon name="extrapolate" /></button>
         <button type="button" title="Align Horizontally" aria-label="Align Horizontally" disabled={!cage || selectedVertices(cage,selection).length<2 || working} onClick={()=>alignScreen(true)}><FreeformIcon name="align-h" /></button>
         <button type="button" title="Align Vertically" aria-label="Align Vertically" disabled={!cage || selectedVertices(cage,selection).length<2 || working} onClick={()=>alignScreen(false)}><FreeformIcon name="align-v" /></button>
-        <button type="button" title="Increase Resolution" aria-label="Increase Resolution" disabled={!cage || working} onClick={()=>cage && void commit(increaseResolution(cage))}><FreeformIcon name="faces" /></button>
-        <button type="button" title="Undo" aria-label="Undo" disabled={!state.canUndo() || working} onClick={()=>history(false)}><FreeformIcon name="undo" /><span className="ff-accessible-label">Undo</span></button>
-        <button type="button" title="Redo" aria-label="Redo" disabled={!state.canRedo() || working} onClick={()=>history(true)}><FreeformIcon name="redo" /><span className="ff-accessible-label">Redo</span></button></div>
+        <button ref={commandsTrigger} type="button" aria-label="Commands" title="Commands" aria-haspopup="menu" aria-expanded={!!menu?.commands}
+          onClick={event => {
+            if (menu?.commands) { setMenu(null); return }
+            const bounds = event.currentTarget.getBoundingClientRect()
+            setMenuText(true)
+            setMenu({ x: bounds.left, y: bounds.bottom, hit: false, commands: true })
+          }}><FreeformIcon name="commands" /></button></div>
         <div className="ff-icon-toolbar">
-        <button type="button" aria-label="Extrapolate" title="Extrapolate" aria-pressed={tool==='extrapolate'} disabled={!cage || working} onClick={()=>chooseTool('extrapolate')}><FreeformIcon name="extrapolate" /></button>
-
+        {(['split', 'crease', 'remove_crease'] as const).map(name => commandButton(name))}
+        <button type="button" title="Increase Resolution" aria-label="Increase Resolution" disabled={!cage || working} onClick={()=>cage && void commit(increaseResolution(cage))}><FreeformIcon name="resolution" /></button>
         <button type="button" aria-label="Smooth" title="Smooth (Q)" disabled={!selection.length || working} onClick={smoothSelection}><FreeformIcon name="smooth" /></button>
-        <button type="button" aria-label="Snap to Mesh" title="Snap to Mesh" disabled={!selection.length || working} onClick={snapSelection}><FreeformIcon name="snap" /></button>{commandButtons()}</div>
+        <button type="button" aria-label="Snap to Mesh" title="Snap to Mesh" disabled={!selection.length || working} onClick={snapSelection}><FreeformIcon name="snap" /></button>{commandButton('bridge')}</div>
       </div>
       {feature?.fromSketch && <small>Manual edits detach this surface from its generating sketch.</small>}
       <label>Selection <select aria-label="Freeform selection" value={mode} onChange={e => pickMode(e.target.value as typeof mode)}>{selectionModes.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
       <label>Drag Strength <input aria-label="Drag Strength" type="range" min="0" max="100" value={strength} onChange={e => setStrength(Number(e.target.value))} /></label>
       <div className="ff-snap-row"><span>Snap Mode</span><span><button type="button" disabled={working} aria-pressed={!snap} onClick={() => snapMode(false)}>OFF</button> <button type="button" disabled={working} aria-pressed={snap} onClick={() => snapMode(true)}>ON</button></span></div>
-      {snap ? <label>Snapping Type <select aria-label="Snapping Type" value="closest" onChange={()=>{}}><option value="closest">Closest Point</option></select></label> : <label>Manipulator <select aria-label="Manipulator" value={frame} onChange={e=>setFrame(e.target.value as ManipulatorFrame)}>{['world','screen','local'].map(f=><option key={f} value={f}>{f[0].toUpperCase()+f.slice(1)}</option>)}</select></label>}
+      {snap ? <label>Snapping Type <select aria-label="Snapping Type" value={snapType} disabled={working} onChange={event => {
+        const next = event.target.value === 'ray' ? 'ray' : 'closest'
+        if (cage) void commit(cage, selection, snap, next)
+        else setNewSnapType(next)
+      }}><option value="closest">Closest Point</option><option value="ray">Ray Projection</option></select></label> : <label>Manipulator <select aria-label="Manipulator" value={frame} onChange={e=>setFrame(e.target.value as ManipulatorFrame)}>{['world','screen','local'].map(f=><option key={f} value={f}>{f[0].toUpperCase()+f.slice(1)}</option>)}</select></label>}
       <label><input type="checkbox" checked={duplicate} onChange={e => setDuplicate(e.target.checked)} /> Show DUPLICATE handle</label>
       <label><input type="checkbox" checked={neighbours} onChange={e => setNeighbours(e.target.checked)} /> Don't move neighbours</label>
       <button className="ff-right-control" type="button" aria-pressed={controlNet} onClick={() => setControlNet(!controlNet)}>Control Net</button>
       <div className="ff-editor-display" role="group" aria-label="Surface display">
-        <button type="button" className="ff-display-current" data-test="freeform-display-shaded" aria-label="Shaded display (current)" aria-pressed="true" disabled><FreeformIcon name="shaded" /></button>
-        <button type="button" data-test="freeform-display-deviation" aria-label="Tolerance display (planned)" title="Tolerance display is planned" disabled><FreeformIcon name="deviation" /></button>
-        <button type="button" data-test="freeform-display-zebra" aria-label="Zebra and shadow display (planned)" title="Zebra and shadow display is planned" disabled><FreeformIcon name="zebra" /></button>
-        <button type="button" className="ff-display-options" data-test="freeform-display-options" title="Surface display options are planned" disabled>Options …</button>
+        {(['shaded', 'deviation', 'zebra'] as const).map(value => {
+          const label = { shaded: 'Shaded', deviation: 'Tolerance', zebra: 'Zebra' }[value]
+          return <button key={value} type="button" data-test={`freeform-display-${value}`} aria-label={label}
+            title={label} aria-pressed={display === value} disabled={!cage}
+            onClick={() => { if (display !== value) setRange(null); setDisplay(value); setDisplayOptions(false) }}><FreeformIcon name={value} /></button>
+        })}
+        <button ref={displayOptionsButton} type="button" className="ff-display-options" data-test="freeform-display-options" disabled={display !== 'deviation'} aria-haspopup="dialog" aria-expanded={displayOptions}
+          onClick={() => setDisplayOptions(true)}>Options …</button>
       </div>
-      <label className="ff-transparency">Surface Transparency <input aria-label="Surface Transparency" type="range" min="0" max="100" value={Math.round((1-opacity)*100)} onChange={e => setOpacity(1-Number(e.target.value)/100)} /></label>
-      <div className="ff-mesh-row"><label htmlFor="freeform-mesh-display">Mesh Display</label><select id="freeform-mesh-display" aria-label="Mesh Display (planned)" disabled><option>Offset</option></select></div>
-      <div className="ff-mesh-row ff-mesh-shading"><select aria-label="Mesh shading (planned)" disabled><option>Shaded</option></select><input aria-label="Mesh display level (planned)" type="range" min="0" max="100" defaultValue="70" disabled /></div>
+      {display === 'deviation' && <div className="ff-tolerance">
+          <button type="button" data-test="freeform-refit-tolerance"
+            title="Refit an open, uncreased quad surface using Closest Point snapping"
+            disabled={!cage || !snap || working || snapType === 'ray' || !!feature?.ask || !!feature?.snapRegion ||
+              cage.creases.length > 0 || cage.faces.length > 32 || cage.faces.some(face => face.length !== 4) || topology(cage).closed || tolerance <= .001}
+            onClick={() => cage && void commit(cage, selection, snap, snapType, true, tolerance)}>Refit to tolerance</button>
+        <div className="ff-tolerance-ramp" aria-hidden="true" />
+        <small className="ff-tolerance-ticks">
+          <span>{length.fmt(-5 * tolerance)}</span><span>{length.fmt(-tolerance)}</span>
+          <span>{length.fmt(tolerance)}</span><span>{length.fmt(5 * tolerance)}</span>
+        </small>
+        <small>{!cage?.faces.length ? 'No surface to measure.' : range ? `${range.preview ? 'Preview' : 'CAD'} samples: Min ${length.fmt(range.min)} · Max ${length.fmt(range.max)} · RMS ${length.fmt(range.rms)}` : deviationError ? 'Deviation measurement unavailable' : 'Measuring visible surface…'}</small>
+        {!!cage?.faces.length && range && <small className="ff-tolerance-result" data-outside={Math.max(-range.min, range.max) > tolerance}>
+          {range.preview ? working ? 'Rebuilding and measuring the finished CAD surface…' : 'Release to measure the finished CAD surface'
+            : Math.max(-range.min, range.max) > tolerance ? 'Sampled surface exceeds tolerance' : 'Sampled surface within tolerance'}
+        </small>}
+      </div>}
+      <button className="ff-right-control" type="button" aria-pressed={inspectWithoutScan} disabled={!cage}
+        onClick={() => setSurfaceOnly(!inspectWithoutScan)}>Surface Only</button>
+      <div className="ff-mesh-row"><label htmlFor="freeform-surface-view">Surface View</label>
+        <select id="freeform-surface-view" value={surfaceView} onChange={e => setSurfaceView(e.target.value as SurfaceView)}>
+          <option value="solid">Solid</option><option value="solid-edges">Solid with edges</option><option value="transparent">Transparent</option>
+        </select>
+      </div>
+      <label className="ff-transparency">Surface Transparency <input aria-label="Surface Transparency" type="range" dir="rtl" min="0" max="100" value={surfaceView === 'transparent' ? transparency : 0} onChange={e => {
+        const value = e.currentTarget.valueAsNumber
+        if (value > 0) { setTransparency(value); setSurfaceView('transparent') }
+        else if (surfaceView === 'transparent') setSurfaceView('solid-edges')
+      }} /></label>
+      <div className="ff-mesh-row"><label htmlFor="freeform-mesh-display">Mesh Display</label>
+        <select id="freeform-mesh-display" value={meshDisplay} onChange={e => setMeshDisplay(e.target.value === 'transparent' ? 'transparent' : 'offset')}>
+          <option value="offset">Offset</option><option value="transparent">Transparent</option>
+        </select>
+      </div>
+      {meshDisplay === 'offset'
+        ? <label className="ff-mesh-row">Mesh Offset <input type="range" min="0" max="100" value={meshOffset} onChange={e => setMeshOffset(e.currentTarget.valueAsNumber)} /></label>
+        : <label className="ff-mesh-row">Mesh Opacity <input type="range" min="0" max="100" value={meshOpacity} onChange={e => setMeshOpacity(e.currentTarget.valueAsNumber)} /></label>}
       <div className="ff-symmetry-row"><label><input type="checkbox" aria-label="Symmetry (planned)" disabled /> Symmetry</label><select aria-label="Symmetry plane (planned)" disabled><option value=""></option></select></div>
       <button type="button" className="ff-symmetry-set" data-test="freeform-set-symmetry" title="Symmetry-plane placement is planned" disabled>Set on Symmetry Plane</button>
-      <small className="ff-planned-note">Tolerance, mesh display and symmetry controls are planned.</small>
-      <label>Surface <select aria-label="Freeform surface" disabled={working} value={id ?? ''} onChange={e => { setId(e.target.value === '' ? null : Number(e.target.value)); setCorners([]) }}><option value="">New Freeform</option>{state.features.filter((f): f is FreeformFeature => f.kind === 'freeform').map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></label>
-      <small data-test="freeform-status">{working ? 'Building surface…' : cage ? `${cage.faces.length} faces · ${selection.length} selected` : `Pick four corners on the scan (${corners.length}/4).`}</small>
+      <small className="ff-planned-note">Symmetry controls are planned.</small>
+      <label>Surface <select aria-label="Freeform surface" disabled={working} value={id ?? ''} onChange={e => { chooseTool('manipulate'); layer.current?.cancelPlacement(); placementVertices.current = []; setId(e.target.value === '' ? null : Number(e.target.value)); setCorners([]) }}><option value="">New Freeform</option>{state.features.filter((f): f is FreeformFeature => f.kind === 'freeform').map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></label>
+      <small data-test="freeform-status">{working ? 'Building surface…' : tool === 'rectangle' ? 'Pick opposite corners on the scan.' : cage && tool !== 'add-face' ? `${cage.faces.length} faces · ${selection.length} selected` : `Pick four corners on the scan (${corners.length}/4).`}</small>
       {error && <small role="alert">{error}</small>}
-      <footer className="ff-editor-footer"><button type="button" className="ff-help-placeholder" aria-label="Freeform help (planned)" title="Freeform help is planned" disabled>?</button><button type="button" disabled={working} onClick={close}>Close</button></footer>
+      <footer className="ff-editor-footer"><button type="button" className="ff-help-placeholder" aria-label="Freeform help (planned)" title="Freeform help is planned" disabled>?</button>
+        <div className="ff-editor-history">
+          <button type="button" title="Undo" aria-label="Undo" disabled={!state.canUndo() || working} onClick={()=>history(false)}><FreeformIcon name="undo" /><span className="ff-accessible-label">Undo</span></button>
+          <button type="button" title="Redo" aria-label="Redo" disabled={!state.canRedo() || working} onClick={()=>history(true)}><FreeformIcon name="redo" /><span className="ff-accessible-label">Redo</span></button>
+        </div>
+        <button type="button" disabled={working} onClick={close}>Close</button></footer>
+      </>}
     </form>
+    {displayOptions && <FreeformDeviationOptions tolerance={tolerance} colouring={colouring}
+      onApply={setDeviationOptions} onClose={closeDisplayOptions} />}
     {menu?.hit && <div role="toolbar" aria-label="Freeform contextual tools" className="ff-icon-toolbar ff-floating-tools" onMouseEnter={()=>{toolbarHover.current=true}} onMouseLeave={()=>{toolbarHover.current=false}} style={{position:'fixed',left:menu.x,top:Math.max(0,menu.y-28),display:'flex',gap:2,zIndex:10001}}>
         <button type="button" aria-label="Manipulate" title="Manipulate" aria-pressed={tool==='manipulate'} onClick={()=>chooseTool('manipulate')}><FreeformIcon name="select" /></button>
         <button type="button" aria-label="Extrapolate" title="Extrapolate" aria-pressed={tool==='extrapolate'} disabled={!cage || working} onClick={()=>chooseTool('extrapolate')}><FreeformIcon name="extrapolate" /></button>
@@ -339,8 +635,20 @@ export function FreeformEditor() {
       const index=buttons.indexOf(document.activeElement as HTMLButtonElement)
       const next=e.key==='Home'?0:e.key==='End'?buttons.length-1:e.key==='ArrowDown'?(index+1)%buttons.length:index<0?buttons.length-1:(index-1+buttons.length)%buttons.length
       buttons[next]?.focus()
-    }} className="freeform-context-menu ff-native-menu" data-test="freeform-context" style={{ position: 'fixed', left: menu.x, top: menu.y, width: 212, maxWidth: 'calc(100vw - 16px)', maxHeight: 'calc(100dvh - 38px)', overflowY: 'auto', boxSizing: 'border-box', padding: 4, display: 'grid', gap: 1, fontSize: 12, background: 'var(--panel, #25282c)', border: '1px solid #777', zIndex: 10000 }}>
+    }} className={menu.commands ? 'freeform-context-menu ff-native-menu ff-commands-menu' : 'freeform-context-menu ff-native-menu'} data-test="freeform-context" style={{ position: 'fixed', left: menu.x, top: menu.y, width: menu.commands ? 278 : 212, maxWidth: 'calc(100vw - 16px)', maxHeight: 'calc(100dvh - 38px)', overflowY: 'auto', boxSizing: 'border-box', padding: 4, display: 'grid', gap: 1, fontSize: 12, background: 'var(--panel, #25282c)', border: '1px solid #777', zIndex: 10000 }}>
 
+      {menu.commands ? <>{visibilityItems}<hr />{commandButton('close_hole', true)}<hr />
+        {(Object.keys(offsetCommands) as OffsetCommand[]).map(command => <button key={command} role="menuitem"
+          disabled={working || !cage || (command === 'boundary' && !planes.length) || (command === 'primitives' && !primitives.length)}
+          onClick={() => {
+          setOffsetText(length.toDisplay(offsetCommands[command].initial).toFixed(length.decimals(3)))
+          setMenu(null)
+          setError('')
+          setCommandDialog(command)
+        }} title={offsetCommands[command].command}><span className="ff-offset-label">{offsetCommands[command].command}</span></button>)}
+        <hr />
+        <button role="menuitem" disabled={working || !cage} onClick={() => { setMenu(null); setCommandDialog('delete-all') }}>Delete All …</button>
+      </> : <>
       <button role="menuitem" onClick={() => { scene?.fitToView(); setMenu(null) }}><span>Zoom to Fit</span><span className="ff-shortcut">A</span></button>
       <button role="menuitem" disabled={!state.canUndo() || working} onClick={() => history(false)}><span>Undo</span><span className="ff-shortcut">Ctrl+Z</span></button><button role="menuitem" disabled={!state.canRedo() || working} onClick={() => history(true)}><span>Redo</span><span className="ff-shortcut">Ctrl+Y</span></button>
       <hr />
@@ -348,9 +656,27 @@ export function FreeformEditor() {
       <button ref={selectionTrigger} role="menuitem" aria-haspopup="menu" aria-expanded={!!selectionMenu} aria-controls="freeform-selection-submenu" data-test="freeform-selection-submenu-trigger" onMouseEnter={() => openSelectionMenu(false)} onClick={() => openSelectionMenu()} onKeyDown={e => { if (e.key === 'ArrowRight') { e.preventDefault(); openSelectionMenu() } }}>Selection &#9656;</button>
       <button ref={manipTrigger} role="menuitem" aria-haspopup="menu" aria-expanded={!!manipMenu} aria-controls="freeform-manipulator-submenu" data-test="freeform-manipulator-submenu-trigger" onMouseEnter={() => openManipMenu(false)} onClick={() => openManipMenu()} onKeyDown={e=>{if(e.key==='ArrowRight'){e.preventDefault();openManipMenu()}}}>Manipulator ▸</button>
       <hr />
-      <button role="menuitem" disabled={!selection.length} onClick={() => visibility(true)}>Isolate</button><button role="menuitem" disabled={!selection.length} onClick={() => visibility(false)}>Hide Selected</button><button role="menuitem" onClick={() => { if (hidden.length) setHidden([]); setMenu(null) }}>Show Hidden</button>
+      {visibilityItems}
       <hr />
-      {commandButtons(true)}
+      {commandButton('crease', true)}{commandButton('remove_crease', true)}<hr />
+      {commandButton('split', true)}{commandButton('bridge', true)}{commandButton('close_hole', true)}<hr />{commandButton('delete', true)}
+      </>}
+    </div>}
+    {commandDialog === 'delete-all' && <div className="modalback ff-command-backdrop">
+      <section className="modal ff-command-dialog" role="alertdialog" aria-modal="true" aria-label="Delete all Freeform faces">
+        <p>Are you sure you want to delete all faces?</p>
+        <footer>
+          <button type="button" onClick={() => { setCommandDialog(null); chooseTool('manipulate'); void commit(empty(), [], snap, snapType, true) }}>Yes</button>
+          <button type="button" autoFocus onClick={() => setCommandDialog(null)}>No</button>
+        </footer>
+      </section>
+    </div>}
+    {offsetDialog && <div className="modalback ff-command-backdrop">
+      <form className="modal ff-command-dialog" role="dialog" aria-modal="true" aria-label={offsetDialog.title} onSubmit={event => { event.preventDefault(); applyOffset() }}>
+        <h3>{offsetDialog.title}</h3>
+        <label>{offsetDialog.field} <input autoFocus type="number" min={commandDialog === 'offset' ? undefined : 0} step="any" required value={offsetText} onFocus={event => event.currentTarget.select()} onChange={event => setOffsetText(event.target.value)} /> {length.word()}</label>
+        <footer><button type="submit">OK</button><button type="button" onClick={() => setCommandDialog(null)}>Cancel</button></footer>
+      </form>
     </div>}
     {menu && manipMenu && <div ref={manipPopup} id="freeform-manipulator-submenu" role="menu" aria-label="Manipulator" data-test="freeform-manipulator-submenu" className="freeform-context-menu ff-native-menu" style={{position:'fixed',left:manipMenu.x,top:manipMenu.y,width:130,maxWidth:'calc(100vw - 16px)',maxHeight:`calc(100dvh - ${manipMenu.y+8}px)`,overflowY:'auto',display:'grid',zIndex:10001}} onKeyDown={e=>{
       const buttons=Array.from(manipPopup.current?.querySelectorAll<HTMLButtonElement>('button')??[]),index=buttons.indexOf(document.activeElement as HTMLButtonElement)

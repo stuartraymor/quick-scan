@@ -152,6 +152,7 @@ export function validateFeatureJson(e: Record<string, unknown>): void {
     const file = object(e.file, 'import.file')
     fields(file, 'key name', 'string', 'import.file')
     fields(file, 'size', 'number', 'import.file')
+    if (e.freeformSource !== undefined && (!Number.isSafeInteger(e.freeformSource) || Number(e.freeformSource) < 1)) invalid('import.freeformSource')
   }
   if (e.kind === 'moveBody') {
     for (const n of array(e.bodies, 'moveBody.bodies')) if (typeof n !== 'number' || !Number.isFinite(n)) invalid('moveBody.bodies')
@@ -221,6 +222,9 @@ export function validateFeatureJson(e: Record<string, unknown>): void {
     fields(e, 'steps', 'number', 'freeform')
     if (!Number.isInteger(e.steps) || (e.steps as number) < 1 || (e.steps as number) > 4) invalid('freeform.steps')
     fields(e, 'snap', 'boolean', 'freeform')
+    if (e.snapType !== undefined && e.snapType !== 'ray') invalid('freeform.snapType')
+    if (e.fitToScan !== undefined) fields(e, 'fitToScan', 'boolean', 'freeform')
+    if (e.refitTolerance !== undefined && (typeof e.refitTolerance !== 'number' || !Number.isFinite(e.refitTolerance) || e.refitTolerance <= 0)) throw new Error('Invalid freeform refit tolerance.')
     if (e.snapRegion !== undefined) {
       const r = object(e.snapRegion, 'freeform.snapRegion')
       for (const k of ['point', 'dir', 'u', 'v']) {

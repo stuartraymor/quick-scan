@@ -720,6 +720,9 @@ export interface ImportFeature extends FeatureFlags {
   kind: 'import'
   name: string
   file: StepFileRef
+  /** A converted Freeform rebuilds from this preceding cage. The embedded
+   *  STEP preserves the initial result for older project readers. */
+  freeformSource?: number
   visible: boolean
 }
 
@@ -1094,8 +1097,13 @@ export interface FreeformFeature extends FeatureFlags {
   creases: [number, number][]
   /** How many times the cage is refined before the faces are made (1–4). */
   steps: number
-  /** The refined surface is taken onto the scan first. */
+  /** Snap editor gestures to the reference mesh. */
   snap: boolean
+  snapType?: 'ray'
+  /** An intentional cage offset stays off the scan when building its surface. */
+  fitToScan?: boolean
+  /** Requested finished-surface fitting tolerance in model millimetres. */
+  refitTolerance?: number
   ask?: FreeformAsk
   /** Where the snap reaches, where a wrap set it; the whole scan otherwise. */
   snapRegion?: FreeformSnapRegion
@@ -1105,7 +1113,7 @@ export interface FreeformFeature extends FeatureFlags {
 }
 
 /** What a freeform feature holds besides its name. */
-export type FreeformData = Pick<FreeformFeature, 'positions' | 'faces' | 'creases' | 'steps' | 'snap' | 'ask' | 'snapRegion' | 'fromSketch'>
+export type FreeformData = Pick<FreeformFeature, 'positions' | 'faces' | 'creases' | 'steps' | 'snap' | 'snapType' | 'fitToScan' | 'refitTolerance' | 'ask' | 'snapRegion' | 'fromSketch'>
 
 /** A Fill Surface: a surface through a grid of points (core/fill.ts), QUICKSURFACE's Fill Surface of a four-sided loop with every edge Contact. The grid is kept, so the surface is rebuilt without the scan or the sketch it was made from. A sheet body of its own. */
 export interface FillFeature extends FeatureFlags {
@@ -1298,7 +1306,7 @@ export function referencesOf(f: Feature): number[] {
     case 'thicken':
       return f.target === undefined ? [f.sheet] : [f.sheet, f.target]
     case 'import':
-      return []
+      return f.freeformSource === undefined ? [] : [f.freeformSource]
     case 'fill':
       return []
     case 'extend':

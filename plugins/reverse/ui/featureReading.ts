@@ -161,6 +161,7 @@ export function bodyFeatureReading(f: Exclude<Feature, { kind: 'sketch' | 'extru
     case 'trim':
       return { text: `${f.tools.length} surface${f.tools.length === 1 ? '' : 's'} · within ${len(f.tolerance)}`, title: `A box round the scan cut by ${f.tools.map((t) => (t.kind === 'body' ? names(t.id) : (ctx.elements.find((e) => e.id === t.id)?.name ?? 'a deleted element'))).join(', ')}; the faces lying on the scan within ${len(f.tolerance)} over ${Math.round(f.overlap * 100)} % of their samples kept and sewn` }
     case 'import':
+      if (f.freeformSource !== undefined) return { text: 'Converted Freeform', title: `Rebuilds from ${names(f.freeformSource)}` }
       return { text: f.file.name, title: `${f.file.name} imported — ${fileSize(f.file.size)}: a body for every solid in it, named as the file names its parts` }
     case 'moveBody':
       return moveReading(f, names, units)
@@ -170,7 +171,7 @@ export function bodyFeatureReading(f: Exclude<Feature, { kind: 'sketch' | 'extru
       return { text: `Extend · ${len(f.offset)} ${f.type}`, title: `${names(f.sheet)} run on ${len(f.offset)} past ${f.sides.length === 4 ? 'all its edges' : `its edges ${f.sides.join(', ')}`}, ${f.type === 'linear' ? 'along each end’s tangent' : f.type === 'soft' ? 'each end’s curve fading to straight' : 'along each end’s curve'}. A sheet body of its own; the sheet it was made from stays as it was` }
     case 'freeform': {
       const faces = f.faces.length
-      return { text: `${faces} face${faces === 1 ? '' : 's'} cage${f.ask ? ` · ${f.ask.kind === 'offset' ? `offset ${f.ask.distance}` : `thicken ${f.ask.thickness}`}` : ''}`, title: `A freeform cage of ${faces} face${faces === 1 ? '' : 's'} and ${f.positions.length / 3} points, refined ${f.steps}× and made B-spline faces${f.snap ? ', taken onto the scan first' : ''}. A solid where the cage closes, else a sheet` }
+      return { text: `${faces} face${faces === 1 ? '' : 's'} cage${f.ask ? ` · ${f.ask.kind === 'offset' ? `offset ${f.ask.distance}` : `thicken ${f.ask.thickness}`}` : ''}`, title: `A freeform cage of ${faces} face${faces === 1 ? '' : 's'} and ${f.positions.length / 3} points, refined ${f.steps}× and made B-spline faces${f.snap && f.fitToScan !== false ? ', taken onto the scan first' : ''}. A solid where the cage closes, else a sheet` }
     }
     case 'network': {
       const curves = f.curves.length

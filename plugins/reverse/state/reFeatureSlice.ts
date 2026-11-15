@@ -36,7 +36,7 @@ function varyingRadii(d: Extract<FeatureDraft, { kind: 'fillet' }>, varying: rea
 type StoreSet = StoreApi<ReState>['setState']
 type StoreGet = StoreApi<ReState>['getState']
 
-export const featureSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'featureDraft' | 'startFeature' | 'editFeature' | 'setFeatureDraft' | 'cancelFeature' | 'commitFeature' | 'addToRegion' | 'setRegion' | 'toggleDraftFace' | 'addDraftEdges' | 'addDraftFaces' | 'toggleDraftEdge' | 'clearDraftPicks' | 'setMoveBodies' | 'editNetwork' | 'addFreeform' | 'updateFreeform' | 'addFill' | 'addExtend'> => ({
+export const featureSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'featureDraft' | 'startFeature' | 'editFeature' | 'setFeatureDraft' | 'cancelFeature' | 'commitFeature' | 'addToRegion' | 'setRegion' | 'toggleDraftFace' | 'addDraftEdges' | 'addDraftFaces' | 'toggleDraftEdge' | 'clearDraftPicks' | 'setMoveBodies' | 'editNetwork' | 'addFreeform' | 'addConvertedFreeform' | 'updateFreeform' | 'addFill' | 'addExtend'> => ({
 
   featureDraft: null,
   startFeature: (kind, init) =>
@@ -434,6 +434,23 @@ export const featureSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'featu
       if (d.kind === 'moveBody') return { featureDraft: withMoveBodies(d, [], s.bodies) }
       return {}
     }),
+  addConvertedFreeform: (sourceId, file) => {
+    const state = get()
+    const source = state.features.find(feature => feature.id === sourceId)
+    if (!source || source.kind !== 'freeform' || source.suppressed || state.building) return null
+    const id = state.nextFeatureId
+    const { nextOfKind } = nameFor(state, 'import')
+    const converted: Feature = { id, kind: 'import', name: `${source.name} CAD Body`, file, freeformSource: sourceId, visible: true }
+    set({
+      ...remember(state),
+      features: [...state.features.map(feature => feature === source ? { ...feature, visible: false } : feature), converted],
+      nextFeatureId: id + 1,
+      nextOfKind,
+      selection: null,
+      buildVersion: state.buildVersion + 1,
+    })
+    return id
+  },
   addFreeform: (data, name) => {
     const s = get()
     const id = s.nextFeatureId

@@ -1555,6 +1555,32 @@ export class ReKernel {
     })
   }
 
+  /** Total length of edges incident to only one face. */
+  openEdgeLength(shape: Shape): number {
+    return run('Measuring open edges', () => {
+      const o = this.occt
+      const facesOf = parseHistory(o.edgeToFaceMap(shape, HASH_BOUND))
+      const edges = o.getSubShapes(shape, 'edge')
+      try {
+        return edges.reduce((sum, edge) =>
+          facesOf.get(o.hashCode(edge, HASH_BOUND))?.length === 1 ? sum + o.curveLength(edge) : sum, 0)
+      } finally {
+        for (const edge of edges) o.release(edge)
+      }
+    })
+  }
+
+  edgeUses(shape: Shape): { boundary: number; shared: number; nonManifold: number } {
+    const facesOf = parseHistory(this.occt.edgeToFaceMap(shape, HASH_BOUND))
+    let boundary = 0, shared = 0, nonManifold = 0
+    for (const faces of facesOf.values()) {
+      if (faces.length === 1) boundary++
+      else if (faces.length === 2) shared++
+      else if (faces.length > 2) nonManifold++
+    }
+    return { boundary, shared, nonManifold }
+  }
+
   /** Every edge with the geometry a fingerprint is made of, its faces by
    *  hash, and its polyline for drawing at the given chord tolerance. */
   edges(shape: Shape, deflection: number): RawEdge[] {

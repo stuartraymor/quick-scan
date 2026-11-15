@@ -54,6 +54,12 @@ export class ReScene {
    *  put away. */
   private bodyGroup = new THREE.Group()
   readonly bodyMeshes = new Map<number, THREE.Mesh>()
+  private bodyGeometryListeners = new Set<() => void>()
+  /** Notify editors after the rendered CAD geometry has actually been replaced. */
+  subscribeBodyGeometry(listener: () => void): () => void {
+    this.bodyGeometryListeners.add(listener)
+    return () => { this.bodyGeometryListeners.delete(listener) }
+  }
   /** Document/workspace visibility, before a temporary editor replaces a body. */
   private bodyVisibility = new Map<number, boolean>()
   private editingBodies = new Set<number>()
@@ -850,6 +856,7 @@ export class ReScene {
       if (!this.host.hasScan()) this.sizeToBodies()
       // What is under the cursor is found again on the bodies as they now are.
       this.host.requestHover()
+      for (const listener of this.bodyGeometryListeners) listener()
     }
     this.host.invalidate()
   }
@@ -1156,6 +1163,7 @@ export class ReScene {
     if (next.size === this.editingBodies.size && [...next].every(id => this.editingBodies.has(id))) return
     this.editingBodies = next
     for (const [id, mesh] of this.bodyMeshes) mesh.visible = (this.bodyVisibility.get(id) ?? false) && !next.has(id)
+    this.bodyPicks.bodyVisibilityChanged()
     this.stepped = null
     this.showOverlaps()
     this.recap()

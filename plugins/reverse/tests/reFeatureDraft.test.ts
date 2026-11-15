@@ -8,6 +8,7 @@ import { findRegions } from '../core/regions'
 import { addRectangle, emptySketch } from '../core/sketch'
 import { useStore } from '../../../src/state/store'
 import { DEFAULT_FILLET_MM, DEFAULT_WALL_MM, editingFeatureId, featureDraftReady, featureOfDraft, historyEditOf, openFeatureEditor, reEditorOpen, snapFaceOf, snapPlanOf, trimToleranceFor, useReverse } from '../state/reStore'
+import { useFreeformEditor } from '../state/freeformEditorStore'
 
 const face = (hash: number, dir: [number, number, number]): FaceInfo => ({ hash, fingerprint: { kind: 'plane', centroid: [0, 0, 5], dir, area: 100, origin: 2 } })
 const edge = (hash: number): EdgeInfo => ({ hash, fingerprint: { kind: 'line', mid: [20, 0, 10], dir: [1, 0, 0], length: 40, faces: [{ kind: 'plane', dir: [0, -1, 0] }, { kind: 'plane', dir: [0, 0, 1] }], origin: 2 }, faces: [], ends: [[0, 0, 10], [40, 0, 10]], endTangents: [[1, 0, 0], [1, 0, 0]], polyline: new Float32Array(0) })
@@ -96,6 +97,17 @@ describe('the feature drafts', () => {
     // A face whose maker is gone opens nothing.
     openFeatureEditor(99)
     expect(reEditorOpen(useReverse.getState())).toBe(false)
+  })
+
+  it('opens an existing Freeform cage from History and resets to New Freeform on a new command', () => {
+    useFreeformEditor.getState().setOpen(false)
+    useReverse.setState({ features: [{ id: 7, kind: 'freeform', name: 'Freeform 1', positions: [0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0], faces: [[0, 1, 2, 3]], creases: [], steps: 2, snap: false, visible: true }] })
+    openFeatureEditor(7)
+    expect(useFreeformEditor.getState().targetId).toBe(7)
+    expect(useFreeformEditor.getState().open).toBe(true)
+    useFreeformEditor.getState().setOpen(true)
+    expect(useFreeformEditor.getState().targetId).toBeNull()
+    useFreeformEditor.getState().setOpen(false)
   })
 
   it('makes the feature of every kind of draft once it is ready, and none before', () => {

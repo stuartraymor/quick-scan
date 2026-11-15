@@ -13,6 +13,17 @@
 
 import type { Vec3 } from '../../../../src/core/types'
 import type { LimitMesh } from './limit'
+import { topology, vertexAt, type Cage } from './cage'
+
+/** A ray must find the scan within one cage edge length. */
+export function snapRayReach(cage: Cage): number {
+  let reach = 0
+  for (const edge of topology(cage).edges) {
+    const a = vertexAt(cage, edge.a), b = vertexAt(cage, edge.b)
+    reach = Math.max(reach, Math.hypot(b[0]-a[0], b[1]-a[1], b[2]-a[2]))
+  }
+  return reach
+}
 
 /** Where a point projects onto the scan: null where the scan is out of
  *  `reach`, or the ray misses. */

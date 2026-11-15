@@ -7,15 +7,15 @@
 // curvature gives faces that swing off their samples, which the kernel
 // says; refined once more, they follow, up to MAX_STEPS.
 
-import type { Vec3 } from '../../../../src/core/types'
 import type { FreeformAsk } from '../features'
 import type { ReKernel, Shape } from '../kernel'
 import type { Cage } from './cage'
 import { type ConvertReport, type PatchSet, patchesBody } from './convert'
-import { displacedAlongNormals } from './limit'
+import { displacedAlongNormals, vertexNormals } from './limit'
 import { type CagePatches, cagePatches, MAX_BLOCK_SIDE } from './patches'
 import { type FreeformOp, reach, type ShellReport, freeformShell } from './shell'
-import { snapMesh } from './snap'
+import { snapMesh, type SnapQuery } from './snap'
+import { smoothSnappedSheet, type SmoothSnapReference } from './smoothSnap'
 
 /** The most a cage is refined before its faces are made. */
 export const MAX_STEPS = 4
@@ -43,10 +43,38 @@ export interface FreeformMade {
 
 const patchSet = (p: CagePatches): PatchSet => ({ grids: p.grids, closed: p.closed, blocks: p.blocks.map((b) => ({ rows: b.rows, cols: b.cols, faces: b.faces })) })
 
+/** Grid perimeter segments that do not have a shared sample edge. */
+function expectedBoundary(patches: CagePatches): number {
+  const edges = new Map<string, { length: number; uses: number }>()
+  for (const { points, rows, cols } of patches.grids) {
+    const add = (a: number, b: number) => {
+      const p = points.subarray(3 * a, 3 * a + 3)
+      const q = points.subarray(3 * b, 3 * b + 3)
+      const key = [p.join(','), q.join(',')].sort().join('|')
+      const previous = edges.get(key)
+      if (previous) previous.uses++
+      else edges.set(key, { length: Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]), uses: 1 })
+    }
+    for (let col = 0; col < cols - 1; col++) {
+      add(col, col + 1)
+      const bottom = (rows - 1) * cols + col
+      add(bottom, bottom + 1)
+    }
+    for (let row = 0; row < rows - 1; row++) {
+      const left = row * cols
+      add(left, left + cols)
+      add(left + cols - 1, left + 2 * cols - 1)
+    }
+  }
+  let length = 0
+  for (const edge of edges.values()) if (edge.uses === 1) length += edge.length
+  return length
+}
+
 /** The cage as a body of the kernel, thickened or offset by `ask`. The
  *  shape is the caller's. `closest` takes a point onto the scan (null:
  *  out of reach) and is wanted where `snap`. */
-export function freeformBody(k: ReKernel, cage: Cage, opts: { steps: number; snap: boolean; closest?: (p: Vec3) => Vec3 | null; ask?: FreeformAsk }): FreeformMade {
+export function freeformBody(k: ReKernel, cage: Cage, opts: { steps: number; snap: boolean; closest?: SnapQuery; ray?: boolean; ask?: FreeformAsk; smoothReference?: SmoothSnapReference }): FreeformMade {
   const { snap, closest, ask } = opts
   if (snap && !closest) throw new Error('The surface is to be taken onto the scan, and the scan is not here.')
   let missed: number | undefined
@@ -54,7 +82,7 @@ export function freeformBody(k: ReKernel, cage: Cage, opts: { steps: number; sna
     cagePatches(cage, n, (fine, limit) => {
       let positions = limit
       if (snap && closest) {
-        const r = snapMesh({ positions: limit, normals: new Float64Array(limit.length) }, (p) => closest(p))
+        const r = snapMesh({ positions: limit, normals: opts.ray ? vertexNormals(limit, fine.faces) : new Float64Array(limit.length) }, closest)
         missed = r.missed
         positions = r.positions
       }
@@ -71,6 +99,29 @@ export function freeformBody(k: ReKernel, cage: Cage, opts: { steps: number; sna
       // Global refinement can collapse projected samples. Split a poorly fitting
       // snapped grid locally while retaining the requested sample resolution.
       made = patchesBody(k, patchSet(patches), snap || last)
+      // Independently interpolated CAD faces can leave open edges along
+      // what should be shared by adjacent grids. A bounded fallback uses
+      // the same straight boundary on both sides of every sample cell.
+      if (snap && !patches.closed && made.report.faces > 1 &&
+          patches.grids.reduce((sum, g) => sum + (g.rows - 1) * (g.cols - 1), 0) <= 2048) {
+        const perimeter = expectedBoundary(patches)
+        const limit = perimeter * 1.03 + .05
+        if (k.openEdgeLength(made.shape) > limit) {
+          let alternative: ReturnType<typeof patchesBody> | undefined
+          try {
+            alternative = patchesBody(k, patchSet(patches), true, true)
+            if (alternative.report.valid && k.openEdgeLength(alternative.shape) <= limit) {
+              k.release(made.shape)
+              made = alternative
+              alternative = undefined
+            }
+          } catch {
+            // Preserve the original build if the alternate fit fails.
+          } finally {
+            if (alternative) k.release(alternative.shape)
+          }
+        }
+      }
       // A closed cage that would not sew shut in blocks: each quad its own face, the neighbours meeting edge to edge, none side to side.
       if (patches.closed && !made.report.solid) {
         const each = patchesAt(used, 0, 1)
@@ -82,6 +133,17 @@ export function freeformBody(k: ReKernel, cage: Cage, opts: { steps: number; sna
         } else k.release(again.shape)
       }
       const closed = patches.closed
+      if (snap && !ask && !closed && opts.smoothReference) {
+        const precise = smoothSnappedSheet(k, cage, made.shape, opts.smoothReference)
+        if (precise !== null) {
+          let area: number
+          try { area = k.surfaceArea(precise) }
+          catch (error) { k.release(precise); throw error }
+          k.release(made.shape)
+          made = { shape: precise, report: { ...made.report, valid: true, faces: cage.faces.length,
+            blocks: cage.faces.length, largestBlock: { rows: 1, cols: 1 }, area } }
+        }
+      }
       const base = { report: made.report, steps: used, closed, ...(missed !== undefined ? { missed } : {}) }
       if (!ask) return { shape: made.shape, ...base }
       let op: FreeformOp

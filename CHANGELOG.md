@@ -1,3 +1,139 @@
+## 1.1.58 — Complete Freeform deletion and Undo measurements
+
+Deleting the entire cage retains an editable empty feature. Undo restores the cage, selection and finished-CAD tolerance analysis. Empty geometry reports no surface to measure; save/reopen and four-corner recreation pass. Full tests, packaged and installed checks passed.
+
+## 1.1.54
+
+- Retain the measured Freeform drag preview and the quad guides while rebuilding the finished CAD after release.
+
+## 1.1.53
+
+- Paint Tolerance on the same refitted Freeform preview shown during supported D-handle and vertex drags, and keep the boundary, internal quad lines and active entity distinct.
+- Reject drag positions that would fold a refitted quad. Leave the previous surface and its history intact when a blocked gesture ends.
+
+## 1.1.52
+
+- Refit eligible snapped sheets against dense scans using the tolerance in Edit Surface. Preserve the editable cage and verify CAD seams and deviation before accepting the fit.
+- Keep quad points available in Solid, and show a finer projected surface with distinct Tolerance readouts while dragging and after the CAD rebuild.
+
+## 1.1.51
+
+- Keep the quad outlines visible while dragging. Preserve scan clipping and compositing as the camera changes.
+- Paint Tolerance on a dedicated fine CAD tessellation, with edge-midpoint samples and a clear status when measurement fails.
+- Refit eligible open snapped sheets as sewn cubic B-splines when the regular fit exceeds 0.01 mm. Verify seam counts and measured deviation before accepting the refit.
+
+## 1.1.50
+
+- Keep the cage strokes visible on the finished Freeform sheet in Solid with edges. Pick along the same visible curves and keep the raw cage when Control Net is enabled.
+- Hide the original CAD body edges during editing. Bring the starting mesh offset closer to the reference control's observed position.
+
+## 1.1.49
+
+- Show finished CAD in the stable Shaded Freeform viewport. Provide Solid, Solid with edges, and Transparent surface views.
+- Add separate mesh offset and mesh opacity controls for the scan behind the edited sheet. Keep the scan used by snapping and deviation in its measured position.
+- Refine Right-view Shaded lighting and keep the primitive offset menu label and numeric input readable.
+
+## 1.1.48
+
+- Add New Freeform boundary offsets against reference planes and tolerance-based offsets against geometric primitives.
+- Use local limit-surface facets for primitive offset directions at twisted boundary corners.
+- Measure the visible Freeform preview during manipulation and the finished CAD after rebuilding. Add RMS and align signed scale labels with their color thresholds.
+- Match the verified Edit Surface deviation sign and color bands. Use a calibrated Zebra projection on finished CAD normals and soften side-on Shaded lighting.
+
+## 1.1.47
+
+- In Snap Mode, fit the new split boundary anchors to the mesh while preserving existing poles. The linked CAD body rebuilds from the edited cage.
+
+## 1.1.46
+
+- Keep the existing single-argument scan placement callback when Add face is placing a new pole.
+
+## 1.1.45
+
+- Add the signed Offset Quad Surface command using the reference corner-normal rule. Preserve the offset through CAD rebuild and keep pointer snapping available.
+
+## 1.1.44
+
+- Add four-point and rectangular face placement, brush face selection, and brush smoothing to Edit Surface.
+- Clear all faces from an active cage from Commands, with confirmation and Undo.
+- Rebuild Convert to CAD bodies from subsequent edits of the original Freeform cage.
+
+## 1.1.43
+
+- Put shared Edit Surface tools in their reference slots and add the Commands menu for visibility and hole closing.
+- Record conversion in the main Undo/Redo history.
+
+## 1.1.42
+
+- Convert the editable cage into a separate verified CAD body while retaining the original snapped Freeform in History.
+
+## 1.1.41
+
+- Pick the nearer Freeform pole or edge when projected targets overlap. Bring common Edit Surface tools closer to the native order.
+
+## 1.1.40
+
+- Follow the scan hit under the cursor for a snapped single-pole drag in Control Net mode.
+
+## 1.1.39
+
+- Add bounded normal-ray projection for New Freeform surface samples and a lightning glyph for Auto Freeform in the ribbon.
+
+## 1.1.38
+
+- Keep hovered and selected face boundaries visible across New Freeform display modes.
+
+## 1.1.37
+
+- Show mesh hits, placed corners and the forming boundary while creating the first Freeform quad. Reject repeated corner clicks and make shaded quad outlines dark.
+
+## 1.1.36
+
+- Recover open snapped Freeform surfaces with excess unsewn boundary using CAD cells with shared edges.
+
+## 1.1.35
+
+- Light Shaded New Freeform surfaces, resolve coincident scan draw order, and add Surface Only inspection.
+
+## 1.1.34
+
+- Use the same finished CAD samples for the Tolerance map and range, and indicate whether the sampled surface exceeds tolerance.
+- Tighten New Freeform Zebra spacing based on the registered sphere comparison.
+
+## 1.1.33
+
+- Measure New Freeform Tolerance against the finished CAD tessellation and include triangle interiors in the reported range.
+
+## 1.1.32
+
+- Cancel snapped New Freeform drags when a moved point has no valid mesh projection.
+
+## 1.1.31
+
+- Add Pass / Fail tolerance colouring and apply tolerance bands to interpolated signed distances.
+
+## 1.1.30
+
+- Add signed tolerance mapping and reflection stripes to New Freeform.
+
+## 1.1.27
+
+- Simplify Edit Surface tools and improve dark theme display and visibility icons.
+
+## 1.1.26
+
+- Open an existing New Freeform cage directly from History, body maker or face Edit actions. The new-command path still starts a new cage.
+- Start Control Net off on the observed QUICKSURFACE test cage, with the raw control polygon available through its toggle.
+- Make surface-mode Snap to Mesh and Horizontal/Vertical Align move the visible limit-surface anchors through the pole-response solver, with neighbour movement honored.
+- Retain the scan snap projector through selection redraws to avoid repeated full-surface resampling. Preserve the dark theme and AI workspace.
+- Exact native numerical snapping, display modes, dense-cage performance and the full 100 paired interactions remain under comparison.
+
+## 1.1.25
+
+- In New Freeform surface mode, direct vertex and multi-vertex dragging now converts the requested surface-anchor movement into the pole movement required by the limit surface. Neighbour falloff is included in the conversion.
+- Place the drag plane and rotation/scale manipulator at the visible surface anchors when Control Net is off. Control Net-on editing still acts on the raw poles.
+- Keep the dark Edit Surface panel and AI workspace. Exact QUICKSURFACE 8 gesture and geometry parity remain under comparison.
+
 ## 1.1.24
 
 - New Freeform: Shift-click removes a selected entity, and Shift rectangle selection subtracts enclosed entities while Ctrl rectangle selection adds them.

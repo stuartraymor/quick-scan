@@ -11,7 +11,7 @@
 
 import type { Vec3 } from '../../../../src/core/types'
 import { type Cage, edgeKey, topology, vertexCount } from './cage'
-import { cageVertexLimits } from './limit'
+import { cageVertexLimits, vertexNormals } from './limit'
 import { subdivide } from './subdivide'
 
 export const cloneCage = (c: Cage): Cage => ({ positions: Float64Array.from(c.positions), faces: c.faces.map((f) => f.slice()), creases: c.creases.map(([a, b]) => [a, b]) })
@@ -131,6 +131,31 @@ export function addFace(c: Cage, corners: Corner[]): Cage {
   const face = same && flipped ? fail('The new face meets the cage’s faces in opposite senses; it cannot be wound to fit.') : same ? ids.slice().reverse() : ids
   out.faces.push(face)
   return checked(out)
+}
+
+/** Offset each control pole using the equally weighted unit corner normals.
+ *  For an inward-wound cage, a positive distance moves outside. */
+export function offsetCage(cage: Cage, distance: number): Cage {
+  if (!Number.isFinite(distance)) return fail('The offset must be a finite distance.')
+  const normals = new Float64Array(cage.positions.length)
+  for (const face of cage.faces) {
+    face.forEach((vertex, i) => {
+      const p = point(cage, vertex)
+      const a = sub(point(cage, face[(i + face.length - 1) % face.length]), p)
+      const b = sub(point(cage, face[(i + 1) % face.length]), p)
+      const cross: Vec3 = [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+      const length = Math.hypot(...cross)
+      if (length <= 1e-12) return
+      for (let k = 0; k < 3; k++) normals[vertex * 3 + k] += cross[k] / length
+    })
+  }
+  const positions = cage.positions.slice()
+  for (let i = 0; i < positions.length; i += 3) {
+    const length = Math.hypot(normals[i], normals[i + 1], normals[i + 2])
+    if (length <= 1e-12) continue
+    for (let k = 0; k < 3; k++) positions[i + k] += normals[i + k] * distance / length
+  }
+  return { ...cage, positions }
 }
 
 /** A grid of quads: `nu` × `nv` of them from `origin`, along `u` and `v`
@@ -422,15 +447,17 @@ export function deleteVertices(c: Cage, vertices: number[]): Cage {
 /** Smooth: the given vertices (all when none are given) moved `factor` of
  *  the way to the average of their neighbours, `iterations` times. A
  *  vertex on a boundary or a crease holds still. */
-export function smooth(c: Cage, vertices?: number[], factor = 0.5, iterations = 1): Cage {
+export function smooth(c: Cage, vertices?: number[], factor = 0.5, iterations = 1,
+  options: { fixBoundary?: boolean; area?: 'all' | 'convex' | 'concave' } = {}): Cage {
   if (!(factor > 0 && factor <= 1) || !(Number.isInteger(iterations) && iterations >= 1 && iterations <= 100)) return fail('Smooth by a factor above 0 up to 1, 1 to 100 times.')
   const top = topology(c)
   const picked = new Set((vertices ?? Array.from({ length: vertexCount(c) }, (_, i) => i)).map((v) => vertexIn(c, v)))
   const held = new Set<number>()
-  for (const e of top.edges) if (e.crease || e.faces.length < 2) { held.add(e.a); held.add(e.b) }
+  for (const e of top.edges) if (e.crease || (options.fixBoundary ?? true) && e.faces.length < 2) { held.add(e.a); held.add(e.b) }
   let out = cloneCage(c)
   for (let it = 0; it < iterations; it++) {
     const next = Float64Array.from(out.positions)
+    const normals = options.area && options.area !== 'all' ? vertexNormals(out.positions, out.faces) : null
     for (const v of picked) {
       if (held.has(v) || top.vertexEdges[v].length === 0) continue
       const mean: Vec3 = [0, 0, 0]
@@ -438,7 +465,12 @@ export function smooth(c: Cage, vertices?: number[], factor = 0.5, iterations = 
         const other = top.edges[e].a === v ? top.edges[e].b : top.edges[e].a
         for (let k = 0; k < 3; k++) mean[k] += out.positions[other * 3 + k] / top.vertexEdges[v].length
       }
-      for (let k = 0; k < 3; k++) next[v * 3 + k] += (mean[k] - out.positions[v * 3 + k]) * factor
+      const displacement = mean.map((axis, k) => axis - out.positions[v * 3 + k])
+      if (normals) {
+        const normalTravel = displacement.reduce((sum, axis, k) => sum + axis * normals[v * 3 + k], 0)
+        if (options.area === 'convex' ? normalTravel >= -1e-9 : normalTravel <= 1e-9) continue
+      }
+      for (let k = 0; k < 3; k++) next[v * 3 + k] += displacement[k] * factor
     }
     out = { ...out, positions: next }
   }

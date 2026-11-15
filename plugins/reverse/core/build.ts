@@ -1,3 +1,4 @@
+import { snapRayReach, type SnapQuery } from './freeform/snap'
 // SPDX-License-Identifier: AGPL-3.0-only
 import { previewDeviation } from './freeform/previewDeviation'
 // Running the feature list through the kernel. A build plays the steps in
@@ -689,15 +690,28 @@ export class Builder {
   /** A freeform cage made a body (core/freeform/make.ts): its surface taken onto the scan first where the step says so. */
   private freeformOf(step: Extract<BuildStep, { kind: 'freeform' }>): FreeformMade {
     const cage = { positions: Float64Array.from(step.positions), faces: step.faces, creases: step.creases }
-    let closest: ((p: Vec3) => Vec3 | null) | undefined
+    let closest: SnapQuery | undefined
     if (step.snap) {
       if (!this.scan || !this.scanPositions) throw new Error('The cage is to be taken onto the scan, and the scan is not here.')
       if (!this.paths) this.paths = new ScanPaths(this.scanPositions, this.scan.index)
       const paths = this.paths
       const whole = (p: Vec3) => paths.closest(p)?.point ?? null
-      closest = step.snapRegion ? regionSnap(step.snapRegion, whole) : whole
+      if (step.snapType === 'ray') {
+        const scan = this.scan
+        const reach = snapRayReach(cage)
+        closest = (point, normal) => {
+          const cast = (p: Vec3) => scan.projectAlong(p, normal, reach)
+          return step.snapRegion ? regionSnap(step.snapRegion, cast)(point) : cast(point)
+        }
+      } else closest = step.snapRegion ? regionSnap(step.snapRegion, whole) : whole
     }
-    return freeformBody(this.kernel, cage, { steps: step.steps, snap: step.snap, ...(closest ? { closest } : {}), ...(step.ask ? { ask: step.ask } : {}) })
+    const scan = this.scan
+    const smoothReference = closest && scan && (step.refitTolerance || scan.triangleCount <= 8000) && step.snapType !== 'ray' && !step.snapRegion
+      ? { tolerance: step.refitTolerance,
+          closest: (point: Vec3) => this.paths!.closest(point)?.point ?? null,
+          projectAlong: (point: Vec3, axis: Vec3, reach: number) => scan.projectAlong(point, axis, reach) }
+      : undefined
+    return freeformBody(this.kernel, cage, { steps: step.steps, snap: step.snap, ray: step.snapType === 'ray', closest, ask: step.ask, smoothReference })
   }
 
   /** A surface fitted through the step's region of the scan, as a face,

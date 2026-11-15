@@ -155,7 +155,7 @@ export type BuildStep =
   | ({ kind: 'fill'; id: number; name: string } & Pick<FillFeature, 'points' | 'rows' | 'cols'>)
   /** An Extend Surface: a whole-patch sheet run on past its edges (core/extend.ts). */
   | ({ kind: 'extend'; id: number; name: string } & Pick<ExtendFeature, 'sheet' | 'offset' | 'type' | 'sides' | 'samples'>)
-  | ({ kind: 'freeform'; id: number; name: string } & Pick<FreeformFeature, 'positions' | 'faces' | 'creases' | 'steps' | 'snap' | 'ask' | 'snapRegion'>)
+  | ({ kind: 'freeform'; id: number; name: string } & Pick<FreeformFeature, 'positions' | 'faces' | 'creases' | 'steps' | 'snap' | 'snapType' | 'refitTolerance' | 'ask' | 'snapRegion'>)
   | { kind: 'trim'; id: number; name: string; bodies: number[]; primitives: TrimPrimitive[]; tolerance: number; overlap: number }
   /** A sketch placed on the part before the features on it are built: its
    *  face found again and its projected pieces taken again from what they

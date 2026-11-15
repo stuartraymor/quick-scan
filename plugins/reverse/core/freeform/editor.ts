@@ -54,17 +54,44 @@ function selectedHole(c: Cage, selection: readonly FreeformSelection[]): number[
     !c.faces.some(face => face.length === 4 && face.every(v => loop.includes(v))))
 }
 
-/** Bridge two disjoint boundary edges with one quad. Unlike the existing
- * face-to-face tube operation, this preserves both selected edges' faces. */
-function bridgeEdges(c: Cage, selection: readonly FreeformSelection[]): Cage {
-  if (selection.length !== 2 || selection.some(s => s.kind !== 'edge')) throw new Error('Select two separate boundary edges to bridge.')
-  const top = topology(c), edges = selection.map(s => top.edges[s.index])
-  if (edges.some(e => e.faces.length !== 1) || new Set(edges.flatMap(e => [e.a, e.b])).size !== 4) throw new Error('Select two separate boundary edges to bridge.')
-  const directed = edges.map(e => {
-    const face = c.faces[e.faces[0]], k = face.findIndex((v, i) => edgeKey(v, face[(i + 1) % face.length]) === edgeKey(e.a, e.b))
-    return [face[k], face[(k + 1) % face.length]]
+/** Order two disjoint open boundaries by their adjacent face winding. */
+function bridgeChains(c: Cage, selection: readonly FreeformSelection[]): number[][] {
+  const fail = () => { throw new Error('Select two separate, equally divided open boundary chains to bridge.') }
+  if (selection.length < 2 || selection.some(s => s.kind !== 'edge')) return fail()
+  const top = topology(c), next = new Map<number, number>(), previous = new Map<number, number>()
+  for (const pick of selection) {
+    const edge = top.edges[pick.index]
+    if (edge.faces.length !== 1) return fail()
+    const face = c.faces[edge.faces[0]]
+    const k = face.findIndex((v, i) => edgeKey(v, face[(i + 1) % face.length]) === edgeKey(edge.a, edge.b))
+    const a = face[k], b = face[(k + 1) % face.length]
+    if (next.has(a) || previous.has(b)) return fail()
+    next.set(a, b); previous.set(b, a)
+  }
+  const starts = [...next.keys()].filter(v => !previous.has(v)).sort((a, b) => a - b)
+  if (starts.length !== 2) return fail()
+  const chains = starts.map(start => {
+    const chain = [start]
+    while (next.has(chain[chain.length - 1])) {
+      const v = next.get(chain[chain.length - 1])!
+      if (chain.includes(v)) return fail()
+      chain.push(v)
+    }
+    return chain
   })
-  const [[p, q], [r, s]] = directed, corners = [q, p, s, r]
+  if (chains[0].length !== chains[1].length || chains.reduce((n, chain) => n + chain.length - 1, 0) !== selection.length ||
+      new Set(chains.flat()).size !== chains.flat().length) return fail()
+  return chains
+}
+
+/** Bridge equal open chains without adding or moving poles. This is separate
+ * from the face-to-face tube operation exposed through the shared API. */
+function bridgeEdges(c: Cage, selection: readonly FreeformSelection[]): Cage {
+  const [a, b] = bridgeChains(c, selection)
+  const opposite = b.slice().reverse()
+  let result = c
+  for (let k = 0; k < a.length - 1; k++) {
+  const corners = [a[k + 1], a[k], opposite[k], opposite[k + 1]]
   if (c.faces.some(face => face.length === 4 && face.every(v => corners.includes(v)))) throw new Error('The selected edges already bound one face.')
   // Two triangle normals must agree: reject collapsed or twisted-over quads.
   const points = corners.map(v => vertexAt(c, v))
@@ -73,7 +100,9 @@ function bridgeEdges(c: Cage, selection: readonly FreeformSelection[]): Cage {
   const n1 = cross(sub(points[1], points[0]), sub(points[2], points[0]))
   const n2 = cross(sub(points[2], points[0]), sub(points[3], points[0]))
   if (!(n1.reduce((sum, v, i) => sum + v*n2[i], 0) > 1e-20)) throw new Error('The bridge would be folded or collapsed.')
-  return addFace(c, corners)
+  result = addFace(result, corners)
+  }
+  return result
 }
 
 export function editorActions(c: Cage, selection: readonly FreeformSelection[]): Record<EditorAction, boolean> {
@@ -84,12 +113,12 @@ export function editorActions(c: Cage, selection: readonly FreeformSelection[]):
   const edgesOnly = picks.every(s => s.kind === 'edge'), gone = deletedFaces(c, picks)
   const top = topology(c)
   let canBridge = false
-  if (edgesOnly && picks.length === 2) { try { bridgeEdges(c, picks); canBridge = true } catch { /* invalid pair */ } }
+  if (edgesOnly && picks.length >= 2) { try { bridgeEdges(c, picks); canBridge = true } catch { /* invalid chains */ } }
   return {
     split: edgesOnly && picks.length === 1 && top.edges[picks[0].index].faces.every(f => c.faces[f].length === 4),
     crease: edgesOnly,
     remove_crease: edgesOnly,
-    delete: gone.length > 0 && gone.length < c.faces.length,
+    delete: gone.length > 0,
     close_hole: !!selectedHole(c, picks),
     bridge: canBridge,
   }
@@ -104,7 +133,15 @@ export function applyEditorAction(c: Cage, selection: readonly FreeformSelection
     case 'split': cage = splitLoop(c, ...edges[0]); break
     case 'crease': cage = setCrease(c, edges, true); break
     case 'remove_crease': cage = setCrease(c, edges, false); break
-    case 'delete': cage = deleteFaces(c, deletedFaces(c, picks)); break
+    case 'delete': {
+      const gone = deletedFaces(c, picks)
+      // The interactive editor retains an empty, undoable Freeform feature.
+      // The shared deleteFaces API continues to require a nonempty result.
+      cage = gone.length === c.faces.length
+        ? { positions: new Float64Array(), faces: [], creases: [] }
+        : deleteFaces(c, gone)
+      break
+    }
     case 'close_hole': cage = closeHole(c, selectedHole(c, picks)![0]); break
     case 'bridge': cage = bridgeEdges(c, picks); break
   }

@@ -407,6 +407,7 @@ export class SceneManager {
   /** When the loop began, in performance.now() time. */
   private deflectStart = 0
   private uDeflect: DeflectionUniform = { value: 0 }
+  private scanDepthOffset = { value: 0 }
   /** See-through surfaces, so what is inside the part — the reference, the
    *  fitted elements, the pinned readings — shows: the scan's and the
    *  reference's, each from its own key. Held here as well as on the
@@ -985,7 +986,7 @@ export class SceneManager {
       side: THREE.DoubleSide,
     })
     this.applyScanFinish(material)
-    patchScanShader(material, { backface: this.backface, paintColor: this.uPaintColor, surfaceColor: this.uSurfaceColor, surfaceOwn: this.uSurfaceOwn, deflect: this.uDeflect, wire: this.wire })
+    patchScanShader(material, { backface: this.backface, paintColor: this.uPaintColor, surfaceColor: this.uSurfaceColor, surfaceOwn: this.uSurfaceOwn, deflect: this.uDeflect, wire: this.wire, depthOffset: this.scanDepthOffset })
     setSurfaceOpacity(material, this.scanOpacity())
     const mesh = new THREE.Mesh(geometry, material)
     // The geometry under the mesh changes hands (an edited copy, a resplit),
@@ -1306,6 +1307,14 @@ export class SceneManager {
     if (this.mesh) setSurfaceOpacity(this.mesh.material as THREE.MeshStandardMaterial, this.scanOpacity())
     for (const layer of this.layers) layer.opacityChanged?.(this.scanOpacity())
     this.updateCaps()
+    this.invalidate()
+  }
+
+  /** Shift scan depth for an editing overlay while retaining the silhouette
+   *  and the unmodified scan used for picking and measurements. */
+  setScanDepthOffset(distance: number): void {
+    if (this.scanDepthOffset.value === distance) return
+    this.scanDepthOffset.value = distance
     this.invalidate()
   }
 
