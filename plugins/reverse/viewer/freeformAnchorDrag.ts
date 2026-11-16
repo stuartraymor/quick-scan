@@ -4,6 +4,20 @@ import type { Cage } from '../core/freeform/cage'
 import { movePoints } from '../core/freeform/edit'
 import { cageVertexLimits } from '../core/freeform/limit'
 
+/** Native direct evaluated-point drags keep unselected surface anchors fixed,
+ * even when that requires moving their poles. Five simultaneous corrections
+ * after the initial pole movement match the saved corner/boundary trials. */
+export function moveSurfaceAnchor(cage: Cage, vertex: number, travel: Vec3): Cage {
+  const goals = cageVertexLimits(cage)
+  goals[vertex] = goals[vertex].map((p, k) => p + travel[k]) as Vec3
+  const result = movePoints(cage, [{ vertex, by: travel }])
+  for (let step = 0; step < 5; step++) {
+    const current = cageVertexLimits(result)
+    result.positions = Float64Array.from(result.positions, (p, k) => p + goals[Math.floor(k / 3)][k % 3] - current[Math.floor(k / 3)][k % 3])
+  }
+  return result
+}
+
 /** Convert requested limit-surface anchor travel into control-pole travel.
  * The response includes the editor's optional neighbour falloff. It is
  * assembled once at pointer-down, rather than during every preview frame. */

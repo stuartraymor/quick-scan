@@ -12,7 +12,8 @@ import { type Cage, edgeKey, topology, vertexAt } from '../core/freeform/cage'
 import { type Corner, edgeLine, extrapolateEdges, movePoints } from '../core/freeform/edit'
 import { subdivide } from '../core/freeform/subdivide'
 import { cageVertexLimits } from '../core/freeform/limit'
-import { surfaceAnchorDrag } from './freeformAnchorDrag'
+import { moveSurfaceAnchor, surfaceAnchorDrag } from './freeformAnchorDrag'
+import { mergeBoundaryPoint, mergeChainEnds } from '../core/freeform/merge'
 
 export interface FreeformDeviationRange {
   min: number
@@ -933,6 +934,8 @@ export class FreeformEditorLayer {
     const vertices = [...new Set(this.selection.flatMap(p => p.kind === 'vertex' ? [p.index] : p.kind === 'face' ? original.faces[p.index] ?? [] : top.edges[p.index] ? [top.edges[p.index].a, top.edges[p.index].b] : []))]
     if (!vertices.length) return true
     const anchors = options.controlNet === false ? cageVertexLimits(original) : null
+    const evaluatedPoint = !!anchors && !grip && !duplicate && !options.snapPoint &&
+      (options.neighbourRadius ?? 0) === 0 && vertices.length === 1 && hit.kind === 'vertex'
     const anchorSolver = anchors && !duplicate ? surfaceAnchorDrag(original, vertices, options.neighbourRadius ?? 0) : null
     const centre = new THREE.Vector3()
     vertices.forEach(i => centre.add(new THREE.Vector3(...(anchors?.[i] ?? vertexAt(original, i)))))
@@ -948,17 +951,27 @@ export class FreeformEditorLayer {
     const rayReach = anchorHit ? snapRayReach(original) : 0
     const axis = options.refitPoint ? refitDirection(original) : null
     const checkedOrientation = axis && preservesRefitOrientation(original, axis) ? axis : null
-    let current = original, changed = false, done = false, blocked = false, nextSelection = this.selection.slice()
+    let current = original, changed = false, done = false, blocked = false, merging = false, nextSelection = this.selection.slice()
+    // Direct point contact is paired in both display modes, including the
+    // evaluated no-neighbour rule above. Constrained handles stay excluded.
+    const chainEnds = !grip && !duplicate && hit.kind === 'edge' && this.selection.every(p => p.kind === 'edge')
+      ? mergeChainEnds(original, this.selection.map(p => p.index)) : []
+    const mergeSources = chainEnds.length ? chainEnds : !grip && !duplicate && (!anchors || evaluatedPoint) && vertices.length === 1 && hit.kind === 'vertex' &&
+      top.vertexEdges[vertices[0]].some(i => top.edges[i].faces.length === 1) ? [vertices[0]] : []
+    const visible = this.visible(original)
     const dragFeedback = (invalid: boolean) => {
       blocked = invalid
       if (this.dragHint) {
-        this.dragHint.textContent = duplicate ? 'Pull outward to add a quad' : 'This move would fold a quad'
-        this.dragHint.style.display = invalid ? 'block' : 'none'
+        this.dragHint.textContent = invalid ? (duplicate ? 'Pull outward to add a quad' : 'This move would fold a quad') : 'Merge'
+        this.dragHint.style.display = invalid || merging ? 'block' : 'none'
       }
       host.setCursor(invalid ? 'not-allowed' : duplicate ? 'copy' : 'grabbing')
     }
     const update = (ev: PointerEvent) => {
       if (ev.pointerId !== e.pointerId) return
+      merging = false
+      let invalidContact = false
+      nextSelection = this.selection.slice()
       const next = point(ev.clientX, ev.clientY)
       if (!next) return
       const cursorPoint = next.clone()
@@ -985,7 +998,8 @@ export class FreeformEditorLayer {
         current = extended.cage; nextSelection = extended.edges.map(index => ({ kind: 'edge', index }))
       } else {
         const travel = anchorSolver ? anchorSolver(vertices.map(() => delta.toArray() as Vec3)) : vertices.map(() => delta.toArray() as Vec3)
-        current = changed ? movePoints(original, vertices.map((vertex, i) => ({ vertex, by: travel[i] })), options.neighbourRadius ?? 0) : original
+        current = !changed ? original : evaluatedPoint ? moveSurfaceAnchor(original, vertices[0], delta.toArray() as Vec3)
+          : movePoints(original, vertices.map((vertex, i) => ({ vertex, by: travel[i] })), options.neighbourRadius ?? 0)
       }
       if (changed && grip && grip.kind !== 'move') {
         const strength = options.strength ?? 1
@@ -1023,8 +1037,37 @@ export class FreeformEditorLayer {
         if (collapsedEdge || area < 1e-12) { current = original; changed = false; break }
         }
       }
-      changed = current.faces.length !== original.faces.length || current.positions.some((v, i) => Math.abs(v - original.positions[i]) > 1e-10)
-      const folds = changed && checkedOrientation !== null && !preservesRefitOrientation(current, checkedOrientation)
+      if (changed) for (const mergeSource of mergeSources) {
+        const at = this.project(evaluatedPoint ? cageVertexLimits(current)[mergeSource] : vertexAt(current, mergeSource))
+        const candidates = visible.vertices.flatMap((shown, v) => {
+          if (!shown || vertices.includes(v) || !top.vertexEdges[v].some(i => top.edges[i].faces.length === 1)) return []
+          const p = evaluatedPoint ? anchors![v] : vertexAt(original, v), screen = this.project(p), distance = Math.hypot(screen.x - at.x, screen.y - at.y)
+          // The observed capture band accepts five pixels and rejects six.
+          // A depth guard prevents a screen overlap welding unrelated layers.
+          if (distance > 5 || !this.unobscured(p) || Math.abs(screen.z - at.z) > .01) return []
+          return [{ v, distance }]
+        }).sort((a, b) => a.distance - b.distance)
+        for (const candidate of candidates) {
+          try {
+            const result = mergeBoundaryPoint(current, mergeSource, candidate.v, chainEnds.length ? 'chain' : evaluatedPoint ? 'surface-point' : 'point')
+            current = result.cage
+            if (chainEnds.length) {
+              const map = (v: number) => { const w = v === mergeSource ? candidate.v : v; return w > mergeSource ? w - 1 : w }
+              const newEdges = topology(current).edges
+              nextSelection = this.selection.map(p => {
+                const old = top.edges[p.index], key = edgeKey(map(old.a), map(old.b))
+                return { kind: 'edge' as const, index: newEdges.findIndex(e => edgeKey(e.a, e.b) === key) }
+              }).filter(p => p.index >= 0)
+            } else nextSelection = [{ kind: 'vertex', index: result.vertex }]
+            merging = true
+            break
+          } catch { /* Try another eligible target before refusing the contact. */ }
+        }
+        invalidContact ||= candidates.length > 0
+        if (merging) { invalidContact = false; break }
+      }
+      changed = current.faces.length !== original.faces.length || current.positions.length !== original.positions.length || current.positions.some((v, i) => Math.abs(v - original.positions[i]) > 1e-10)
+      const folds = invalidContact || (changed && checkedOrientation !== null && !preservesRefitOrientation(current, checkedOrientation))
       dragFeedback(folds)
       if (folds) {
         current = original

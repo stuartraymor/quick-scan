@@ -1,4 +1,24 @@
+# 1.1.66
+
+- New Freeform face-selection and smoothing brush symbols now follow the observed brush and circular-tool shapes.
+- Shaded, Tolerance and Zebra use independently drawn spherical icons in the existing display positions.
+
+# 1.1.65
+
+- Direct point dragging with Control Net off, Snap off and Dont move neighbours preserves neighboring evaluated surface anchors using the measured five-step correction.
+- Boundary-point Merge now follows that evaluated movement and preserves precontact anchors, including final seam closure.
+
+# 1.1.64
+
+- Manual New Freeform open boundary chains preview and merge one contacting endpoint while preserving selected edges and shared connectivity.
+- Empty-selection contextual Delete dismisses without creating history.
+
 ## 1.1.60 — Irregular boundary repair
+
+## 1.1.63
+
+- New Freeform boundary-point contact merges shared topology with four evaluated-surface preservation corrections, matching three native seam stages.
+- Direct control-net point drags show Merge within the measured five-pixel capture band; cancellation and history remain atomic.
 
 New Freeform identifies irregular boundary points and repairs the isolated, uncreased three- and four-face patterns measured in QUICKSURFACE. Repairs add the observed two-quad boundary strip, preserve history and project persistence, and refresh finished-CAD tolerance. Unsupported or degenerate configurations leave geometry unchanged. Full drag-to-Merge equivalence remains open.
 

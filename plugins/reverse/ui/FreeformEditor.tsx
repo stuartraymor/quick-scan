@@ -280,6 +280,7 @@ export function FreeformEditor() {
   }
   function action(name: EditorAction) {
     if (!cage || busy.current) return
+    if (name === 'delete' && !selection.length) { setMenu(null); return }
     if (name === 'bridge' && !bridgeCommandAvailable(cage, selection)) return
     try {
       const result = applyEditorAction(cage, selection, name)
@@ -510,7 +511,7 @@ export function FreeformEditor() {
   const history = (redo: boolean) => { if (busy.current || useReverse.getState().building) return; setMenu(null); redo ? state.redoFeatures() : state.undoFeatures() }
   const pickMode = (value: typeof mode) => { setMode(value); setSelectionMenu(null); setMenu(null) }
   const commandButton = (name: EditorAction, context = false) => <button key={name} type="button" role={context ? 'menuitem' : undefined}
-    data-test={`freeform-${name}`} aria-label={labels[name]} title={labels[name]} disabled={working || (name === 'bridge' ? !cage || !bridgeCommandAvailable(cage, selection) : !available?.[name])}
+    data-test={`freeform-${name}`} aria-label={labels[name]} title={labels[name]} disabled={working || (name === 'bridge' ? !cage || !bridgeCommandAvailable(cage, selection) : context && name === 'delete' && !selection.length ? !cage : !available?.[name])}
     onClick={() => action(name)}>{context ? <><span>{labels[name]}</span><span className="ff-shortcut">{name === 'split' ? 'S' : name === 'delete' ? 'Del' : name === 'bridge' ? 'D' : ''}</span></> : <FreeformIcon name={name} />}</button>
   const visibilityItems = <>
     <button role="menuitem" disabled={!selection.length} onClick={() => visibility(true)}><span className="ff-visibility-label"><FreeformIcon name="isolate" size={16} />Isolate</span></button>

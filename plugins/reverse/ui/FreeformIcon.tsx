@@ -1,17 +1,49 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { useId } from 'react'
 /** Original vector symbols; command names remain available to assistive tools. */
 export function FreeformIcon({ name, size = 19 }: { name: string; size?: number }) {
+  const id = useId().replaceAll(':', '')
   if (name === 'shaded' || name === 'deviation' || name === 'zebra') {
-    const [top, left, right] = name === 'shaded'
-      ? ['#78bafa', '#397bc1', '#24528e']
-      : name === 'deviation' ? ['#ffd13d', '#35cb67', '#168cd7'] : ['#d7dde4', '#393f48', '#707983']
-    return <svg aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" strokeLinejoin="round">
-      <path fill={top} d="M2 7 12 2 22 7 12 12Z" />
-      <path fill={left} d="M2 7 12 12V22L2 17Z" />
-      <path fill={right} d="M12 12 22 7V17L12 22Z" />
-      {name === 'deviation' && <path fill="#ec5840" d="M7 7 12 4.5 17 7 12 9.5Z" />}
-      {name === 'zebra' && <path fill="none" stroke="#f0f3f7" strokeWidth="1.6" d="M2 10 12 15 22 10 M2 14 12 19 22 14" />}
-      <path fill="none" stroke="currentColor" strokeWidth="1.2" d="M2 7 12 2 22 7V17L12 22 2 17Z M2 7 12 12 22 7 M12 12V22" />
+    // Original spherical symbols drawn from the observed display categories.
+    // The icon palette is independent of the measured viewport color map.
+    return <svg aria-hidden="true" width={size} height={size} viewBox="0 0 24 24">
+      <defs>
+        <clipPath id={`${id}-ball`}><circle cx="12" cy="12" r="10" /></clipPath>
+        <radialGradient id={`${id}-shade`} cx="32%" cy="26%" r="75%">
+          <stop offset="0" stopColor={name === 'shaded' ? '#84b8ec' : '#fff'} stopOpacity={name === 'shaded' ? 1 : .55} />
+          <stop offset=".48" stopColor={name === 'shaded' ? '#3479b9' : '#fff'} stopOpacity={name === 'shaded' ? 1 : 0} />
+          <stop offset="1" stopColor={name === 'shaded' ? '#102c51' : '#071b25'} stopOpacity={name === 'shaded' ? 1 : .7} />
+        </radialGradient>
+      </defs>
+      <rect x=".5" y=".5" width="23" height="23" rx="1" fill="#263743" />
+      <g clipPath={`url(#${id}-ball)`}>
+        <circle cx="12" cy="12" r="10" fill={name === 'deviation' ? '#18dd37' : name === 'zebra' ? '#eee' : '#3479b9'} />
+        {name === 'deviation' && <>
+          <path fill="#128bda" d="M1 5Q10 1 15 8T24 15V24H0Z" />
+          <path fill="#ffe928" d="M0 7Q8 1 15 5T24 4V0H0Z" />
+          <path fill="#ec531e" d="M5 0H22V5Q13 1 5 4Z" />
+          <path fill="#29e239" d="M1 10Q10 3 14 10T23 16L20 21Q15 15 10 14T1 16Z" />
+        </>}
+        {name === 'zebra' && <path fill="none" stroke="#121719" strokeWidth="3.2" d="M-1 3Q17 1 10 10T15 25 M5-3Q23 2 17 10T22 25 M-5 7Q10 6 4 15T8 26" />}
+        <circle cx="12" cy="12" r="10" fill={`url(#${id}-shade)`} />
+      </g>
+      <circle cx="12" cy="12" r="10" fill="none" stroke="#162c3e" strokeWidth=".7" />
+    </svg>
+  }
+  if (name === 'brush-faces' || name === 'brush-smooth') {
+    return <svg aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" stroke="#315c79" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="1" y="1" width="22" height="22" fill="#b8dcf4" stroke="#87b9d8" strokeWidth=".7" />
+      {name === 'brush-faces' ? <>
+        <path d="M3 15 9 12 20 19 14 22Z" fill="#84b9db" stroke="#5a8bad" />
+        <path d="M4 3Q3 2 3 5L10 13 13 10Z" fill="#e2eef3" />
+        <path d="m10 12 3-3 3 3-3 3Z" fill="#788f9e" />
+        <path d="m13 14 3-2q1 4 6 6-4 4-8 1Z" fill="#597b91" />
+        <path d="m15 15 4 4m-5-3 3 4" stroke="#d4e4eb" strokeWidth=".8" />
+      </> : <>
+        <circle cx="12" cy="12" r="8.4" fill="#d5eaf5" />
+        <path d="M4 12q4-7 8 0t8 0 M5 16q4-7 8-1t7-3" fill="none" strokeWidth="1.8" />
+        <path d="m15 3 4 1-1 4" fill="none" />
+      </>}
     </svg>
   }
   const paths: Record<string, string> = {
@@ -35,8 +67,6 @@ export function FreeformIcon({ name, size = 19 }: { name: string; size?: number 
     commands: 'M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20Z M7.5 12h.1 M12 12h.1 M16.5 12h.1',
     'add-face': 'M5 3l14 3-2 15-14-3Z M4 1h2v4H4z M18 4h2v4h-2z M16 19h2v4h-2z M2 16h2v4H2z',
     rectangle: 'M4 4h16v16H4Z M2 2h4v4H2z M18 18h4v4h-4z',
-    'brush-faces': 'M2 3h20v18H2z M3 5l9 6 1 4 8 5 M4 5l9 5 3 4',
-    'brush-smooth': 'M2 8q5-8 10 0t10 0 M2 17q5 8 10 0t10 0 M5 12q7-5 14 0',
     close_hole: 'M3 3h16v16H3z M3 8h5V3 M14 3v5h5 M19 14h-5v5 M8 19v-5H3 M8 8h6v6H8z',
     crease: 'M2 16l9-10 9 10 M2 11l9-9 9 9',
     remove_crease: 'M2 16Q11 1 20 16 M2 11Q11 0 20 11',

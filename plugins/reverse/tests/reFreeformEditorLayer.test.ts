@@ -2,11 +2,57 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import type { SceneLayerHost } from '../../../src/viewer/sceneLayers'
-import type { Cage } from '../core/freeform/cage'
+import { type Cage, topology } from '../core/freeform/cage'
 import { cageVertexLimits } from '../core/freeform/limit'
 import { FreeformEditorLayer, type FreeformEditorOptions, type FreeformSelectionMode } from '../viewer/freeformEditorLayer'
+import mergeFixtures from './fixtures/freeform-merge-reference.json'
+import chainMerge from './fixtures/freeform-chain-merge-reference.json'
+import surfaceDrags from './fixtures/freeform-surface-drag-reference.json'
 
 afterEach(() => vi.unstubAllGlobals())
+
+it('previews a native point merge and commits the welded selection only on release', () => {
+  const f = mergeFixtures[0], cage: Cage = { positions: Float64Array.from(f.input.positions), faces: f.input.faces, creases: [] }
+  const s = setup({ mode: 'points', controlNet: true }, cage)
+  const xy = (v: number) => [100 + cage.positions[v * 3] * 10, 100 - cage.positions[v * 3 + 1] * 10]
+  const [x, y] = xy(f.from), [tx, ty] = xy(f.to)
+  s.layer.pointerDown!(s.event('pointerdown', x, y))
+  s.canvas.dispatchEvent(s.event('pointermove', tx - 4, ty))
+  expect(s.onCommit).not.toHaveBeenCalled()
+  expect(s.onPreview.mock.lastCall?.[0].positions.length).toBe(33)
+  s.canvas.dispatchEvent(s.event('pointerup', tx - 4, ty))
+  expect(s.onCommit).toHaveBeenCalledTimes(1)
+  expect(s.onCommit.mock.lastCall?.[0].faces).toEqual(f.expected.faces)
+  expect(s.onCommit.mock.lastCall?.[1]).toEqual([{ kind: 'vertex', index: 9 }])
+  expect(Array.from(cage.positions)).toEqual(f.input.positions)
+  s.editor.dispose()
+})
+
+it('leaves a six-pixel miss unwelded and cancels a captured point merge atomically', () => {
+  for (const cancel of [false, true]) {
+    const f = mergeFixtures[0], cage: Cage = { positions: Float64Array.from(f.input.positions), faces: f.input.faces, creases: [] }
+    const s = setup({ mode: 'points', controlNet: true }, cage)
+    const x = 100 + cage.positions[f.from * 3] * 10, y = 100 - cage.positions[f.from * 3 + 1] * 10
+    const tx = 100 + cage.positions[f.to * 3] * 10
+    s.layer.pointerDown!(s.event('pointerdown', x, y))
+    s.canvas.dispatchEvent(s.event('pointermove', tx - (cancel ? 0 : 6), y))
+    if (cancel) s.win.dispatchEvent(Object.assign(new Event('keydown'), { key: 'Escape' }))
+    s.canvas.dispatchEvent(s.event('pointerup', tx - (cancel ? 0 : 6), y))
+    if (cancel) { expect(s.onCommit).not.toHaveBeenCalled(); expect(s.onPreview.mock.lastCall).toEqual([cage, false]) }
+    else expect(s.onCommit.mock.lastCall?.[0].positions.length).toBe(36)
+    s.editor.dispose()
+  }
+})
+
+it('refuses same-face point contact instead of committing a collapsed quad', () => {
+  const s = setup({ mode: 'points', controlNet: true })
+  s.layer.pointerDown!(s.event('pointerdown', 100, 100))
+  s.canvas.dispatchEvent(s.event('pointermove', 150, 100))
+  s.canvas.dispatchEvent(s.event('pointerup', 150, 100))
+  expect(s.onCommit).not.toHaveBeenCalled()
+  expect(s.onPreview.mock.lastCall).toEqual([s.cage, false])
+  s.editor.dispose()
+})
 
 it('axis handles constrain translation and preserve unselected vertices', () => {
   const s = setup({ selection: [{kind:'vertex', index:0}], manipulator:'world' })
@@ -685,4 +731,33 @@ it('a selected rear boundary does not expose a D handle through a foreground fac
  const input:Cage={positions:Float64Array.from([0,0,0,5,0,0,5,5,0,0,5,0,-2,-2,2,7,-2,2,7,7,2,-2,7,2]),faces:[[0,1,2,3],[4,5,6,7]],creases:[]}
  const s=setup({duplicateHandle:true,selection:[{kind:'edge',index:0}]},input)
  expect((s.editor as any).duplicateAnchor()).toBeNull();s.editor.dispose()
+})
+
+for (const controlNet of [true, false]) it(`merges one open-chain endpoint and retains both selected edges (Control Net ${controlNet})`, () => {
+  const cage: Cage = { positions: Float64Array.from(chainMerge.input.positions), faces: chainMerge.input.faces, creases: [] }
+  const top = topology(cage), selection = chainMerge.selectedEdges.map(([a,b]) => ({kind:'edge' as const,index:top.edges.findIndex(e=>(e.a===a&&e.b===b)||(e.a===b&&e.b===a))}))
+  const s=setup({mode:'edges',controlNet,selection},cage)
+  const x=100+cage.positions[6]*10, y=100-(cage.positions[7]+cage.positions[25])*5
+  s.layer.pointerDown!(s.event('pointerdown',x,y));s.canvas.dispatchEvent(s.event('pointermove',x+chainMerge.delta*10,y))
+  expect(s.onCommit).not.toHaveBeenCalled();expect(s.onPreview.mock.lastCall?.[0].positions.length).toBe(33)
+  s.canvas.dispatchEvent(s.event('pointerup',x+chainMerge.delta*10,y))
+  expect(s.onCommit).toHaveBeenCalledTimes(1)
+  const [next,picks]=s.onCommit.mock.lastCall! as [Cage,{kind:string;index:number}[]]
+  expect(next.faces).toEqual(chainMerge.expected.faces)
+  expect(Math.max(...next.positions.map((v,i)=>Math.abs(v-chainMerge.expected.positions[i])))).toBeLessThan(5e-7)
+  expect(picks).toHaveLength(2);expect(picks.every(p=>p.kind==='edge')).toBe(true)
+  expect(Array.from(cage.positions)).toEqual(chainMerge.input.positions);s.editor.dispose()
+})
+it('cancels a previewed chain weld without changing topology or history',()=>{
+ const cage:Cage={positions:Float64Array.from(chainMerge.input.positions),faces:chainMerge.input.faces,creases:[]},top=topology(cage)
+ const selection=chainMerge.selectedEdges.map(([a,b])=>({kind:'edge' as const,index:top.edges.findIndex(e=>(e.a===a&&e.b===b)||(e.a===b&&e.b===a))}))
+ const s=setup({mode:'edges',controlNet:true,selection},cage),x=100+cage.positions[6]*10,y=100-(cage.positions[7]+cage.positions[25])*5
+ s.layer.pointerDown!(s.event('pointerdown',x,y));s.canvas.dispatchEvent(s.event('pointermove',x+chainMerge.delta*10,y));s.win.dispatchEvent(Object.assign(new Event('keydown'),{key:'Escape'}));s.canvas.dispatchEvent(s.event('pointerup',x+chainMerge.delta*10,y));expect(s.onCommit).not.toHaveBeenCalled();expect(s.onPreview.mock.lastCall).toEqual([cage,false]);s.editor.dispose()
+})
+
+for(const f of surfaceDrags) it(`direct surface-point pointer gesture matches native ${f.name}`,()=>{
+ const cage:Cage={positions:Float64Array.from(f.input.positions),faces:f.input.faces,creases:[]},anchors=cageVertexLimits(cage),a=anchors[f.vertex]
+ const s=setup({mode:'points',controlNet:false,neighbourRadius:0},cage),x=100+a[0]*10,y=100-a[1]*10,tx=x+f.travel[0]*10
+ s.layer.pointerDown!(s.event('pointerdown',x,y));s.canvas.dispatchEvent(s.event('pointermove',tx,y));expect(s.onCommit).not.toHaveBeenCalled();s.canvas.dispatchEvent(s.event('pointerup',tx,y));expect(s.onCommit).toHaveBeenCalledTimes(1)
+ const result=s.onCommit.mock.lastCall?.[0] as Cage;expect(result.faces).toEqual(f.expected.faces);expect(Math.max(...result.positions.map((v,i)=>Math.abs(v-f.expected.positions[i])))).toBeLessThan(5e-7);s.editor.dispose()
 })
