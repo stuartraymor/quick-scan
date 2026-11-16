@@ -85,4 +85,24 @@ describe('an overtaken kernel build', () => {
     await session.settled(30_000)
     expect(useReverse.getState().bodies).toHaveLength(1)
   })
+
+  it('coalesces edits and Undo during a pending build, never landing obsolete geometry', async () => {
+    const outline = sketchOf(1, (s) => addRectangle(s, [0, 0], [30, 20]))
+    setFeatures([outline, extrudeAll(2, outline, 0, 5, 'new')])
+    await vi.waitFor(() => expect(gate.asked()).toBe(1))
+    for (const height of [6, 7, 8, 7]) {
+      setFeatures([outline, extrudeAll(2, outline, 0, height, 'new')])
+      await Promise.resolve()
+    }
+    expect(gate.asked()).toBe(1)
+    gate.letGo()
+    await vi.waitFor(() => expect(gate.asked()).toBe(2))
+    expect(useReverse.getState().bodies).toHaveLength(0)
+    expect(useReverse.getState().building).toBe(true)
+    gate.letGo()
+    await session.settled(30_000)
+    expect(gate.asked()).toBe(2)
+    expect(useReverse.getState().bodies[0].volume).toBeCloseTo(30 * 20 * 7, 5)
+    expect(session.buildState()).toBe('built')
+  })
 })

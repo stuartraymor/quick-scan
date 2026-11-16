@@ -139,6 +139,9 @@ export function createReverseSession({
   /** Of those, the ones asked of the kernel's client — what a stop lets go
    *  with it; the rest are the surfaces' regions read again. */
   let kernelBuilds = 0
+  /** Editing can advance several revisions while CAD is calculating. Only
+   * the newest pending revision is worth sending to the worker. */
+  let rebuildQueued = false
   /** What each stop of a build said, in order — what a wait the stop fell
    *  in answers (settled). */
   const stopsSaid: string[] = []
@@ -241,6 +244,7 @@ export function createReverseSession({
     const version = re.buildVersion
     const ticket = ++latestBuild
     if (re.features.length === 0) {
+      rebuildQueued = false
       meshes.clear()
       topologies.clear()
       re.finishBuild([], [])
@@ -261,6 +265,7 @@ export function createReverseSession({
     // for. A first sketch once stood five minutes behind a kernel that did
     // not answer, and was then told it had failed.
     if (steps.length === 0) {
+      rebuildQueued = false
       meshes.clear()
       topologies.clear()
       // A build all the same, of no step: what a change answers says so.
@@ -269,6 +274,8 @@ export function createReverseSession({
       landed = version
       return
     }
+    if (kernelBuilds > 0) { rebuildQueued = true; return }
+    rebuildQueued = false
     const sketches = new Map(built.filter((f): f is SketchFeature => f.kind === 'sketch').map((f) => [f.id, f.sketch]))
     re.beginBuild()
     running++
@@ -283,7 +290,7 @@ export function createReverseSession({
         // what waits on the store finds the session idle when it looks.
         running--
         kernelBuilds--
-        if (!answer || ticket !== latestBuild) return
+        if (!answer || ticket !== latestBuild || version !== useReverse.getState().buildVersion) return
         // A body the build left as it was comes back the very object it
         // was, so what the viewport made of its mesh stays.
         meshes.clear()
@@ -313,10 +320,11 @@ export function createReverseSession({
         if (c !== client) return
         running--
         kernelBuilds--
-        if (ticket !== latestBuild) return
+        if (ticket !== latestBuild || version !== useReverse.getState().buildVersion) return
         landed = version
         useReverse.getState().failBuild(message(e))
       })
+      .finally(() => { if (c === client && rebuildQueued) schedule() })
   }
 
   /** The surfaces' regions read again in their boxes, written into the
@@ -406,7 +414,7 @@ export function createReverseSession({
 
   const buildState = (): BuildState => {
     const re = useReverse.getState()
-    if (scheduled || running > 0) return 'building'
+    if (scheduled || running > 0 || rebuildQueued) return 'building'
     if (re.kernelStatus === 'ready' && landed === re.buildVersion) return 'built'
     return re.features.length === 0 && landed === null ? 'none' : 'waiting'
   }
@@ -472,6 +480,7 @@ export function createReverseSession({
       c.onFailure = null
       running -= kernelBuilds
       kernelBuilds = 0
+      rebuildQueued = false
       scanSent = null
       scanSending = null
       // The new kernel builds once it has the scan — held till then, and

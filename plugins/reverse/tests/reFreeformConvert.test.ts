@@ -22,6 +22,19 @@ vi.setConfig({ testTimeout: 120_000 })
 
 const kernelPromise = ReKernel.load()
 
+it('enumerates identical rectangular face incidences without repeated whole-body lookup', async () => {
+  const k = await kernelPromise
+  for (const c of [grid(9, 9), cube, torus(8, 6, 20, 5)]) {
+    const patches = cagePatches(c, 1)
+    const made = patchesBody(k, { ...patches, blocks: patches.blocks }, true, true)
+    try {
+      expect(k.openEdgeLength(made.shape, true)).toBeCloseTo(k.openEdgeLength(made.shape), 9)
+      const before = k.edges(made.shape, .01), after = k.edges(made.shape, .01, true)
+      expect(after).toEqual(before)
+    } finally { k.release(made.shape) }
+  }
+})
+
 function cage(vertices: Vec3[], faces: number[][], creases: [number, number][] = []): Cage {
   return { positions: Float64Array.from(vertices.flat()), faces, creases }
 }

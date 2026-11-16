@@ -21,6 +21,7 @@ import type { ConvertReport, PatchSet } from './freeform/convert'
 import type { FreeformOp, ShellReport } from './freeform/shell'
 import type { ReWorkerRequest, ReWorkerResponse } from './reService'
 import type { Sketch } from './sketch'
+import type { MeasuredTriangles } from './freeform/deviationRefinement'
 
 export interface BuildAnswer {
   results: FeatureResult[]
@@ -303,6 +304,15 @@ export class ReClient {
     return result.values
   }
 
+  /** Refine actual CAD-facet measurements without blocking viewport input. */
+  async refineSurfaceDeviation(data: MeasuredTriangles, tolerance: number): Promise<MeasuredTriangles> {
+    const copy = { positions: data.positions.slice(), triangles: data.triangles.slice(), values: data.values.slice() }
+    const result = await this.request<Extract<ReWorkerResponse, { type: 'refine-deviation-ok' }>>(
+      { type: 'refine-deviation', requestId: this.nextId++, data: copy, tolerance },
+      [copy.positions.buffer, copy.triangles.buffer, copy.values.buffer], HEAVY_MS)
+    return result.data
+  }
+
   /** The live map against the last preview's solid or against bodies of
    *  the last build. Null when a newer map has been asked for since. */
   async map(source: 'preview' | 'bodies', bodyIds: number[], range: number): Promise<SparseField | null> {
@@ -341,9 +351,9 @@ export class ReClient {
 
   /** The given solid bodies of the last build, meshed to a chord — with
    *  `sheets`, the sheets among them too. */
-  async referenceMeshes(bodyIds: number[], chord: number, sheets = false): Promise<KernelMesh[]> {
+  async referenceMeshes(bodyIds: number[], chord: number, sheets = false, analysisGrid = false): Promise<KernelMesh[]> {
     const requestId = this.nextId++
-    const res = await this.request<Extract<ReWorkerResponse, { type: 'reference-ok' }>>({ type: 'reference', requestId, bodyIds, chord, ...(sheets ? { sheets } : {}) }, [], HEAVY_MS)
+    const res = await this.request<Extract<ReWorkerResponse, { type: 'reference-ok' }>>({ type: 'reference', requestId, bodyIds, chord, ...(sheets ? { sheets } : {}), ...(analysisGrid ? { analysisGrid } : {}) }, [], HEAVY_MS)
     return res.meshes
   }
 

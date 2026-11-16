@@ -10,7 +10,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useShell } from '../../../src/state/shellStore'
 import * as THREE from 'three'
 import type { Vec3 } from '../../../src/core/types'
-import { change } from '../app/reCommandCore'
+import { editCage } from '../app/reCommandCore'
 import { reverseSession } from '../app/reSession'
 import { scanPaths } from '../app/reNetworkCommands'
 import type { FreeformFeature } from '../core/features'
@@ -92,7 +92,8 @@ export function FreeformEditor() {
   const manipTrigger = useRef<HTMLButtonElement>(null)
   const manipPopup = useRef<HTMLDivElement>(null)
   const [pending, setWorking] = useState(false)
-  const working = pending || state.building
+  const working = pending || state.kernelStatus !== 'ready'
+  const rebuilding = state.building
   const [error, setError] = useState('')
   const [commandDialog, setCommandDialog] = useState<'delete-all' | OffsetCommand | null>(null)
   const [bridgeMessage, setBridgeMessage] = useState<string | null>(null)
@@ -229,7 +230,7 @@ export function FreeformEditor() {
     return () => { useShell.getState().setInspectorOpen(wasOpen) }
   }, [])
   async function commit(next: Cage, nextSelection: FreeformSelection[] = [], snapMode = snap, projection = snapType, fitToScan = feature?.fitToScan, refitTolerance = feature?.refitTolerance) {
-    if (busy.current || useReverse.getState().building) return
+    if (busy.current || useReverse.getState().kernelStatus !== 'ready') return
     const target = current.current.id
     busy.current = true; setWorking(true); setError(''); setMenu(null)
     try {
@@ -237,7 +238,7 @@ export function FreeformEditor() {
       if (next.faces.length > 200_000) throw new Error('The cage exceeds the 200,000-face editing limit.')
       const data = { positions: Array.from(next.positions), faces: next.faces, creases: next.creases,
         ...(fitToScan === undefined ? {} : { fitToScan }), ...(refitTolerance === undefined ? {} : { refitTolerance }) }
-      const result = await change(() => {
+      const result = editCage(() => {
         const st = useReverse.getState()
         if (target === null) {
           const created = st.addFreeform({ ...data, steps: 2, snap: snapMode, snapType: projection === 'ray' ? 'ray' : undefined })
@@ -253,11 +254,14 @@ export function FreeformEditor() {
         return target
       })
       if (alive.current) { setId(result); setCorners([]); if(!cage || cage.positions.length!==next.positions.length || JSON.stringify(cage.faces)!==JSON.stringify(next.faces)) setHidden([]) }
-      const built = useReverse.getState().results[result]
-      if (built?.status === 'failed' && alive.current) setError(`The cage was saved, but its CAD surface could not be built: ${built.message ?? 'Build failed'}. Undo is available.`)
     } catch (e) { if (alive.current) setError(e instanceof Error ? e.message : String(e)) }
     finally { busy.current = false; if (alive.current) setWorking(false) }
   }
+  useEffect(() => {
+    if (rebuilding || id === null) return
+    const built = state.results[id]
+    if (built?.status === 'failed') setError(`The cage was saved, but its CAD surface could not be built: ${built.message ?? 'Build failed'}. Undo is available.`)
+  }, [rebuilding, id, state.results])
   const snapMode = (on: boolean) => { if (busy.current || on === snap) return; setSnap(on); if (cage) void commit(cage, selection, on) }
   const applyOffset = () => {
     if (!cage || !offsetText.trim() || !commandDialog || commandDialog === 'delete-all') return
@@ -388,10 +392,14 @@ export function FreeformEditor() {
     if (!scene || !layer.current) return
     const editor = layer.current
     const view = reSceneOf(scene)
-    const finishedSurface = !working && editedBodies.length === 1 ? view.bodyMeshes.get(editedBodies[0])?.geometry : undefined
+    const candidate = !rebuilding && !working && editedBodies.length === 1 ? view.bodyMeshes.get(editedBodies[0])?.geometry : undefined
+    // The document's finished build can render before the scene effect has
+    // installed its mesh. Never label the previous revision's colors as CAD.
+    const finishedSurface = candidate?.getAttribute('position').array === reverseSession()?.meshes.get(editedBodies[0])?.positions
+      ? candidate : undefined
     if (display === 'deviation') { setRange(null); setDeviationError(false) }
     editor.set(cage, {
-      enabled: !working && commandDialog === null && bridgeMessage === null, rebuilding: working, extrapolate: tool === 'extrapolate', mode, selection, hiddenFaces: hidden, duplicateHandle: duplicate, controlNet, opacity, showEdges: surfaceView === 'solid-edges', manipulator: snap ? undefined : frame,
+      enabled: !working && commandDialog === null && bridgeMessage === null, rebuilding, extrapolate: tool === 'extrapolate', mode, selection, hiddenFaces: hidden, duplicateHandle: duplicate, controlNet, opacity, showEdges: surfaceView === 'solid-edges', manipulator: snap ? undefined : frame,
       strength: strength / 100, neighbourRadius: neighbours ? 0 : scene.layerHost().modelRadius() * .1,
       creating: (!cage || tool === 'add-face' || tool === 'rectangle') && !working, creationCorners: corners,
       creationTool: tool === 'rectangle' ? 'rectangle' : tool === 'add-face' ? 'face' : undefined,
@@ -444,10 +452,15 @@ export function FreeformEditor() {
       },
       snapPoint: snapProjector, rayPoint: rayProjector, refitPoint: refitProjector, fitToScan: feature?.fitToScan, display, tolerance, colouring, finishedSurface, deviationReference,
       measureLiveDeviation,
+      refineDeviation: async (data, threshold) => {
+        const client = reverseSession()?.client()
+        if (!client) throw new Error('Reference scan unavailable')
+        return client.refineSurfaceDeviation(data, threshold)
+      },
       readDeviationMesh: async () => {
         const client = reverseSession()?.client()
         if (!client) throw new Error('Finished CAD unavailable')
-        const [mesh] = await client.referenceMeshes(editedBodies, .001, true)
+        const [mesh] = await client.referenceMeshes(editedBodies, .001, true, true)
         if (!mesh?.indices.length) throw new Error('Finished CAD has no triangles')
         return mesh
       },
@@ -459,7 +472,7 @@ export function FreeformEditor() {
       onDeviation: value => { setRange(value); setDeviationError(false) },
       onDeviationError: () => { setRange(null); setDeviationError(true) },
     })
-  }, [scene, cage, corners, tool, mode, selection, hidden, duplicate, strength, neighbours, snap, snapProjector, rayProjector, refitProjector, frame, controlNet, opacity, surfaceView, display, tolerance, colouring, working, editedBodies, bodyGeometryVersion, brushArea, brushRadius, brushStrength, brushFixBoundary, commandDialog, bridgeMessage, feature?.fitToScan, measureLiveDeviation, deviationReference])
+  }, [scene, cage, corners, tool, mode, selection, hidden, duplicate, strength, neighbours, snap, snapProjector, rayProjector, refitProjector, frame, controlNet, opacity, surfaceView, display, tolerance, colouring, working, rebuilding, editedBodies, bodyGeometryVersion, brushArea, brushRadius, brushStrength, brushFixBoundary, commandDialog, bridgeMessage, feature?.fitToScan, measureLiveDeviation, deviationReference])
   useEffect(() => { setPicked({ feature, items: feature ? selectionHistory.current.get(feature) ?? [] : [] }); setMenu(null) }, [feature])
   const topologyKey=cage?JSON.stringify([cage.positions.length,cage.faces]):''
   useEffect(()=>{setHidden([])},[id,topologyKey])
@@ -508,7 +521,7 @@ export function FreeformEditor() {
     document.addEventListener('keydown', key, true)
     return () => document.removeEventListener('keydown', key, true)
   }, [cage, selection, selectionMenu, manipMenu, menu, menuText, working, tool, commandDialog, bridgeMessage, displayOptions])
-  const history = (redo: boolean) => { if (busy.current || useReverse.getState().building) return; setMenu(null); redo ? state.redoFeatures() : state.undoFeatures() }
+  const history = (redo: boolean) => { if (busy.current) return; setMenu(null); redo ? state.redoFeatures() : state.undoFeatures() }
   const pickMode = (value: typeof mode) => { setMode(value); setSelectionMenu(null); setMenu(null) }
   const commandButton = (name: EditorAction, context = false) => <button key={name} type="button" role={context ? 'menuitem' : undefined}
     data-test={`freeform-${name}`} aria-label={labels[name]} title={labels[name]} disabled={working || (name === 'bridge' ? !cage || !bridgeCommandAvailable(cage, selection) : context && name === 'delete' && !selection.length ? !cage : !available?.[name])}
@@ -589,7 +602,7 @@ export function FreeformEditor() {
         </small>
         <small>{!cage?.faces.length ? 'No surface to measure.' : range ? `${range.preview ? 'Preview' : 'CAD'} samples: Min ${length.fmt(range.min)} · Max ${length.fmt(range.max)} · RMS ${length.fmt(range.rms)}` : deviationError ? 'Deviation measurement unavailable' : 'Measuring visible surface…'}</small>
         {!!cage?.faces.length && range && <small className="ff-tolerance-result" data-outside={Math.max(-range.min, range.max) > tolerance}>
-          {range.preview ? working ? 'Rebuilding and measuring the finished CAD surface…' : 'Release to measure the finished CAD surface'
+          {range.preview ? rebuilding ? 'Updating finished CAD measurements…' : 'Release to measure the finished CAD surface'
             : Math.max(-range.min, range.max) > tolerance ? 'Sampled surface exceeds tolerance' : 'Sampled surface within tolerance'}
         </small>}
       </div>}

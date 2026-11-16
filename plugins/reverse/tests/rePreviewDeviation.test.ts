@@ -40,10 +40,17 @@ it('measures through the worker protocol, keeps caller data, and follows scan re
     await expect(client.previewSurfaceDeviation(points)).rejects.toThrow('reference scan')
     await client.setScan(scan(0), null, triangles())
     expect(Array.from(await client.previewSurfaceDeviation(points))).toEqual([2,-3])
+    const { refineDeviation } = await import('../core/freeform/deviationRefinement')
+    const surface = new NominalSurface(scan(0), triangles())
+    const data = { positions: new Float32Array([-2,-1,.002,2,-1,.03,0,1,-.02]), triangles: new Uint32Array([0,1,2]), values: new Float32Array([.002,.03,-.02]) }
+    const before = structuredClone(data)
+    expect(await client.refineSurfaceDeviation(data, .01)).toEqual(refineDeviation(data, p => previewDeviation(p, surface), .01))
+    expect(data).toEqual(before)
     expect(Array.from(points)).toEqual([0,0,2,0,0,-3])
     await client.setScan(scan(1), null, triangles())
     expect(Array.from(await client.previewSurfaceDeviation(points))).toEqual([1,-4])
     await client.setScan(null, null)
     await expect(client.previewSurfaceDeviation(points)).rejects.toThrow('reference scan')
+    await expect(client.refineSurfaceDeviation(data, .01)).rejects.toThrow('reference scan')
   } finally { client.dispose() }
 }, 120000)

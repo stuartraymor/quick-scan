@@ -9,8 +9,97 @@ import mergeFixtures from './fixtures/freeform-merge-reference.json'
 import chainMerge from './fixtures/freeform-chain-merge-reference.json'
 import surfaceDrags from './fixtures/freeform-surface-drag-reference.json'
 import snappedDrags from './fixtures/freeform-snapped-point-reference.json'
+import aligned from './fixtures/freeform-aligned-edge-reference.json'
+import { addRectangle } from '../core/freeform/edit'
 
 afterEach(() => vi.unstubAllGlobals())
+
+it('measures shared large-cage preview vertices without multiplying queries and accepts editing during CAD rebuild', () => {
+  const cage = addRectangle({positions:new Float64Array(),faces:[],creases:[]}, [0,0,.02], [5,0,0], [0,5,0], 10, 10)
+  const measure = vi.fn((p:Float32Array) => Float32Array.from({length:p.length/3},(_,i)=>p[i*3+2]))
+  const range = vi.fn()
+  const s = setup({display:'deviation',rebuilding:true,measureDeviation:async p=>measure(p),measureLiveDeviation:measure,onDeviation:range},cage)
+  expect(measure.mock.calls[0][0].length/3).toBeLessThan(2000)
+  expect(range).toHaveBeenLastCalledWith(expect.objectContaining({preview:true,min:expect.closeTo(-.02),max:expect.closeTo(-.02)}))
+  const before = measure.mock.calls.length
+  s.layer.hover!({x:100,y:100},false)
+  expect(measure.mock.calls.length).toBe(before)
+  expect(s.layer.pointerDown!(s.event('pointerdown',100,100))).toBe(true)
+  s.canvas.dispatchEvent(s.event('pointermove',90,110))
+  s.canvas.dispatchEvent(s.event('pointerup',90,110))
+  expect(s.onCommit).toHaveBeenCalledOnce()
+  s.editor.dispose()
+})
+
+it('reallocates the color atlas after topology changes and keeps it through hover', async () => {
+  const finished = () => new THREE.BufferGeometry().setAttribute('position',new THREE.Float32BufferAttribute([0,0,.02,5,0,.02,0,5,.02],3))
+  const a=finished(), b=finished(), onDeviation=vi.fn()
+  let faces=2
+  const readDeviationMesh=vi.fn(async()=>({positions:a.getAttribute('position').array as Float32Array,indices:Uint32Array.of(0,1,2),
+    analysisGrid:{coordinates:Float32Array.of(0,0,0,1,0,0,0,1,0),positions:new Float32Array(17*17*faces*3),size:17,faces}}))
+  const measureDeviation=vi.fn(async(p:Float32Array)=>new Float32Array(p.length/3).fill(.02))
+  const options={display:'deviation' as const,readDeviationMesh,measureDeviation,measureLiveDeviation:(p:Float32Array)=>new Float32Array(p.length/3),onDeviation}
+  const s=setup({...options,finishedSurface:a})
+  await vi.waitFor(()=>expect(onDeviation.mock.lastCall?.[0]?.preview).toBe(false))
+  const mesh=()=>s.partGroup.getObjectByName('freeform-deviation-surface') as THREE.Mesh
+  const material=mesh().material as THREE.Material, shader:any={vertexShader:'#include <begin_vertex>',fragmentShader:'#include <color_fragment>',uniforms:{}}
+  material.onBeforeCompile(shader,{} as THREE.WebGLRenderer)
+  const first=shader.uniforms.analysisGrid.value, disposed=vi.spyOn(first,'dispose'),version=material.version
+  expect(first.image.height).toBe(34)
+  s.layer.hover!({x:125,y:100},false)
+  expect(material.version).toBe(version)
+  expect(shader.uniforms.analysisGrid.value).toBe(first)
+  s.editor.set(s.cage,{...options,finishedSurface:a,tolerance:.04})
+  expect(readDeviationMesh).toHaveBeenCalledTimes(1)
+  expect(measureDeviation).toHaveBeenCalledTimes(2)
+  expect(shader.uniforms.analysisGrid.value.image.data[0]).toBeCloseTo(-.5)
+  faces=4;onDeviation.mockClear();s.editor.set(s.cage,{...options,finishedSurface:b})
+  await vi.waitFor(()=>expect(onDeviation.mock.lastCall?.[0]?.preview).toBe(false))
+  expect(disposed).toHaveBeenCalledOnce()
+  expect(shader.uniforms.analysisGrid.value).not.toBe(first)
+  expect(shader.uniforms.analysisGrid.value.image.height).toBe(68)
+  expect(shader.uniforms.analysisGridSize.value.y).toBe(1)
+  expect(readDeviationMesh).toHaveBeenCalledTimes(2)
+  s.editor.set(s.cage,{...options,finishedSurface:b,deviationReference:{}})
+  await vi.waitFor(()=>expect(readDeviationMesh).toHaveBeenCalledTimes(3))
+  s.editor.dispose();a.dispose();b.dispose()
+})
+
+it('captures both aligned edge endpoints, cancels atomically and commits one shared seam', () => {
+  for (const cancel of [true, false]) {
+    const cage: Cage = { positions: Float64Array.from(aligned.input.positions), faces: aligned.input.faces, creases: [] }
+    const edge = topology(cage).edges.findIndex(e => e.a === 1 && e.b === 2)
+    const s = setup({mode:'edges',controlNet:true,selection:[{kind:'edge',index:edge}]}, cage)
+    s.layer.pointerDown!(s.event('pointerdown',80,110))
+    s.canvas.dispatchEvent(s.event('pointermove',120,110))
+    expect(s.onPreview.mock.lastCall?.[0].faces).toEqual(aligned.expected.faces)
+    if (cancel) s.win.dispatchEvent(Object.assign(new Event('keydown'),{key:'Escape'}))
+    s.canvas.dispatchEvent(s.event('pointerup',120,110))
+    if (cancel) expect(s.onCommit).not.toHaveBeenCalled()
+    else {
+      expect(s.onCommit).toHaveBeenCalledTimes(1)
+      const out = s.onCommit.mock.lastCall![0] as Cage
+      expect(out.faces).toEqual(aligned.expected.faces)
+      expect(Math.max(...out.positions.map((v,i)=>Math.abs(v-aligned.expected.positions[i])))).toBeLessThan(1e-6)
+    }
+    s.editor.dispose()
+  }
+})
+
+it('keeps current preview visible during worker refinement and ignores an overtaken result', async () => {
+  let resolve!: (data: any) => void
+  const finished = new THREE.BufferGeometry().setAttribute('position',new THREE.Float32BufferAttribute([0,0,.02,5,0,.02,0,5,.02],3))
+  const refine = vi.fn((data: any) => new Promise<any>(r => {resolve=()=>r(data)}))
+  const onDeviation = vi.fn(), measure = (p:Float32Array)=>Float32Array.from({length:p.length/3},(_,i)=>p[i*3+2])
+  const s=setup({display:'deviation',finishedSurface:finished,measureDeviation:async p=>measure(p),measureLiveDeviation:measure,refineDeviation:refine,onDeviation})
+  await vi.waitFor(()=>expect(refine).toHaveBeenCalledTimes(1))
+  expect(s.partGroup.getObjectByName('freeform-deviation-surface')?.visible).toBe(true)
+  s.editor.set(s.cage,{display:'shaded'})
+  onDeviation.mockClear();resolve(undefined)
+  await new Promise(r=>setTimeout(r,0))
+  expect(onDeviation).not.toHaveBeenCalled()
+  s.editor.dispose();finished.dispose()
+})
 
 it('refines curved colors without changing CAD-sample statistics when tolerance changes', async () => {
   const finished = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([-2,-1,2,2,-1,2,0,1,2],3))
@@ -359,6 +448,75 @@ it('does not commit clicks or out-and-back gestures', () => {
   s.layer.pointerDown!(s.event('pointerdown')); s.canvas.dispatchEvent(s.event('pointermove', 120)); s.canvas.dispatchEvent(s.event('pointerup'))
   expect(s.onCommit).not.toHaveBeenCalled(); s.editor.dispose()
 })
+it('pulls a snapped duplicate off the scan while held and projects only on release', () => {
+  const snapPoint = vi.fn((p: [number,number,number]): [number,number,number] => [p[0],p[1],0])
+  const options: FreeformEditorOptions = {selection:[{kind:'edge',index:0}],duplicateHandle:true,snapPoint,
+    display:'deviation',measureDeviation:async p=>new Float32Array(p.length/3),
+    measureLiveDeviation:p=>Float32Array.from({length:p.length/3},(_,i)=>p[3*i+2])}
+  const s=setup(options),camera=s.host.camera()
+  camera.position.set(0,-20,20);camera.up.set(0,0,1);camera.lookAt(0,0,0);camera.updateMatrixWorld()
+  s.editor.set(s.cage,{...options,onCommit:s.onCommit,onPreview:s.onPreview})
+  const at=(s.editor as any).duplicateAnchor().at
+  s.layer.pointerDown!(s.event('pointerdown',at.x,at.y));snapPoint.mockClear()
+  s.canvas.dispatchEvent(s.event('pointermove',at.x,at.y+30))
+  const draft=s.onPreview.mock.lastCall?.[0] as Cage
+  expect(draft.faces).toHaveLength(2)
+  expect(Math.abs(draft.positions[14])).toBeGreaterThan(1)
+  expect(snapPoint).not.toHaveBeenCalled()
+  const analysis=s.partGroup.getObjectByName('freeform-deviation-surface') as THREE.Mesh
+  expect(analysis.visible).toBe(true)
+  expect([...analysis.geometry.getAttribute('signedDeviation').array].some(v=>Math.abs(v)>1)).toBe(true)
+  s.canvas.dispatchEvent(s.event('pointerup',at.x,at.y+30))
+  expect(s.onCommit).toHaveBeenCalledTimes(1)
+  const result=s.onCommit.mock.lastCall?.[0] as Cage
+  expect(result.faces).toHaveLength(2)
+  expect([...result.positions].filter((_,i)=>i%3===2).every(z=>z===0)).toBe(true)
+  expect(Array.from(result.positions.slice(0,12))).toEqual(Array.from(s.cage.positions))
+  s.editor.dispose()
+})
+
+it('lets a Closest Point vertex follow the drag plane without scan queries while held', () => {
+  const snapPoint=vi.fn((p:[number,number,number]):[number,number,number]=>[p[0],p[1],0])
+  const s=setup({snapPoint,controlNet:true,mode:'points'})
+  const camera=s.host.camera();camera.position.set(0,-20,20);camera.up.set(0,0,1);camera.lookAt(0,0,0);camera.updateMatrixWorld()
+  s.layer.pointerDown!(s.event('pointerdown'));snapPoint.mockClear()
+  s.canvas.dispatchEvent(s.event('pointermove',100,130))
+  expect(Math.abs(s.onPreview.mock.lastCall?.[0].positions[2])).toBeGreaterThan(1)
+  expect(snapPoint).not.toHaveBeenCalled()
+  s.win.dispatchEvent(Object.assign(new Event('keydown'),{key:'Escape'}))
+  expect(s.onCommit).not.toHaveBeenCalled();expect(s.onPreview.mock.lastCall).toEqual([s.cage,false]);s.editor.dispose()
+})
+
+it('retains moving geometry and measured colors through a selection option refresh', () => {
+  const options: FreeformEditorOptions={display:'deviation',measureDeviation:async p=>new Float32Array(p.length/3),
+    measureLiveDeviation:p=>Float32Array.from({length:p.length/3},(_,i)=>p[3*i])}
+  const s=setup(options)
+  s.layer.pointerDown!(s.event('pointerdown'));s.canvas.dispatchEvent(s.event('pointermove',120))
+  const geometry=()=>((s.partGroup.getObjectByName('freeform-deviation-surface') as THREE.Mesh).geometry.getAttribute('position').array)
+  const moving=Array.from(geometry())
+  s.editor.set(s.cage,{...options,selection:[{kind:'vertex',index:0}],onCommit:s.onCommit,onPreview:s.onPreview})
+  expect(Array.from(geometry())).toEqual(moving)
+  expect(s.partGroup.getObjectByName('freeform-deviation-surface')?.visible).toBe(true)
+  s.canvas.dispatchEvent(s.event('pointerup',120))
+  expect(s.onCommit).toHaveBeenCalledTimes(1)
+  expect(s.onCommit.mock.lastCall?.[0].positions[0]).toBeCloseTo(2)
+  s.editor.dispose()
+})
+
+it('snaps a lifted vertex on release outside the scan silhouette', () => {
+  const snapPoint=vi.fn((p:[number,number,number]):[number,number,number]=>[p[0],p[1],0])
+  const s=setup({snapPoint,controlNet:true,mode:'points'})
+  const camera=s.host.camera();camera.position.set(0,-20,20);camera.up.set(0,0,1);camera.lookAt(0,0,0);camera.updateMatrixWorld()
+  s.layer.pointerDown!(s.event('pointerdown'))
+  s.host.pickScan=()=>null
+  s.canvas.dispatchEvent(s.event('pointermove',100,130))
+  expect(Math.abs(s.onPreview.mock.lastCall?.[0].positions[2])).toBeGreaterThan(1)
+  s.canvas.dispatchEvent(s.event('pointerup',100,130))
+  expect(s.onCommit).toHaveBeenCalledTimes(1)
+  expect(s.onCommit.mock.lastCall?.[0].positions[2]).toBe(0)
+  expect(snapPoint).toHaveBeenCalled();s.editor.dispose()
+})
+
 it('moves an edge normally and extends only the enabled duplicate handle', () => {
   for (const duplicateHandle of [false, true]) {
     const s = setup({ selection: [{ kind: 'edge', index: 0 }], duplicateHandle })

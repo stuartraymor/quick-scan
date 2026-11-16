@@ -34,12 +34,13 @@ export function repairBoundary(c: Cage): Cage {
   return out
 }
 
-/** Two one-face corners or two two-face boundary rows joined at one point.
- * Native repair leaves both observed arrangements in place, including when
+/** Two or three one-face corners, or two two-face rows joined at one point.
+ * Native repair leaves these observed arrangements in place, including when
  * an independent connected fan is repaired by the same warning click. */
 function pointOnlyJunction(c: Cage, v: number): boolean {
   const t = topology(c), faces = t.vertexFaces[v]
-  if (![2, 4].includes(faces.length) || t.vertexEdges[v].filter(e => t.edges[e].faces.length === 1).length !== 4) return false
+  const groupCount = faces.length === 3 ? 3 : 2
+  if (![2, 3, 4].includes(faces.length) || t.vertexEdges[v].filter(e => t.edges[e].faces.length === 1).length !== 2 * groupCount) return false
   const remaining = new Set(faces), groups: number[][] = []
   while (remaining.size) {
     const group = [remaining.values().next().value!]; remaining.delete(group[0])
@@ -50,7 +51,7 @@ function pointOnlyJunction(c: Cage, v: number): boolean {
     }
     groups.push(group)
   }
-  if (groups.length !== 2 || groups.some(g => g.length !== faces.length / 2)) return false
+  if (groups.length !== groupCount || groups.some(g => g.length !== faces.length / groupCount)) return false
   for (const group of groups) orderedFan(c, v, group)
   return true
 }
@@ -79,7 +80,7 @@ function orderedFan(c: Cage, v: number, faces: number[]) {
 
 function repairFan(c: Cage, v: number): Cage {
   const t = topology(c), faces = t.vertexFaces[v]
-  if (![3, 4, 5, 6, 7, 8].includes(faces.length)) throw unsupported()
+  if (![3, 4, 5, 6, 7, 8, 9, 12].includes(faces.length)) throw unsupported()
   orderedFan(c, v, faces)
   const next = new Map<number, number[]>(), previous = new Map<number, number[]>()
   for (const edge of t.edges) {
@@ -98,7 +99,7 @@ function repairFan(c: Cage, v: number): Cage {
       if (strip.includes(p)) throw unsupported()
       if (prepend) strip.unshift(p); else strip.push(p)
       if (t.vertexFaces[p].length === 1) break
-      if (![2, 3, 4, 5, 6, 7, 8].includes(t.vertexFaces[p].length)) throw unsupported()
+      if (![2, 3, 4, 5, 6, 7, 8, 9, 12].includes(t.vertexFaces[p].length)) throw unsupported()
       // Adjacent irregular fans belong to the same strip. A disconnected
       // fan or branching boundary is still refused rather than guessed.
       orderedFan(c, p, t.vertexFaces[p])

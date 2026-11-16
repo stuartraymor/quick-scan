@@ -1,5 +1,35 @@
 # 1.1.68
 
+## 1.1.81 — New Freeform editing responsiveness
+
+- Commit quad edits and Undo/Redo immediately while CAD rebuilds in the background; coalesce pending revisions and reject stale surface colors.
+- Remove repeated whole-body edge lookup for rectangular freeform CAD faces, preserving connectivity and seam checks.
+- Blend live and fallback tolerance sample colors consistently; bound synchronous preview queries on large cages while retaining full finished CAD measurement.
+
+Full QuickSurface parity and instant large-part finished analysis remain incomplete.
+
+## 1.1.80
+
+- Tiled tolerance color charts support large manual freeform parts, including the saved 100-quad / 1600-CAD-face case, with gradual measured color fades.
+- Reuse measured charts when only the tolerance threshold changes; geometry and reference changes still invalidate measurements.
+- Reduce redundant CAD sampling and coordinate extraction on known rectangular freeform faces while preserving CAD tessellation, statistics and trimmed-face checks.
+
+## 1.1.79
+
+- Complete single-edge contact welds both boundary endpoints in one correction, matching the saved native aligned-edge result.
+- Tolerance interpolates colors on regular samples of eligible CAD faces, producing gradual curved bands while retaining the original CAD geometry and numerical statistics.
+- Unsupported color charts retain measured adaptive refinement, now in the worker so it does not block viewport input.
+
+## 1.1.78
+
+- Closest Point duplicate-handle and vertex/edge drags move freely off the scan while held and snap on release, following native observations.
+- Measure the lifted preview during dragging and preserve snapping when release occurs outside the scan silhouette.
+
+## 1.1.77
+
+- Repair the native-observed 9- and 12-face irregular boundary fans.
+- Repair supported fans beside three-way point-only junctions while retaining unresolved junction geometry and its warning.
+
 ## 1.1.76
 
 - Preserve input orientation for open reference scans, including curved OBJ sheets; retain closed inside-out correction.

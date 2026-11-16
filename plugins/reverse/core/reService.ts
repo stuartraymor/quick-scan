@@ -24,6 +24,7 @@ import { createParallel, type HelperPool } from './reParallel'
 import { patchesBody, type ConvertReport, type PatchSet } from './freeform/convert'
 import { freeformShell, type FreeformOp, type ShellReport } from './freeform/shell'
 import type { Sketch } from './sketch'
+import { refineDeviation, type MeasuredTriangles } from './freeform/deviationRefinement'
 
 export type ReWorkerRequest =
   /** Load the kernel. Answered once it is ready to build. */
@@ -63,6 +64,7 @@ export type ReWorkerRequest =
    *  or to the given bodies of the last build, for the vertices within
    *  reach of it — see liveMap.ts. */
   | { type: 'preview-deviation'; requestId: number; positions: Float32Array }
+  | { type: 'refine-deviation'; requestId: number; data: MeasuredTriangles; tolerance: number }
   | { type: 'map'; requestId: number; source: 'preview' | 'bodies'; bodyIds: number[]; range: number }
   /** The scan against the given bodies in detail: the field, each face's
    *  reading, the worst spots — see compareDetail.ts — the scan read by
@@ -77,7 +79,7 @@ export type ReWorkerRequest =
   /** The given solid bodies of the last build meshed to a chord, for the
    *  Deviation workspace to measure against — see compare.ts. With
    *  `sheets`, the sheets among them too. */
-  | { type: 'reference'; requestId: number; bodyIds: number[]; chord: number; sheets?: boolean }
+  | { type: 'reference'; requestId: number; bodyIds: number[]; chord: number; sheets?: boolean; analysisGrid?: boolean }
   /** A freeform cage's patches made a body and written as STEP, nothing
    *  kept — see freeform/convert.ts. */
   | { type: 'freeform-convert'; requestId: number; patches: PatchSet; name: string; step: boolean; op?: FreeformOp }
@@ -100,6 +102,7 @@ export type ReWorkerResponse =
   | { type: 'overlaps-ok'; requestId: number; overlaps: Overlap[]; done: boolean }
   | { type: 'scan-ok'; requestId: number }
   | { type: 'preview-deviation-ok'; requestId: number; values: Float32Array }
+  | { type: 'refine-deviation-ok'; requestId: number; data: MeasuredTriangles }
   | { type: 'map-ok'; requestId: number; field: SparseField }
   | { type: 'compare-ok'; requestId: number; detail: CompareDetail }
   | { type: 'check-ok'; requestId: number; check: BodyCheck | null }
@@ -330,6 +333,10 @@ export function createReService(loadKernel: () => Promise<ReKernel>, loadManifol
         const values = b.previewSurfaceDeviation(msg.positions)
         return answer({ type: 'preview-deviation-ok', requestId: msg.requestId, values }, [values.buffer])
       }
+      if (msg.type === 'refine-deviation') {
+        const data = refineDeviation(msg.data, positions => b.previewSurfaceDeviation(positions), msg.tolerance)
+        return answer({ type: 'refine-deviation-ok', requestId: msg.requestId, data }, [data.positions.buffer, data.triangles.buffer, data.values.buffer])
+      }
       if (msg.type === 'map') {
         // The same bodies at the same range on the same scan: the last reading
         // as it was, not the bodies meshed and every vertex read again — a
@@ -382,11 +389,12 @@ export function createReService(loadKernel: () => Promise<ReKernel>, loadManifol
       if (msg.type === 'reference') {
         // A sheet is meshed as a solid is when it is asked for: meshes()
         // leaves sheets out of a reference, which has an inside.
-        const meshes = msg.sheets ? msg.bodyIds.flatMap((id) => b.meshById(id, msg.chord)?.mesh ?? []) : b.meshes(msg.bodyIds, msg.chord)
+        const meshes = msg.sheets ? msg.bodyIds.flatMap((id) => b.meshById(id, msg.chord, msg.analysisGrid)?.mesh ?? []) : b.meshes(msg.bodyIds, msg.chord)
         const transfer: Transferable[] = []
         for (const m of meshes) {
           transfer.push(m.positions.buffer, m.normals.buffer, m.indices.buffer)
           if (m.faceHash) transfer.push(m.faceHash.buffer)
+          if (m.analysisGrid) transfer.push(m.analysisGrid.coordinates.buffer, m.analysisGrid.positions.buffer)
         }
         return answer({ type: 'reference-ok', requestId: msg.requestId, meshes }, transfer)
       }

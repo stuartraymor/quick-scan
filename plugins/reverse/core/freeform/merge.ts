@@ -85,13 +85,31 @@ export function mergeChainEnds(cage: Cage, indices: readonly number[]): number[]
  * moved cage supplies the surface anchors; four simultaneous corrections
  * preserve them after replacing the source pole by the target pole. */
 export function mergeBoundaryPoint(input: Cage, from: number, to: number, contact: 'point' | 'chain' | 'surface-point' = 'point'): { cage: Cage; vertex: number } {
+  const result = mergeBoundaryContacts(input, [[from, to]], contact)
+  return { cage: result.cage, vertex: result.mapping[to] }
+}
+
+/** A complete single-edge contact captures both ends in the same correction
+ * solve. Sequential point welds change the anchors before the second contact. */
+export function mergeBoundaryEdge(input: Cage, from: readonly [number, number], to: readonly [number, number]) {
+  const top = topology(input)
+  for (const pair of [from, to]) if (!top.edges.some(e => edgeKey(e.a, e.b) === edgeKey(...pair) && e.faces.length === 1)) {
+    throw new Error('Only boundary edges can be joined.')
+  }
+  return mergeBoundaryContacts(input, [[from[0], to[0]], [from[1], to[1]]], 'chain')
+}
+
+function mergeBoundaryContacts(input: Cage, pairs: readonly (readonly [number, number])[], contact: 'point' | 'chain' | 'surface-point') {
   const refuse = () => { throw new Error('These boundary points cannot be merged without damaging the surface.') }
   const n = input.positions.length / 3, before = topology(input)
   const boundary = (v: number) => before.vertexEdges[v].some(e => before.edges[e].faces.length === 1)
+  if (new Set(pairs.flat()).size !== pairs.length * 2) return refuse()
+  for (const [from, to] of pairs) {
   if (![from, to].every(v => Number.isInteger(v) && v >= 0 && v < n) || from === to) return refuse()
   if (!boundary(from) || !boundary(to) || input.faces.some(f => f.includes(from) && f.includes(to))) return refuse()
+  }
   const moved = cloneCage(input)
-  moved.positions.set(vertexAt(input, to), from * 3)
+  for (const [from, to] of pairs) moved.positions.set(vertexAt(input, to), from * 3)
   // A native chain contact preserves the dragged chain's anchors before
   // capturing its endpoint; individual point contact uses the captured pole.
   // Native crease flags survive the weld, but its four contact corrections
@@ -99,8 +117,9 @@ export function mergeBoundaryPoint(input: Cage, from: number, to: number, contac
   // as its uncreased counterpart; including sharp masks pins its midpoint.
   const contactLimits = (c: Cage) => cageVertexLimits({ ...c, creases: [] })
   const anchors = contactLimits(contact === 'point' ? moved : input)
-  const map = (v: number) => { const w = v === from ? to : v; return w > from ? w - 1 : w }
-  const kept = Array.from({ length: n }, (_, v) => v).filter(v => v !== from)
+  const targets = new Map(pairs), kept = Array.from({ length: n }, (_, v) => v).filter(v => !targets.has(v))
+  const mapping = Array.from({ length: n }, (_, v) => kept.indexOf(targets.get(v) ?? v))
+  const map = (v: number) => mapping[v]
   const cage: Cage = {
     positions: Float64Array.from(kept.flatMap(v => vertexAt(moved, v))),
     faces: input.faces.map(f => f.map(map)),
@@ -142,5 +161,5 @@ export function mergeBoundaryPoint(input: Cage, from: number, to: number, contac
   }
   // Keep crease serialization canonical when unrelated creases are present.
   cage.creases = cage.creases.filter((e, i, all) => all.findIndex(q => edgeKey(...q) === edgeKey(...e)) === i)
-  return { cage, vertex: map(to) }
+  return { cage, mapping }
 }

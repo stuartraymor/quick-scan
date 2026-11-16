@@ -161,6 +161,9 @@ type Shared = { volume: number; mesh: KernelMesh } | null
 
 export class Builder {
   private bodies = new Map<number, Body>()
+  // Only exact body objects constructed from full rectangular freeform
+  // charts qualify. Trim/join replacements are new bodies and do not inherit it.
+  private untrimmedFreeformBodies = new WeakMap<Body, number>()
   /** Bodies gone into another in this build — joined by a feature that
    *  bridged them, combined into it — by the id of the one each went into:
    *  a later feature naming the one gone finds what it became. */
@@ -1526,7 +1529,7 @@ export class Builder {
       return { hash: f.hash, fingerprint, ...(f.fullTurn !== undefined ? { fullTurn: f.fullTurn } : {}), ...(copy ? { copy } : {}) }
     })
     const byHash = new Map(faces.map((f) => [f.hash, f.fingerprint]))
-    const edges: EdgeInfo[] = k.edges(body.shape, deflection).map((e) => {
+    const edges: EdgeInfo[] = k.edges(body.shape, deflection, this.untrimmedFreeformBodies.has(body)).map((e) => {
       const sides = e.faceHashes.map((h) => byHash.get(h)).filter((f): f is FaceFingerprint => f !== undefined)
       // The edge belongs to the newest of its faces: a fillet's edge on a
       // face the fillet made is the fillet's, not the extrude's.
@@ -3381,10 +3384,12 @@ export class Builder {
 
   /** A body of the last build by id with its mesh — to a chord, if one is
    *  given — or null for a body that is not there. */
-  meshById(id: number, chord?: number): { id: number; mesh: KernelMesh } | null {
+  meshById(id: number, chord?: number, analysisGrid = false): { id: number; mesh: KernelMesh } | null {
     const b = this.bodyById(id)
     if (!b) return null
     const mesh = chord !== undefined ? this.kernel.mesh(b.shape, chord, 0.1) : this.meshes([id])[0]
+    const chartSize = this.untrimmedFreeformBodies.get(b)
+    if (mesh && analysisGrid) mesh.analysisGrid = this.kernel.deviationGrid(b.shape, mesh, chartSize ?? 17, chartSize !== undefined)
     return mesh ? { id: this.resolve(id), mesh } : null
   }
 
@@ -3835,7 +3840,15 @@ export class Builder {
       }
       if (step.kind === 'freeform') {
         const made = this.freeformOf(step)
-        this.bodies.set(step.id, { name: step.name, shape: made.shape, origins: new Map(k.faceHashes(made.shape).map((h) => [h, step.id])), surface: !(made.shell ? made.shell.solid : made.report.solid) })
+        const body = { name: step.name, shape: made.shape, origins: new Map(k.faceHashes(made.shape).map((h) => [h, step.id])), surface: !(made.shell ? made.shell.solid : made.report.solid) }
+        this.bodies.set(step.id, body)
+        if (!step.ask) {
+          // A fallback can represent every subdivided cage cell as a separate
+          // bilinear CAD face. Keep sixteen color intervals per original quad,
+          // rather than multiplying analysis density by that fragmentation.
+          const cellsOnly = made.report.faces === step.faces.length * 4 ** made.steps
+          this.untrimmedFreeformBodies.set(body, cellsOnly ? Math.max(2, 16 / 2 ** made.steps + 1) : 17)
+        }
         results.push({ id: step.id, status: 'ok', freeform: { convert: made.report, ...(made.shell ? { shell: made.shell } : {}), steps: made.steps, ...(made.missed ? { missed: made.missed } : {}) } })
         return
       }

@@ -106,11 +106,11 @@ export function freeformBody(k: ReKernel, cage: Cage, opts: { steps: number; sna
           patches.grids.reduce((sum, g) => sum + (g.rows - 1) * (g.cols - 1), 0) <= 2048) {
         const perimeter = expectedBoundary(patches)
         const limit = perimeter * 1.03 + .05
-        if (k.openEdgeLength(made.shape) > limit) {
+        if (k.openEdgeLength(made.shape, true) > limit) {
           let alternative: ReturnType<typeof patchesBody> | undefined
           try {
             alternative = patchesBody(k, patchSet(patches), true, true)
-            if (alternative.report.valid && k.openEdgeLength(alternative.shape) <= limit) {
+            if (alternative.report.valid && k.openEdgeLength(alternative.shape, true) <= limit) {
               k.release(made.shape)
               made = alternative
               alternative = undefined

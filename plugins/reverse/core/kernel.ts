@@ -1538,6 +1538,101 @@ export class ReKernel {
 
   // ---- reading the topology --------------------------------------------------------
 
+  /** Regular samples of the actual untrimmed CAD faces, with their parameter
+   * coordinates on the existing render mesh. Never replaces CAD positions. */
+  deviationGrid(shape: Shape, mesh: KernelMesh, size = 17, rectangularCharts = false): KernelMesh['analysisGrid'] {
+    if (!mesh.faceHash) return undefined
+    const faces = this.occt.getSubShapes(shape, 'face')
+    try {
+      // Charts are tiled by the viewer. Bound CPU/sample memory, not the
+      // height of the old single-column texture (which rejected large parts).
+      if (!faces.length || faces.length * size * size > 4_000_000) return undefined
+      const positions = new Float32Array(faces.length * size * size * 3)
+      const coordinates = new Float32Array(mesh.positions.length), owner = new Int32Array(mesh.positions.length / 3).fill(-1)
+      const byHash = new Map(faces.map((f, i) => [this.occt.hashCode(f, HASH_BOUND), i]))
+      const bounds = faces.map(f => this.occt.uvBounds(f))
+      for (let face = 0; face < faces.length; face++) {
+        const f = faces[face], b = bounds[face]
+        if (!(b.uMax > b.uMin && b.vMax > b.vMin)) return undefined
+        for (let j = 0; j < size; j++) for (let i = 0; i < size; i++) {
+          const u = b.uMin + (b.uMax - b.uMin) * i / (size - 1), v = b.vMin + (b.vMax - b.vMin) * j / (size - 1)
+          if (!rectangularCharts && this.occt.classifyPointOnFace(f, u, v) === 'out') return undefined
+          const p = this.occt.pointOnSurface(f, u, v)
+          positions.set([p.x,p.y,p.z], ((face * size + j) * size + i) * 3)
+        }
+      }
+      for (let t = 0; t < mesh.faceHash.length; t++) {
+        const face = byHash.get(mesh.faceHash[t])
+        if (face === undefined) return undefined
+        const b = bounds[face]
+        for (let j = 0; j < 3; j++) {
+          const index = mesh.indices[t * 3 + j]
+          if (owner[index] === face) continue
+          if (owner[index] !== -1) return undefined // Shared UV seams need separate vertex charts.
+          owner[index] = face
+          const k = index * 3, target = {x:mesh.positions[k],y:mesh.positions[k+1],z:mesh.positions[k+2]}
+          // The existing grid gives a local seed. A bounded surface Newton
+          // solve avoids a global extrema search for every tessellation point.
+          let seed = 0, distance = Infinity
+          for (let n = 0; n < size * size; n++) {
+            const at = (face * size * size + n) * 3
+            const d = (positions[at]-target.x)**2 + (positions[at+1]-target.y)**2 + (positions[at+2]-target.z)**2
+            if (d < distance) { distance = d; seed = n }
+          }
+          let u = b.uMin + (b.uMax-b.uMin) * (seed % size)/(size-1)
+          let v = b.vMin + (b.vMax-b.vMin) * Math.floor(seed/size)/(size-1)
+          const hu=(b.uMax-b.uMin)*1e-5, hv=(b.vMax-b.vMin)*1e-5
+          // Invert the already sampled grid first. This is only an initial
+          // guess: the actual CAD surface below verifies every coordinate.
+          // Bilinear cells (common in large snapped parts) need no repeated
+          // WASM derivative calls after this local solve.
+          let gu=seed%size, gv=Math.floor(seed/size)
+          for (let iteration=0;iteration<4;iteration++) {
+            const x=Math.min(size-2,Math.floor(gu)),y=Math.min(size-2,Math.floor(gv)),s=gu-x,t=gv-y
+            const at=(face*size*size+y*size+x)*3
+            const a:number[]=[],c:number[]=[],r:number[]=[]
+            for(let axis=0;axis<3;axis++) {
+              const p00=positions[at+axis],p10=positions[at+3+axis],p01=positions[at+size*3+axis],p11=positions[at+(size+1)*3+axis]
+              a.push((p10-p00)*(1-t)+(p11-p01)*t)
+              c.push((p01-p00)*(1-s)+(p11-p10)*s)
+              r.push([target.x,target.y,target.z][axis]-((p00*(1-s)+p10*s)*(1-t)+(p01*(1-s)+p11*s)*t))
+            }
+            const aa=dot(a as Vec3,a as Vec3),cc=dot(c as Vec3,c as Vec3),ac=dot(a as Vec3,c as Vec3),ar=dot(a as Vec3,r as Vec3),cr=dot(c as Vec3,r as Vec3),det=aa*cc-ac*ac
+            if(det<=1e-20*aa*cc)break
+            const du=(ar*cc-cr*ac)/det,dv=(cr*aa-ar*ac)/det
+            gu=Math.max(0,Math.min(size-1,gu+du));gv=Math.max(0,Math.min(size-1,gv+dv))
+            if(Math.abs(du)+Math.abs(dv)<1e-7)break
+          }
+          u=b.uMin+(b.uMax-b.uMin)*gu/(size-1);v=b.vMin+(b.vMax-b.vMin)*gv/(size-1)
+          let evaluated: XYZ | undefined
+          for (let iteration = 0; iteration < 8; iteration++) {
+            const p=this.occt.pointOnSurface(faces[face],u,v)
+            evaluated=p
+            if(Math.hypot(target.x-p.x,target.y-p.y,target.z-p.z)<1e-5)break
+            const pu=this.occt.pointOnSurface(faces[face],u+hu,v), pv=this.occt.pointOnSurface(faces[face],u,v+hv)
+            const a=[(pu.x-p.x)/hu,(pu.y-p.y)/hu,(pu.z-p.z)/hu], c=[(pv.x-p.x)/hv,(pv.y-p.y)/hv,(pv.z-p.z)/hv], r=[target.x-p.x,target.y-p.y,target.z-p.z]
+            const aa=a.reduce((s,x)=>s+x*x,0),cc=c.reduce((s,x)=>s+x*x,0),ac=a.reduce((s,x,i)=>s+x*c[i],0),ar=a.reduce((s,x,i)=>s+x*r[i],0),cr=c.reduce((s,x,i)=>s+x*r[i],0),det=aa*cc-ac*ac
+            if (det<=1e-20*aa*cc) break
+            const du=(ar*cc-cr*ac)/det,dv=(cr*aa-ar*ac)/det
+            u=Math.max(b.uMin,Math.min(b.uMax,u+du));v=Math.max(b.vMin,Math.min(b.vMax,v+dv))
+            evaluated=undefined
+            if (Math.abs(du)<hu*1e-3 && Math.abs(dv)<hv*1e-3) break
+          }
+          const p=evaluated ?? this.occt.pointOnSurface(faces[face],u,v)
+          const local = Math.hypot(p.x-target.x,p.y-target.y,p.z-target.z) <= 1e-5
+          const uv = local
+            ? {u,v} : this.occt.uvFromPoint(faces[face],target)
+          const verified = local ? p : this.occt.pointOnSurface(faces[face],uv.u,uv.v)
+          if (Math.hypot(verified.x-target.x,verified.y-target.y,verified.z-target.z)>1e-5 ||
+              uv.u<b.uMin-hu || uv.u>b.uMax+hu || uv.v<b.vMin-hv || uv.v>b.vMax+hv) return undefined
+          coordinates.set([(uv.u-b.uMin)/(b.uMax-b.uMin),(uv.v-b.vMin)/(b.vMax-b.vMin),face],k)
+        }
+      }
+      if (!positions.every(Number.isFinite) || !coordinates.every(Number.isFinite)) return undefined
+      return {positions,coordinates,size,faces:faces.length}
+    } finally { for (const f of faces) this.occt.release(f) }
+  }
+
   /** The hashes of a shape's faces, in the kernel's order. */
   faceHashes(shape: Shape): number[] {
     return run('Listing the faces', () => this.occt.subShapeHashes(shape, 'face', HASH_BOUND))
@@ -1556,10 +1651,10 @@ export class ReKernel {
   }
 
   /** Total length of edges incident to only one face. */
-  openEdgeLength(shape: Shape): number {
+  openEdgeLength(shape: Shape, rectangularFaces = false): number {
     return run('Measuring open edges', () => {
       const o = this.occt
-      const facesOf = parseHistory(o.edgeToFaceMap(shape, HASH_BOUND))
+      const facesOf = this.edgeFaces(shape, rectangularFaces)
       const edges = o.getSubShapes(shape, 'edge')
       try {
         return edges.reduce((sum, edge) =>
@@ -1583,12 +1678,32 @@ export class ReKernel {
 
   /** Every edge with the geometry a fingerprint is made of, its faces by
    *  hash, and its polyline for drawing at the given chord tolerance. */
-  edges(shape: Shape, deflection: number): RawEdge[] {
+  /** Rectangular freeform faces have no periodic seam edges. Enumerating
+   * their incidences once avoids the wrapper's whole-body edge search. */
+  private edgeFaces(shape: Shape, rectangularFaces: boolean): Map<number, number[]> {
+    const o = this.occt
+    if (!rectangularFaces) return parseHistory(o.edgeToFaceMap(shape, HASH_BOUND))
+    const result = new Map(o.subShapeHashes(shape, 'edge', HASH_BOUND).map(hash => [hash, [] as number[]]))
+    const faces = o.getSubShapes(shape, 'face')
+    try {
+      for (const face of faces) {
+        const hash = o.hashCode(face, HASH_BOUND)
+        for (const edge of o.subShapeHashes(face, 'edge', HASH_BOUND)) {
+          const uses = result.get(edge)
+          if (uses) uses.push(hash)
+          else result.set(edge, [hash])
+        }
+      }
+      return result
+    } finally { for (const face of faces) o.release(face) }
+  }
+
+  edges(shape: Shape, deflection: number, rectangularFaces = false): RawEdge[] {
     return run('Reading the edges', () => {
       const o = this.occt
       // Which faces meet at each edge: flat groups of an edge hash, a
       // count, and that many face hashes.
-      const facesOf = parseHistory(o.edgeToFaceMap(shape, HASH_BOUND))
+      const facesOf = this.edgeFaces(shape, rectangularFaces)
       const wire = o.wireframe(shape, deflection)
       const polylines = new Map<number, Float32Array>()
       const g = wire.edgeGroups

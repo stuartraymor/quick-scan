@@ -210,6 +210,17 @@ export async function change<T>(job: (s: ReverseSession) => T, { now = false }: 
   return out
 }
 
+/** Manual cage edits need no picks on the previous CAD body. Commit the
+ * document/history synchronously; the session builds its newest revision
+ * in the background. Commands that depend on CAD still use change(). */
+export function editCage<T>(job: () => T): T {
+  session()
+  requireFree()
+  showWorkspace()
+  try { return job() }
+  finally { closeBoxes() }
+}
+
 export const allFeatures = (): Feature[] => [...re().features, ...re().rolledBack]
 
 /** A name that is a number written out — "185", "3.0009765625" — as that

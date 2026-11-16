@@ -1,10 +1,22 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { expect, it } from 'vitest'
 import { type Cage, topology } from '../core/freeform/cage'
-import { mergeBoundaryPoint, mergeChainEnds } from '../core/freeform/merge'
+import { mergeBoundaryEdge, mergeBoundaryPoint, mergeChainEnds } from '../core/freeform/merge'
+import aligned from './fixtures/freeform-aligned-edge-reference.json'
 import { irregularBoundaryVertices } from '../core/freeform/repair'
 import fixtures from './fixtures/freeform-merge-reference.json'
 import creased from './fixtures/freeform-creased-merge.json'
+
+it('welds both ends of the saved native aligned edge in one anchor solve', () => {
+  const cage: Cage = { positions: Float64Array.from(aligned.input.positions), faces: aligned.input.faces, creases: [] }
+  for (const v of aligned.source) cage.positions[v * 3] += 4
+  const before = structuredClone(cage), out = mergeBoundaryEdge(cage, [1,2], [4,7]).cage
+  expect(out.faces).toEqual(aligned.expected.faces)
+  expect(Math.max(...out.positions.map((v,i) => Math.abs(v - aligned.expected.positions[i])))).toBeLessThan(1e-6)
+  expect(topology(out).edges.filter(e => e.faces.length === 2)).toHaveLength(1)
+  expect(cage).toEqual(before)
+  expect(() => mergeBoundaryEdge(cage, [1,2], [7,4])).toThrow()
+})
 
 for (const trial of fixtures) it(`matches saved native ${trial.name} coordinates and oriented connectivity`, () => {
   const cage: Cage = { positions: Float64Array.from(trial.input.positions), faces: trial.input.faces.map(f => [...f]), creases: [] }

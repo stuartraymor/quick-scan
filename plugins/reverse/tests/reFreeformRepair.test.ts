@@ -9,12 +9,13 @@ import larger from './fixtures/freeform-larger-repair.json'
 import creased from './fixtures/freeform-creased-repair.json'
 import higher from './fixtures/freeform-higher-repair.json'
 import adjacent from './fixtures/freeform-adjacent-repair.json'
+import largerBranched from './fixtures/freeform-larger-branched-repair.json'
 
 const cage = (c: { positions: number[]; faces: number[][] }): Cage => ({ positions: Float64Array.from(c.positions), faces: c.faces.map(f => [...f]), creases: [] })
 const canonical = (f: number[]) => { const i = f.indexOf(Math.min(...f)); return [...f.slice(i), ...f.slice(0, i)].join(',') }
 
 describe('native-observed larger and mixed boundary repairs', () => {
-  for (const sample of [...larger, ...higher, ...adjacent]) it(`matches ${sample.name} without changing unresolved junctions`, () => {
+  for (const sample of [...larger, ...higher, ...adjacent, ...largerBranched]) it(`matches ${sample.name} without changing unresolved junctions`, () => {
     const input = cage(sample.before), original = structuredClone(input), out = repairBoundary(input)
     expect(out.positions.length).toBe(sample.after.positions.length)
     expect(Math.max(...out.positions.map((v, i) => Math.abs(v - sample.after.positions[i])))).toBeLessThan(5e-7)
@@ -23,6 +24,16 @@ describe('native-observed larger and mixed boundary repairs', () => {
     expect(input).toEqual(original)
     expect(topology(out).edges.every(e => e.faces.length <= 2)).toBe(true)
   })
+})
+
+it('retains the three-way junction and refuses repeated repair without mutating geometry', () => {
+  const sample = largerBranched.find(s => s.name === 'three-branch-mixed')!
+  const input = cage(sample.before), out = repairBoundary(input)
+  expect(Array.from(out.positions.slice(36, 66))).toEqual(sample.before.positions.slice(36, 66))
+  expect(irregularBoundaryVertices(out)).toEqual([12])
+  const before = structuredClone(out)
+  expect(() => repairBoundary(out)).toThrow(/could not be repaired/)
+  expect(out).toEqual(before)
 })
 
 describe('native-observed isolated irregular boundary repair', () => {

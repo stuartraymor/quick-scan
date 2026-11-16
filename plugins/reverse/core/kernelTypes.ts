@@ -42,6 +42,7 @@ export interface KernelMesh {
   /** The faces the mesher did not draw whole with the others (kernelMesh.ts);
    *  absent where it drew them all. */
   faults?: MeshFault[]
+  analysisGrid?: { coordinates: Float32Array; positions: Float32Array; size: number; faces: number }
 }
 
 /** A face of a shape as the kernel reads it: its session hash (the name

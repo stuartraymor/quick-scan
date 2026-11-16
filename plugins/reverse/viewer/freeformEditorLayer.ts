@@ -2,7 +2,7 @@ import { snapRayReach } from '../core/freeform/snap'
 import { preservesRefitOrientation, refitDirection } from '../core/freeform/smoothSnap'
 import { vertexNormals } from '../core/freeform/limit'
 import type { PreviewColouring } from '../core/freeform/previewDeviation'
-import { refineDeviation } from '../core/freeform/deviationRefinement'
+import { refineDeviation, type MeasuredTriangles } from '../core/freeform/deviationRefinement'
 // SPDX-License-Identifier: AGPL-3.0-only
 import * as THREE from 'three'
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js'
@@ -17,7 +17,9 @@ import { type Corner, cloneCage, edgeLine, extrapolateEdges, movePoints } from '
 import { subdivide } from '../core/freeform/subdivide'
 import { cageVertexLimits } from '../core/freeform/limit'
 import { moveSurfaceAnchor, surfaceAnchorDrag } from './freeformAnchorDrag'
-import { fitMergedContact, mergeBoundaryPoint, mergeChainEnds } from '../core/freeform/merge'
+import { fitMergedContact, mergeBoundaryEdge, mergeBoundaryPoint, mergeChainEnds } from '../core/freeform/merge'
+import { deviationAtlasValues } from '../core/freeform/deviationAtlas'
+import type { KernelMesh } from '../core/kernel'
 
 export interface FreeformDeviationRange {
   min: number
@@ -41,7 +43,8 @@ export interface FreeformEditorOptions {
   display?: FreeformDisplayMode
   tolerance?: number
   finishedSurface?: THREE.BufferGeometry
-  readDeviationMesh?(): Promise<{ positions: Float32Array; indices: Uint32Array }>
+  readDeviationMesh?(): Promise<{ positions: Float32Array; indices: Uint32Array; analysisGrid?: KernelMesh['analysisGrid'] }>
+  refineDeviation?(data: MeasuredTriangles, tolerance: number): Promise<MeasuredTriangles>
   deviationReference?: object
   colouring?: PreviewColouring
   measureDeviation?(positions: Float32Array): Promise<Float32Array>
@@ -107,7 +110,8 @@ function deviationSamples(positions: Float32Array, indices?: ArrayLike<number>) 
   return { positions: samples.subarray(0, count * 3), triangles }
 }
 
-type DeviationData = { positions: Float32Array; triangles: Uint32Array; values: Float32Array; statisticsValues?: Float32Array }
+type DeviationData = { positions: Float32Array; triangles: Uint32Array; values: Float32Array; statisticsValues?: Float32Array;
+  grid?: { coordinates: Float32Array; values: Float32Array; size: number; faces: number } }
 
 /** Plugin-owned cage selection and direct manipulation. The body remains a
  * kernel feature; this temporary control polygon never enters project state. */
@@ -131,7 +135,11 @@ export class FreeformEditorLayer {
   // Hover changes the control overlay, not the analysis shader. Retain its
   // material/program just as we retain the measured vertex buffers.
   private deviationMaterial: THREE.MeshBasicMaterial | null = null
-  private deviationColouring: PreviewColouring | null = null
+  private deviationColouring: string | null = null
+  private deviationTexture: THREE.DataTexture | null = null
+  private deviationTextureUniform: {value:THREE.DataTexture|null} = {value:null}
+  private deviationTextureData: {grid:NonNullable<DeviationData['grid']>;tolerance:number}|null = null
+  private deviationTextureSize = { value: new THREE.Vector2() }
   private pendingDeviation: Promise<DeviationData> | null = null
   private nextDeviation: { run(): void; cancel(): void } | null = null
 
@@ -153,7 +161,7 @@ export class FreeformEditorLayer {
       }
     })
   }
-  private preview: { cage: Cage; selection: FreeformPick[] } | null = null
+  private preview: { cage: Cage; selection: FreeformPick[]; freePull?: boolean } | null = null
   private placementPoint: Vec3 | null = null
   private rectangleStart: { x: number; y: number } | null = null
   private rectanglePreview: Vec3[] | null = null
@@ -287,7 +295,9 @@ export class FreeformEditorLayer {
     return (this.preview?.selection ?? this.selection).some(p => same(p, pick)) ? YELLOW : same(this.hovered, pick) ? HOVER : base
   }
   private surface(cage: Cage) {
-      const snap = this.options.fitToScan === false ? undefined : this.options.snapPoint
+      // Native Closest Point pulls stay in the drag plane until release, even with Snap ON.
+      // Measure that lifted surface rather than projecting the preview to the scan.
+      const snap = this.preview?.freePull || this.options.fitToScan === false ? undefined : this.options.snapPoint
       const ray = snap ? this.options.rayPoint : undefined
       const refit = snap && (this.preview || this.options.rebuilding) ? this.options.refitPoint : undefined
       if (this.surfaceCache?.cage === cage && this.surfaceCache.snap === snap && this.surfaceCache.ray === ray && this.surfaceCache.refit === refit) return this.surfaceCache
@@ -458,7 +468,7 @@ export class FreeformEditorLayer {
         material.colorWrite = material.depthWrite = false
       }
       if (display === 'deviation' && this.options.measureDeviation && surfacePositions.length) {
-        const { readDeviationMesh, measureDeviation, measureLiveDeviation, onDeviation, onDeviationError, tolerance = .01 } = this.options
+        const { readDeviationMesh, measureDeviation, measureLiveDeviation, refineDeviation: refineAsync, onDeviation, onDeviationError, tolerance = .01 } = this.options
         const source = finished ?? surfaceGeometry
         let analysisGeometry = new THREE.BufferGeometry()
         // The native analysis colors stay opaque when surface transparency changes.
@@ -497,6 +507,7 @@ export class FreeformEditorLayer {
             geometry.setIndex(new THREE.BufferAttribute(triangles, 1))
             geometry.computeVertexNormals()
             geometry.setAttribute('signedDeviation', new THREE.BufferAttribute(samples, 1))
+            if (data.grid) geometry.setAttribute('analysisCoordinates', new THREE.BufferAttribute(data.grid.coordinates, 3))
             if (analysisGeometry !== previous?.geometry) analysisGeometry.dispose()
             previous?.geometry.dispose()
             analysisGeometry = geometry
@@ -504,22 +515,67 @@ export class FreeformEditorLayer {
           }
           analysisMesh.geometry = analysisGeometry
           const passFail = this.options.colouring === 'pass-fail'
-          const colouring = passFail ? 'pass-fail' : 'gradient'
+          const grid = data.grid
+          if (grid && (this.deviationTextureData?.grid !== grid || this.deviationTextureData.tolerance !== tolerance)) {
+            const {width,height,columns,data:texels} = deviationAtlasValues(grid.values,grid.size,grid.faces,tolerance)
+            // WebGL texture storage is immutable: topology can change the
+            // face count, so allocate a new texture when its dimensions change.
+            if (this.deviationTexture?.image.width !== width || this.deviationTexture.image.height !== height) {
+              this.deviationTexture?.dispose()
+              this.deviationTexture = new THREE.DataTexture(undefined,width,height,THREE.RedFormat,THREE.FloatType)
+              this.deviationTextureUniform.value = this.deviationTexture
+            }
+            const texture = this.deviationTexture
+            texture.image = { data: texels, width, height }
+            texture.needsUpdate = true
+            this.deviationTextureSize.value.set(grid.size,columns)
+            this.deviationTextureData = {grid,tolerance}
+          }
+          const colouring = (passFail ? 'pass-fail' : 'gradient') + (grid ? '-grid' : '')
           if (this.deviationColouring !== colouring) {
             this.deviationColouring = colouring
             analysisMaterial.onBeforeCompile = shader => {
               shader.vertexShader = 'attribute float signedDeviation; varying float vSignedDeviation; varying vec3 vAnalysisNormal;\n' + shader.vertexShader.replace(
                 '#include <begin_vertex>', '#include <begin_vertex>\nvSignedDeviation = signedDeviation; vAnalysisNormal = normalMatrix * normal;')
-              shader.fragmentShader = 'varying float vSignedDeviation; varying vec3 vAnalysisNormal;\n' + shader.fragmentShader.replace(
-                '#include <color_fragment>', `
-                  float ratio = abs(vSignedDeviation);
+              if (grid) {
+                shader.uniforms.analysisGrid = this.deviationTextureUniform
+                shader.uniforms.analysisGridSize = this.deviationTextureSize
+                shader.vertexShader = 'attribute vec3 analysisCoordinates; varying vec3 vAnalysisCoordinates;\n' + shader.vertexShader.replace(
+                  '#include <begin_vertex>', '#include <begin_vertex>\nvAnalysisCoordinates = analysisCoordinates;')
+              }
+              const rampFunction = `vec3 analysisRamp(float deviation) {
+                  float ratio = abs(deviation);
                   float t = (ratio - 1.0) / 4.0;
                   vec3 outside = ${passFail ? 'vec3(0.51, 0.0, 0.0)' : `
-                    ratio > 5.0 ? vec3(0.25) : vSignedDeviation > 0.0
+                    ratio > 5.0 ? vec3(0.25) : deviation > 0.0
                       ? vec3(1.0, 1.0 - t, 0.0)
                       : vec3(0.0, 1.0 - t, 1.0)
                   `};
-                  vec3 ramp = ratio <= 1.0 ? vec3(0.0, 1.0, 0.0) : outside;
+                  return ratio <= 1.0 ? vec3(0.0, 1.0, 0.0) : outside;
+                }`
+              const gridFunction = grid ? `
+                uniform sampler2D analysisGrid; uniform vec2 analysisGridSize; varying vec3 vAnalysisCoordinates;
+                vec3 gridRamp(vec2 p) {
+                  int face=int(floor(vAnalysisCoordinates.z+0.5)), columns=int(analysisGridSize.y), size=int(analysisGridSize.x);
+                  ivec2 origin=ivec2(face % columns,face / columns)*size;
+                  return analysisRamp(texelFetch(analysisGrid,ivec2(p)+origin,0).r);
+                }
+                vec3 interpolatedRamp() {
+                  vec2 q=clamp(vAnalysisCoordinates.xy,0.0,1.0)*(analysisGridSize.x-1.0);
+                  vec2 a=min(floor(q),vec2(analysisGridSize.x-2.0)), f=q-a;
+                  return mix(mix(gridRamp(a),gridRamp(a+vec2(1,0)),f.x),mix(gridRamp(a+vec2(0,1)),gridRamp(a+vec2(1,1)),f.x),f.y);
+                }` : ''
+              // Native fades interpolate measured sample colors. Applying the
+              // discontinuous pass band after interpolating distance produced
+              // hard contours whenever editing switched to the live preview.
+              if (!grid) {
+                shader.vertexShader = 'varying vec3 vAnalysisColor;\n' + rampFunction + '\n' + shader.vertexShader.replace(
+                  '#include <begin_vertex>', '#include <begin_vertex>\nvAnalysisColor = analysisRamp(signedDeviation);')
+                shader.fragmentShader = 'varying vec3 vAnalysisColor;\n' + shader.fragmentShader
+              }
+              shader.fragmentShader = 'varying float vSignedDeviation; varying vec3 vAnalysisNormal;\n' + rampFunction + gridFunction + shader.fragmentShader.replace(
+                '#include <color_fragment>', `
+                  vec3 ramp = ${grid ? 'interpolatedRamp()' : 'vAnalysisColor'};
                   // Camera-space fill calibrated on independent plane and cylinder
                   // captures. It affects appearance only, never signed samples or
                   // the tolerance threshold. The reverse side is neutral gray;
@@ -532,7 +588,7 @@ export class FreeformEditorLayer {
                   diffuseColor.rgb = sRGBTransferEOTF(vec4(litRamp, 1.0)).rgb;
                 `)
             }
-            analysisMaterial.customProgramCacheKey = () => passFail ? 'freeform-tolerance-pass-fail' : 'freeform-tolerance-gradient'
+            analysisMaterial.customProgramCacheKey = () => 'freeform-tolerance-' + colouring
             analysisMaterial.needsUpdate = true
             }
             analysisMesh.visible = true
@@ -567,10 +623,11 @@ export class FreeformEditorLayer {
               positions.push(...smooth.points[vertex]); unique.set(vertex, index)
               return index
             })
-            // Dense refit previews already have four subdivision levels. Sample
-            // their shared rendered vertices directly rather than multiplying
-            // that dense mesh by another six triangles during every mouse move.
-            const data = smooth.faces.length > 4096
+            // Bound synchronous scan queries during interaction. Large cages
+            // already provide thousands of evaluated shared vertices; adding
+            // six triangles per triangle stalls D release and point dragging.
+            // Finished CAD retains its independent, dense measurement set.
+            const data = smooth.faces.length > 512
               ? { positions:Float32Array.from(positions), triangles:indices }
               : deviationSamples(Float32Array.from(positions), indices)
             try {
@@ -586,7 +643,7 @@ export class FreeformEditorLayer {
             if (!finished) onDeviation?.(null)
             let measured = this.deviationCache
             const refinementTolerance = finished && measureLiveDeviation ? tolerance : undefined
-            if (!measured || measured.source !== source || measured.refinementTolerance !== refinementTolerance) {
+            if (!measured || measured.source !== source || (!measured.value?.grid && measured.refinementTolerance !== refinementTolerance)) {
               const read = async (): Promise<DeviationData> => {
                 const mesh = finished && readDeviationMesh ? await readDeviationMesh() : {
                   positions: source.getAttribute('position').array as Float32Array,
@@ -594,9 +651,18 @@ export class FreeformEditorLayer {
                 }
                 const data = deviationSamples(mesh.positions, mesh.indices)
                 const measured = { ...data, values: await measureDeviation(data.positions) }
+                if ('analysisGrid' in mesh && mesh.analysisGrid) {
+                  const grid = mesh.analysisGrid
+                  const values = await measureDeviation(grid.positions)
+                  if (values.length !== grid.positions.length / 3 || !values.every(Number.isFinite)) throw new Error('Incomplete deviation grid.')
+                  return { positions:mesh.positions, triangles:mesh.indices!, values:measured.values.slice(0,mesh.positions.length/3),
+                    statisticsValues:measured.values, grid:{coordinates:grid.coordinates,values,size:grid.size,faces:grid.faces} }
+                }
+                if (finished && refineAsync) return {
+                  ...await refineAsync(measured, tolerance), statisticsValues: measured.values,
+                }
                 return finished && measureLiveDeviation
-                  ? { ...refineDeviation(measured, measureLiveDeviation, tolerance), statisticsValues: measured.values }
-                  : measured
+                  ? { ...refineDeviation(measured, measureLiveDeviation, tolerance), statisticsValues: measured.values } : measured
               }
               const result = finished ? read() : this.measurePreview(read)
               measured = { source, result, refinementTolerance }
@@ -1063,12 +1129,13 @@ export class FreeformEditorLayer {
       if (!start) return true
       const directPole = options.snapPoint && !grip && !duplicate && !anchorSolver &&
         vertices.length === 1 && hit.kind === 'vertex' ? vertexAt(original, vertices[0]) : null
+      const deferSnap = !!options.snapPoint && !options.rayPoint
       const anchorHit = directPole ? host.pickScan(e.clientX, e.clientY)?.point : undefined
       const rayReach = anchorHit ? snapRayReach(original) : 0
       const axis = options.refitPoint ? refitDirection(original) : null
       const checkedOrientation = axis && preservesRefitOrientation(original, axis) ? axis : null
       let current = original, changed = false, done = false, blocked = false, merging = false, nextSelection = this.selection.slice()
-      let activeContact: { from: number; to: number } | null = null
+      let activeContact: { from: number; to: number; otherTo?: number } | null = null
       // Direct point contact is paired in both display modes, including the
       // evaluated no-neighbour rule above. Constrained handles stay excluded.
       const chainEnds = !grip && !duplicate && hit.kind === 'edge' && this.selection.every(p => p.kind === 'edge')
@@ -1084,7 +1151,7 @@ export class FreeformEditorLayer {
         }
         host.setCursor(invalid ? 'not-allowed' : duplicate ? 'copy' : 'grabbing')
       }
-      const update = (ev: PointerEvent) => {
+      const update = (ev: PointerEvent, releasing = false) => {
         if (ev.pointerId !== e.pointerId) return
         merging = false
         const previousContact = activeContact
@@ -1098,13 +1165,14 @@ export class FreeformEditorLayer {
         const delta = next.sub(start).multiplyScalar(strength)
         if (grip?.kind === 'move') delta.copy(grip.axis).multiplyScalar(((ev.clientX-e.clientX)*grip.dx+(ev.clientY-e.clientY)*grip.dy)/grip.unit * (options.strength ?? 1))
         changed = delta.lengthSq() > 1e-16 && Math.hypot(ev.clientX - e.clientX, ev.clientY - e.clientY) >= 2
-        if (changed && directPole && anchorHit) {
+        if (changed && directPole && anchorHit && (!deferSnap || releasing)) {
           const target = host.pickScan(e.clientX + (ev.clientX-e.clientX)*strength, e.clientY + (ev.clientY-e.clientY)*strength)?.point
-          if (!target) { changed = current !== original; return }
-          const projected = new THREE.Vector3(...target).sub(new THREE.Vector3(...anchorHit))
-          // Reject a discontinuous change in depth, such as crossing a rim.
-          if (projected.distanceTo(delta) > rayReach) { changed = current !== original; return }
-          delta.copy(projected)
+          const projected = target ? new THREE.Vector3(...target).sub(new THREE.Vector3(...anchorHit)) : null
+          // A lifted Closest Point gesture can end beyond the scan silhouette.
+          // In that case retain its drag-plane position for closest projection,
+          // rather than accepting the still-unsnapped held preview.
+          if (projected && projected.distanceTo(delta) <= rayReach) delta.copy(projected)
+          else if (!deferSnap) { changed = current !== original; return }
         }
         if (changed && duplicate) {
           const edge = new THREE.Vector3(...vertexAt(original, duplicate.edge.b)).sub(new THREE.Vector3(...vertexAt(original, duplicate.edge.a)))
@@ -1136,7 +1204,7 @@ export class FreeformEditorLayer {
         // Keep the raw gesture for contact: fitting the approaching poles
         // first changes the joined surface on curved scans.
         const contactCage = changed && options.snapPoint && !options.rayPoint && mergeSources.length ? cloneCage(current) : null
-        if (changed && options.snapPoint) {
+        if (changed && options.snapPoint && (!deferSnap || releasing)) {
           for (let i = 0; i < current.positions.length / 3; i++) {
             const moved = i >= original.positions.length / 3 || [0, 1, 2].some(k => current.positions[i * 3 + k] !== original.positions[i * 3 + k])
             if (!moved) continue
@@ -1175,8 +1243,25 @@ export class FreeformEditorLayer {
           }).sort((a, b) => a.distance - b.distance)
           for (const candidate of candidates) {
             try {
-              const result = mergeBoundaryPoint(contactCage ?? current, mergeSource, candidate.v, chainEnds.length ? 'chain' : evaluatedPoint ? 'surface-point' : 'point')
-              const map = (v: number) => { const w = v === mergeSource ? candidate.v : v; return w > mergeSource ? w - 1 : w }
+              // A complete single side captures both matching boundary ends.
+              // Test both contacts before changing topology: a partial chain
+              // contact still follows the independently observed point path.
+              const otherFrom = chainEnds.find(v => v !== mergeSource)
+              const otherAt = otherFrom === undefined ? null : this.project(vertexAt(current, otherFrom))
+              const otherTo = this.selection.length === 1 && otherAt ? top.vertexEdges[candidate.v]
+                .map(i => top.edges[i]).filter(edge => edge.faces.length === 1)
+                .map(edge => edge.a === candidate.v ? edge.b : edge.a)
+                .find(v => {
+                  if (!visible.vertices[v] || vertices.includes(v)) return false
+                  const p = vertexAt(original, v), screen = this.project(p)
+                  return Math.hypot(screen.x - otherAt.x, screen.y - otherAt.y) <= 5 && Math.abs(screen.z - otherAt.z) <= .01 &&
+                    (previousContact?.otherTo === v || this.unobscured(p))
+                }) : undefined
+              const paired = otherTo !== undefined && otherFrom !== undefined
+                ? mergeBoundaryEdge(contactCage ?? current, [mergeSource, otherFrom], [candidate.v, otherTo]) : null
+              const result = paired ? { cage: paired.cage, vertex: paired.mapping[candidate.v] }
+                : mergeBoundaryPoint(contactCage ?? current, mergeSource, candidate.v, chainEnds.length ? 'chain' : evaluatedPoint ? 'surface-point' : 'point')
+              const map = (v: number) => { if (paired) return paired.mapping[v]; const w = v === mergeSource ? candidate.v : v; return w > mergeSource ? w - 1 : w }
               let joined = result.cage
               if (contactCage) {
                 const screen = this.project(evaluatedPoint ? anchors![candidate.v] : vertexAt(original, candidate.v))
@@ -1194,7 +1279,7 @@ export class FreeformEditorLayer {
                 }).filter(p => p.index >= 0)
               } else nextSelection = [{ kind: 'vertex', index: result.vertex }]
               merging = true
-              activeContact = { from: mergeSource, to: candidate.v }
+              activeContact = { from: mergeSource, to: candidate.v, otherTo }
               break
             } catch { /* Try another eligible target before refusing the contact. */ }
           }
@@ -1209,11 +1294,11 @@ export class FreeformEditorLayer {
           changed = false
           nextSelection = this.selection.slice()
         }
-        this.preview = changed ? {cage:current,selection:nextSelection} : null
+        this.preview = changed ? {cage:current,selection:nextSelection,freePull:deferSnap && !releasing} : null
         this.draw(current); options.onPreview?.(current, true)
       }
-      const move = (ev: PointerEvent) => {
-        try { update(ev) } catch (error) { finish(false); options.onError?.(error instanceof Error ? error : new Error(String(error))) }
+      const move = (ev: PointerEvent, releasing = false) => {
+        try { update(ev, releasing) } catch (error) { finish(false); options.onError?.(error instanceof Error ? error : new Error(String(error))) }
       }
       const finish = (accept: boolean) => {
         if (done) return
@@ -1235,7 +1320,7 @@ export class FreeformEditorLayer {
       }
       const end = (ev: PointerEvent) => {
         if (ev.pointerId !== e.pointerId) return
-        move(ev)
+        move(ev, true)
         const click = !changed && Math.hypot(ev.clientX - e.clientX, ev.clientY - e.clientY) < 2 && hit.kind === 'edge'
         finish(!blocked)
         // The scene owns/prevents pointerdown for direct manipulation, which
@@ -1330,6 +1415,8 @@ export class FreeformEditorLayer {
       this.cancelDrag?.(); this.clearDrawing(); this.surfaceCache = null; this.topologyCache = null; this.group.removeFromParent(); this.duplicate?.remove(); this.dragHint?.remove(); this.brushRing?.remove(); this.manipulator.dispose()
       this.paintedDeviation?.geometry.dispose(); this.paintedDeviation = null
       this.deviationMaterial?.dispose(); this.deviationMaterial = null; this.deviationColouring = null
+      this.deviationTexture?.dispose(); this.deviationTexture = null
+      this.deviationTextureUniform.value = null; this.deviationTextureData = null
       this.host.canvas.removeEventListener('dblclick', this.doubleClick); this.host.canvas.removeEventListener('contextmenu', this.contextMenu); this.host.claimDrag(false)
     }
   }
