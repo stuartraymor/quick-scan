@@ -176,15 +176,15 @@ export function FreeformEditor() {
   const deviationReference = useMemo(() => ({}), [scene, scanName, scanTriangles, scanAlignment])
   const refitPreview = !!feature?.refitTolerance && !feature.ask && !snapRegion && feature.fitToScan !== false && snapType !== 'ray'
   const raySurface = useMemo(() => {
-    if (!snap || (snapType !== 'ray' && !refitPreview) || !scanName || !scanTriangles) return null
+    if ((!snap || (snapType !== 'ray' && !refitPreview)) && display !== 'deviation' || !scanName || !scanTriangles) return null
     const session = reverseSession()
     if (!session) return null
     const paths = scanPaths(session)
     return new NominalSurface(paths.positions, paths.indices.slice())
-  }, [snap, snapType, refitPreview, scene, scanName, scanTriangles, scanAlignment])
+  }, [snap, snapType, refitPreview, display, scene, scanName, scanTriangles, scanAlignment])
   const refitProjector = useMemo(() => refitPreview && raySurface
     ? raySurface.projectAlong.bind(raySurface) : undefined, [refitPreview, raySurface])
-  const measureLiveDeviation = useMemo(() => refitPreview && raySurface
+  const measureLiveDeviation = useMemo(() => raySurface
     ? (positions: Float32Array) => previewDeviation(positions, raySurface) : undefined, [refitPreview, raySurface])
   const rayProjector = useMemo(() => {
     if (snapType !== 'ray' || !raySurface || !cage) return undefined

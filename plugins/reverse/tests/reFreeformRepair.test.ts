@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest'
 import { type Cage, topology } from '../core/freeform/cage'
 import { irregularBoundaryVertices, repairBoundary } from '../core/freeform/repair'
 import fixtures from './fixtures/freeform-boundary-repair.json'
+import multiple from './fixtures/freeform-multiple-repair.json'
+import connected from './fixtures/freeform-connected-repair.json'
 
 const cage = (c: { positions: number[]; faces: number[][] }): Cage => ({ positions: Float64Array.from(c.positions), faces: c.faces.map(f => [...f]), creases: [] })
 const canonical = (f: number[]) => { const i = f.indexOf(Math.min(...f)); return [...f.slice(i), ...f.slice(0, i)].join(',') }
@@ -57,5 +59,51 @@ describe('native-observed isolated irregular boundary repair', () => {
     const before = structuredClone(c)
     expect(() => repairBoundary(c)).toThrow(/could not be repaired/)
     expect(c).toEqual(before)
+  })
+})
+
+describe('native-observed independent boundary repairs', () => {
+  for (const sample of multiple) it(`matches ${sample.name} in one repair`, () => {
+    const input = cage(sample.before), original = structuredClone(input)
+    expect(irregularBoundaryVertices(input)).toHaveLength(2)
+    const out = repairBoundary(input)
+    expect(out.positions.length).toBe(sample.after.positions.length)
+    expect(Math.max(...out.positions.map((v, i) => Math.abs(v - sample.after.positions[i])))).toBeLessThan(5e-7)
+    expect(out.faces.map(canonical)).toEqual(sample.after.faces.map(canonical))
+    expect(irregularBoundaryVertices(out)).toEqual([])
+    expect(topology(out).edges.every(e => e.faces.length <= 2)).toBe(true)
+    expect(input).toEqual(original)
+    expect(repairBoundary(out)).toEqual(out)
+  })
+
+  it('keeps the whole input when a later component cannot be repaired', () => {
+    const input = cage(multiple[0].before)
+    input.creases = [[18, 19]]
+    const original = structuredClone(input)
+    expect(() => repairBoundary(input)).toThrow(/could not be repaired/)
+    expect(input).toEqual(original)
+  })
+})
+
+describe('native-observed connected boundary repair', () => {
+  for (const sample of connected) it(`repairs ${sample.name} through regular boundary rows in native order`, () => {
+    const input = cage(sample.before), original = structuredClone(input)
+    expect(irregularBoundaryVertices(input).length).toBeGreaterThan(2)
+    const out = repairBoundary(input)
+    expect(out.positions.length).toBe(sample.after.positions.length)
+    expect(Math.max(...out.positions.map((v, i) => Math.abs(v - sample.after.positions[i])))).toBeLessThan(2e-6)
+    expect(out.faces.map(canonical)).toEqual(sample.after.faces.map(canonical))
+    expect(out.faces.slice(0, input.faces.length)).toEqual(input.faces)
+    expect(irregularBoundaryVertices(out)).toEqual([])
+    expect(topology(out).edges.every(e => e.faces.length <= 2)).toBe(true)
+    expect(input).toEqual(original)
+    expect(repairBoundary(out)).toEqual(out)
+  })
+
+  it('keeps the entire connected cage unchanged when a later strip is creased', () => {
+    const input = cage(connected[1].before), original = structuredClone(input)
+    input.creases = [[139, 141]]; original.creases = [[139, 141]]
+    expect(() => repairBoundary(input)).toThrow(/could not be repaired/)
+    expect(input).toEqual(original)
   })
 })

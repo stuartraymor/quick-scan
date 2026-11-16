@@ -1,3 +1,34 @@
+# 1.1.68
+
+## 1.1.72
+
+- Match native evaluated point and corner dragging with Closest Point snapping enabled.
+- Allow the observed snapped point contacts to preview and merge shared boundary vertices with Control Net off.
+
+## 1.1.71
+
+- Repair multiple irregular boundary points on a connected surface using native-observed sequential boundary strips.
+- Extend repair through regular boundary rows to corners while preserving shared topology and atomic failure behavior.
+
+## 1.1.70
+
+- Allocate complete surface normals when finished CAD replaces a smaller tolerance preview.
+- Retain measured analysis geometry and GPU buffers across hover/selection instead of rebuilding them.
+- Preserve physical deviations and invalidate cached geometry when data or tolerance changes.
+
+## 1.1.69
+
+- Keep resolved New Freeform tolerance measurements visible during hover and selection.
+- Measure the current surface preview while finished CAD loads, including Snap OFF and non-refit surfaces.
+- Give selected edges and face boundaries bright screen-space highlights with dark contrast outlines.
+
+- New Freeform repairs independent irregular boundary regions together, including mixed three/four-face patterns.
+- Multi-region repair stays atomic: unsupported adjoining or folded regions retain the complete original cage and history.
+
+# 1.1.67
+
+- New Freeform shows the reverse side of clockwise native cages in orange in Shaded and Zebra.
+- Tolerance shows the reverse side in neutral gray while retaining signed measurements and thresholds.
 # 1.1.66
 
 - New Freeform face-selection and smoothing brush symbols now follow the observed brush and circular-tool shapes.

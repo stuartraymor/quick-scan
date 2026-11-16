@@ -4,16 +4,17 @@ import type { Cage } from '../core/freeform/cage'
 import { movePoints } from '../core/freeform/edit'
 import { cageVertexLimits } from '../core/freeform/limit'
 
-/** Native direct evaluated-point drags keep unselected surface anchors fixed,
- * even when that requires moving their poles. Five simultaneous corrections
- * after the initial pole movement match the saved corner/boundary trials. */
-export function moveSurfaceAnchor(cage: Cage, vertex: number, travel: Vec3): Cage {
+/** Native direct evaluated-point drags use five corrections after the initial
+ * pole movement. Don't move neighbours preserves all other surface anchors;
+ * the unchecked snapped gesture corrects only the selected anchor. */
+export function moveSurfaceAnchor(cage: Cage, vertex: number, travel: Vec3, keepNeighbours = true): Cage {
   const goals = cageVertexLimits(cage)
   goals[vertex] = goals[vertex].map((p, k) => p + travel[k]) as Vec3
   const result = movePoints(cage, [{ vertex, by: travel }])
   for (let step = 0; step < 5; step++) {
     const current = cageVertexLimits(result)
-    result.positions = Float64Array.from(result.positions, (p, k) => p + goals[Math.floor(k / 3)][k % 3] - current[Math.floor(k / 3)][k % 3])
+    result.positions = Float64Array.from(result.positions, (p, k) =>
+      keepNeighbours || Math.floor(k / 3) === vertex ? p + goals[Math.floor(k / 3)][k % 3] - current[Math.floor(k / 3)][k % 3] : p)
   }
   return result
 }

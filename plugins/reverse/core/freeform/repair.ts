@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Independent reconstruction from saved three- and four-face boundary repairs.
+// Independent reconstruction from saved isolated and connected boundary repairs.
 import { type Cage, topology, vertexAt } from './cage'
 import { cloneCage } from './edit'
 
@@ -13,16 +13,20 @@ export function irregularBoundaryVertices(c: Cage): number[] {
 
 const unsupported = () => new Error('These boundary points could not be repaired. Undo the topology edit or reconnect the boundary.')
 
-/** Repair the isolated, uncreased three/four-face boundary fan observed in
- * the native editor. Other patterns are detected but not guessed. The two
- * old boundary edges become internal; their copies retain the old boundary.
- * Each old pole moves one quarter inward, along its ordered quad fan. */
+/** Extend each irregular fan's boundary to one-face corners, copying the
+ * old perimeter and moving its poles a quarter inward. The native repair
+ * applies strips in vertex order, so later strips use earlier moved poles.
+ * Work on clones: an unsupported later strip must not partially repair. */
 export function repairBoundary(c: Cage): Cage {
   const irregular = irregularBoundaryVertices(c)
   if (!irregular.length) return cloneCage(c)
-  if (irregular.length !== 1) throw unsupported()
-  const v = irregular[0], t = topology(c), faces = t.vertexFaces[v]
-  if (![3, 4].includes(faces.length) || faces.some(f => c.faces[f].length !== 4)) throw unsupported()
+  let out = cloneCage(c)
+  for (const v of irregular) out = repairFan(out, v)
+  return out
+}
+
+function orderedFan(c: Cage, v: number, faces: number[]) {
+  if (faces.some(f => c.faces[f].length !== 4)) throw unsupported()
   const links = new Map<number, { next: number; diagonal: number }>()
   const incoming = new Set<number>()
   for (const f of faces) {
@@ -40,27 +44,56 @@ export function repairBoundary(c: Cage): Cage {
     fan.push(step.next); diagonals.push(step.diagonal)
   }
   if (diagonals.length !== faces.length) throw unsupported()
-  const a = fan[0], b = fan[fan.length - 1], strip = [a, v, b]
-  // The measured strip ends at one-face corners. Extending through regular
-  // boundary rows, adjoining irregular fans or creases remains unverified.
-  if (t.vertexFaces[a].length !== 1 || t.vertexFaces[b].length !== 1 ||
-      c.creases.some(edge => edge.some(p => strip.includes(p)))) throw unsupported()
-  const other = (p: number) => {
-    const edges = t.vertexEdges[p].map(e => t.edges[e]).filter(e => e.a !== v && e.b !== v)
-    if (edges.length !== 1) throw unsupported()
-    return edges[0].a === p ? edges[0].b : edges[0].a
+  return { fan, diagonals }
+}
+
+function repairFan(c: Cage, v: number): Cage {
+  const remaining = irregularBoundaryVertices(c).filter(p => p !== v)
+  const t = topology(c), faces = t.vertexFaces[v]
+  if (![3, 4].includes(faces.length)) throw unsupported()
+  orderedFan(c, v, faces)
+  const next = new Map<number, number>(), previous = new Map<number, number>()
+  for (const edge of t.edges) {
+    if (edge.faces.length !== 1) continue
+    const face = c.faces[edge.faces[0]], k = face.indexOf(edge.a)
+    const a = face[(k + 1) % face.length] === edge.b ? edge.a : edge.b
+    const b = a === edge.a ? edge.b : edge.a
+    if (next.has(a) || previous.has(b)) throw unsupported()
+    next.set(a, b); previous.set(b, a)
   }
-  const middle = faces.length % 2 ? diagonals[(faces.length - 1) / 2] : fan[faces.length / 2]
-  const towards = [other(a), middle, other(b)], out = cloneCage(c), count = c.positions.length / 3
-  out.positions = new Float64Array(c.positions.length + 9)
+  const strip = [v]
+  const extend = (prepend: boolean, map: Map<number, number>) => {
+    while (true) {
+      const p = map.get(prepend ? strip[0] : strip[strip.length - 1])
+      if (p === undefined || strip.includes(p)) throw unsupported()
+      if (prepend) strip.unshift(p); else strip.push(p)
+      if (t.vertexFaces[p].length === 1) break
+      if (t.vertexFaces[p].length !== 2) throw unsupported()
+    }
+  }
+  extend(true, previous); extend(false, next)
+  if (c.creases.some(edge => edge.some(p => strip.includes(p)))) throw unsupported()
+  const towards = strip.map(p => {
+    const { fan, diagonals } = orderedFan(c, p, t.vertexFaces[p])
+    if (diagonals.length === 1) {
+      const inward = fan.filter(q => !strip.includes(q))
+      if (inward.length !== 1) throw unsupported()
+      return inward[0]
+    }
+    return diagonals.length % 2 ? diagonals[(diagonals.length - 1) / 2] : fan[diagonals.length / 2]
+  })
+  const out = cloneCage(c), count = c.positions.length / 3
+  out.positions = new Float64Array(c.positions.length + strip.length * 3)
   out.positions.set(c.positions)
   strip.forEach((p, i) => {
     out.positions.set(vertexAt(c, p), (count + i) * 3)
     for (let k = 0; k < 3; k++) out.positions[p * 3 + k] += (c.positions[towards[i] * 3 + k] - c.positions[p * 3 + k]) * .25
   })
-  out.faces.push([v, a, count, count + 1], [b, v, count + 1, count + 2])
+  for (let i = 0; i + 1 < strip.length; i++) out.faces.push([count + i + 1, strip[i + 1], strip[i], count + i])
   topology(out)
-  if (irregularBoundaryVertices(out).length || !out.positions.every(Number.isFinite)) throw unsupported()
+  const after = irregularBoundaryVertices(out)
+  if (after.length !== remaining.length || after.some((p, i) => p !== remaining[i]) ||
+      !out.positions.every(Number.isFinite)) throw unsupported()
   // Refuse collapsed or reversed local faces rather than committing a fold.
   const normal = (cage: Cage, face: number[]) => {
     const p = vertexAt(cage, face[0]), n = [0, 0, 0]
@@ -72,7 +105,10 @@ export function repairBoundary(c: Cage): Cage {
   }
   for (let i = 0; i < out.faces.length; i++) {
     if (i < c.faces.length && !c.faces[i].some(p => strip.includes(p))) continue
-    const reference = i < c.faces.length ? c.faces[i] : c.faces[t.vertexFaces[i === c.faces.length ? a : b][0]]
+    const segment = i - c.faces.length
+    const edge = segment < 0 ? undefined : t.edges.find(e => e.faces.length === 1 &&
+      (e.a === strip[segment] && e.b === strip[segment + 1] || e.b === strip[segment] && e.a === strip[segment + 1]))
+    const reference = i < c.faces.length ? c.faces[i] : c.faces[edge!.faces[0]]
     const before = normal(c, reference), after = normal(out, out.faces[i])
     if (!(before.reduce((s, x, k) => s + x * after[k], 0) > Math.hypot(...before) ** 2 * 1e-12)) throw unsupported()
     const face = out.faces[i], scale = Math.hypot(...before)

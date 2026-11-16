@@ -8,8 +8,65 @@ import { FreeformEditorLayer, type FreeformEditorOptions, type FreeformSelection
 import mergeFixtures from './fixtures/freeform-merge-reference.json'
 import chainMerge from './fixtures/freeform-chain-merge-reference.json'
 import surfaceDrags from './fixtures/freeform-surface-drag-reference.json'
+import snappedDrags from './fixtures/freeform-snapped-point-reference.json'
 
 afterEach(() => vi.unstubAllGlobals())
+
+it('keeps measured tolerance visible synchronously through hover and selection redraws', async () => {
+  const finished = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([0,0,.02,5,0,.02,0,5,.02],3))
+  const measureDeviation = vi.fn(async (p: Float32Array) => new Float32Array(p.length / 3).fill(.02))
+  const options = { display: 'deviation' as const, finishedSurface: finished, measureDeviation, mode: 'edges' as const }
+  const s = setup(options)
+  const visible = () => s.partGroup.getObjectByName('freeform-deviation-surface')?.visible
+  await vi.waitFor(() => expect(visible()).toBe(true))
+  const geometry = (s.partGroup.getObjectByName('freeform-deviation-surface') as THREE.Mesh).geometry
+  const disposed = vi.spyOn(geometry, 'dispose')
+  for (let i = 0; i < 8; i++) {
+    s.layer.hover!({x:125,y:100}, false)
+    expect(visible()).toBe(true)
+    expect((s.partGroup.getObjectByName('freeform-deviation-surface') as THREE.Mesh).geometry).toBe(geometry)
+    expect(disposed).not.toHaveBeenCalled()
+    s.layer.hover!(null, false)
+    expect(visible()).toBe(true)
+  }
+  s.editor.set(s.cage, {...options, selection:[{kind:'edge',index:0}], tolerance:.1})
+  expect(visible()).toBe(true)
+  expect(disposed).toHaveBeenCalledTimes(1)
+  expect(measureDeviation).toHaveBeenCalledTimes(1)
+  s.editor.dispose(); finished.dispose()
+})
+
+it('paints current measured preview while finished CAD sampling is pending', async () => {
+  let resolve!: (values: Float32Array) => void
+  const finished = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([0,0,.02,5,0,.02,0,5,.02],3))
+  const readDeviationMesh = vi.fn(async () => ({positions: finished.getAttribute('position').array as Float32Array, indices:Uint32Array.of(0,1,2)}))
+  const measureDeviation = vi.fn(() => new Promise<Float32Array>(r => {resolve = r}))
+  const measureLiveDeviation = vi.fn((p: Float32Array) => Float32Array.from({length:p.length/3}, (_,i)=>p[3*i+2]))
+  const onDeviation = vi.fn()
+  const s = setup({ display:'deviation', finishedSurface:finished, readDeviationMesh, measureDeviation, measureLiveDeviation, onDeviation })
+  expect(s.partGroup.getObjectByName('freeform-deviation-surface')?.visible).toBe(true)
+  expect(onDeviation).toHaveBeenLastCalledWith({min:0,max:0,rms:0,preview:true})
+  await vi.waitFor(() => expect(measureDeviation).toHaveBeenCalledTimes(1))
+  resolve(new Float32Array(7).fill(.02))
+  await vi.waitFor(() => expect(onDeviation).toHaveBeenLastCalledWith(expect.objectContaining({preview:false,max:expect.closeTo(-.02)})))
+  s.editor.dispose(); finished.dispose()
+})
+
+it('reallocates normals when finished analysis has more samples than its preview', async () => {
+  const positions = Float32Array.from({length:18000}, (_,k) => {
+    const v=Math.floor(k/3),t=Math.floor(v/3)
+    return k%3===2 ? .02 : k%3===0 ? t%40+(v%3===1?1:0) : Math.floor(t/40)+(v%3===2?1:0)
+  })
+  const finished = new THREE.BufferGeometry().setAttribute('position',new THREE.BufferAttribute(positions,3))
+  const s = setup({display:'deviation',finishedSurface:finished,
+    measureLiveDeviation:p=>new Float32Array(p.length/3),
+    measureDeviation:async p=>new Float32Array(p.length/3).fill(.02)})
+  const initial = (s.partGroup.getObjectByName('freeform-deviation-surface') as THREE.Mesh).geometry.getAttribute('position').count
+  await vi.waitFor(()=>expect((s.partGroup.getObjectByName('freeform-deviation-surface') as THREE.Mesh).geometry.getAttribute('position').count).toBeGreaterThan(initial))
+  const g=(s.partGroup.getObjectByName('freeform-deviation-surface') as THREE.Mesh).geometry
+  expect(g.getAttribute('normal').count).toBe(g.getAttribute('position').count)
+  s.editor.dispose();finished.dispose()
+})
 
 it('previews a native point merge and commits the welded selection only on release', () => {
   const f = mergeFixtures[0], cage: Cage = { positions: Float64Array.from(f.input.positions), faces: f.input.faces, creases: [] }
@@ -760,4 +817,27 @@ for(const f of surfaceDrags) it(`direct surface-point pointer gesture matches na
  const s=setup({mode:'points',controlNet:false,neighbourRadius:0},cage),x=100+a[0]*10,y=100-a[1]*10,tx=x+f.travel[0]*10
  s.layer.pointerDown!(s.event('pointerdown',x,y));s.canvas.dispatchEvent(s.event('pointermove',tx,y));expect(s.onCommit).not.toHaveBeenCalled();s.canvas.dispatchEvent(s.event('pointerup',tx,y));expect(s.onCommit).toHaveBeenCalledTimes(1)
  const result=s.onCommit.mock.lastCall?.[0] as Cage;expect(result.faces).toEqual(f.expected.faces);expect(Math.max(...result.positions.map((v,i)=>Math.abs(v-f.expected.positions[i])))).toBeLessThan(5e-7);s.editor.dispose()
+})
+
+for(const f of snappedDrags) it(`snapped surface-point pointer gesture matches native ${f.name}`,()=>{
+ const cage:Cage={positions:Float64Array.from(f.input.positions),faces:f.input.faces,creases:[]},a=cageVertexLimits(cage)[f.vertex]
+ const s=setup({mode:'points',controlNet:false,neighbourRadius:f.keepNeighbours?0:2,snapPoint:p=>[p[0],p[1],0]},cage),x=100+a[0]*10,y=100-a[1]*10,tx=x+f.travel[0]*10
+ s.layer.pointerDown!(s.event('pointerdown',x,y));s.canvas.dispatchEvent(s.event('pointermove',tx,y));expect(s.onCommit).not.toHaveBeenCalled()
+ const preview=s.onPreview.mock.lastCall?.[0] as Cage;expect(preview.faces).toEqual(f.expected.faces)
+ s.canvas.dispatchEvent(s.event('pointerup',tx,y));expect(s.onCommit).toHaveBeenCalledTimes(1)
+ const result=s.onCommit.mock.lastCall?.[0] as Cage;expect(result.faces).toEqual(f.expected.faces);expect(Math.max(...result.positions.map((v,i)=>Math.abs(v-f.expected.positions[i])))).toBeLessThan(5e-7)
+ expect(Array.from(cage.positions)).toEqual(f.input.positions);s.editor.dispose()
+})
+
+it('cancels a snapped surface-point merge without committing its shared vertex',()=>{
+ const f=snappedDrags.find(f=>f.name==='corner-snap-on-contact')!,cage:Cage={positions:Float64Array.from(f.input.positions),faces:f.input.faces,creases:[]},a=cageVertexLimits(cage)[f.vertex]
+ const s=setup({mode:'points',controlNet:false,neighbourRadius:0,snapPoint:p=>[p[0],p[1],0]},cage),x=100+a[0]*10,y=100-a[1]*10,tx=x+f.travel[0]*10
+ s.layer.pointerDown!(s.event('pointerdown',x,y));s.canvas.dispatchEvent(s.event('pointermove',tx,y));expect(s.onPreview.mock.lastCall?.[0].faces).toEqual(f.expected.faces)
+ s.win.dispatchEvent(Object.assign(new Event('keydown'),{key:'Escape'}));s.canvas.dispatchEvent(s.event('pointerup',tx,y));expect(s.onCommit).not.toHaveBeenCalled();expect(s.onPreview.mock.lastCall).toEqual([cage,false]);s.editor.dispose()
+})
+
+it('keeps a snapped surface-point move atomic when the scan has no correspondence',()=>{
+ const f=snappedDrags[1],cage:Cage={positions:Float64Array.from(f.input.positions),faces:f.input.faces,creases:[]},a=cageVertexLimits(cage)[f.vertex]
+ const s=setup({mode:'points',controlNet:false,neighbourRadius:0,snapPoint:()=>null},cage),x=100+a[0]*10,y=100-a[1]*10,tx=x+f.travel[0]*10
+ s.layer.pointerDown!(s.event('pointerdown',x,y));s.canvas.dispatchEvent(s.event('pointermove',tx,y));s.canvas.dispatchEvent(s.event('pointerup',tx,y));expect(s.onCommit).not.toHaveBeenCalled();expect(Array.from(cage.positions)).toEqual(f.input.positions);s.editor.dispose()
 })
