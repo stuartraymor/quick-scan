@@ -1,0 +1,61 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+import { describe, expect, it } from 'vitest'
+import { type Cage, topology } from '../core/freeform/cage'
+import { irregularBoundaryVertices, repairBoundary } from '../core/freeform/repair'
+import fixtures from './fixtures/freeform-boundary-repair.json'
+
+const cage = (c: { positions: number[]; faces: number[][] }): Cage => ({ positions: Float64Array.from(c.positions), faces: c.faces.map(f => [...f]), creases: [] })
+const canonical = (f: number[]) => { const i = f.indexOf(Math.min(...f)); return [...f.slice(i), ...f.slice(0, i)].join(',') }
+
+describe('native-observed isolated irregular boundary repair', () => {
+  for (const sample of fixtures) it(`matches saved ${sample.name}-face repair coordinates and oriented connectivity`, () => {
+    const input = cage(sample.before), original = Array.from(input.positions)
+    expect(irregularBoundaryVertices(input)).toHaveLength(1)
+    const out = repairBoundary(input)
+    expect(out.positions.length).toBe(sample.after.positions.length)
+    expect(Math.max(...out.positions.map((v, i) => Math.abs(v - sample.after.positions[i])))).toBeLessThan(2e-7)
+    expect(out.faces.map(canonical)).toEqual(sample.after.faces.map(canonical))
+    expect(irregularBoundaryVertices(out)).toEqual([])
+    expect(topology(out).edges.every(e => e.faces.length <= 2)).toBe(true)
+    expect(Array.from(input.positions)).toEqual(original)
+    expect(input.faces).toEqual(sample.before.faces)
+    expect(repairBoundary(out)).toEqual(out)
+  })
+
+  it('preserves the measured construction under rotation, translation and scale', () => {
+    const transform = (p: number[]) => p.map((_, i) => {
+      const k = i % 3, at = i - k
+      return k === 0 ? 2 * p[at + 2] + 30 : k === 1 ? 2 * p[at] - 10 : 2 * p[at + 1] + 5
+    })
+    for (const sample of fixtures) {
+      const input = cage({ ...sample.before, positions: transform(sample.before.positions) })
+      const expected = transform(sample.after.positions), out = repairBoundary(input)
+      expect(Math.max(...out.positions.map((v, i) => Math.abs(v - expected[i])))).toBeLessThan(4e-7)
+    }
+  })
+
+  it('detects a disconnected boundary fan without guessing its repair', () => {
+    const c: Cage = { positions: Float64Array.from([0,0,0, 1,0,0, 1,1,0, 0,1,0, -1,0,0, -1,-1,0, 0,-1,0]), faces: [[0,1,2,3], [0,4,5,6]], creases: [] }
+    expect(irregularBoundaryVertices(c)).toEqual([0])
+    const before = structuredClone(c)
+    expect(() => repairBoundary(c)).toThrow(/could not be repaired/)
+    expect(c).toEqual(before)
+  })
+
+  it('refuses unverified creased boundary repairs without changing the cage', () => {
+    const c = cage(fixtures[0].before)
+    c.creases = [[7, 8]]
+    const before = structuredClone(c)
+    expect(() => repairBoundary(c)).toThrow(/could not be repaired/)
+    expect(c).toEqual(before)
+  })
+
+  it('refuses a collapsed repair', () => {
+    const c = cage(fixtures[0].before)
+    // Collapse the left strip end onto its inward neighbour.
+    c.positions.set(c.positions.slice(0, 3), 8 * 3)
+    const before = structuredClone(c)
+    expect(() => repairBoundary(c)).toThrow(/could not be repaired/)
+    expect(c).toEqual(before)
+  })
+})

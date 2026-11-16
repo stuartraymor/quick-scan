@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Vec3 } from '../../../src/core/types'
 import { type Cage, edgeKey, faceArea, topology, vertexCount } from '../core/freeform/cage'
-import { addFace, addRectangle, align, boundaryLoops, bridge, closeHole, deleteFaces, deleteVertices, deviation, edgeLine, extrapolate, extrapolateEdges, increaseResolution, mirror, movePoints, setCrease, smooth, snapCage, splitLoop } from '../core/freeform/edit'
+import { addFace, addRectangle, align, boundaryLoops, bridge, closeHole, deleteFaces, deleteVertices, deviation, edgeLine, extrapolate, extrapolateEdges, increaseResolution, mirror, movePoints, setCrease, smooth, snapCage, snapSelected, splitLoop } from '../core/freeform/edit'
 import { cageVertexLimits } from '../core/freeform/limit'
 import { cylinderClosest } from '../core/freeform/snap'
 
@@ -388,6 +388,40 @@ describe('bridge and close', () => {
     expect(() => closeHole(b, 0)).toThrow(/not on a hole/)
     // A hole of six sides is not closed by this tool.
     expect(() => closeHole(patch(3, 1), 0)).toThrow(/8 sides/)
+  })
+})
+
+describe('selected Snap to Mesh: saved native plane experiments', () => {
+  const plane = (p: Vec3) => ({ point: [p[0], p[1], 0] as Vec3, distance: Math.abs(p[2]) })
+  it('fits a single limit anchor, retaining the native residual and untouched neighbours', () => {
+    const c = patch(3, 2)
+    c.positions[5 * 3 + 2] = 0.05999999865889549
+    const before = Array.from(c.positions), once = snapSelected(c, [5], plane)
+    expect(once.positions[17]).toBeCloseTo(0.003175328951328993, 9)
+    const twice = snapSelected(once, [5], plane)
+    expect(twice.positions[17]).toBeCloseTo(0.00016804522601887584, 10)
+    for (let i = 0; i < c.positions.length; i++) if (i !== 17) expect(twice.positions[i]).toBeCloseTo(before[i], 13)
+    expect(Array.from(c.positions)).toEqual(before)
+    expect(twice.faces).toEqual(c.faces)
+  })
+  it('fits an edge chain simultaneously and reproduces two native snaps', () => {
+    const c = patch(3, 2), selected = [1, 5, 9]
+    for (const v of selected) c.positions[v * 3 + 2] = 0.05999999865889549
+    const once = snapSelected(c, selected, plane), twice = snapSelected(once, selected, plane)
+    for (const v of selected) {
+      expect(once.positions[v * 3 + 2]).toBeCloseTo(0.0002469135797582567, 10)
+      expect(twice.positions[v * 3 + 2]).toBeCloseTo(0.0000010161052159674, 12)
+    }
+    expect(snapSelected(c, [9, 5, 1, 5], plane).positions).toEqual(once.positions)
+    for (let v = 0; v < vertexCount(c); v++) if (!selected.includes(v)) expect(at(twice, v)).toEqual(at(c, v))
+  })
+  it('rejects a later missing correspondence without mutating the input', () => {
+    const c = patch(3, 2), before = Array.from(c.positions)
+    let calls = 0
+    expect(() => snapSelected(c, [1, 5], p => ++calls === 4 ? null : plane(p))).toThrow(/No reference mesh/)
+    expect(Array.from(c.positions)).toEqual(before)
+    expect(() => snapSelected(c, [5], () => ({ point: [0, NaN, 0], distance: NaN }))).toThrow(/No reference mesh/)
+    expect(() => snapSelected(c, [100], plane)).toThrow(/no vertex/)
   })
 })
 

@@ -136,3 +136,5 @@
 .ff-deviation-options [aria-invalid=true] { border-color: var(--amber); }
 :root[data-theme='dark'] .ff-deviation-options { color-scheme: dark; }
 :root[data-theme='light'] .ff-deviation-options { color-scheme: light; }
+.ff-irregular-warning { position: fixed; right: 8px; bottom: 92px; z-index: 1000; pointer-events: auto; max-width: calc(100vw - 16px); border: 0; border-radius: 1px; padding: 6px 8px; background: #d64524; color: white; text-align: left; font: 14px/1.25 "Segoe UI", sans-serif; cursor: pointer; }
+.ff-irregular-warning:disabled { opacity: .65; cursor: wait; }

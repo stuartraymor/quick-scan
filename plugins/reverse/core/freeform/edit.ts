@@ -649,3 +649,26 @@ export function snapCage(c: Cage, closest: Closest, iterations = 8, tolerance = 
   const d = deviation(cage, closest, tolerance)
   return { cage, stats: { iterations: done, ...d } }
 }
+
+/** The interactive Snap to Mesh command fits the selected surface anchors.
+ * Saved native point/chain experiments show five simultaneous limit-gap
+ * corrections, independent of Control Net and Don't move neighbours. Keep
+ * this separate from whole-cage fitting, with its caller-controlled stopping
+ * tolerance. A missing correspondence refuses the complete edit. */
+export function snapSelected(c: Cage, vertices: number[], closest: Closest): Cage {
+  const selected = [...new Set(vertices.map(v => vertexIn(c, v)))].sort((a, b) => a - b)
+  let cage = cloneCage(c)
+  for (let iteration = 0; iteration < 5 && selected.length; iteration++) {
+    const anchors = cageVertexLimits(cage)
+    const positions = Float64Array.from(cage.positions)
+    for (const v of selected) {
+      const p = anchors[v], q = closest(p)
+      if (!q?.point || q.point.length !== 3 || !q.point.every(Number.isFinite)) {
+        return fail('No reference mesh point was found for this selection.')
+      }
+      for (let k = 0; k < 3; k++) positions[v * 3 + k] += q.point[k] - p[k]
+    }
+    cage = { ...cage, positions }
+  }
+  return cage
+}

@@ -33,6 +33,14 @@ export function selectedEdges(c: Cage, selection: readonly FreeformSelection[]):
   return checkedSelection(c, selection).filter(s => s.kind === 'edge').map(s => [edges[s.index].a, edges[s.index].b])
 }
 
+/** Native command availability is broader than geometric bridge validity. */
+export function bridgeCommandAvailable(c: Cage, selection: readonly FreeformSelection[]): boolean {
+  try {
+    const picks = checkedSelection(c, selection)
+    return picks.length >= 2 && picks.every(p => p.kind === 'edge')
+  } catch { return false }
+}
+
 /** Edge deletion removes its adjacent faces; vertex deletion removes its
  * incident faces. It never removes extra faces merely sharing an edge end. */
 function deletedFaces(c: Cage, selection: readonly FreeformSelection[]): number[] {
@@ -59,6 +67,18 @@ function bridgeChains(c: Cage, selection: readonly FreeformSelection[]): number[
   const fail = () => { throw new Error('Select two separate, equally divided open boundary chains to bridge.') }
   if (selection.length < 2 || selection.some(s => s.kind !== 'edge')) return fail()
   const top = topology(c), next = new Map<number, number>(), previous = new Map<number, number>()
+  // Observed for both an open chain and a connected, branched edge region.
+  const selected = new Set(selection.map(p => p.index)), connected = new Set<number>(), pending = [selection[0].index]
+  while (pending.length) {
+    const index = pending.pop()!
+    if (connected.has(index)) continue
+    connected.add(index)
+    const edge = top.edges[index]
+    for (const v of [edge.a, edge.b]) for (const other of top.vertexEdges[v]) {
+      if (selected.has(other) && !connected.has(other)) pending.push(other)
+    }
+  }
+  if (connected.size === selection.length) throw new Error('Only one chain is selected, nothing to do.')
   for (const pick of selection) {
     const edge = top.edges[pick.index]
     if (edge.faces.length !== 1) return fail()
@@ -124,13 +144,39 @@ export function editorActions(c: Cage, selection: readonly FreeformSelection[]):
   }
 }
 
+/** Native manual Split inserts midpoints and moves regular adjacent rows a
+ * third of the way towards their continuation away from the cut. Paired on
+ * a boundary-adjacent strip and a second cut between two interior rows.
+ * Keep the shared API's arbitrary-fraction split unchanged. Extraordinary
+ * and creased neighbourhoods retain the existing conservative midpoint split. */
+function splitEditorLoop(c: Cage, a: number, b: number): Cage {
+  const next = splitLoop(c, a, b), before = topology(c), after = topology(next)
+  const cut = new Set(before.edges.flatMap((e, i) => after.edgeOf.has(edgeKey(e.a, e.b)) ? [] : [i]))
+  for (const index of cut) {
+    const edge = before.edges[index]
+    for (const v of [edge.a, edge.b]) {
+      const incident = before.vertexEdges[v]
+      if (incident.length !== (edge.faces.length === 1 ? 3 : 4) ||
+          incident.some(i => before.edges[i].crease) ||
+          before.vertexFaces[v].some(i => c.faces[i].length !== 4) ||
+          incident.filter(i => cut.has(i)).length !== 1) continue
+      const continuation = incident.filter(i => i !== index && !before.edges[i].faces.some(f => edge.faces.includes(f)))
+      if (continuation.length !== 1) continue
+      const opposite = before.edges[continuation[0]], other = opposite.a === v ? opposite.b : opposite.a
+      for (let k = 0; k < 3; k++) next.positions[v * 3 + k] = (2 * c.positions[v * 3 + k] + c.positions[other * 3 + k]) / 3
+    }
+  }
+  return next
+}
+
 export function applyEditorAction(c: Cage, selection: readonly FreeformSelection[], action: EditorAction): { cage: Cage; selection: FreeformSelection[] } {
   const picks = checkedSelection(c, selection)
+  if (action === 'bridge' && bridgeCommandAvailable(c, picks)) return { cage: bridgeEdges(c, picks), selection: [] }
   if (!editorActions(c, picks)[action]) throw new Error(`Cannot ${action.replaceAll('_', ' ')} with this selection.`)
   const edges = selectedEdges(c, picks)
   let cage: Cage
   switch (action) {
-    case 'split': cage = splitLoop(c, ...edges[0]); break
+    case 'split': cage = splitEditorLoop(c, ...edges[0]); break
     case 'crease': cage = setCrease(c, edges, true); break
     case 'remove_crease': cage = setCrease(c, edges, false); break
     case 'delete': {

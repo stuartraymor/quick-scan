@@ -510,6 +510,33 @@ it('does not commit an extension when snapping collapses its new edges', () => {
 })
 
 const strip: Cage = { positions: Float64Array.from([0,0,0, 5,0,0, 10,0,0, 0,5,0, 5,5,0, 10,5,0]), faces:[[0,1,4,3],[1,2,5,4]], creases:[] }
+it('Boundary mode selects the entire connected perimeter on one click', () => {
+  const s=setup({mode:'boundary'},strip)
+  s.layer.pointerDown!(s.event('pointerdown',125,100));s.canvas.dispatchEvent(s.event('pointerup',125,100))
+  expect(s.onSelection.mock.lastCall?.[0]).toEqual([0,2,3,4,5,6].map(index=>({kind:'edge',index})))
+  s.canvas.dispatchEvent(s.event('dblclick',125,100))
+  expect(s.onSelection.mock.lastCall?.[0]).toHaveLength(6)
+  expect(s.onCommit).not.toHaveBeenCalled();s.editor.dispose()
+})
+it('Boundary context adds a second perimeter and Control removes one complete perimeter', () => {
+  const c:Cage={positions:Float64Array.from([0,0,0,2,0,0,2,2,0,0,2,0,4,0,0,6,0,0,6,2,0,4,2,0]),faces:[[0,1,2,3],[4,5,6,7]],creases:[]}
+  const s=setup({mode:'boundary'},c)
+  s.canvas.dispatchEvent(s.event('contextmenu',110,100))
+  expect(s.onSelection.mock.lastCall?.[0]).toHaveLength(4)
+  s.canvas.dispatchEvent(s.event('contextmenu',150,100))
+  expect(s.onSelection.mock.lastCall?.[0]).toHaveLength(8)
+  s.layer.pointerDown!(s.event('pointerdown',110,100,{ctrlKey:true}))
+  expect(s.onSelection.mock.lastCall?.[0]).toEqual([4,5,6,7].map(index=>({kind:'edge',index})))
+  expect(s.onCommit).not.toHaveBeenCalled();s.editor.dispose()
+})
+it('Boundary mode does not box-select internal or hidden geometry', () => {
+  const s=setup({mode:'boundary',hiddenFaces:[1]},strip)
+  s.canvas.dispatchEvent(s.event('contextmenu',125,100))
+  expect(s.onSelection.mock.lastCall?.[0]).toEqual([0,2,3].map(index=>({kind:'edge',index})))
+  s.layer.pointerDown!(s.event('pointerdown',80,40));s.canvas.dispatchEvent(s.event('pointerup',210,120))
+  expect(s.onSelection.mock.lastCall?.[0]).toEqual([])
+  expect(s.onCommit).not.toHaveBeenCalled();s.editor.dispose()
+})
 it('double-click selects the boundary line, stops at corners and does not change geometry', () => {
   const s=setup({},strip)
   s.canvas.dispatchEvent(s.event('dblclick',125,100))

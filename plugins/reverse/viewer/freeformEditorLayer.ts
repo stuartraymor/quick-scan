@@ -210,9 +210,10 @@ export class FreeformEditorLayer {
     const hit = this.pick(event.clientX, event.clientY)
     // Native Freeform adds a newly right-clicked edge to edges already selected.
     // A different entity type starts a new context selection.
-    if (hit && !this.selection.some(p => same(p, hit))) {
+    const picks = hit ? this.expandPick(hit) : []
+    if (hit && picks.some(p => !this.selection.some(q => same(p, q)))) {
       const sameKind = this.selection.every(pick => pick.kind === hit.kind)
-      this.select(sameKind ? [...this.selection, hit] : [hit])
+      this.select(sameKind ? [...this.selection, ...picks.filter(p => !this.selection.some(q => same(p, q)))] : picks)
     }
     this.options.onContext?.(event.clientX, event.clientY, hit)
   }
@@ -221,13 +222,30 @@ export class FreeformEditorLayer {
     const hit = this.pick(event.clientX, event.clientY)
     if (hit?.kind !== 'edge') return
     event.preventDefault(); event.stopPropagation(); this.cancelDrag?.()
-    const line = edgeLine(this.cage, hit.index, this.options.hiddenFaces).map(index => ({ kind: 'edge' as const, index }))
+    const line = this.options.mode === 'boundary' ? this.expandPick(hit)
+      : edgeLine(this.cage, hit.index, this.options.hiddenFaces).map(index => ({ kind: 'edge' as const, index }))
     this.select(event.ctrlKey || event.metaKey ? [...line, ...this.selection.filter(p => !line.some(q => same(p, q)))] : line)
   }
   private select(picks: FreeformPick[]) {
     this.selection = picks
     this.draw(this.cage)
     this.options.onSelection?.(picks.slice())
+  }
+  private expandPick(hit: FreeformPick): FreeformPick[] {
+    if (!this.cage || this.options.mode !== 'boundary' || hit.kind !== 'edge') return [hit]
+    const top = this.cageTopology(this.cage), visible = this.visible(this.cage), found = new Set<number>(), pending = [hit.index]
+    while (pending.length) {
+      const index = pending.pop()!
+      if (found.has(index) || !visible.edges[index] || top.edges[index].faces.length !== 1) continue
+      found.add(index)
+      for (const v of [top.edges[index].a, top.edges[index].b]) {
+        const adjacent = top.vertexEdges[v].filter(e => visible.edges[e] && top.edges[e].faces.length === 1)
+        // A branching irregular boundary has no unambiguous loop to select.
+        if (adjacent.length > 2) return [hit]
+        pending.push(...adjacent.filter(e => !found.has(e)))
+      }
+    }
+    return [...found].sort((a, b) => a - b).map(index => ({ kind: 'edge', index }))
   }
   private clearDrawing() {
     for (const object of [...this.group.children]) {
@@ -883,16 +901,20 @@ export class FreeformEditorLayer {
     let tangentExtension = false
     const grip = duplicate || selecting ? null : this.manipulator.hit(e.clientX, e.clientY)
     const hit = grip || duplicate ? this.selection[0] : this.pick(e.clientX, e.clientY)
-    if (!hit) return this.beginBox(e)
+    if (!hit) {
+      if (this.options.mode === 'boundary') { if (!selecting) this.select([]); return true }
+      return this.beginBox(e)
+    }
+    const picks = grip || duplicate ? [hit] : this.expandPick(hit)
     if (e.shiftKey) {
-      this.select(this.selection.filter(p => !same(p, hit)))
+      this.select(this.selection.filter(p => !picks.some(q => same(p, q))))
       return true
     }
     if ((e.ctrlKey || e.metaKey) && !e.altKey) {
-      this.select(this.selection.some(p => same(p, hit)) ? this.selection.filter(p => !same(p, hit)) : [...this.selection, hit])
+      this.select(picks.every(p => this.selection.some(q => same(p, q))) ? this.selection.filter(p => !picks.some(q => same(p, q))) : [...this.selection, ...picks.filter(p => !this.selection.some(q => same(p, q)))])
       return true
     }
-    if (!this.selection.some(p => same(p, hit))) this.select([hit])
+    if (picks.some(p => !this.selection.some(q => same(p, q)))) this.select(picks)
     if (e.altKey && !grip && !duplicate && hit.kind === 'edge') {
       const top = this.cageTopology(this.cage)
       const picks = this.selection.filter(p => p.kind === 'edge')

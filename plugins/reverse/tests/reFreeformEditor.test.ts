@@ -2,7 +2,8 @@
 import { describe, expect, it } from 'vitest'
 import { type Cage, edgeKey, topology } from '../core/freeform/cage'
 import { addRectangle, cloneCage } from '../core/freeform/edit'
-import { applyEditorAction, editorActions, type FreeformSelection, selectedEdges, selectedVertices } from '../core/freeform/editor'
+import { applyEditorAction, bridgeCommandAvailable, editorActions, type FreeformSelection, selectedEdges, selectedVertices } from '../core/freeform/editor'
+import splitReference from './fixtures/freeform-split-reference.json'
 
 const empty = (): Cage => ({ positions: new Float64Array(), faces: [], creases: [] })
 const patch = (n = 2) => addRectangle(empty(), [0, 0, 0], [n, 0, 0], [0, n, 0], n, n)
@@ -43,6 +44,29 @@ describe('freeform editor selection', () => {
 })
 
 describe('freeform editor actions', () => {
+  it.each([
+    ['smooth-point-input', 'split-result', 2, 8],
+    ['split-result', 'split-second', 12, 8],
+  ] as const)('matches native %s to %s Split poles and oriented quads', (input, output, a, b) => {
+    const source = splitReference[input], expected = splitReference[output]
+    const cage: Cage = { positions: Float64Array.from(source.positions), faces: source.faces, creases: [] }
+    const original = cloneCage(cage), result = applyEditorAction(cage, [edge(cage, a, b)], 'split').cage
+    expect(cage).toEqual(original)
+    expect(result.positions.length).toBe(expected.positions.length)
+    const mapping = Array.from({length: result.positions.length / 3}, (_, v) => {
+      let closest = -1, distance = Infinity
+      for (let n = 0; n < expected.positions.length / 3; n++) {
+        const d = Math.hypot(...[0,1,2].map(k => result.positions[3*v+k] - expected.positions[3*n+k]))
+        if (d < distance) { distance = d; closest = n }
+      }
+      expect(distance).toBeLessThan(3e-7)
+      return closest
+    })
+    expect(new Set(mapping).size).toBe(mapping.length)
+    const canonical = (faces: number[][]) => faces.map(f => f.map((_, i) => [...f.slice(i), ...f.slice(0,i)].join(',')).sort()[0]).sort()
+    expect(canonical(result.faces.map(f => f.map(v => mapping[v])))).toEqual(canonical(expected.faces))
+    expect(consistent(result)).toBe(true)
+  })
   it('splits a strip, preserves winding and clears renumberable picks', () => {
     const c = patch(), before = cloneCage(c)
     const result = applyEditorAction(c,[edge(c,0,1)],'split')
@@ -106,6 +130,20 @@ describe('freeform editor actions', () => {
     expect(consistent(result.cage)).toBe(true)
     expect(topology(result.cage).edges.filter(e=>e.faces.length===2)).toHaveLength(2)
     expect(result.selection).toEqual([])
+    expect(c).toEqual(before)
+  })
+  it('offers Bridge for a connected selection and reports the native refusal without editing it', () => {
+    const c = patch(), before = cloneCage(c)
+    const picks = [edge(c,0,1),edge(c,1,2)]
+    expect(bridgeCommandAvailable(c,picks)).toBe(true)
+    expect(editorActions(c,picks).bridge).toBe(false)
+    expect(() => applyEditorAction(c,picks,'bridge')).toThrow('Only one chain is selected, nothing to do.')
+    const region = topology(c).edges.map((_,index) => ({kind:'edge' as const,index}))
+    expect(bridgeCommandAvailable(c,region)).toBe(true)
+    expect(() => applyEditorAction(c,region,'bridge')).toThrow('Only one chain is selected, nothing to do.')
+    expect(bridgeCommandAvailable(c,[])).toBe(false)
+    expect(bridgeCommandAvailable(c,[picks[0],picks[0]])).toBe(false)
+    expect(bridgeCommandAvailable(c,[picks[0],{kind:'face',index:0}])).toBe(false)
     expect(c).toEqual(before)
   })
   it('rejects internal, adjoining, duplicate, and collapsed bridge pairs', () => {

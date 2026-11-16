@@ -15,12 +15,13 @@ import { reverseSession } from '../app/reSession'
 import { scanPaths } from '../app/reNetworkCommands'
 import type { FreeformFeature } from '../core/features'
 import { type Cage, topology, vertexAt } from '../core/freeform/cage'
-import { addFace, increaseResolution, movePoints, offsetCage, smooth } from '../core/freeform/edit'
+import { addFace, increaseResolution, movePoints, offsetCage, smooth, snapSelected } from '../core/freeform/edit'
 import { cageVertexLimits, vertexNormals } from '../core/freeform/limit'
+import { irregularBoundaryVertices, repairBoundary } from '../core/freeform/repair'
 import { offsetBoundaryToPlanes, offsetByPrimitives } from '../core/freeform/referenceOffset'
 import { surfaceAnchorDrag } from '../viewer/freeformAnchorDrag'
 import { regionClosestIn } from '../core/freeform/wrap'
-import { applyEditorAction, editorActions, selectedVertices, type EditorAction, type FreeformSelection } from '../core/freeform/editor'
+import { applyEditorAction, bridgeCommandAvailable, editorActions, selectedVertices, type EditorAction, type FreeformSelection } from '../core/freeform/editor'
 import { useReverse } from '../state/reStore'
 import { FreeformEditorLayer, type FreeformSelectionMode } from '../viewer/freeformEditorLayer'
 import { reSceneOf } from '../viewer/reScene'
@@ -57,6 +58,7 @@ export function FreeformEditor() {
   const setId = useFreeformEditor(s => s.setTargetId)
   const feature = state.features.find(f => f.id === id && f.kind === 'freeform') as FreeformFeature | undefined
   const cage = useMemo(() => feature?.faces.length ? fromFeature(feature) : null, [feature])
+  const irregular = useMemo(() => cage ? irregularBoundaryVertices(cage) : [], [cage])
   const editedBodies = useMemo(() => state.bodies.filter(b => Math.floor(b.id) === id).map(b => b.id), [id, state.bodies])
   const selectionHistory = useRef(new WeakMap<FreeformFeature, FreeformSelection[]>())
   const [picked, setPicked] = useState<{ feature: FreeformFeature | undefined; items: FreeformSelection[] }>({ feature, items: [] })
@@ -93,6 +95,7 @@ export function FreeformEditor() {
   const working = pending || state.building
   const [error, setError] = useState('')
   const [commandDialog, setCommandDialog] = useState<'delete-all' | OffsetCommand | null>(null)
+  const [bridgeMessage, setBridgeMessage] = useState<string | null>(null)
   const [offsetText, setOffsetText] = useState('')
   const elements = useStore(s => s.elements)
   const primitives = useMemo(() => elements.flatMap(({ fit }) =>
@@ -277,6 +280,7 @@ export function FreeformEditor() {
   }
   function action(name: EditorAction) {
     if (!cage || busy.current) return
+    if (name === 'bridge' && !bridgeCommandAvailable(cage, selection)) return
     try {
       const result = applyEditorAction(cage, selection, name)
       if (name === 'split' && snapProjector) {
@@ -299,32 +303,29 @@ export function FreeformEditor() {
       }
       void commit(result.cage, name === 'crease' ? [] : result.selection)
     }
-    catch (e) { setError((e as Error).message) }
+    catch (e) {
+      if (name === 'bridge') { setMenu(null); setBridgeMessage((e as Error).message) }
+      else setError((e as Error).message)
+    }
   }
   function smoothSelection() {
-    if (!cage || working || !selection.length) return
+    if (!cage?.faces.length || working) return
     try {
-      const next = smooth(cage, selectedVertices(cage, selection))
+      // Native Smooth takes a 10% neighbour step, using the whole cage when
+      // nothing is selected. Control Net and drag falloff do not change it.
+      const next = smooth(cage, selection.length ? selectedVertices(cage, selection) : undefined, 0.1)
       setMenu(null)
       if (next.positions.some((v,i)=>Math.abs(v-cage.positions[i])>1e-12)) void commit(next, selection)
     } catch(e) { setError((e as Error).message) }
   }
   function snapSelection() {
-    if (!cage || working || !selection.length) return
+    if (!cage?.faces.length || working) return
     try {
       const session=reverseSession()
       if (!session) throw new Error('The reference mesh is unavailable.')
-      const ids=selectedVertices(cage,selection), paths=scanPaths(session)
-      const anchors=controlNet ? null : cageVertexLimits(cage)
-      const travel=ids.map(index => {
-        const point=anchors?.[index] ?? vertexAt(cage,index)
-        const result=paths.closest(point)
-        if(!result?.point?.every(Number.isFinite)) throw new Error('No reference mesh point was found for this selection.')
-        return result.point.map((v,axis)=>v-point[axis]) as Vec3
-      })
-      const radius=neighbours ? 0 : (scene?.layerHost().modelRadius() ?? 0) * .1
-      const poleTravel=anchors ? surfaceAnchorDrag(cage,ids,radius)?.(travel) ?? travel : travel
-      const next=movePoints(cage,ids.map((vertex,i)=>({vertex,by:poleTravel[i]})),radius)
+      const paths=scanPaths(session)
+      const vertices=selection.length ? selectedVertices(cage,selection) : Array.from({length:cage.positions.length/3},(_,i)=>i)
+      const next=snapSelected(cage,vertices,p=>paths.closest(p))
       setMenu(null)
       if(next.positions.some((v,i)=>Math.abs(v-cage.positions[i])>1e-12)) void commit(next,selection)
     } catch(e) { setError((e as Error).message) }
@@ -389,7 +390,7 @@ export function FreeformEditor() {
     const finishedSurface = !working && editedBodies.length === 1 ? view.bodyMeshes.get(editedBodies[0])?.geometry : undefined
     if (display === 'deviation') { setRange(null); setDeviationError(false) }
     editor.set(cage, {
-      enabled: !working && commandDialog === null, rebuilding: working, extrapolate: tool === 'extrapolate', mode, selection, hiddenFaces: hidden, duplicateHandle: duplicate, controlNet, opacity, showEdges: surfaceView === 'solid-edges', manipulator: snap ? undefined : frame,
+      enabled: !working && commandDialog === null && bridgeMessage === null, rebuilding: working, extrapolate: tool === 'extrapolate', mode, selection, hiddenFaces: hidden, duplicateHandle: duplicate, controlNet, opacity, showEdges: surfaceView === 'solid-edges', manipulator: snap ? undefined : frame,
       strength: strength / 100, neighbourRadius: neighbours ? 0 : scene.layerHost().modelRadius() * .1,
       creating: (!cage || tool === 'add-face' || tool === 'rectangle') && !working, creationCorners: corners,
       creationTool: tool === 'rectangle' ? 'rectangle' : tool === 'add-face' ? 'face' : undefined,
@@ -457,7 +458,7 @@ export function FreeformEditor() {
       onDeviation: value => { setRange(value); setDeviationError(false) },
       onDeviationError: () => { setRange(null); setDeviationError(true) },
     })
-  }, [scene, cage, corners, tool, mode, selection, hidden, duplicate, strength, neighbours, snap, snapProjector, rayProjector, refitProjector, frame, controlNet, opacity, surfaceView, display, tolerance, colouring, working, editedBodies, bodyGeometryVersion, brushArea, brushRadius, brushStrength, brushFixBoundary, commandDialog, feature?.fitToScan, measureLiveDeviation, deviationReference])
+  }, [scene, cage, corners, tool, mode, selection, hidden, duplicate, strength, neighbours, snap, snapProjector, rayProjector, refitProjector, frame, controlNet, opacity, surfaceView, display, tolerance, colouring, working, editedBodies, bodyGeometryVersion, brushArea, brushRadius, brushStrength, brushFixBoundary, commandDialog, bridgeMessage, feature?.fitToScan, measureLiveDeviation, deviationReference])
   useEffect(() => { setPicked({ feature, items: feature ? selectionHistory.current.get(feature) ?? [] : [] }); setMenu(null) }, [feature])
   const topologyKey=cage?JSON.stringify([cage.positions.length,cage.faces]):''
   useEffect(()=>{setHidden([])},[id,topologyKey])
@@ -468,6 +469,12 @@ export function FreeformEditor() {
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (displayOptions) return
+      if (bridgeMessage) {
+        e.stopImmediatePropagation()
+        if (e.key === 'Escape') { e.preventDefault(); setBridgeMessage(null) }
+        else if (e.key === 'Tab' || e.ctrlKey || e.metaKey) e.preventDefault()
+        return
+      }
       if (commandDialog) {
         if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); setCommandDialog(null) }
         return
@@ -499,11 +506,11 @@ export function FreeformEditor() {
     }
     document.addEventListener('keydown', key, true)
     return () => document.removeEventListener('keydown', key, true)
-  }, [cage, selection, selectionMenu, manipMenu, menu, menuText, working, tool, commandDialog, displayOptions])
+  }, [cage, selection, selectionMenu, manipMenu, menu, menuText, working, tool, commandDialog, bridgeMessage, displayOptions])
   const history = (redo: boolean) => { if (busy.current || useReverse.getState().building) return; setMenu(null); redo ? state.redoFeatures() : state.undoFeatures() }
   const pickMode = (value: typeof mode) => { setMode(value); setSelectionMenu(null); setMenu(null) }
   const commandButton = (name: EditorAction, context = false) => <button key={name} type="button" role={context ? 'menuitem' : undefined}
-    data-test={`freeform-${name}`} aria-label={labels[name]} title={labels[name]} disabled={working || !available?.[name]}
+    data-test={`freeform-${name}`} aria-label={labels[name]} title={labels[name]} disabled={working || (name === 'bridge' ? !cage || !bridgeCommandAvailable(cage, selection) : !available?.[name])}
     onClick={() => action(name)}>{context ? <><span>{labels[name]}</span><span className="ff-shortcut">{name === 'split' ? 'S' : name === 'delete' ? 'Del' : name === 'bridge' ? 'D' : ''}</span></> : <FreeformIcon name={name} />}</button>
   const visibilityItems = <>
     <button role="menuitem" disabled={!selection.length} onClick={() => visibility(true)}><span className="ff-visibility-label"><FreeformIcon name="isolate" size={16} />Isolate</span></button>
@@ -543,8 +550,8 @@ export function FreeformEditor() {
         <div className="ff-icon-toolbar">
         {(['split', 'crease', 'remove_crease'] as const).map(name => commandButton(name))}
         <button type="button" title="Increase Resolution" aria-label="Increase Resolution" disabled={!cage || working} onClick={()=>cage && void commit(increaseResolution(cage))}><FreeformIcon name="resolution" /></button>
-        <button type="button" aria-label="Smooth" title="Smooth (Q)" disabled={!selection.length || working} onClick={smoothSelection}><FreeformIcon name="smooth" /></button>
-        <button type="button" aria-label="Snap to Mesh" title="Snap to Mesh" disabled={!selection.length || working} onClick={snapSelection}><FreeformIcon name="snap" /></button>{commandButton('bridge')}</div>
+        <button type="button" aria-label="Smooth" title="Smooth (Q)" disabled={!cage?.faces.length || working} onClick={smoothSelection}><FreeformIcon name="smooth" /></button>
+        <button type="button" aria-label="Snap to Mesh" title="Snap to Mesh" disabled={!cage?.faces.length || working} onClick={snapSelection}><FreeformIcon name="snap" /></button>{commandButton('bridge')}</div>
       </div>
       {feature?.fromSketch && <small>Manual edits detach this surface from its generating sketch.</small>}
       <label>Selection <select aria-label="Freeform selection" value={mode} onChange={e => pickMode(e.target.value as typeof mode)}>{selectionModes.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
@@ -619,14 +626,19 @@ export function FreeformEditor() {
         <button type="button" disabled={working} onClick={close}>Close</button></footer>
       </>}
     </form>
+    {!!irregular.length && <button type="button" className="ff-irregular-warning" data-test="freeform-repair-boundary" disabled={working}
+      onClick={() => {
+        if (!cage || working) return
+        try { void commit(repairBoundary(cage)) } catch (e) { setError((e as Error).message) }
+      }}>The surface contains irregular points<br />Click here to repair.</button>}
     {displayOptions && <FreeformDeviationOptions tolerance={tolerance} colouring={colouring}
       onApply={setDeviationOptions} onClose={closeDisplayOptions} />}
-    {menu?.hit && <div role="toolbar" aria-label="Freeform contextual tools" className="ff-icon-toolbar ff-floating-tools" onMouseEnter={()=>{toolbarHover.current=true}} onMouseLeave={()=>{toolbarHover.current=false}} style={{position:'fixed',left:menu.x,top:Math.max(0,menu.y-28),display:'flex',gap:2,zIndex:10001}}>
+    {menu && !menu.commands && <div role="toolbar" aria-label="Freeform contextual tools" className="ff-icon-toolbar ff-floating-tools" onMouseEnter={()=>{toolbarHover.current=true}} onMouseLeave={()=>{toolbarHover.current=false}} style={{position:'fixed',left:menu.x,top:Math.max(0,menu.y-28),display:'flex',gap:2,zIndex:10001}}>
         <button type="button" aria-label="Manipulate" title="Manipulate" aria-pressed={tool==='manipulate'} onClick={()=>chooseTool('manipulate')}><FreeformIcon name="select" /></button>
         <button type="button" aria-label="Extrapolate" title="Extrapolate" aria-pressed={tool==='extrapolate'} disabled={!cage || working} onClick={()=>chooseTool('extrapolate')}><FreeformIcon name="extrapolate" /></button>
         <button type="button" aria-label="Increase Resolution" title="Increase Resolution (Ctrl+R)" disabled={!cage || working} onClick={()=>cage && void commit(increaseResolution(cage))}><FreeformIcon name="resolution" /></button>
-        <button type="button" aria-label="Smooth" title="Smooth (Q)" disabled={!selection.length || working} onClick={smoothSelection}><FreeformIcon name="smooth" /></button>
-        <button type="button" aria-label="Snap to Mesh" title="Snap to Mesh" disabled={!selection.length || working} onClick={snapSelection}><FreeformIcon name="snap" /></button>
+        <button type="button" aria-label="Smooth" title="Smooth (Q)" disabled={!cage?.faces.length || working} onClick={smoothSelection}><FreeformIcon name="smooth" /></button>
+        <button type="button" aria-label="Snap to Mesh" title="Snap to Mesh" disabled={!cage?.faces.length || working} onClick={snapSelection}><FreeformIcon name="snap" /></button>
     </div>}
     {menu && menuText && <div ref={contextRef} role="menu" tabIndex={-1} onKeyDown={e => {
       if (!['ArrowDown','ArrowUp','Home','End'].includes(e.key)) return
@@ -661,6 +673,12 @@ export function FreeformEditor() {
       {commandButton('crease', true)}{commandButton('remove_crease', true)}<hr />
       {commandButton('split', true)}{commandButton('bridge', true)}{commandButton('close_hole', true)}<hr />{commandButton('delete', true)}
       </>}
+    </div>}
+    {bridgeMessage && <div className="modalback ff-command-backdrop">
+      <section className="modal ff-command-dialog" role="alertdialog" aria-modal="true" aria-label="Bridge Edges" aria-describedby="freeform-bridge-message">
+        <p id="freeform-bridge-message">{bridgeMessage}</p>
+        <footer><button type="button" autoFocus onClick={() => setBridgeMessage(null)}>OK</button></footer>
+      </section>
     </div>}
     {commandDialog === 'delete-all' && <div className="modalback ff-command-backdrop">
       <section className="modal ff-command-dialog" role="alertdialog" aria-modal="true" aria-label="Delete all Freeform faces">

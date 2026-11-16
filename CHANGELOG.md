@@ -1,3 +1,25 @@
+## 1.1.60 — Irregular boundary repair
+
+New Freeform identifies irregular boundary points and repairs the isolated, uncreased three- and four-face patterns measured in QUICKSURFACE. Repairs add the observed two-quad boundary strip, preserve history and project persistence, and refresh finished-CAD tolerance. Unsupported or degenerate configurations leave geometry unchanged. Full drag-to-Merge equivalence remains open.
+
+## 1.1.62 — 2026-11-15
+
+- New Freeform Smooth uses the native-observed 10% neighbour step and processes the whole cage when nothing is selected; selected edits retain their selection.
+- Snap to Mesh is available without a selection and applies the same five limit-surface corrections to all poles.
+- Manual Split adjusts regular adjacent control rows by one third toward their continuation, matching two saved native refinements. Shared API splitting, Auto Freeform and creased/extraordinary fallback behavior are unchanged.
+- Paired Smooth, snap and repeated Split geometry, independent finished-CAD tolerance, Undo/Redo and persistence checks pass. Full Merge, irregular/creased Split equivalence and remaining visual differences remain open.
+
+## 1.1.61 — 2026-11-15
+
+- New Freeform Boundary selection picks the connected visible perimeter; right-click adds another perimeter and empty Boundary clicks clear selection without starting an edge marquee.
+- Bridge Edges remains available for multiple selected edges and reports a connected single-chain refusal in a modal dialog, preserving geometry, selection and history. Invalid topology still refuses atomically.
+- Empty-viewport right-click now exposes the native-order five-tool floating toolbar.
+- Verified against installed QUICKSURFACE 8.0.128. Closed-loop bridge output is not reproduced: tested native fixtures produced degenerate or disconnected faces. Complete Merge and remaining parity work remain open.
+
+## 1.1.59 — Selected smooth-surface snapping
+
+Snap to Mesh applies five selected limit-anchor corrections and holds unselected poles fixed independently of Control Net and neighbour drag settings. Native point/chain coordinates, finished-CAD tolerance, contextual snap, Undo/Redo and persistence pass paired checks. Native deformation/refinement comparisons are recorded; full merge remains incomplete.
+
 ## 1.1.58 — Complete Freeform deletion and Undo measurements
 
 Deleting the entire cage retains an editable empty feature. Undo restores the cage, selection and finished-CAD tolerance analysis. Empty geometry reports no surface to measure; save/reopen and four-corner recreation pass. Full tests, packaged and installed checks passed.
