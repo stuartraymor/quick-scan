@@ -157,8 +157,9 @@ describe('the edited scan as a PLY', () => {
     expect(Array.from(wall.indices)).toEqual(indices)
     const drop = Uint8Array.from(side, (k, t) => (Math.floor(t / 8) < n / 6 && (k === 0 || k === 3) ? 0 : 1))
     const kept = withoutTriangles(wall.positions, wall.indices, wall.vertexCount, drop)
-    // Guessed afresh, the strip would be turned.
-    expect(Array.from(buildMeshGraph({ kind: 'indexed', positions: kept.positions.slice(), indices: kept.indices.slice() }).indices)).not.toEqual(
+    // The open strip no longer supplies an enclosed-volume orientation guess.
+    // Fresh import and explicit keep-winding PLY both retain its original side.
+    expect(Array.from(buildMeshGraph({ kind: 'indexed', positions: kept.positions.slice(), indices: kept.indices.slice() }).indices)).toEqual(
       Array.from(kept.indices),
     )
     // Kept as a PLY and read back, it is wound as the wall was: its top faces up.

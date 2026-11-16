@@ -50,7 +50,7 @@ export function buildMeshGraph(parsed: ParsedMesh, onProgress?: (text: string) =
   const { offsets, list } = buildAdjacency(indices, vertexCount)
   onProgress?.('Computing normals…')
   const normals = computeVertexNormals(positions, indices)
-  if (!parsed.keepWinding) orientNormalsOutward(positions, indices, normals)
+  if (!parsed.keepWinding) orientNormalsOutward(positions, indices, normals, { offsets, list })
 
   const { min: [minX, minY, minZ], max: [maxX, maxY, maxZ] } = extentOf(positions)
   const bboxDiag = Math.sqrt((maxX - minX) ** 2 + (maxY - minY) ** 2 + (maxZ - minZ) ** 2)

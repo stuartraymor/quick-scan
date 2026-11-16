@@ -1,5 +1,28 @@
 # 1.1.68
 
+## 1.1.76
+
+- Preserve input orientation for open reference scans, including curved OBJ sheets; retain closed inside-out correction.
+- Repair adjacent irregular boundary fans together using the native-observed shared strip.
+- Refine measured tolerance colors across curved references without moving the CAD surface or biasing CAD-sample statistics when display thresholds change.
+
+## 1.1.75
+
+- Fit curved Closest Point contacts after joining, following observed point/chain and Control Net behavior. Keep captured targets through release when the fitted preview covers their original poles.
+- Repair observed seven/eight-quad irregular boundary fans, including a nonplanar eight-quad case.
+
+## 1.1.74
+
+- Repair supported irregular boundary fans with interior or boundary creases while retaining the original crease edges.
+
+- Preserve crease connectivity during native-observed point and boundary-chain joining.
+- Retain the measured tolerance material and shader across hover/selection redraws, avoiding repeated GPU program disposal.
+
+## 1.1.73
+
+- Extend irregular-boundary repair to the native-observed five- and six-quad fans.
+- Repair supported boundary components alongside point-only junctions, retaining the unresolved junction and its warning.
+
 ## 1.1.72
 
 - Match native evaluated point and corner dragging with Closest Point snapping enabled.

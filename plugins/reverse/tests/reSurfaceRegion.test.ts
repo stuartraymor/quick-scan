@@ -66,9 +66,9 @@ afterAll(() => {
 beforeEach(resetReverse)
 
 const BOX = { min: [-25, -20, -1], max: [25, 20, 10] }
-/** The way the skin faces as the scan has it: an open sheet's normals are
- *  turned away from the side it curls round, down here. */
-const FACING = { dir: [0, 0, -1], withinDeg: 40 }
+/** The supplied open sheet and boss top wind toward +Z. Import must preserve
+ *  that direction, rather than infer an inside/outside from an open surface. */
+const FACING = { dir: [0, 0, 1], withinDeg: 40 }
 
 describe('a surface’s region by query', () => {
   it('fits the skin through a box facing up, the boss left out, with no vertex list in or out', async () => {

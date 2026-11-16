@@ -6,6 +6,7 @@
 
 import { extentOf } from './bounds'
 import { tetraVolume6 } from './centroid'
+import { buildAdjacency } from './adjacency'
 
 /** Area-weighted per-vertex normals (unnormalized cross products summed,
  *  then normalized). Orientation follows the triangle winding — see
@@ -63,17 +64,17 @@ export function computeVertexNormals(positions: Float32Array, indices: Uint32Arr
  * from behind (uniformly dark, ambient only).
  *
  * The test is the signed volume about the centroid: origin-independent for a
- * closed mesh, and anchoring at the centroid keeps an open scan's spurious
- * contribution small. A scan too open to give a decisive signal (a single
- * sheet has none) is left exactly as wound. It is still a guess: a strip
- * open on every side that curves round its own inside can give a decisive
- * signal the wrong way, so a file that says its winding is settled is not
- * put through it (see parsers/ply).
+ * closed mesh. A curved open sheet can give a strong but meaningless volume
+ * signal, reversing its snapping normals and tolerance colors. Require two
+ * incident triangles on every edge before using that signal. Open or
+ * nonmanifold scans retain their input winding, as does an explicit
+ * keep-winding file (see parsers/ply).
  */
 export function orientNormalsOutward(
   positions: Float32Array,
   indices: Uint32Array,
   normals: Float32Array,
+  adjacency?: { offsets: Uint32Array; list: Uint32Array },
 ): boolean {
   const vcount = positions.length / 3
   if (vcount === 0) return false
@@ -92,6 +93,16 @@ export function orientNormalsOutward(
   // Decisive means the enclosed volume is a real fraction of the bounding box;
   // below that the mesh is a sheet and its orientation is not knowable.
   if (!(bboxVol > 0) || vol6 >= -6e-3 * bboxVol) return false
+  // Reuse the graph's bounded CSR storage; do not allocate a global edge
+  // map (large scans can exceed V8's Map entry limit). Each adjacent vertex
+  // occurs once per incident triangle, so a closed manifold edge occurs twice.
+  const { offsets, list } = adjacency ?? buildAdjacency(indices, vcount)
+  const uses = new Map<number, number>()
+  for (let v = 0; v < vcount; v++) {
+    uses.clear()
+    for (let i = offsets[v]; i < offsets[v + 1]; i++) uses.set(list[i], (uses.get(list[i]) ?? 0) + 1)
+    for (const count of uses.values()) if (count !== 2) return false
+  }
   for (let v = 0; v < normals.length; v++) normals[v] = -normals[v]
   for (let t = 0; t < indices.length; t += 3) {
     const tmp = indices[t + 1]

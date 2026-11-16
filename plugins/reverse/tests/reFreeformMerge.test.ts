@@ -4,6 +4,7 @@ import { type Cage, topology } from '../core/freeform/cage'
 import { mergeBoundaryPoint, mergeChainEnds } from '../core/freeform/merge'
 import { irregularBoundaryVertices } from '../core/freeform/repair'
 import fixtures from './fixtures/freeform-merge-reference.json'
+import creased from './fixtures/freeform-creased-merge.json'
 
 for (const trial of fixtures) it(`matches saved native ${trial.name} coordinates and oriented connectivity`, () => {
   const cage: Cage = { positions: Float64Array.from(trial.input.positions), faces: trial.input.faces.map(f => [...f]), creases: [] }
@@ -16,14 +17,12 @@ for (const trial of fixtures) it(`matches saved native ${trial.name} coordinates
   if (trial.name === 'third-contact-off') expect(irregularBoundaryVertices(result.cage)).toEqual([])
 })
 
-it('refuses collapsed faces and creased contacts without changing the input', () => {
+it('refuses collapsed faces and invalid contacts without changing the input', () => {
   const f = fixtures[0], cage: Cage = { positions: Float64Array.from(f.input.positions), faces: f.input.faces, creases: [] }
   const before = structuredClone(cage)
   expect(() => mergeBoundaryPoint(cage, 2, 8)).toThrow('cannot be merged')
   expect(() => mergeBoundaryPoint(cage, -1, 10)).toThrow('cannot be merged')
   expect(cage).toEqual(before)
-  cage.creases = [[2, 8]]
-  expect(() => mergeBoundaryPoint(cage, 8, 10)).toThrow('cannot be merged')
 })
 
 it('orders one open chain independently of click order and excludes disconnected, internal and closed selections',()=>{
@@ -34,4 +33,11 @@ it('orders one open chain independently of click order and excludes disconnected
  expect(mergeChainEnds(c,[edge(2,8),edge(4,10)])).toEqual([])
  expect(mergeChainEnds(c,[edge(8,9)])).toEqual([])
  expect(mergeChainEnds(c,t.edges.flatMap((e,i)=>e.faces.length===1?[i]:[]))).toEqual([])
+})
+
+for(const trial of creased) it('preserves native crease connectivity for '+trial.name,()=>{
+ const c:Cage={positions:Float64Array.from(trial.input.positions),faces:trial.input.faces,creases:trial.input.creases as [number,number][]},before=structuredClone(c);
+ const out=mergeBoundaryPoint(c,trial.from,trial.to,trial.contact==='chain'?'chain':'point').cage;
+ expect(out.faces).toEqual(trial.expected.faces);expect(out.creases.map(e=>[...e].sort((a,b)=>a-b)).sort()).toEqual(trial.expected.creases.map(e=>[...e].sort((a,b)=>a-b)).sort());
+ expect(Math.max(...out.positions.map((v,i)=>Math.abs(v-trial.expected.positions[i])))).toBeLessThan(5e-7);expect(c).toEqual(before);
 })

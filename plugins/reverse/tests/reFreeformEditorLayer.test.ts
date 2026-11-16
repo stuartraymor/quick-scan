@@ -12,6 +12,25 @@ import snappedDrags from './fixtures/freeform-snapped-point-reference.json'
 
 afterEach(() => vi.unstubAllGlobals())
 
+it('refines curved colors without changing CAD-sample statistics when tolerance changes', async () => {
+  const finished = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([-2,-1,2,2,-1,2,0,1,2],3))
+  const measure = (p: Float32Array) => Float32Array.from({length:p.length/3}, (_,i)=>Math.hypot(p[i*3],p[i*3+2])-2)
+  const measureDeviation = vi.fn(async (p: Float32Array) => measure(p)), onDeviation = vi.fn()
+  const options = {display:'deviation' as const, finishedSurface:finished, measureDeviation, measureLiveDeviation:measure, onDeviation, tolerance:.01}
+  const s = setup(options)
+  await vi.waitFor(()=>expect(onDeviation.mock.lastCall?.[0]?.preview).toBe(false))
+  const values = measure(measureDeviation.mock.calls[0][0]), range = onDeviation.mock.lastCall![0]
+  expect(range.rms).toBeCloseTo(Math.sqrt(values.reduce((sum,v)=>sum+v*v,0)/values.length),10)
+  const count = () => (s.partGroup.getObjectByName('freeform-deviation-surface') as THREE.Mesh).geometry.getAttribute('position').count
+  const narrowCount = count(); expect(narrowCount).toBeGreaterThan(values.length)
+  s.editor.set(s.cage,{...options,tolerance:.1})
+  await vi.waitFor(()=>expect(measureDeviation).toHaveBeenCalledTimes(2))
+  await vi.waitFor(()=>expect(onDeviation.mock.lastCall?.[0]?.preview).toBe(false))
+  expect(onDeviation.mock.lastCall![0]).toEqual(range)
+  expect(count()).not.toBe(narrowCount)
+  s.editor.dispose(); finished.dispose()
+})
+
 it('keeps measured tolerance visible synchronously through hover and selection redraws', async () => {
   const finished = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([0,0,.02,5,0,.02,0,5,.02],3))
   const measureDeviation = vi.fn(async (p: Float32Array) => new Float32Array(p.length / 3).fill(.02))
@@ -20,12 +39,17 @@ it('keeps measured tolerance visible synchronously through hover and selection r
   const visible = () => s.partGroup.getObjectByName('freeform-deviation-surface')?.visible
   await vi.waitFor(() => expect(visible()).toBe(true))
   const geometry = (s.partGroup.getObjectByName('freeform-deviation-surface') as THREE.Mesh).geometry
+  const material = (s.partGroup.getObjectByName('freeform-deviation-surface') as THREE.Mesh).material as THREE.Material
+  const materialDisposed = vi.spyOn(material, 'dispose'), version = material.version
   const disposed = vi.spyOn(geometry, 'dispose')
   for (let i = 0; i < 8; i++) {
     s.layer.hover!({x:125,y:100}, false)
     expect(visible()).toBe(true)
     expect((s.partGroup.getObjectByName('freeform-deviation-surface') as THREE.Mesh).geometry).toBe(geometry)
     expect(disposed).not.toHaveBeenCalled()
+    expect((s.partGroup.getObjectByName('freeform-deviation-surface') as THREE.Mesh).material).toBe(material)
+    expect(material.version).toBe(version)
+    expect(materialDisposed).not.toHaveBeenCalled()
     s.layer.hover!(null, false)
     expect(visible()).toBe(true)
   }
@@ -34,6 +58,7 @@ it('keeps measured tolerance visible synchronously through hover and selection r
   expect(disposed).toHaveBeenCalledTimes(1)
   expect(measureDeviation).toHaveBeenCalledTimes(1)
   s.editor.dispose(); finished.dispose()
+  expect(materialDisposed).toHaveBeenCalledTimes(1)
 })
 
 it('paints current measured preview while finished CAD sampling is pending', async () => {
@@ -822,6 +847,7 @@ for(const f of surfaceDrags) it(`direct surface-point pointer gesture matches na
 for(const f of snappedDrags) it(`snapped surface-point pointer gesture matches native ${f.name}`,()=>{
  const cage:Cage={positions:Float64Array.from(f.input.positions),faces:f.input.faces,creases:[]},a=cageVertexLimits(cage)[f.vertex]
  const s=setup({mode:'points',controlNet:false,neighbourRadius:f.keepNeighbours?0:2,snapPoint:p=>[p[0],p[1],0]},cage),x=100+a[0]*10,y=100-a[1]*10,tx=x+f.travel[0]*10
+ s.host.pickScan=vi.fn((x:number,y:number)=>({point:[(x-100)/10,(100-y)/10,0]})) as unknown as typeof s.host.pickScan
  s.layer.pointerDown!(s.event('pointerdown',x,y));s.canvas.dispatchEvent(s.event('pointermove',tx,y));expect(s.onCommit).not.toHaveBeenCalled()
  const preview=s.onPreview.mock.lastCall?.[0] as Cage;expect(preview.faces).toEqual(f.expected.faces)
  s.canvas.dispatchEvent(s.event('pointerup',tx,y));expect(s.onCommit).toHaveBeenCalledTimes(1)

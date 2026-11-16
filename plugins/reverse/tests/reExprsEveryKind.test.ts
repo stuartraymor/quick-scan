@@ -127,7 +127,8 @@ describe('exprs on every kind with numbers', () => {
 
   it('drives the box a surface’s region is read in: the points read again when it moves', async () => {
     await parameter('bx', '0')
-    const facing = { dir: [0, 0, -1], withinDeg: 40 }
+    // The open sheet is wound toward +Z; import preserves that orientation.
+    const facing = { dir: [0, 0, 1], withinDeg: 40 }
     const made = await run<Added>('reverse.feature.add', { feature: { kind: 'surface', name: 'Skin', region: { box: { min: [-25, -20, -1], max: [25, 20, 10] }, normal: facing }, exprs: { 'region.box.max.x': 'bx' } } })
     expect(made.result?.status, made.result?.message).toBe('ok')
     const half = made.result!.surface!.points

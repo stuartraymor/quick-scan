@@ -1,7 +1,59 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { type Cage, edgeKey, topology, vertexAt } from './cage'
-import { cloneCage } from './edit'
+import { cloneCage, snapSelected } from './edit'
 import { cageVertexLimits } from './limit'
+import type { Vec3 } from '../../../../src/core/types'
+
+/** Closest Point contact fits the joined surface, not the approaching poles.
+ * Native point contact uses a camera-ray hit at the captured target. With
+ * Control Net ON its connected component fits too. Chain contact fits only
+ * the selected row; Control Net OFF retains the other surface anchors. */
+export function fitMergedContact(input: Cage, selected: readonly number[], controlNet: boolean,
+  closest: (p: Vec3) => Vec3 | null, point?: { vertex: number; position: Vec3 }): Cage {
+  const cage = cloneCage(input), top = topology(cage), vertices = new Set(selected)
+  const anchors = cageVertexLimits(cage)
+  if (point) {
+    if (!point.position.every(Number.isFinite)) throw new Error('No valid mesh contact.')
+    cage.positions.set(point.position, point.vertex * 3)
+    vertices.clear(); vertices.add(point.vertex)
+    if (controlNet) for (const v of vertices) for (const ei of top.vertexEdges[v]) {
+      const e = top.edges[ei]; vertices.add(e.a); vertices.add(e.b)
+    }
+  }
+  const out = snapSelected(cage, [...vertices], p => {
+    const q = closest(p)
+    return q?.every(Number.isFinite) ? { point: q, distance: Math.hypot(...q.map((v, k) => v - p[k])) } : null
+  })
+  if (!point && !controlNet) for (let step = 0; step < 4; step++) {
+    const current = cageVertexLimits(out)
+    out.positions = Float64Array.from(out.positions, (p, k) => vertices.has(Math.floor(k / 3)) ? p
+      : p + anchors[Math.floor(k / 3)][k % 3] - current[Math.floor(k / 3)][k % 3])
+  }
+  validateContactGeometry(input, out)
+  return out
+}
+
+function validateContactGeometry(input: Cage, cage: Cage) {
+  const refuse = () => { throw new Error('These boundary points cannot be merged without damaging the surface.') }
+  if (!cage.positions.every(Number.isFinite)) return refuse()
+  const normal = (c: Cage, f: number[]) => {
+    const p = vertexAt(c, f[0]), result = [0, 0, 0]
+    for (let i = 1; i + 1 < f.length; i++) {
+      const u = vertexAt(c, f[i]).map((v, k) => v - p[k]), v = vertexAt(c, f[i + 1]).map((v, k) => v - p[k])
+      result[0] += u[1] * v[2] - u[2] * v[1]; result[1] += u[2] * v[0] - u[0] * v[2]; result[2] += u[0] * v[1] - u[1] * v[0]
+    }
+    return result
+  }
+  for (let i = 0; i < cage.faces.length; i++) {
+    const a = normal(input, input.faces[i]), b = normal(cage, cage.faces[i]), scale = Math.hypot(...a)
+    if (!(a.reduce((s, v, k) => s + v * b[k], 0) > scale * scale * 1e-12)) return refuse()
+    const f = cage.faces[i]
+    for (let k = 0; k < f.length; k++) {
+      const p = vertexAt(cage, f[k]), q = vertexAt(cage, f[(k + 1) % f.length])
+      if (!(p.reduce((s, v, k) => s + (v - q[k]) ** 2, 0) > scale * 1e-20)) return refuse()
+    }
+  }
+}
 
 /** Ends of one open selected boundary, ordered by adjacent face winding.
  * Native whole-chain contact captures its trailing end first; it does not
@@ -37,13 +89,16 @@ export function mergeBoundaryPoint(input: Cage, from: number, to: number, contac
   const n = input.positions.length / 3, before = topology(input)
   const boundary = (v: number) => before.vertexEdges[v].some(e => before.edges[e].faces.length === 1)
   if (![from, to].every(v => Number.isInteger(v) && v >= 0 && v < n) || from === to) return refuse()
-  if (!boundary(from) || !boundary(to) || input.faces.some(f => f.includes(from) && f.includes(to)) ||
-      input.creases.some(e => e.includes(from) || e.includes(to))) return refuse()
+  if (!boundary(from) || !boundary(to) || input.faces.some(f => f.includes(from) && f.includes(to))) return refuse()
   const moved = cloneCage(input)
   moved.positions.set(vertexAt(input, to), from * 3)
   // A native chain contact preserves the dragged chain's anchors before
   // capturing its endpoint; individual point contact uses the captured pole.
-  const anchors = cageVertexLimits(contact === 'point' ? moved : input)
+  // Native crease flags survive the weld, but its four contact corrections
+  // use the smooth cage masks. A creased chain has the same captured poles
+  // as its uncreased counterpart; including sharp masks pins its midpoint.
+  const contactLimits = (c: Cage) => cageVertexLimits({ ...c, creases: [] })
+  const anchors = contactLimits(contact === 'point' ? moved : input)
   const map = (v: number) => { const w = v === from ? to : v; return w > from ? w - 1 : w }
   const kept = Array.from({ length: n }, (_, v) => v).filter(v => v !== from)
   const cage: Cage = {
@@ -65,7 +120,7 @@ export function mergeBoundaryPoint(input: Cage, from: number, to: number, contac
     if (forward[0] === forward[1]) return refuse()
   }
   for (let step = 0; step < 4; step++) {
-    const current = cageVertexLimits(cage)
+    const current = contactLimits(cage)
     cage.positions = Float64Array.from(cage.positions, (p, k) => p + anchors[kept[Math.floor(k / 3)]][k % 3] - current[Math.floor(k / 3)][k % 3])
   }
   if (!cage.positions.every(Number.isFinite)) return refuse()

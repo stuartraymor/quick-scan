@@ -16,13 +16,43 @@ const unsupported = () => new Error('These boundary points could not be repaired
 /** Extend each irregular fan's boundary to one-face corners, copying the
  * old perimeter and moving its poles a quarter inward. The native repair
  * applies strips in vertex order, so later strips use earlier moved poles.
- * Work on clones: an unsupported later strip must not partially repair. */
+ * The observed point-only joins stay unchanged while other components repair.
+ * Work on clones: any other unsupported strip must not partially repair. */
 export function repairBoundary(c: Cage): Cage {
   const irregular = irregularBoundaryVertices(c)
   if (!irregular.length) return cloneCage(c)
   let out = cloneCage(c)
-  for (const v of irregular) out = repairFan(out, v)
+  for (const v of irregular) {
+    // One native strip may repair neighboring irregular boundary points
+    // together. Do not attempt a second strip through a now-interior point.
+    if (!irregularBoundaryVertices(out).includes(v)) continue
+    if (pointOnlyJunction(out, v)) continue
+    out = repairFan(out, v)
+  }
+  // Do not create a history entry or rebuild for a junction-only no-op.
+  if (out.faces.length === c.faces.length) throw unsupported()
   return out
+}
+
+/** Two one-face corners or two two-face boundary rows joined at one point.
+ * Native repair leaves both observed arrangements in place, including when
+ * an independent connected fan is repaired by the same warning click. */
+function pointOnlyJunction(c: Cage, v: number): boolean {
+  const t = topology(c), faces = t.vertexFaces[v]
+  if (![2, 4].includes(faces.length) || t.vertexEdges[v].filter(e => t.edges[e].faces.length === 1).length !== 4) return false
+  const remaining = new Set(faces), groups: number[][] = []
+  while (remaining.size) {
+    const group = [remaining.values().next().value!]; remaining.delete(group[0])
+    for (let i = 0; i < group.length; i++) {
+      for (const edge of t.vertexEdges[v].map(e => t.edges[e]).filter(e => e.faces.includes(group[i]))) {
+        for (const f of edge.faces) if (remaining.delete(f)) group.push(f)
+      }
+    }
+    groups.push(group)
+  }
+  if (groups.length !== 2 || groups.some(g => g.length !== faces.length / 2)) return false
+  for (const group of groups) orderedFan(c, v, group)
+  return true
 }
 
 function orderedFan(c: Cage, v: number, faces: number[]) {
@@ -48,31 +78,36 @@ function orderedFan(c: Cage, v: number, faces: number[]) {
 }
 
 function repairFan(c: Cage, v: number): Cage {
-  const remaining = irregularBoundaryVertices(c).filter(p => p !== v)
   const t = topology(c), faces = t.vertexFaces[v]
-  if (![3, 4].includes(faces.length)) throw unsupported()
+  if (![3, 4, 5, 6, 7, 8].includes(faces.length)) throw unsupported()
   orderedFan(c, v, faces)
-  const next = new Map<number, number>(), previous = new Map<number, number>()
+  const next = new Map<number, number[]>(), previous = new Map<number, number[]>()
   for (const edge of t.edges) {
     if (edge.faces.length !== 1) continue
     const face = c.faces[edge.faces[0]], k = face.indexOf(edge.a)
     const a = face[(k + 1) % face.length] === edge.b ? edge.a : edge.b
     const b = a === edge.a ? edge.b : edge.a
-    if (next.has(a) || previous.has(b)) throw unsupported()
-    next.set(a, b); previous.set(b, a)
+    next.set(a, [...(next.get(a) ?? []), b]); previous.set(b, [...(previous.get(b) ?? []), a])
   }
   const strip = [v]
-  const extend = (prepend: boolean, map: Map<number, number>) => {
+  const extend = (prepend: boolean, map: Map<number, number[]>) => {
     while (true) {
-      const p = map.get(prepend ? strip[0] : strip[strip.length - 1])
-      if (p === undefined || strip.includes(p)) throw unsupported()
+      const candidates = map.get(prepend ? strip[0] : strip[strip.length - 1])
+      if (candidates?.length !== 1) throw unsupported()
+      const p = candidates[0]
+      if (strip.includes(p)) throw unsupported()
       if (prepend) strip.unshift(p); else strip.push(p)
       if (t.vertexFaces[p].length === 1) break
-      if (t.vertexFaces[p].length !== 2) throw unsupported()
+      if (![2, 3, 4, 5, 6, 7, 8].includes(t.vertexFaces[p].length)) throw unsupported()
+      // Adjacent irregular fans belong to the same strip. A disconnected
+      // fan or branching boundary is still refused rather than guessed.
+      orderedFan(c, p, t.vertexFaces[p])
     }
   }
   extend(true, previous); extend(false, next)
-  if (c.creases.some(edge => edge.some(p => strip.includes(p)))) throw unsupported()
+  const remaining = irregularBoundaryVertices(c).filter(p => !strip.includes(p))
+  // Native repair retains the original crease edges, including a boundary
+  // crease that becomes internal. It does not crease the copied perimeter.
   const towards = strip.map(p => {
     const { fan, diagonals } = orderedFan(c, p, t.vertexFaces[p])
     if (diagonals.length === 1) {
