@@ -14,8 +14,9 @@ export function SketchCornerTrimPanel(_props: { chainsOf: () => SketchChains | n
     </div>
     <label className="field"><span>Radius</span><input disabled={state.mode !== 'fixedFillet'} data-test="corner-radius" type="number" min={len.toDisplay(0.0001)} step={len.step(0.1)} value={Number.isFinite(state.radiusMm) ? len.toDisplay(state.radiusMm) : ''} onChange={(e) => state.setRadiusMm(e.currentTarget.value === '' ? NaN : len.fromDisplay(Number(e.currentTarget.value)))} /><span>{len.word()}</span></label>
     <label style={{ display: 'block', margin: '10px 0' }}><input type="checkbox" disabled={state.mode === 'trim'} checked={state.addDimension} onChange={(e) => state.setAddDimension(e.currentTarget.checked)} data-test="corner-add-dimension" /> Automatically add dimension</label>
-    <p className="hint">Hold the left mouse button and paint over two endpoints to join them on release.</p>
+    <p className="hint">Hold the left mouse button and paint over two ends — of lines, arcs or open curves — to join them on release. Fillets join two lines.</p>
     {state.mode === 'autoFillet' && <p className="hint">Include the rounded reference points in the stroke to fit the radius.</p>}
+    {state.lastFit && <p className="hint" data-test="corner-last-fit">Fillet R {len.fmt(state.lastFit.radiusMm, 3)}{state.lastFit.rms !== undefined ? ` · fitted to ${state.lastFit.usedPoints} scan points, ${len.fmt(state.lastFit.rms, 4)} RMS` : ''}</p>}
     {state.message && <p role="status" className="hint" data-test="corner-message">{state.message}</p>}
     <div className="toolrow"><button onClick={() => state.cancel()} data-test="corner-cancel">OK</button></div>
   </section>

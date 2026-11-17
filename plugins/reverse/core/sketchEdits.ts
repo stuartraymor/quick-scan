@@ -43,14 +43,28 @@ export function mirrorSelected(input: Sketch, ids: readonly number[]): SketchEdi
   const pieces = selected(input, ids)
   const axes = pieces.filter((e): e is SketchLine => e.kind === 'line' && Boolean(e.construction))
   if (axes.length !== 1) return fail('Select the pieces and exactly one construction line to mirror about.')
-  const axis = axes[0], d = sub(axis.b, axis.a), length = norm(d)
+  const axis = axes[0]
+  return mirrorAbout(input, pieces.filter(e => e.id !== axis.id).map(e => e.id), { a: axis.a, b: axis.b })
+}
+
+/** A mirror line: any two distinct points on it, in sheet millimetres. */
+export interface MirrorAxis { a: Vec2; b: Vec2 }
+
+/** Copies the pieces reflected about the line through `axis`. The pieces may
+ *  lie anywhere — touching the line or far from it; their exact definitions
+ *  are reflected (ends, centres, control points, arc sweep, end directions)
+ *  and the originals are left as they are. Nothing is joined to the line. */
+export function mirrorAbout(input: Sketch, ids: readonly number[], axis: MirrorAxis): SketchEditResult {
+  if (!axis.a.every(Number.isFinite) || !axis.b.every(Number.isFinite)) return fail('The mirror line must be finite.')
+  const d = sub(axis.b, axis.a), length = norm(d)
   if (length < EPS) return fail('The mirror line has no length.')
-  const copyIds = pieces.filter(e => e.id !== axis.id).map(e => e.id)
-  if (!copyIds.length) return fail('Select at least one piece as well as the construction line.')
+  const copyIds = selected(input, ids).map(e => e.id)
+  if (!copyIds.length) return fail('Select at least one piece to mirror.')
+  const anchor = axis.a
   const sketch = cloneSketch(input), oldConstraints = new Set(sketch.constraints.map(c => c.id))
   const made = patternPieces(sketch, copyIds, { kind: 'rectangular', count: 2, step: [0, 0] }).flat()
   const set = new Set(made), arcs = new Set<number>(), phi = Math.atan2(d[1], d[0])
-  const reflect = (p: Vec2): Vec2 => mirrorPoint(p, axis.a, [d[0] / length, d[1] / length])
+  const reflect = (p: Vec2): Vec2 => mirrorPoint(p, anchor, [d[0] / length, d[1] / length])
   for (const e of sketch.entities) {
     if (!set.has(e.id)) continue
     if (e.kind === 'line') { e.a = reflect(e.a); e.b = reflect(e.b) }
@@ -68,6 +82,9 @@ export function mirrorSelected(input: Sketch, ids: readonly number[]): SketchEdi
         if (anchor.at === 'a') anchor.at = 'b'; else if (anchor.at === 'b') anchor.at = 'a'
       }
     }
+    // A reflection turns counter-clockwise sweeps clockwise: an angle's
+    // sector is swept the other way round to stay the same sector.
+    if (c.kind === 'angle' && c.sector) { c.sector = { ...c.sector, flip: !c.sector.flip }; return true }
     if (c.kind !== 'horizontal' && c.kind !== 'vertical') return true
     const e = entityOf(sketch, c.entity)
     if (e?.kind !== 'line') return false

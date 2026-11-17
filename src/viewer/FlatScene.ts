@@ -153,6 +153,9 @@ export class FlatScene {
    *  Each is kept with the width it has at the default setting, which the
    *  operator's line-width setting scales — see setLineWidth. */
   private fatLines = new LineWidthRegistry(SHEET_LINE_DEFAULT)
+  /** Dotted lines keep their dot and gap in screen pixels at any zoom. */
+  private dashed = new Set<{ mat: LineMaterial; dash: number; gap: number }>()
+  private dashPx = 0
   /** The draft's hand picks in document units, kept for hit-testing: a press
    *  on one of them starts a drag instead of a pan or a pick. */
   private draftPicks: Vec2[] = []
@@ -323,6 +326,7 @@ export class FlatScene {
         // ruled over.
         if (this.gridFrame && this.gridStale()) this.rebuildGrid()
         if (this.sketchDims && Math.abs(this.unitsPerScreenPx() / this.sketchDims.px - 1) > 0.01) this.rebuildDimStrokes()
+        if (this.dashed.size && Math.abs(this.unitsPerScreenPx() / (this.dashPx || 1) - 1) > 1e-3) this.resizeDashes()
         // Fat lines are sized in screen pixels and need to know the canvas.
         const el = this.viewport.renderer.domElement
         const w = el.clientWidth || 1
@@ -1114,6 +1118,17 @@ export class FlatScene {
 
   /** Document units per screen pixel at the current zoom — what turns a snap
    *  radius the hand understands into one the sheet understands. */
+  /** Zoom changed: dotted lines keep their on-screen dot and gap. */
+  private resizeDashes(): void {
+    const u = this.unitsPerScreenPx()
+    this.dashPx = u
+    for (const d of this.dashed) {
+      d.mat.dashSize = d.dash * u
+      d.mat.gapSize = d.gap * u
+    }
+    this.viewport.invalidate()
+  }
+
   unitsPerScreenPx(): number {
     const cam = this.viewport.camera
     const h = this.viewport.renderer.domElement.clientHeight || 1
@@ -1193,6 +1208,7 @@ export class FlatScene {
     z: number,
     width = SHEET_LINE_DEFAULT,
     drawOrder = 4,
+    dash?: { dash: number; gap: number },
   ): void {
     const mat = new LineMaterial({
       color: new THREE.Color(color).getHex(),
@@ -1203,8 +1219,18 @@ export class FlatScene {
       worldUnits: false,
     })
     const letGo = this.fatLines.track(mat, width)
+    const dotted = dash ? { mat, ...dash } : null
+    if (dotted) {
+      mat.dashed = true
+      const u = this.unitsPerScreenPx()
+      mat.dashSize = dotted.dash * u
+      mat.gapSize = dotted.gap * u
+      this.dashPx = u
+      this.dashed.add(dotted)
+    }
     cleanup.push(() => {
       letGo()
+      if (dotted) this.dashed.delete(dotted)
       mat.dispose()
     })
     for (const pts of polylines) {
@@ -1238,7 +1264,7 @@ export class FlatScene {
   /** The measured elements, rebuilt wholesale when anything about them
    *  changes — same policy as the 3D overlays. */
   setFlatElements(
-    items: readonly { fit: FlatFit; color: string; name: string; value: string; label?: boolean; width?: number; drawOrder?: number; opacity?: number }[],
+    items: readonly { fit: FlatFit; color: string; name: string; value: string; label?: boolean; width?: number; drawOrder?: number; opacity?: number; dash?: { dash: number; gap: number }; polyline?: readonly Vec2[] }[],
   ): void {
     for (const dispose of this.elementCleanup) dispose()
     this.elementCleanup = []
@@ -1246,7 +1272,9 @@ export class FlatScene {
     for (const item of items) {
       // A sketch's pieces carry no readings: they are drawn without a tag,
       // and without a centre mark.
-      this.addPolylines(this.elementGroup, this.elementCleanup, this.fitPolyline(item.fit, item.label !== false), item.color, item.opacity ?? 0.95, 0.15, item.width, item.drawOrder)
+      // A polyline given is drawn as it is (an analysis overlay along a piece).
+      const lines = item.polyline ? [item.polyline.map((p): Vec2 => [p[0], p[1]])] : this.fitPolyline(item.fit, item.label !== false)
+      this.addPolylines(this.elementGroup, this.elementCleanup, lines, item.color, item.opacity ?? 0.95, 0.15, item.width, item.drawOrder, item.dash)
       if (item.label === false) continue
       this.addLabel(
         this.elementGroup,

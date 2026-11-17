@@ -13,6 +13,7 @@ import type { EdgeInfo } from '../core/build'
 import { CORNER_GAP_MM, inferCorners } from '../core/corners'
 import { type DatumPlane, type DatumTrace, datumTraces, traceNear } from '../core/datums'
 import { dimPlaceAt } from '../core/dimLayout'
+import { angleForSector } from '../core/angleSector'
 import { dimensionFor, type DimPick, dimPickAt, outwardTangent, relPickAt } from '../core/draw'
 import { chamferLines, cornerLinesAt, filletLines } from '../core/filletCorner'
 import type { FitOptions } from '../core/fitOptions'
@@ -73,8 +74,12 @@ export function putDownDimension(d: SketchDraft, spot: Vec2 | null): SketchDraft
   const id = d.dimMade
   const held = id == null ? undefined : d.sketch.constraints.find((c) => c.id === id)
   if (!held || !isDimension(held)) return { ...d, dimPick: null, dimMade: null, dimFrom: null }
-  const place = spot ? dimPlaceAt(held, d.sketch, spot, datumTraces(d.frame)) : null
-  if (place) d.sketch.constraints = d.sketch.constraints.map((c) => (c.id === id ? { ...c, place } : c))
+  // An angle takes the sector the click stands in — the angle, its
+  // supplement or a corner's reflex — and the value the lines make there.
+  const sector = spot && held.kind === 'angle' ? angleForSector(d.sketch, held.a, held.b, spot) : null
+  const placed = sector && held.kind === 'angle' ? { ...held, sector: sector.sector, value: sector.value } : held
+  const place = spot ? dimPlaceAt(placed, d.sketch, spot, datumTraces(d.frame)) : null
+  if (place || sector) d.sketch.constraints = d.sketch.constraints.map((c) => (c.id === id ? { ...placed, ...(place ? { place } : {}) } : c))
   return { ...d, dimPick: null, dimMade: null, dimFrom: null, selectedConstraint: held.id, dimFocus: (d.dimFocus ?? 0) + 1, error: null }
 }
 

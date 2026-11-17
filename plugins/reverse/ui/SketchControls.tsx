@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useState } from 'react'
 import type { SketchChains } from '../app/useReverseWorkspace'
-import { cloneSketch, entityOf, nearestOnEntity, type ConstraintKind } from '../core/sketch'
+import { cloneSketch, entityOf, type ConstraintKind } from '../core/sketch'
 import { useReverse } from '../state/reStore'
 import { useRePrefs } from '../state/rePrefs'
 import { useSketchBrush } from '../state/sketchBrushStore'
@@ -18,12 +18,14 @@ import { useSketchExportPrefs } from '../state/sketchExportPrefs'
 import { SketchAssistDialog } from './SketchAssistDialog'
 import { createPortal } from 'react-dom'
 import { useSketchCurvature } from '../state/sketchCurvatureStore'
+import { useSketchAnalysis } from '../state/sketchAnalysisStore'
+import { FAIL_COLOR, PASS_COLOR, gradientColor, sketchDeviation } from '../core/sketchDeviation'
 
 export function SketchControls({chainsOf}:{chainsOf:()=>SketchChains|null}) {
  const d = useReverse(s=>s.sketchDraft), sliced=useReverse(s=>s.sketchSliced)
  const prefs=useRePrefs(), presentation=useSketchPresentation()
- // Analysis: how far the scan's section points lie from the drawn sketch.
- const [analysis,setAnalysis]=useState(false)
+ // Analysis: how far each portion of the sketch lies from the scan's section.
+ const analysis=useSketchAnalysis()
  const len=useLength()
  const comb=useSketchCurvature()
  const [assist,setAssist]=useState(false)
@@ -65,7 +67,7 @@ export function SketchControls({chainsOf}:{chainsOf:()=>SketchChains|null}) {
    {key('corner','Corner Trim','sketch-sharpen',()=>{tool('select');useSketchProject.getState().setOpen(false);useSketchCornerTrim.getState().setOpen(true)})}
    {key('trim','Trim (T) — paint unwanted spans between intersections','sketch-trim',()=>extra('trim'),presentation.tool==='trim')}
    {key('dimension','Dimensions (D)','sketch-dimension',dimensionSketchSelection,active('dimension'))}
-   {key('mirror','Mirror selected entities (M) — include a construction line','sketch-mirror',mirrorSelectedSketchEntities,false,!has)}
+   {key('mirror','Mirror selected entities (M) — then pick the mirror line','sketch-mirror',mirrorSelectedSketchEntities,false,!has)}
    {key('duplicate','Duplicate selected entities','sketch-duplicate',()=>openSketchEditPanel(edit==='duplicate'?null:'duplicate'),edit==='duplicate',!has)}
    {key('offset','Offset selected entities (O)','sketch-offset-entities',()=>openSketchEditPanel(edit==='offset'?null:'offset'),edit==='offset',!has)}
    {key('fillet','Fillet','sketch-tool-fillet',()=>{if(d.selection.length===2)re.filletSelected();else tool('fillet')},active('fillet'))}
@@ -89,18 +91,31 @@ export function SketchControls({chainsOf}:{chainsOf:()=>SketchChains|null}) {
     <label><input data-test="sketch-show-control-points" type="checkbox" checked={prefs.sketchControlPoints} onChange={e=>prefs.setSketchControlPoints(e.target.checked)}/>Control Points</label>
     <label title="A 3D sketch manipulator is not implemented"><input type="checkbox" disabled/>Manipulator</label>
     <label title="A comb along each arc, circle and spline: tooth length is the curvature there"><input data-test="sketch-curvature" type="checkbox" checked={comb.on} onChange={e=>comb.setOn(e.target.checked)}/>Curvature</label><input data-test="sketch-curvature-scale" type="range" min={5} max={500} step={5} value={comb.scale} disabled={!comb.on} aria-label="Curvature comb scale" onChange={e=>comb.setScale(Number(e.target.value))}/>
-    <label title="How far the scan's section points lie from the sketch"><input data-test="sketch-analysis" type="checkbox" checked={analysis} onChange={e=>setAnalysis(e.target.checked)}/>Analysis</label><button disabled title="No analysis options yet">Options …</button>
+    <label title="Colour each portion of the sketch by its distance from the scan's section"><input data-test="sketch-analysis" type="checkbox" checked={analysis.on} onChange={e=>analysis.setOn(e.target.checked)}/>Analysis</label><button data-test="sketch-analysis-options" aria-expanded={analysis.optionsOpen} onClick={()=>analysis.setOptionsOpen(!analysis.optionsOpen)}>Options …</button>
     <label><input data-test="sketch-show-relations" type="checkbox" checked={prefs.sketchRelations} onChange={e=>prefs.setSketchRelations(e.target.checked)}/>Constraints</label>
     <label><input data-test="sketch-show-dimensions" type="checkbox" checked={prefs.sketchDimensions} onChange={e=>prefs.setSketchDimensions(e.target.checked)}/>Dimensions</label>
    </div>
   </fieldset>
-  {analysis&&(()=>{
-   const drawn=d.sketch.entities.filter(e=>!e.construction)
-   const pts=(chainsOf()?.chains??[]).flat()
-   if(!drawn.length||!pts.length)return <p className="hint" data-test="sketch-analysis-result">Analysis: draw on the section first.</p>
-   let worst=0,sum=0
-   for(const p of pts){let best=Infinity;for(const e of drawn){const q=nearestOnEntity(e,p).dist;if(q<best)best=q}if(best>worst)worst=best;sum+=best}
-   return <p className="hint" data-test="sketch-analysis-result">Analysis: scan section to sketch — max {len.fmt(worst,3)}, mean {len.fmt(sum/pts.length,3)} over {pts.length} points.</p>
+  {analysis.optionsOpen&&<fieldset className="sketch-display" data-test="sketch-analysis-options-panel"><legend>Analysis options</legend>
+   <ToleranceField/>
+   <div role="radiogroup" aria-label="Analysis colouring" className="sketch-entry-row">
+    {([['passFail','Pass / Fail'],['gradient','Gradient']] as const).map(([mode,label])=><label key={mode}><input type="radio" name="sketch-analysis-mode" data-test={`sketch-analysis-mode-${mode}`} checked={analysis.mode===mode} onChange={()=>analysis.setMode(mode)}/>{label}</label>)}
+   </div>
+  </fieldset>}
+  {analysis.on&&(()=>{
+   const chains=chainsOf()?.chains??[]
+   const tol=analysis.toleranceMm
+   const result=d.sketch.entities.some(e=>!e.construction&&e.kind!=='point')&&chains.length?sketchDeviation(d.sketch,chains,tol):null
+   if(!result||!result.stats.samples)return <p className="hint" data-test="sketch-analysis-result">Analysis: draw on the section first.</p>
+   const st=result.stats
+   const swatch=(color:string)=><span aria-hidden style={{display:'inline-block',width:10,height:10,borderRadius:2,background:color,margin:'0 4px -1px 0'}}/>
+   return <div className="hint" data-test="sketch-analysis-result">
+    <div data-test="sketch-analysis-legend">{analysis.mode==='passFail'
+     ?<>{swatch(PASS_COLOR)}within ±{len.fmt(tol,4)} &nbsp; {swatch(FAIL_COLOR)}outside</>
+     :<>{swatch(gradientColor(0))}0 &nbsp; {swatch(gradientColor(1))}±{len.fmt(tol,4)} &nbsp; {swatch(gradientColor(2))}≥ {len.fmt(2*tol,4)}</>}</div>
+    <div data-test="sketch-analysis-stats">Min {len.fmt(st.min,4)} · max {len.fmt(st.max,4)} · mean {len.fmt(st.mean,4)} · RMS {len.fmt(st.rms,4)}</div>
+    <div data-test="sketch-analysis-pass">{(st.passShare*100).toFixed(1)} % of the length within tolerance{st.failing.length?` · ${st.failing.length} ${st.failing.length===1?'piece':'pieces'} outside`:''}{st.unread?` · ${st.unread} samples with no section within ${len.fmt(result.reach,3)}`:''}</div>
+   </div>
   })()}
   <button className="sketch-overdefined" data-test="sketch-overdefined" disabled={!d.report?.unmet.length} onClick={()=>{const id=d.report?.unmet[0]?.id;if(id!==undefined)re.selectConstraint(id)}}>Select overdefining constraints</button>
   <div className="sketch-section-label">Sketch Reference points</div>
@@ -118,4 +133,21 @@ export function SketchControls({chainsOf}:{chainsOf:()=>SketchChains|null}) {
       <footer style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button type="button" onClick={()=>setExportOptions(false)}>Cancel</button><button type="submit" data-test="sketch-export-options-ok">OK</button></footer>
     </form></div>,document.body)}
  </div>
+}
+
+/** The analysis tolerance, typed in the units shown. The text is the
+ *  field's own while it is typed; a valid number is taken at once, and the
+ *  field follows the units when they change. */
+function ToleranceField() {
+ const len=useLength()
+ const tol=useSketchAnalysis(s=>s.toleranceMm), setTol=useSketchAnalysis(s=>s.setToleranceMm)
+ const shown=()=>String(Number(len.toDisplay(tol).toFixed(6)))
+ const [text,setText]=useState(shown)
+ const unit=len.word()
+ const [seen,setSeen]=useState(unit)
+ if(seen!==unit){setSeen(unit);setText(shown())}
+ const v=Number(text), bad=text.trim()===''||!Number.isFinite(v)||v<=0
+ return <label className="field"><span>Tolerance ±</span><input data-test="sketch-analysis-tolerance" type="number" min={0} step={len.step(0.01)} value={text} aria-invalid={bad}
+  onChange={e=>{const t=e.currentTarget.value;setText(t);const n=Number(t);if(t.trim()!==''&&Number.isFinite(n)&&n>0)setTol(len.fromDisplay(n))}}
+  onBlur={()=>{if(bad)setText(shown())}}/><span>{unit}</span></label>
 }

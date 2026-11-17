@@ -1,3 +1,14 @@
+## 1.1.95 — 2D Sketch: Corner Trim, Mirror, angle sectors and live tolerance
+
+- Corner Trim has its own icon (two sides joined by a rounded corner) and a brush: a ring follows the cursor, the ends it would take are ringed, and the result is previewed while the button is held. Release commits it as one undo step; Esc cancels.
+- Corner Trim now joins lines, arcs and open curves in any pair at their exact crossing nearest the painted ends. Far ends never move, and curves keep their shape.
+- Auto Fillet fits the whole rounded corner from the scan (robust to stray points) at acute, square, obtuse and nearly straight corners. It refuses a blend that is not circular instead of guessing, and the panel shows the fitted radius and RMS.
+- Construction lines, circles and arcs are drawn dotted at any zoom.
+- Mirror: select pieces, press Mirror, then click any line, a construction line, a sketch axis or a plane trace. The copies are previewed and added on Accept, at any distance from the line. Selecting one construction line with the pieces still mirrors at once.
+- Angle dimensions follow the cursor: the angle, its supplement or a corner's reflex angle, with the arc and number live. The sector is kept when the number is moved later.
+- Display, Analysis colours each portion of the sketch green within tolerance and red outside (or a gradient), measured against the section. Options set the tolerance in mm or inches; a legend and min/max/mean/RMS are shown.
+- Evidence: analysis/quick-scan-v1.1.95 and analysis/sketch-overhaul.
+
 ## 1.1.94 — Safer in-app updates
 
 - "Restart to update" no longer starts the installer while Quick Scan is still open. The installer used to close Quick Scan by force, even after "Keep working" at the unsaved-changes prompt. It now starts only once Quick Scan has really quit; keeping your work open cancels the install and leaves "Restart to update" ready.

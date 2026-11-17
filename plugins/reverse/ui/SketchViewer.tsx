@@ -20,6 +20,7 @@ import { SketchBrushOverlay } from './SketchBrushOverlay'
 import { SketchExtraOverlay } from './SketchExtraOverlay'
 import { SketchSelectionTools } from './SketchSelectionTools'
 import { SketchCornerTrimOverlay } from './SketchCornerTrimOverlay'
+import { SketchMirrorOverlay } from './SketchMirrorOverlay'
 import { SketchCornerGestureOverlay } from './SketchCornerGestureOverlay'
 import { SketchProjectOverlay } from './SketchProjectPanel'
 import { SketchEditPreview } from './SketchEditPreview'
@@ -127,6 +128,7 @@ export function SketchViewer({
     <div className="viewport" ref={containerRef} data-test="sketch-viewport">
       <SketchBrushOverlay scene={activeScene} chainsOf={chainsOf} />
       <SketchCornerTrimOverlay scene={activeScene} chainsOf={chainsOf} />
+      <SketchMirrorOverlay scene={activeScene} />
       <SketchCornerGestureOverlay scene={activeScene} chainsOf={chainsOf} />
       <SketchProjectOverlay scene={activeScene} />
       <SketchEditPreview scene={activeScene} />

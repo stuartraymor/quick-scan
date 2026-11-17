@@ -20,6 +20,7 @@ import { findRegions } from './regions'
 import { chainStatistics, kindsOfChain, placeSegments } from './segment'
 import { type Anchor, type AnchorAt, anchorPoint, arcAngleOf, arcPoint, type Constraint, constraintEntities, endsOf, entityOf, entityPolyline, isDimension, type Sketch, type SketchArc, type SketchCircle, type SketchEntity, type SketchLine, TOUCH_MM, unwindAngle } from './sketch'
 import { measureDimension } from './solver'
+import { measureAngleDimension } from './angleSector'
 
 /** One piece of a station's profile, in the order the profile runs. */
 export interface StationPiece {
@@ -822,7 +823,7 @@ function relationsSettled(out: Sketch, moved: readonly number[], datums: readonl
         c.kind === 'length' || c.kind === 'radius' || c.kind === 'diameter'
           ? measureDimension(out, c.kind, at(c.entity))
           : c.kind === 'angle'
-            ? measureDimension(out, 'angle', at(c.a), at(c.b))
+            ? measureAngleDimension(out, c.a, c.b, c.sector)
             : measureDimension(out, 'distance', c.p, c.q, datums)
       if (value === null) {
         dropped.push({ id: c.id, kind: c.kind })

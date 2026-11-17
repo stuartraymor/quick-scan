@@ -17,6 +17,7 @@ import type { Vec2 } from '../../../src/core/flat/types'
 import { add2, dot2, len2, normalize2, perp2, scale2, sub2 } from '../../../src/core/flat/vec2'
 import type { DimShape } from '../../../src/core/flat/dimStrokes'
 import { traceFoot, traceOf, type DatumTrace } from './datums'
+import { sectorSweep } from './angleSector'
 import { anchorPoint, entityOf, lineDir, sketchBounds, type Constraint, type DimPlace, type Sketch } from './sketch'
 
 export type Dimension = Extract<Constraint, { value: number }>
@@ -64,10 +65,17 @@ function angleSector(c: Extract<Dimension, { kind: 'angle' }>, sketch: Sketch) {
     const w = sub2(b.a, a.a)
     vertex = add2(a.a, scale2(da, (w[0] * db[1] - w[1] * db[0]) / cross))
   }
+  const lines: [[Vec2, Vec2], [Vec2, Vec2]] = [[a.a, a.b], [b.a, b.b]]
+  const shorter = Math.min(len2(sub2(a.b, a.a)), len2(sub2(b.b, b.a)))
+  const s = c.sector
+  if (s) {
+    // The sector it was put down in: from one ray counter-clockwise to the other.
+    const from = s.flip ? scale2(db, s.sb) : scale2(da, s.sa)
+    return { vertex, a0: Math.atan2(from[1], from[0]), sweep: sectorSweep(da, db, s), lines, shorter }
+  }
   const turn = Math.atan2(cross, dot2(da, db))
   const sweep = ((turn % Math.PI) + Math.PI) % Math.PI
-  const lines: [[Vec2, Vec2], [Vec2, Vec2]] = [[a.a, a.b], [b.a, b.b]]
-  return { vertex, a0: Math.atan2(da[1], da[0]), sweep, lines, shorter: Math.min(len2(sub2(a.b, a.a)), len2(sub2(b.b, b.a))) }
+  return { vertex, a0: Math.atan2(da[1], da[0]), sweep, lines, shorter }
 }
 
 /**

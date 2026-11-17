@@ -15,6 +15,7 @@
 import type { Vec2 } from '../../../src/core/flat/types'
 import { add2, dot2, len2, normalize2, scale2, sub2 } from '../../../src/core/flat/vec2'
 import type { DatumPlane } from './datums'
+import type { AngleSector } from './angleSector'
 import { isClosed, nearestOnSpline, splineAt, splineCurve, splineEnd, splineSamples } from './sketchSpline'
 import type { EdgeFingerprint } from './topo'
 
@@ -193,8 +194,10 @@ export type Constraint = { inferred?: boolean; place?: DimPlace } & (
    *  by, as a drawing gives a hole or a boss; the solver holds the radius at
    *  half of it. */
   | { id: number; kind: 'diameter'; entity: number; value: number; expr?: string }
-  /** Between two lines, degrees, 0–180 as the lines' directions read. */
-  | { id: number; kind: 'angle'; a: number; b: number; value: number; expr?: string }
+  /** Between two lines, degrees: 0–180 as the lines' directions read, or,
+   *  with a sector (picked where the dimension was put down), that sector's
+   *  angle — the angle, its supplement, or a corner's reflex, 0–360. */
+  | { id: number; kind: 'angle'; a: number; b: number; value: number; expr?: string; sector?: AngleSector }
 )
 
 export type ConstraintKind = Constraint['kind']

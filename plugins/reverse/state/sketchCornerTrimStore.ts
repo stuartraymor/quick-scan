@@ -16,6 +16,8 @@ interface SketchCornerTrimState {
   ids: number[]
   points: Vec2[]
   sourceKey: string | null
+  /** The last fillet made: its radius and, for Auto Fillet, the scan fit. */
+  lastFit: { radiusMm: number; rms?: number; usedPoints?: number } | null
   setOpen: (open: boolean) => void
   setMode: (mode: CornerTrimMode) => void
   setRadiusMm: (radiusMm: number) => void
@@ -36,10 +38,10 @@ export const useSketchCornerTrim = create<SketchCornerTrimState>()((set, get) =>
     set({ preview: result, sourceKey: JSON.stringify(draft.sketch), message: result.ok ? null : result.error })
   }
   return {
-    open: false, mode: 'trim', radiusMm: 1, addDimension: false, preview: null, message: null, ids: [], points: [], sourceKey: null,
+    open: false, mode: 'trim', radiusMm: 1, addDimension: false, preview: null, message: null, ids: [], points: [], sourceKey: null, lastFit: null,
     setOpen: (open) => {
       if (open) useReverse.getState().setSketchTool('select')
-      set({ open, preview: null, message: null, ids: [], points: [], sourceKey: null })
+      set({ open, preview: null, message: null, ids: [], points: [], sourceKey: null, lastFit: null })
     },
     setMode: (mode) => { set({ mode }); if (get().ids.length) preview() },
     setRadiusMm: (radiusMm) => { set({ radiusMm }); if (get().ids.length) preview() },
@@ -66,7 +68,10 @@ export const useSketchCornerTrim = create<SketchCornerTrimState>()((set, get) =>
       if (!result.ok) { set({ message: result.error }); return false }
       if (JSON.stringify(result.sketch) === JSON.stringify(draft.sketch)) return false
       useReverse.getState().setSketch(result.sketch, result.farAnchors)
-      set({ message: s.mode === 'trim' ? 'Corner trimmed. Paint another pair of endpoints.' : 'Fillet created. Paint another pair of endpoints.' })
+      set({
+        lastFit: result.radiusMm !== undefined ? { radiusMm: result.radiusMm, rms: result.rms, usedPoints: result.usedPoints } : null,
+        message: s.mode === 'trim' ? 'Corner joined. Paint another pair of ends.' : 'Fillet created. Paint another pair of ends.',
+      })
       return true
     },
     apply: () => {

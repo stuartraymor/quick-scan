@@ -25,6 +25,7 @@ import { choleskySolve, solveLinear, symmetricEigenN } from '../../../src/core/f
 import type { Vec2 } from '../../../src/core/flat/types'
 import { dot2, len2, normalize2, perp2, sub2 } from '../../../src/core/flat/vec2'
 import { traceLine, traceOf, traceOffset, type DatumPlane, type DatumTrace } from './datums'
+import { sectorSweep } from './angleSector'
 import {
   anchorPoint,
   constraintEntities,
@@ -564,9 +565,16 @@ export function solveSketch(sketch: Sketch, options: SolveOptions = {}): SolveRe
       hard(c, [c.a, c.b], (xs) => [dot2(dirOf(xs, c.a), dirOf(xs, c.b)) * L])
     } else if (c.kind === 'angle') {
       const target = (c.value * Math.PI) / 180
+      const sector = c.sector
       hard(c, [c.a, c.b], (xs) => {
         const da = dirOf(xs, c.a)
         const db = dirOf(xs, c.b)
+        if (sector) {
+          // The sector's own sweep, 0–2π: the difference taken the short way.
+          let diff = sectorSweep(da, db, sector) - target
+          diff = ((((diff + Math.PI) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)) - Math.PI
+          return [diff * L]
+        }
         const angle = Math.atan2(da[0] * db[1] - da[1] * db[0], dot2(da, db))
         // Directions have a sign the angle should not: fold to 0–π.
         const folded = ((angle % Math.PI) + Math.PI) % Math.PI

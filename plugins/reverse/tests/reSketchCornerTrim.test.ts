@@ -63,7 +63,8 @@ describe('Corner Trim geometry', () => {
     expect(result.usedPoints).toBeGreaterThanOrEqual(15)
     const arc = result.sketch.entities.find((e) => e.kind === 'arc') as SketchArc
     expect(arc.r).toBeCloseTo(3.7, 5)
-    expect(arc.points?.length).toBe(result.usedPoints)
+    // Fitted with the lines held; the scan is not attached as soft data.
+    expect(arc.points).toBeUndefined()
   })
 
   it('refuses Auto Fillet without adequate curved data instead of choosing a default', () => {

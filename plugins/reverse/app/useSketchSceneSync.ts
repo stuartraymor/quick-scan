@@ -16,6 +16,9 @@ import { anchorPoint, constraintEntities, entityOf, fixedEntityOf, fixedPieces, 
 import { datumName, datumTraces, traceSegment, type DatumPlane } from '../core/datums'
 import { piecesInBox } from '../core/boxSelect'
 import { dimPlaceAt, dimShape } from '../core/dimLayout'
+import { angleForSector } from '../core/angleSector'
+import { FAIL_COLOR, gradientPieces, PASS_COLOR, sketchDeviation } from '../core/sketchDeviation'
+import { useSketchAnalysis } from '../state/sketchAnalysisStore'
 import { arcAbout, circleFrom, DEFAULT_DRAW_MODES, rectangleCorners, tangentArc, type DrawModes } from '../core/draw'
 import { splineCurve } from '../core/sketchSpline'
 import { patternPieces, polygonCorners, sketchBounds, type SketchPatternSpec } from '../core/sketch'
@@ -232,6 +235,9 @@ export const sketchGripShown = (kind: SketchEntity['kind'], at: AnchorAt | 'body
 
 /** A screen-scaled dotted original carrier. Its dashes extend beyond both
  *  original ends and the current drag position, with a bounded work count. */
+/** Dot and gap of construction geometry on the sheet, screen pixels. */
+export const CONSTRUCTION_DASH = { dash: 4, gap: 4 }
+
 export function controlPolygonMarks(points: readonly Vec2[], unitsPerPixel: number): FlatFit[] {
   const result: FlatFit[] = []
   if (!(unitsPerPixel > 0) || !Number.isFinite(unitsPerPixel)) return result
@@ -597,7 +603,10 @@ export function useSketchSceneSync({
               : loose.has(e.id)
                 ? palette.free
                 : palette.constrained
-    const items: { fit: FlatFit; color: string; name: string; value: string; label: boolean; width?: number; drawOrder?: number; opacity?: number }[] = sketch.entities.map((e) => ({
+    const items: { fit: FlatFit; color: string; name: string; value: string; label: boolean; width?: number; drawOrder?: number; opacity?: number; dash?: { dash: number; gap: number }; polyline?: readonly Vec2[] }[] = sketch.entities.map((e) => ({
+      // Construction geometry is dotted, as reference lines are drawn: the
+      // dots are display only, the piece itself stays exact.
+      dash: e.construction ? CONSTRUCTION_DASH : undefined,
       // Coplanar transparent strokes otherwise sort by distance to their
       // midpoints. A longer profile can hide the fitted segment on the same edge.
       drawOrder: lit.has(e.id) || selected.has(e.id) ? 4.5 : (e.kind === 'line' || e.kind === 'circle' || e.kind === 'spline') && e.points?.length && !e.construction && !e.projected ? 4.25 : 4,
@@ -642,6 +651,22 @@ export function useSketchSceneSync({
         for (const [a, b] of [...teeth, ...envelope]) {
           const fit = lineFit(a, b)
           if (fit) items.push({ fit, color: palette.datum, name: '', value: '', label: false, width: SKETCH_LINE.datum })
+        }
+      }
+    }
+    // Display → Analysis: each portion of a piece coloured by how far it is
+    // from the scan's section — green within the tolerance, red outside, or
+    // a gradient. Portions with no section within reach stay as drawn.
+    const analysis = useSketchAnalysis.getState()
+    if (analysis.on) {
+      const deviation = sketchDeviation(sketch, chainsOf()?.chains ?? [], analysis.toleranceMm)
+      for (const run of deviation?.runs ?? []) {
+        if (run.cls === 'none' || run.pts.length < 2) continue
+        const pieces = analysis.mode === 'gradient' ? gradientPieces(run, analysis.toleranceMm) : [{ pts: run.pts, color: run.cls === 'pass' ? PASS_COLOR : FAIL_COLOR }]
+        for (const piece of pieces) {
+          // The fit only carries the item; the polyline is what is drawn.
+          const fit = lineFit(piece.pts[0], piece.pts[1])
+          if (fit) items.push({ fit, polyline: piece.pts, color: piece.color, name: '', value: '', label: false, width: SKETCH_LINE.selected, drawOrder: 4.6, opacity: 1 })
         }
       }
     }
@@ -765,11 +790,14 @@ export function useSketchSceneSync({
     for (const c of sketch.constraints) {
       if (!isDimension(c)) continue
       if (!useRePrefs.getState().sketchDimensions && c.id !== draft.dimMade && c.id !== draft.selectedConstraint) continue
-      const place = held?.id === c.id ? dimPlaceAt(c, sketch, held.at, traces) : null
-      const shape = dimShape(place ? { ...c, place } : c, sketch, traces, lift)
+      // An angle in hand follows the cursor's sector, its arc and number live.
+      const sector = held?.id === c.id && c.kind === 'angle' ? angleForSector(sketch, c.a, c.b, held.at) : null
+      const live = sector && c.kind === 'angle' ? { ...c, sector: sector.sector, value: sector.value } : c
+      const place = held?.id === c.id ? dimPlaceAt(live, sketch, held.at, traces) : null
+      const shape = dimShape(place ? { ...live, place } : live, sketch, traces, lift)
       if (!shape) continue
-      const text = dimensionFieldText(c, units)
-      dims.push({ shape, value: dimensionText(c, units), ...(draft.dimMade == null ? { edit: { id: c.id, value: c.value, ...(text !== undefined ? { text } : {}) } } : {}) })
+      const text = dimensionFieldText(live, units)
+      dims.push({ shape, value: dimensionText(live, units), ...(draft.dimMade == null ? { edit: { id: c.id, value: c.value, ...(text !== undefined ? { text } : {}) } } : {}) })
     }
     view.setSketchDimensions(dims, { color: colors().dimension, className: 'sketch-dim' })
   }
@@ -791,9 +819,12 @@ export function useSketchSceneSync({
   const brushPreview = useSketchBrush((s) => s.preview)
   const brushOpen = useSketchBrush((s) => s.open)
   const combScale = useSketchCurvature((s) => s.scale)
+  const analysisOn = useSketchAnalysis((s) => s.on)
+  const analysisTolerance = useSketchAnalysis((s) => s.toleranceMm)
+  const analysisMode = useSketchAnalysis((s) => s.mode)
   const dark = usePrefs((s) => s.dark)
   const units = usePrefs((s) => s.units)
-  useEffect(pushSketch, [draft, showRelations, showDimensions, showControlPoints, combOn, combScale, brushPreview, brushOpen, dark, units])
+  useEffect(pushSketch, [draft, showRelations, showDimensions, showControlPoints, combOn, combScale, brushPreview, brushOpen, dark, units, analysisOn, analysisTolerance, analysisMode, chainsVersion])
   useEffect(() => {
     scene()?.setEdgeColor(colors().slice, colors().sliceOpacity)
     // Runs on the listed dependencies only, not on everything it reads.

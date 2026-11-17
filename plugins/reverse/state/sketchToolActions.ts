@@ -5,6 +5,7 @@ import { useSketchCornerTrim } from './sketchCornerTrimStore'
 import { useSketchProject } from './sketchProjectStore'
 import { useSketchPresentation, type ExtraSketchTool, type SketchEditPanel } from './sketchPresentation'
 import { mirrorSketchSelection } from './sketchExtraTools'
+import { useSketchMirror } from './sketchMirrorStore'
 
 /** Buttons and shortcuts leave the same provisional tools before the next
  * command takes the pointer. None of these cancellations changes geometry. */
@@ -13,6 +14,7 @@ export function closeSketchToolOverlays(): void {
   useSketchBrush.getState().setOpen(false)
   useSketchCornerTrim.getState().cancel()
   useSketchProject.getState().cancel()
+  useSketchMirror.getState().cancel()
 }
 
 export function activateSketchTool(tool: SketchTool): void {
@@ -32,10 +34,17 @@ export function dimensionSketchSelection(): void {
   else re.setSketchTool('dimension')
 }
 
+/** With exactly one construction line among the selection, mirror about it
+ *  at once (the quick path); otherwise open Mirror mode to pick the axis. */
 export function mirrorSelectedSketchEntities(): void {
-  if (!useReverse.getState().sketchDraft?.selection.length) return
+  const draft = useReverse.getState().sketchDraft
+  if (!draft?.selection.length) return
+  const chosen = new Set(draft.selection)
+  const axes = draft.sketch.entities.filter((e) => chosen.has(e.id) && e.kind === 'line' && e.construction)
   closeSketchToolOverlays()
-  mirrorSketchSelection()
+  if (axes.length === 1 && draft.selection.length > 1) { mirrorSketchSelection(); return }
+  activateSketchTool('select')
+  useSketchMirror.getState().start(draft.selection)
 }
 
 export function openSketchEditPanel(edit: SketchEditPanel): void {

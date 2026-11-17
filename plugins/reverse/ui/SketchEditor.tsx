@@ -43,6 +43,8 @@ import { useSketchCornerTrim } from '../state/sketchCornerTrimStore'
 import { useSketchProject } from '../state/sketchProjectStore'
 import { SketchCornerTrimPanel } from './SketchCornerTrimPanel'
 import { SketchProjectPanel } from './SketchProjectPanel'
+import { SketchMirrorPanel } from './SketchMirrorPanel'
+import { useSketchMirror } from '../state/sketchMirrorStore'
 
 /** The ways each of the shape tools draws: pictures in the strip that opens
  *  on the tool's key, the one chosen last on the key itself — and what each
@@ -333,11 +335,13 @@ export function SketchEditor({ chainsOf }: { chainsOf: () => SketchChains | null
   const extracting = useSketchBrush((s) => s.open)
   const cornerTrimming = useSketchCornerTrim((s) => s.open)
   const projecting = useSketchProject((s) => s.open)
+  const mirroring = useSketchMirror((s) => s.open)
 
   if (!draft) return null
   if (extracting) return <SketchExtractPanel chainsOf={chainsOf} />
   if (cornerTrimming) return <div className="sketch-editor-parity"><SketchCornerTrimPanel chainsOf={chainsOf} /></div>
   if (projecting) return <div className="sketch-editor-parity"><SketchProjectPanel /></div>
+  if (mirroring) return <div className="sketch-editor-parity"><SketchMirrorPanel /></div>
 
   const sketch = draft.sketch
   const relations = sketch.constraints.filter((c) => !isDimension(c) && !c.inferred)

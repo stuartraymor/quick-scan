@@ -12,7 +12,7 @@ const meshPath=out+'/cylinder.obj';fs.writeFileSync(meshPath,mesh.join('\n'));
 
 const {browser,page,consoleErrors}=await launchApp({width:1800,height:1100});
 const read=()=>page.evaluate(()=>{const d=window.__re.store.getState().sketchDraft;return {sketch:d.sketch,history:d.history.length,error:d.error}});
-const seed=async entities=>{await page.evaluate(async entities=>{const r=window.__re.store; (await import('/plugins/reverse/state/sketchCornerTrimStore.ts')).useSketchCornerTrim.getState().cancel();r.setState({sketchDraft:null});r.getState().startSketch({kind:'world',axis:'z',offset:0},{origin:[0,0,0],normal:[0,0,1],basisU:[1,0,0],basisV:[0,1,0]},entities);},entities);await sleep(600)};
+const seed=async entities=>{const ok=await page.$('[data-test=corner-cancel]');if(ok){await ok.click();await sleep(150)}await page.evaluate(async entities=>{const r=window.__re.store; (await import('/plugins/reverse/state/sketchCornerTrimStore.ts')).useSketchCornerTrim.getState().cancel();r.setState({sketchDraft:null});r.getState().startSketch({kind:'world',axis:'z',offset:0},{origin:[0,0,0],normal:[0,0,1],basisU:[1,0,0],basisV:[0,1,0]},entities);},entities);await sleep(600)};
 const click=async s=>page.$eval(s,e=>e.click());
 try{
  await loadScan(page,meshPath);await openReverse(page);
