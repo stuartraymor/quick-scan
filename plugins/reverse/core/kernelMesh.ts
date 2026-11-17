@@ -160,7 +160,7 @@ function withFace(m: RawMesh, hash: number, piece: RawMesh): RawMesh {
  * beside it to within the chord, not vertex to vertex. `faults` names every
  * such face, drawn in the end or not.
  */
-export function meshEveryFace(occt: OcctLike, shape: number, linearDeflection: number, angularDeflection: number): RawMesh & { faults?: MeshFault[] } {
+export function meshEveryFace(occt: OcctLike, shape: number, linearDeflection: number, angularDeflection: number, areas?: Map<number, number>): RawMesh & { faults?: MeshFault[] } {
   const first = occt.meshShape(shape, { linearDeflection, angularDeflection })
   if (!first.faceGroups) return first
   if (first.faceGroups.length / 3 >= occt.subShapeCount(shape, 'face') && closes(first)) return first
@@ -174,7 +174,8 @@ export function meshEveryFace(occt: OcctLike, shape: number, linearDeflection: n
       const hash = occt.hashCode(face, HASH_BOUND)
       if (seen.has(hash)) continue
       seen.add(hash)
-      const area = occt.getSurfaceArea(face)
+      let area = areas?.get(hash)
+      if (area === undefined) { area=occt.getSurfaceArea(face); areas?.set(hash,area) }
       const had = drawn.get(hash) ?? 0
       if (!(area > NO_FACE_MM2) || had >= MESHED_SHARE * area) continue
       const tries = [

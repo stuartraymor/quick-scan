@@ -24,23 +24,43 @@ export function vertexRule(t: CageTopology, v: number): VertexRule {
   return 'smooth'
 }
 
-export function subdivide(c: Cage, t: CageTopology = topology(c)): Cage {
+/** Re-evaluate only masks whose inputs changed. Connectivity is supplied by
+ * the edit-session plan; unchanged output coordinates retain their exact bits. */
+export function subdivisionPositions(c: Cage, t: CageTopology, previous?: Float64Array, dirty?: ReadonlySet<number>): Float64Array {
   const n = vertexCount(c)
   const p = c.positions
   const nf = c.faces.length
   const ne = t.edges.length
-  const out = new Float64Array((n + nf + ne) * 3)
+  const out = previous ? previous.slice() : new Float64Array((n + nf + ne) * 3)
+  if (out.length !== (n + nf + ne) * 3) throw new Error('Subdivision plan vertex count changed.')
+  let changedFaces: Set<number> | undefined, changedEdges: Set<number> | undefined, changedVertices: Set<number> | undefined
+  if (previous && dirty) {
+    changedFaces = new Set(); changedEdges = new Set(); changedVertices = new Set(dirty)
+    for (const v of dirty) {
+      for (const f of t.vertexFaces[v]) changedFaces.add(f)
+      for (const e of t.vertexEdges[v]) {
+        changedEdges.add(e); changedVertices.add(t.edges[e].a); changedVertices.add(t.edges[e].b)
+      }
+    }
+    for (const fi of changedFaces) for (const v of c.faces[fi]) {
+      changedVertices.add(v)
+      for (const e of t.vertexEdges[v]) if (t.edges[e].faces.includes(fi)) changedEdges.add(e)
+    }
+  }
   const at = (i: number, k: number) => p[i * 3 + k]
 
   // Face points: centroids.
   const facePoint = (fi: number) => n + fi
   c.faces.forEach((f, fi) => {
+    if (changedFaces && !changedFaces.has(fi)) return
     const o = facePoint(fi) * 3
+    out[o] = out[o + 1] = out[o + 2] = 0
     for (const v of f) for (let k = 0; k < 3; k++) out[o + k] += at(v, k) / f.length
   })
   // Edge points.
   const edgePoint = (ei: number) => n + nf + ei
   t.edges.forEach((e, ei) => {
+    if (changedEdges && !changedEdges.has(ei)) return
     const o = edgePoint(ei) * 3
     const sharp = e.crease || e.faces.length < 2
     for (let k = 0; k < 3; k++) {
@@ -50,6 +70,7 @@ export function subdivide(c: Cage, t: CageTopology = topology(c)): Cage {
   })
   // Vertex points.
   for (let v = 0; v < n; v++) {
+    if (changedVertices && !changedVertices.has(v)) continue
     const o = v * 3
     const rule = vertexRule(t, v)
     if (rule === 'corner') {
@@ -79,6 +100,14 @@ export function subdivide(c: Cage, t: CageTopology = topology(c)): Cage {
       out[o + k] = (q + 2 * r + (valence - 3) * at(v, k)) / valence
     }
   }
+  return out
+}
+
+export function subdivide(c: Cage, t: CageTopology = topology(c)): Cage {
+  const n = vertexCount(c), nf = c.faces.length
+  const out = subdivisionPositions(c, t)
+  const facePoint = (fi: number) => n + fi
+  const edgePoint = (ei: number) => n + nf + ei
   // Faces: one quad per corner of each face.
   const faces: number[][] = []
   c.faces.forEach((f, fi) => {

@@ -1,10 +1,29 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { NominalSurface } from '../../../src/core/deviation/surface'
-import { previewDeviation, previewDeviationColours } from '../core/freeform/previewDeviation'
+import { deviationSampler, previewDeviation, previewDeviationColours } from '../core/freeform/previewDeviation'
 describe('Freeform surface deviation', () => {
   const p = new Float32Array([-10,-10,0, 10,-10,0, 10,10,0, -10,10,0])
   const triangles = new Uint32Array([0,1,2, 0,2,3])
+  it('reuses only identical samples across local edits and keeps reference winding independent', () => {
+    const scan = new NominalSurface(p, triangles), query = vi.spyOn(scan, 'closest'), sample = deviationSampler(scan)
+    const before = new Float32Array([0,0,2, 0,0,-3, 1,1,0])
+    expect(sample(before)).toEqual(new Float32Array([2,-3,0]))
+    expect(query).toHaveBeenCalledTimes(3)
+    expect(sample(new Float32Array([0,0,2, 0,0,-3, 1,1,.5]))).toEqual(new Float32Array([2,-3,.5]))
+    expect(query).toHaveBeenCalledTimes(4)
+    expect(sample(before)).toEqual(new Float32Array([2,-3,0]))
+    expect(query).toHaveBeenCalledTimes(4)
+    const reversed = deviationSampler(new NominalSurface(p, new Uint32Array([2,1,0,3,2,0])))
+    expect(reversed(before)).toEqual(new Float32Array([-2,3,0]))
+  })
+  it('bounds measurement storage without changing results or inventing invalid samples', () => {
+    const scan = new NominalSurface(p, triangles), sample = deviationSampler(scan, 2)
+    const points = new Float32Array([0,0,1, 0,0,2, 0,0,3, 0,0,1, NaN,0,0])
+    expect(sample(points)).toEqual(previewDeviation(points,scan))
+    expect(sample(points)).toEqual(previewDeviation(points,scan))
+    expect(()=>sample(Float32Array.of(0))).toThrow('XYZ')
+  })
   it('samples the preview vertices against the scan with winding-dependent sign', () => {
     const points = new Float32Array([0,0,2, 0,0,-3, 1,1,0])
     expect(Array.from(previewDeviation(points, new NominalSurface(p, triangles)))).toEqual([2,-3,0])

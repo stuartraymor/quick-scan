@@ -1540,7 +1540,8 @@ export class ReKernel {
 
   /** Regular samples of the actual untrimmed CAD faces, with their parameter
    * coordinates on the existing render mesh. Never replaces CAD positions. */
-  deviationGrid(shape: Shape, mesh: KernelMesh, size = 17, rectangularCharts = false): KernelMesh['analysisGrid'] {
+  deviationGrid(shape: Shape, mesh: KernelMesh, size = 17, rectangularCharts = false, meshChord = 1e-5): KernelMesh['analysisGrid'] {
+    if (!Number.isFinite(meshChord) || meshChord <= 0) throw new Error('Invalid deviation mesh chord.')
     if (!mesh.faceHash) return undefined
     const faces = this.occt.getSubShapes(shape, 'face')
     try {
@@ -1623,7 +1624,13 @@ export class ReKernel {
           const uv = local
             ? {u,v} : this.occt.uvFromPoint(faces[face],target)
           const verified = local ? p : this.occt.pointOnSurface(faces[face],uv.u,uv.v)
-          if (Math.hypot(verified.x-target.x,verified.y-target.y,verified.z-target.z)>1e-5 ||
+          // Tessellation vertices on sewn boundaries can differ from this
+          // face by the mesh chord. Mapping that vertex must use the same
+          // geometric allowance as the renderer, rather than discard every
+          // chart for a sub-chord discrepancy on one new face. Grid samples
+          // still lie on the actual CAD surface; neither geometry nor measured
+          // signed distances are moved, clamped or smoothed here.
+          if (Math.hypot(verified.x-target.x,verified.y-target.y,verified.z-target.z)>Math.max(1e-5,meshChord) ||
               uv.u<b.uMin-hu || uv.u>b.uMax+hu || uv.v<b.vMin-hv || uv.v>b.vMax+hv) return undefined
           coordinates.set([(uv.u-b.uMin)/(b.uMax-b.uMin),(uv.v-b.vMin)/(b.vMax-b.vMin),face],k)
         }
@@ -1935,9 +1942,9 @@ export class ReKernel {
    *  face and the shading is sharp there, as a CAD body's should be. The
    *  normals are the surfaces' own, turned outward by the windings — see
    *  surfaceNormals. */
-  mesh(shape: Shape, linearDeflection: number, angularDeflection = 0.15): KernelMesh {
+  mesh(shape: Shape, linearDeflection: number, angularDeflection = 0.15, areas?: Map<number, number>): KernelMesh {
     return run('Tessellating the body', () => {
-      const m = meshEveryFace(this.occt, shape, linearDeflection, angularDeflection)
+      const m = meshEveryFace(this.occt, shape, linearDeflection, angularDeflection, areas)
       const mesh: KernelMesh = { positions: m.positions, normals: surfaceNormals(m.positions, m.normals, m.indices, m.faceGroups), indices: m.indices, ...(m.faults ? { faults: m.faults } : {}) }
       // The face each triangle lies on: the kernel meshes face by face and
       // says which triangles are whose — as runs of the index buffer,

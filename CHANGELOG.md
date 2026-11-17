@@ -1,5 +1,29 @@
 # 1.1.68
 
+## 1.1.86 — Control surfaces independent of scan fitting
+
+- New manual Freeform patches follow their control points, including nonplanar corners. Placing/snapping points no longer silently fits the evaluated surface to the scan. Existing projects keep their shape; Use control surface provides an explicit undoable conversion, and Refit to tolerance remains explicit.
+- Keep the evaluated control surface and measured tolerance stable while CAD builds. Reuse unchanged surface buffers and signed-distance cells; prepare live charts asynchronously and reuse immutable CAD face areas.
+- Native aerosol geometry comparison, nonplanar B-spline STEP round trip, native joining/repair cases and installed project/history checks pass. On the saved 124-quad production trial, first motion improved from 319 to 50.6 ms; median movement was 16 ms. Control-surface release first paint was 40.1 ms; stable completed CAD remained about 4.5 s. Full QuickSurface parity, every-frame response, curved multi-patch agreement and exact visual matching remain incomplete.
+
+## 1.1.85 — Measured gradients before quad placement
+
+- Show the evaluated, measured candidate surface while positioning the fourth corner or a rectangle, before committing the new quad.
+- Sample regular tolerance charts during D-handle and point movement, independently of CAD conversion. Reuse unchanged cells and render smooth per-pixel color interpolation without adding geometry to the CAD model.
+- Completed CAD measurements remain separate from preview measurements. Background CAD conversion and exact QuickSurface curved color placement remain under validation.
+
+## 1.1.83 — Local live freeform evaluation
+
+- Reuse subdivision connectivity during pointer movement and recalculate only affected subdivision and limit masks, including neighboring smooth/creased surface dependencies. Unchanged evaluated points keep their exact coordinates and cached measured deviations.
+- Retain surface and selection shader materials through dragging, avoiding repeated shader/program setup. Topology changes, winding, creases and Undo receive a distinct evaluation plan.
+- Full QuickSurface parity and instant completed large-part CAD analysis remain incomplete.
+
+## 1.1.82 — Stable tolerance gradients after quad extension
+
+- Keep measured CAD color charts when tessellation differs from its surface by less than the requested mesh chord; a tiny discrepancy on one face no longer changes the whole part to triangular color interpolation. Actual CAD probes and reported distances remain unchanged.
+- Reuse exact-coordinate deviation measurements across local edits, with bounded storage owned by each reference scan. Scan replacement, winding and alignment changes invalidate those measurements.
+- Compared the same native Lego scan and six-quad cage at matching front-view scale. Native gradient placement remains imperfect; instant large-part completed analysis remains unfinished.
+
 ## 1.1.81 — New Freeform editing responsiveness
 
 - Commit quad edits and Undo/Redo immediately while CAD rebuilds in the background; coalesce pending revisions and reject stale surface colors.

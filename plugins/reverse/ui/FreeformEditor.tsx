@@ -2,7 +2,7 @@ import { NominalSurface } from '../../../src/core/deviation/surface'
 import { snapRayReach } from '../core/freeform/snap'
 import { regionSnap } from '../core/freeform/wrap'
 import { useStore } from '../../../src/state/store'
-import { previewDeviation } from '../core/freeform/previewDeviation'
+import { deviationSampler } from '../core/freeform/previewDeviation'
 import { useLength } from '../../../src/app/useUnits'
 import type { FreeformDeviationRange } from '../viewer/freeformEditorLayer'
 // SPDX-License-Identifier: AGPL-3.0-only
@@ -186,7 +186,7 @@ export function FreeformEditor() {
   const refitProjector = useMemo(() => refitPreview && raySurface
     ? raySurface.projectAlong.bind(raySurface) : undefined, [refitPreview, raySurface])
   const measureLiveDeviation = useMemo(() => raySurface
-    ? (positions: Float32Array) => previewDeviation(positions, raySurface) : undefined, [refitPreview, raySurface])
+    ? deviationSampler(raySurface) : undefined, [raySurface])
   const rayProjector = useMemo(() => {
     if (snapType !== 'ray' || !raySurface || !cage) return undefined
     const reach = snapRayReach(cage)
@@ -219,7 +219,7 @@ export function FreeformEditor() {
   useEffect(() => {
     if (!scene) return
     scene.setScanOpacityOverride(meshDisplay === 'offset' ? 1 : meshOpacity / 100)
-    scene.setScanDepthOffset(cage && meshDisplay === 'offset' ? scene.layerHost().modelRadius() * .06 * meshOffset / 100 : 0)
+    scene.setScanDepthOffset(meshDisplay === 'offset' ? scene.layerHost().modelRadius() * .06 * meshOffset / 100 : 0)
     return () => { scene.setScanOpacityOverride(null); scene.setScanDepthOffset(0) }
   }, [scene, Boolean(cage), meshDisplay, meshOpacity, meshOffset])
   const available = cage ? editorActions(cage, selection) : null
@@ -229,7 +229,7 @@ export function FreeformEditor() {
     useShell.getState().setInspectorOpen(false)
     return () => { useShell.getState().setInspectorOpen(wasOpen) }
   }, [])
-  async function commit(next: Cage, nextSelection: FreeformSelection[] = [], snapMode = snap, projection = snapType, fitToScan = feature?.fitToScan, refitTolerance = feature?.refitTolerance) {
+  async function commit(next: Cage, nextSelection: FreeformSelection[] = [], snapMode = snap, projection = snapType, fitToScan = feature ? feature.fitToScan : false, refitTolerance = feature?.refitTolerance) {
     if (busy.current || useReverse.getState().kernelStatus !== 'ready') return
     const target = current.current.id
     busy.current = true; setWorking(true); setError(''); setMenu(null)
@@ -401,7 +401,7 @@ export function FreeformEditor() {
     editor.set(cage, {
       enabled: !working && commandDialog === null && bridgeMessage === null, rebuilding, extrapolate: tool === 'extrapolate', mode, selection, hiddenFaces: hidden, duplicateHandle: duplicate, controlNet, opacity, showEdges: surfaceView === 'solid-edges', manipulator: snap ? undefined : frame,
       strength: strength / 100, neighbourRadius: neighbours ? 0 : scene.layerHost().modelRadius() * .1,
-      creating: (!cage || tool === 'add-face' || tool === 'rectangle') && !working, creationCorners: corners,
+      creating: (!cage || tool === 'add-face' || tool === 'rectangle') && !working, creationCorners: corners, creationVertices: placementVertices.current,
       creationTool: tool === 'rectangle' ? 'rectangle' : tool === 'add-face' ? 'face' : undefined,
       onCancelCreation: () => chooseTool('manipulate'),
       brush: tool === 'brush-faces' ? { kind: 'faces' } : tool === 'brush-smooth' ? {
@@ -450,7 +450,7 @@ export function FreeformEditor() {
           setCorners(next)
         }
       },
-      snapPoint: snapProjector, rayPoint: rayProjector, refitPoint: refitProjector, fitToScan: feature?.fitToScan, display, tolerance, colouring, finishedSurface, deviationReference,
+      snapPoint: snapProjector, rayPoint: rayProjector, refitPoint: refitProjector, fitToScan: feature ? feature.fitToScan : false, display, tolerance, colouring, finishedSurface, deviationReference,
       measureLiveDeviation,
       refineDeviation: async (data, threshold) => {
         const client = reverseSession()?.client()
@@ -576,6 +576,9 @@ export function FreeformEditor() {
         if (cage) void commit(cage, selection, snap, next)
         else setNewSnapType(next)
       }}><option value="closest">Closest Point</option><option value="ray">Ray Projection</option></select></label> : <label>Manipulator <select aria-label="Manipulator" value={frame} onChange={e=>setFrame(e.target.value as ManipulatorFrame)}>{['world','screen','local'].map(f=><option key={f} value={f}>{f[0].toUpperCase()+f.slice(1)}</option>)}</select></label>}
+      {feature && feature.fitToScan !== false && <button type="button" data-test="freeform-use-control-surface"
+        title="Shape the surface from its control points. Point snapping remains a separate setting."
+        disabled={!cage || working} onClick={() => cage && void commit(cage, selection, snap, snapType, false)}>Use control surface</button>}
       <label><input type="checkbox" checked={duplicate} onChange={e => setDuplicate(e.target.checked)} /> Show DUPLICATE handle</label>
       <label><input type="checkbox" checked={neighbours} onChange={e => setNeighbours(e.target.checked)} /> Don't move neighbours</label>
       <button className="ff-right-control" type="button" aria-pressed={controlNet} onClick={() => setControlNet(!controlNet)}>Control Net</button>
@@ -583,7 +586,7 @@ export function FreeformEditor() {
         {(['shaded', 'deviation', 'zebra'] as const).map(value => {
           const label = { shaded: 'Shaded', deviation: 'Tolerance', zebra: 'Zebra' }[value]
           return <button key={value} type="button" data-test={`freeform-display-${value}`} aria-label={label}
-            title={label} aria-pressed={display === value} disabled={!cage}
+            title={label} aria-pressed={display === value} disabled={working}
             onClick={() => { if (display !== value) setRange(null); setDisplay(value); setDisplayOptions(false) }}><FreeformIcon name={value} /></button>
         })}
         <button ref={displayOptionsButton} type="button" className="ff-display-options" data-test="freeform-display-options" disabled={display !== 'deviation'} aria-haspopup="dialog" aria-expanded={displayOptions}
@@ -600,9 +603,9 @@ export function FreeformEditor() {
           <span>{length.fmt(-5 * tolerance)}</span><span>{length.fmt(-tolerance)}</span>
           <span>{length.fmt(tolerance)}</span><span>{length.fmt(5 * tolerance)}</span>
         </small>
-        <small>{!cage?.faces.length ? 'No surface to measure.' : range ? `${range.preview ? 'Preview' : 'CAD'} samples: Min ${length.fmt(range.min)} · Max ${length.fmt(range.max)} · RMS ${length.fmt(range.rms)}` : deviationError ? 'Deviation measurement unavailable' : 'Measuring visible surface…'}</small>
-        {!!cage?.faces.length && range && <small className="ff-tolerance-result" data-outside={Math.max(-range.min, range.max) > tolerance}>
-          {range.preview ? rebuilding ? 'Updating finished CAD measurements…' : 'Release to measure the finished CAD surface'
+        <small>{range ? `${range.preview ? feature?.fitToScan === false ? 'Surface' : 'Preview' : 'CAD'} samples: Min ${length.fmt(range.min)} · Max ${length.fmt(range.max)} · RMS ${length.fmt(range.rms)}` : !cage?.faces.length ? 'Place three corners to preview the surface.' : deviationError ? 'Deviation measurement unavailable' : 'Measuring visible surface…'}</small>
+        {range && <small className="ff-tolerance-result" data-outside={Math.max(-range.min, range.max) > tolerance}>
+          {range.preview && feature?.fitToScan !== false ? rebuilding ? 'Updating finished CAD measurements…' : 'Release to measure the finished CAD surface'
             : Math.max(-range.min, range.max) > tolerance ? 'Sampled surface exceeds tolerance' : 'Sampled surface within tolerance'}
         </small>}
       </div>}
@@ -698,7 +701,7 @@ export function FreeformEditor() {
       <section className="modal ff-command-dialog" role="alertdialog" aria-modal="true" aria-label="Delete all Freeform faces">
         <p>Are you sure you want to delete all faces?</p>
         <footer>
-          <button type="button" onClick={() => { setCommandDialog(null); chooseTool('manipulate'); void commit(empty(), [], snap, snapType, true) }}>Yes</button>
+            <button type="button" onClick={() => { setCommandDialog(null); chooseTool('manipulate'); void commit(empty(), [], snap, snapType, false) }}>Yes</button>
           <button type="button" autoFocus onClick={() => setCommandDialog(null)}>No</button>
         </footer>
       </section>

@@ -2,6 +2,20 @@
 import {it,expect} from 'vitest'
 import {readFileSync} from 'node:fs'
 import {ReKernel,rectangleLoop} from '../core/kernel'
+it('maps sub-chord sewn-boundary offsets without moving geometry or CAD probes',async()=>{
+ const k=await ReKernel.load(),shape=k.face({outer:rectangleLoop([0,0,0],[1,0,0],[0,1,0],10,10),holes:[]})
+ try {
+  const original=k.mesh(shape,.001,.1),exact=k.deviationGrid(shape,original,5,true)!
+  const mesh={...original,positions:original.positions.slice()};mesh.positions[2]=.00002
+  const positions=mesh.positions.slice(),indices=mesh.indices.slice()
+  expect(k.deviationGrid(shape,mesh,5,true)).toBeUndefined()
+  const mapped=k.deviationGrid(shape,mesh,5,true,.001)!
+  expect(mapped).toBeDefined();expect(mapped.positions).toEqual(exact.positions)
+  expect(mesh.positions).toEqual(positions);expect(mesh.indices).toEqual(indices)
+  mesh.positions[2]=.002
+  expect(k.deviationGrid(shape,mesh,5,true,.001)).toBeUndefined()
+ } finally {k.release(shape)}
+},120000)
 it('maps a regular color chart back to the unchanged native curved CAD',async()=>{
  const k=await ReKernel.load(),shape=k.importStep(readFileSync(new URL('./fixtures/freeform-curved-native.stp',import.meta.url),'utf8')),mesh=k.mesh(shape,.001,.1),t=performance.now(),grid=k.deviationGrid(shape,mesh)!,o=(k as any).occt,faces=o.getSubShapes(shape,'face')
  const errors:number[]=[]

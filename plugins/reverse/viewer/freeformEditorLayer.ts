@@ -1,4 +1,5 @@
 import { snapRayReach } from '../core/freeform/snap'
+import { updateSurfaceAttribute } from './updateSurfaceBuffers'
 import { preservesRefitOrientation, refitDirection } from '../core/freeform/smoothSnap'
 import { vertexNormals } from '../core/freeform/limit'
 import type { PreviewColouring } from '../core/freeform/previewDeviation'
@@ -13,11 +14,12 @@ import { FreeformManipulator, type ManipulatorFrame } from './freeformManipulato
 import type { Vec3 } from '../../../src/core/types'
 import type { SceneLayer, SceneLayerHost } from '../../../src/viewer/sceneLayers'
 import { type Cage, edgeKey, topology, vertexAt } from '../core/freeform/cage'
-import { type Corner, cloneCage, edgeLine, extrapolateEdges, movePoints } from '../core/freeform/edit'
-import { subdivide } from '../core/freeform/subdivide'
+import { type Corner, addFace, cloneCage, edgeLine, extrapolateEdges, movePoints } from '../core/freeform/edit'
+import { previewEvaluation, previewTopologyKey } from '../core/freeform/previewEvaluation'
 import { cageVertexLimits } from '../core/freeform/limit'
 import { moveSurfaceAnchor, surfaceAnchorDrag } from './freeformAnchorDrag'
 import { fitMergedContact, mergeBoundaryEdge, mergeBoundaryPoint, mergeChainEnds } from '../core/freeform/merge'
+import { liveDeviationGrid } from '../core/freeform/liveDeviationGrid'
 import { deviationAtlasValues } from '../core/freeform/deviationAtlas'
 import type { KernelMesh } from '../core/kernel'
 
@@ -57,6 +59,7 @@ export interface FreeformEditorOptions {
   neighbourRadius?: number
   creating?: boolean
   creationCorners?: readonly Vec3[]
+  creationVertices?: readonly (number | undefined)[]
   onSelection?(selection: FreeformPick[]): void
   onContext?(x: number, y: number, pick: FreeformPick | null): void
   onCommit?(cage: Cage, selection?: FreeformPick[]): void
@@ -110,7 +113,7 @@ function deviationSamples(positions: Float32Array, indices?: ArrayLike<number>) 
   return { positions: samples.subarray(0, count * 3), triangles }
 }
 
-type DeviationData = { positions: Float32Array; triangles: Uint32Array; values: Float32Array; statisticsValues?: Float32Array;
+type DeviationData = { positions: Float32Array; normals?: Float32Array; triangles: Uint32Array; values: Float32Array; statisticsValues?: Float32Array;
   grid?: { coordinates: Float32Array; values: Float32Array; size: number; faces: number } }
 
 /** Plugin-owned cage selection and direct manipulation. The body remains a
@@ -163,6 +166,32 @@ export class FreeformEditorLayer {
   }
   private preview: { cage: Cage; selection: FreeformPick[]; freePull?: boolean } | null = null
   private placementPoint: Vec3 | null = null
+  private placementVertex: number | undefined
+  private liveGrid = liveDeviationGrid()
+  private warmTimer: ReturnType<typeof setTimeout> | undefined
+  private warmRequest: {cage:Cage;reference?:object;measure:NonNullable<FreeformEditorOptions['measureLiveDeviation']>} | null = null
+  private prepareFreePull(cage:Cage) {
+    const {measureLiveDeviation:measure,measureDeviation:asyncMeasure,deviationReference:reference}=this.options
+    if(!measure || !asyncMeasure || this.options.hiddenFaces?.length) return
+    if(this.warmRequest?.cage===cage && this.warmRequest.reference===reference && this.warmRequest.measure===measure) return
+    if(this.warmTimer!==undefined) clearTimeout(this.warmTimer)
+    const request=this.warmRequest={cage,reference,measure}
+    // Let the finished field paint first. Worker queries never block pointer motion.
+    this.warmTimer=setTimeout(()=>{
+      this.warmTimer=undefined
+      if(this.disposed || this.cage!==cage || this.cancelDrag || this.options.deviationReference!==reference) {if(this.warmRequest===request)this.warmRequest=null;return}
+      const key=previewTopologyKey(cage,2)
+      let plan=this.evaluationPlans.get(key)
+      if(!plan) {
+        plan=previewEvaluation(cage,2)
+        if(this.evaluationPlans.size>=2)this.evaluationPlans.delete(this.evaluationPlans.keys().next().value!)
+        this.evaluationPlans.set(key,plan)
+      }
+      void this.liveGrid.warm(plan.evaluate(cage.positions).points,plan.faces,measure,reference,asyncMeasure).catch(()=>{
+        if(this.warmRequest===request)this.warmRequest=null
+      })
+    },0)
+  }
   private rectangleStart: { x: number; y: number } | null = null
   private rectanglePreview: Vec3[] | null = null
   private hovered: FreeformPick | null = null
@@ -179,6 +208,7 @@ export class FreeformEditorLayer {
   private manipulator: FreeformManipulator
   private disposed = false
   private drawError = ''
+  private evaluationPlans = new Map<string, ReturnType<typeof previewEvaluation>>()
   private surfaceCache: { cage: Cage; snap: FreeformEditorOptions['snapPoint']; ray: FreeformEditorOptions['rayPoint']; refit: FreeformEditorOptions['refitPoint']; faces: number[][]; owners: number[]; points: Vec3[]; paths: number[][] } | null = null
   private finishedGuides: { geometry: THREE.BufferGeometry; surface: NonNullable<FreeformEditorLayer['surfaceCache']>; tree: MeshBVH; paths: Map<number, Vec3[]> } | null = null
   constructor(private host: SceneLayerHost) {
@@ -207,7 +237,7 @@ export class FreeformEditorLayer {
   }
   set(cage: Cage | null, options: FreeformEditorOptions = {}): void {
     if (options.deviationReference !== this.options.deviationReference) {
-      this.deviationCache = null; this.liveDeviationCache = null
+      this.deviationCache = null; this.liveDeviationCache = null; this.liveGrid.clear(); this.warmRequest=null
     }
     // React can feed selection callbacks back while a gesture is held.
     // Preserve that gesture when the source cage identity has not changed.
@@ -270,13 +300,23 @@ export class FreeformEditorLayer {
     }
     return [...found].sort((a, b) => a - b).map(index => ({ kind: 'edge', index }))
   }
+  private drawingMaterials = new Map<string, { revision: string; material: THREE.Material }>()
+  private drawingMaterial<T extends THREE.Material>(slot: string, revision: string, create: () => T): T {
+    const previous = this.drawingMaterials.get(slot)
+    if (previous?.revision === revision) return previous.material as T
+    previous?.material.dispose()
+    const material = create()
+    this.drawingMaterials.set(slot, { revision, material })
+    return material
+  }
   private clearDrawing() {
+    const retained = new Set([...this.drawingMaterials.values()].map(entry => entry.material))
     for (const object of [...this.group.children]) {
       const mesh = object as THREE.Mesh
       // The finished CAD geometry is owned by the body renderer.
       if (mesh !== this.cadSurface && mesh.geometry !== this.paintedDeviation?.geometry) mesh.geometry?.dispose()
       const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
-      materials.forEach(m => { if (m !== this.deviationMaterial) m?.dispose() })
+      materials.forEach(m => { if (m !== this.deviationMaterial && !retained.has(m)) m?.dispose() })
       this.group.remove(object)
     }
     this.faces = []
@@ -303,20 +343,20 @@ export class FreeformEditorLayer {
       if (this.surfaceCache?.cage === cage && this.surfaceCache.snap === snap && this.surfaceCache.ray === ray && this.surfaceCache.refit === refit) return this.surfaceCache
       const axis = refit ? refitDirection(cage) : null
       const reach = axis ? snapRayReach(cage) * .35 : 0
-      let smooth = cage, owners = cage.faces.map((_, i) => i)
-      let paths = this.cageTopology(cage).edges.map(e => [e.a, e.b])
-      for (let step = 0; step < (axis ? 4 : 2); step++) {
-        const top = topology(smooth), offset = smooth.positions.length / 3 + smooth.faces.length
-        paths = paths.map(path => path.flatMap((v, i) => i === path.length - 1 ? [v] : [v, offset + top.edgeOf.get(edgeKey(v, path[i + 1]))!]))
-        owners = smooth.faces.flatMap((face, i) => face.map(() => owners[i]))
-        smooth = subdivide(smooth)
+      const steps = axis ? 4 : 2, key = previewTopologyKey(cage, steps)
+      let plan = this.evaluationPlans.get(key)
+      if (!plan) {
+        plan = previewEvaluation(cage, steps)
+        if (this.evaluationPlans.size >= 2) this.evaluationPlans.delete(this.evaluationPlans.keys().next().value!)
+        this.evaluationPlans.set(key, plan)
       }
-      const limit = cageVertexLimits(smooth)
+      const { faces, owners, paths } = plan
+      const { points: limit } = plan.evaluate(cage.positions)
       let displayPoints = limit
       if (snap) {
         try {
           const flat = ray ? Float64Array.from(limit.flat()) : null
-          const normals = flat && vertexNormals(flat, smooth.faces)
+          const normals = flat && vertexNormals(flat, faces)
           displayPoints = limit.map((p, i) => {
             const q = normals && ray
               ? ray(p, [normals[i*3], normals[i*3+1], normals[i*3+2]])
@@ -332,7 +372,7 @@ export class FreeformEditorLayer {
           if (this.drawError !== message) { this.drawError = message; this.options.onError?.(new Error(message)) }
         }
       }
-      this.surfaceCache = { cage, snap, ray, refit, faces: smooth.faces, owners, points: displayPoints, paths }
+      this.surfaceCache = { cage, snap, ray, refit, faces, owners, points: displayPoints, paths }
       return this.surfaceCache
   }
   private drawPlacement(): void {
@@ -364,7 +404,17 @@ export class FreeformEditorLayer {
   private draw(cage: Cage | null) {
     if (this.disposed) return
     this.clearDrawing()
-    if (this.options.creating) this.drawPlacement()
+    if (this.options.creating) {
+      this.drawPlacement()
+      const corners = this.rectanglePreview ?? (this.options.creationCorners?.length === 3 && this.placementPoint
+        ? [...this.options.creationCorners, this.placementPoint] : null)
+      if (corners) {
+        const vertices = this.rectanglePreview ? [] : [...(this.options.creationVertices ?? []), this.placementVertex]
+        try { cage = addFace(cage ?? {positions:new Float64Array(),faces:[],creases:[]}, corners.map((p,i) => vertices[i] ?? p)) }
+        catch { /* An incomplete/invalid candidate retains the placement markers. */ }
+      }
+    }
+    if (!cage && this.options.display === 'deviation') this.options.onDeviation?.(null)
     if (cage) {
       const visible = this.visible(cage)
       const smooth = this.surface(cage)
@@ -385,7 +435,8 @@ export class FreeformEditorLayer {
       const display = this.options.display
       const opacity = this.options.opacity ?? 1
       const parameters = { vertexColors: true, side: THREE.DoubleSide, transparent: opacity < 1, opacity, depthWrite: opacity === 1, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }
-      const material = new THREE.MeshPhongMaterial({ ...parameters, shininess: 22, specular: 0x222222 })
+      const material = this.drawingMaterial('surface', `${display}:${opacity}`, () => new THREE.MeshPhongMaterial({ ...parameters, shininess: 22, specular: 0x222222 }))
+      material.colorWrite = true; material.depthWrite = opacity === 1
       // Native visible faces wind clockwise. Keep face selection/hover colors
       // above the reverse-side finish on the interactive cage.
       const reverseFinish = `
@@ -451,12 +502,16 @@ export class FreeformEditorLayer {
       surfaceMesh.renderOrder = 2
       surfaceMesh.userData.faceOwners = faceOwners
       this.group.add(surfaceMesh); this.faces.push(surfaceMesh)
-      const finished = cage === this.cage && !this.preview && !this.options.hiddenFaces?.length
+      // The manual control surface is the editing authority in every display.
+      // Finished CAD is a derived export representation, never a replacement
+      // surface arriving halfway through an edit. Legacy fitted projects keep
+      // their saved representation until explicitly changed by the user.
+      const finished = this.options.fitToScan !== false && cage === this.cage && !this.preview && !this.options.hiddenFaces?.length
         ? this.options.finishedSurface : undefined
       const selection = this.preview?.selection ?? this.selection
       const faceHighlight = this.hovered?.kind === 'face' || selection.some(p => p.kind === 'face')
       if ((display === 'zebra' || (display === 'shaded' && !faceHighlight)) && finished?.hasAttribute('normal')) {
-        const sheet = new THREE.Mesh(finished, material.clone())
+        const sheet = new THREE.Mesh(finished, this.drawingMaterial('finished', material.uuid, () => material.clone()))
         sheet.name = 'freeform-finished-cad'
         sheet.material.vertexColors = false
         sheet.material.color.setHex(SURFACE)
@@ -502,14 +557,18 @@ export class FreeformEditorLayer {
             // Reusing the preview normal attribute truncates the finished
             // normals, producing a black surface. New data owns a complete
             // geometry; hover retains those buffers and normals unchanged.
-            const geometry = new THREE.BufferGeometry()
-            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-            geometry.setIndex(new THREE.BufferAttribute(triangles, 1))
-            geometry.computeVertexNormals()
-            geometry.setAttribute('signedDeviation', new THREE.BufferAttribute(samples, 1))
-            if (data.grid) geometry.setAttribute('analysisCoordinates', new THREE.BufferAttribute(data.grid.coordinates, 3))
+            const sameLayout = previous?.geometry.getAttribute('position')?.count === positions.length / 3 &&
+              previous.geometry.getIndex()?.count === triangles.length && !!previous.data.grid === !!data.grid
+            const geometry = sameLayout ? previous!.geometry : new THREE.BufferGeometry()
+            updateSurfaceAttribute(geometry, 'position', positions, 3)
+            updateSurfaceAttribute(geometry, 'index', triangles, 1)
+            if (data.normals) updateSurfaceAttribute(geometry, 'normal', data.normals, 3)
+            else geometry.computeVertexNormals()
+            updateSurfaceAttribute(geometry, 'signedDeviation', samples, 1)
+            if (data.grid) updateSurfaceAttribute(geometry, 'analysisCoordinates', data.grid.coordinates, 3)
+            geometry.boundingBox = geometry.boundingSphere = null
             if (analysisGeometry !== previous?.geometry) analysisGeometry.dispose()
-            previous?.geometry.dispose()
+            if (!sameLayout) previous?.geometry.dispose()
             analysisGeometry = geometry
             this.paintedDeviation = {data, tolerance, geometry}
           }
@@ -605,6 +664,7 @@ export class FreeformEditorLayer {
             }
             onDeviation?.(count ? { min, max, rms: Math.sqrt(squared / count), preview } : null)
             this.host.invalidate()
+            if (!preview) this.prepareFreePull(cage)
           }
           const fail = () => { if (this.faces.includes(surfaceMesh)) onDeviationError?.() }
           const paintLive = () => {
@@ -613,25 +673,11 @@ export class FreeformEditorLayer {
             if (cached?.surface === smooth && cached.reference === this.options.deviationReference && cached.measure === measureLiveDeviation) {
               paint(cached.value, true); return true
             }
-            // Measure the same candidate we draw in this frame. Index by shared
-            // vertex so adjacent quads use the same tolerance values and sample locations.
-            const unique = new Map<number, number>(), positions: number[] = []
-            const indices = Uint32Array.from(surfaceVertices, vertex => {
-              const existing = unique.get(vertex)
-              if (existing !== undefined) return existing
-              const index = positions.length / 3
-              positions.push(...smooth.points[vertex]); unique.set(vertex, index)
-              return index
-            })
-            // Bound synchronous scan queries during interaction. Large cages
-            // already provide thousands of evaluated shared vertices; adding
-            // six triangles per triangle stalls D release and point dragging.
-            // Finished CAD retains its independent, dense measurement set.
-            const data = smooth.faces.length > 512
-              ? { positions:Float32Array.from(positions), triangles:indices }
-              : deviationSamples(Float32Array.from(positions), indices)
+            // Regular color charts are available in this same pointer event,
+            // before release or CAD conversion. Only changed evaluated cells
+            // query the scan; stationary cells retain their measured field.
             try {
-              const value = { ...data, values: measureLiveDeviation(data.positions) }
+              const value = this.liveGrid(smooth.points, smooth.faces.filter((_,i) => visible.face[smooth.owners[i]]), measureLiveDeviation, this.options.deviationReference)
               this.liveDeviationCache = { surface:smooth, reference:this.options.deviationReference, measure:measureLiveDeviation, value }
               paint(value, true)
             } catch { fail() }
@@ -694,7 +740,7 @@ export class FreeformEditorLayer {
           }
         })
         const controlGeometry = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(controlPositions, 3))
-        const controlMesh = new THREE.Mesh(controlGeometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, transparent: true, opacity: 0, depthWrite: false }))
+        const controlMesh = new THREE.Mesh(controlGeometry, this.drawingMaterial('occlusion', '', () => new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, transparent: true, opacity: 0, depthWrite: false })))
         controlMesh.userData.faceOwners = controlOwners
         this.group.add(controlMesh); this.controlOccluders.push(controlMesh)
         const lines: number[] = [], colors: number[] = [], selectedLines: number[] = [], hoverLines: number[] = []
@@ -719,7 +765,7 @@ export class FreeformEditorLayer {
           }
         })
         const geometry = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(lines, 3)).setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
-        const lineMaterial = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false })
+        const lineMaterial = this.drawingMaterial('outlines', String(this.options.controlNet === false), () => new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false }))
         if (this.options.controlNet === false) {
           // Give the sampled outline a small depth allowance in every mode.
           // Keep depth testing against the scan and neighboring surfaces.
@@ -741,7 +787,7 @@ export class FreeformEditorLayer {
           if (!segments.length) continue
           for (const halo of [true, false]) {
             const geometry = new LineSegmentsGeometry().setPositions(segments)
-            const material = new LineMaterial({color:halo ? 0x171b20 : color, linewidth:halo ? 5 : 3, depthTest:true, depthWrite:false, toneMapped:false})
+            const material = this.drawingMaterial(`${name}-${halo}`, '', () => new LineMaterial({color:halo ? 0x171b20 : color, linewidth:halo ? 5 : 3, depthTest:true, depthWrite:false, toneMapped:false}))
             const rect = this.host.canvas.getBoundingClientRect()
             material.resolution.set(rect.width, rect.height)
             material.onBeforeCompile = shader => {
@@ -768,7 +814,7 @@ export class FreeformEditorLayer {
           points.push(...this.displayPoint(cage, index)); pointColors.push(color.r, color.g, color.b)
         })
         const pg = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(points, 3)).setAttribute('color', new THREE.Float32BufferAttribute(pointColors, 3))
-        this.group.add(new THREE.Points(pg, new THREE.PointsMaterial({ size: 7, sizeAttenuation: false, vertexColors: true })))
+        this.group.add(new THREE.Points(pg, this.drawingMaterial('points', '', () => new THREE.PointsMaterial({ size: 7, sizeAttenuation: false, vertexColors: true }))))
       }
       this.tick(); this.host.invalidate()
     }
@@ -1389,7 +1435,9 @@ export class FreeformEditorLayer {
               this.host.setCursor('crosshair')
               return !!this.rectanglePreview
             }
-            const point = !covered && at ? this.faceCorner(at.x, at.y)?.point ?? null : null
+            const hit = !covered && at ? this.faceCorner(at.x, at.y) : null
+            const point = hit?.point ?? null
+            this.placementVertex = typeof hit?.corner === 'number' ? hit.corner : undefined
             const previous = this.placementPoint
             if (point ? !previous || point.some((axis, i) => axis !== previous[i]) : previous) {
               this.placementPoint = point
@@ -1411,8 +1459,12 @@ export class FreeformEditorLayer {
     dispose(): void {
       if (this.disposed) return
       this.disposed = true
+      if(this.warmTimer!==undefined)clearTimeout(this.warmTimer)
+      this.warmRequest=null;this.liveGrid.clear()
       this.nextDeviation?.cancel(); this.nextDeviation = null; this.deviationCache = null; this.liveDeviationCache = null
-      this.cancelDrag?.(); this.clearDrawing(); this.surfaceCache = null; this.topologyCache = null; this.group.removeFromParent(); this.duplicate?.remove(); this.dragHint?.remove(); this.brushRing?.remove(); this.manipulator.dispose()
+      this.cancelDrag?.(); this.clearDrawing(); this.surfaceCache = null; this.topologyCache = null; this.evaluationPlans.clear(); this.group.removeFromParent(); this.duplicate?.remove(); this.dragHint?.remove(); this.brushRing?.remove(); this.manipulator.dispose()
+      for (const entry of this.drawingMaterials.values()) entry.material.dispose()
+      this.drawingMaterials.clear()
       this.paintedDeviation?.geometry.dispose(); this.paintedDeviation = null
       this.deviationMaterial?.dispose(); this.deviationMaterial = null; this.deviationColouring = null
       this.deviationTexture?.dispose(); this.deviationTexture = null

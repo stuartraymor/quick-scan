@@ -14,12 +14,68 @@ import { addRectangle } from '../core/freeform/edit'
 
 afterEach(() => vi.unstubAllGlobals())
 
-it('measures shared large-cage preview vertices without multiplying queries and accepts editing during CAD rebuild', () => {
+it('keeps a nonplanar four-corner control surface independent of mesh snapping and late CAD', () => {
+  const cage = {positions:Float64Array.of(0,0,0,5,0,0,5,5,2,0,5,0),faces:[[0,1,2,3]],creases:[]}
+  const snapPoint=vi.fn((p: [number,number,number]) => [p[0],p[1],20] as [number,number,number])
+  const measureLiveDeviation=vi.fn((p:Float32Array)=>Float32Array.from({length:p.length/3},(_,i)=>p[3*i+2]-20))
+  const readDeviationMesh=vi.fn()
+  const options={fitToScan:false,snapPoint,display:'deviation' as const,measureDeviation:async(p:Float32Array)=>measureLiveDeviation(p),measureLiveDeviation,readDeviationMesh}
+  const s=setup(options,cage)
+  const mesh=()=>s.partGroup.getObjectByName('freeform-deviation-surface') as THREE.Mesh
+  const original=mesh().geometry.getAttribute('position').array.slice()
+  const z=Array.from(original).filter((_,i)=>i%3===2)
+  expect(Math.max(...z)).toBe(2)
+  expect(z.some(v=>v>0&&v<2)).toBe(true)
+  expect(snapPoint).not.toHaveBeenCalled()
+  const finished=new THREE.BufferGeometry().setAttribute('position',new THREE.Float32BufferAttribute([0,0,20,5,0,20,0,5,20],3))
+  s.editor.set(cage,{...options,finishedSurface:finished})
+  expect(mesh().geometry.getAttribute('position').array).toEqual(original)
+  expect(readDeviationMesh).not.toHaveBeenCalled()
+  expect(mesh().visible).toBe(true)
+  s.editor.dispose();finished.dispose()
+})
+
+it('retains analysis GPU attributes across held geometry revisions and updates their measured values', () => {
+  const measure=(p:Float32Array)=>Float32Array.from({length:p.length/3},(_,i)=>p[i*3]+p[i*3+2])
+  const s=setup({fitToScan:false,display:'deviation',measureDeviation:async p=>measure(p),measureLiveDeviation:measure})
+  const mesh=()=>s.partGroup.getObjectByName('freeform-deviation-surface') as THREE.Mesh
+  const geometry=mesh().geometry,position=geometry.getAttribute('position'),values=geometry.getAttribute('signedDeviation')
+  const before=values.array.slice(),disposed=vi.spyOn(geometry,'dispose')
+  s.layer.pointerDown!(s.event('pointerdown',100,100))
+  s.canvas.dispatchEvent(s.event('pointermove',90,110))
+  expect(mesh().geometry).toBe(geometry)
+  expect(mesh().geometry.getAttribute('position')).toBe(position)
+  expect(mesh().geometry.getAttribute('signedDeviation')).toBe(values)
+  expect(values.array).not.toEqual(before)
+  expect(disposed).not.toHaveBeenCalled()
+  s.win.dispatchEvent(Object.assign(new Event('keydown'),{key:'Escape'}))
+  expect(values.array).toEqual(before)
+  s.editor.dispose()
+  expect(disposed).toHaveBeenCalledOnce()
+})
+
+it('retains overlay shader materials through held movement and releases them when the editor closes', () => {
+  const s=setup({selection:[{kind:'edge',index:0}]})
+  const names=['freeform-cage-outlines','freeform-selected-halo','freeform-selected-highlight']
+  const materials=names.map(name=>(s.partGroup.getObjectByName(name) as THREE.Mesh).material as THREE.Material)
+  const disposed=materials.map(m=>vi.spyOn(m,'dispose'))
+  s.layer.pointerDown!(s.event('pointerdown',125,100))
+  for(const x of [130,135,140]) {
+    s.canvas.dispatchEvent(s.event('pointermove',x,110))
+    names.forEach((name,i)=>expect((s.partGroup.getObjectByName(name) as THREE.Mesh).material).toBe(materials[i]))
+  }
+  disposed.forEach(spy=>expect(spy).not.toHaveBeenCalled())
+  s.canvas.dispatchEvent(s.event('pointerup',140,110))
+  s.editor.dispose()
+  disposed.forEach(spy=>expect(spy).toHaveBeenCalledOnce())
+})
+
+it('measures dense large-cage charts once and accepts editing during CAD rebuild', () => {
   const cage = addRectangle({positions:new Float64Array(),faces:[],creases:[]}, [0,0,.02], [5,0,0], [0,5,0], 10, 10)
   const measure = vi.fn((p:Float32Array) => Float32Array.from({length:p.length/3},(_,i)=>p[i*3+2]))
   const range = vi.fn()
   const s = setup({display:'deviation',rebuilding:true,measureDeviation:async p=>measure(p),measureLiveDeviation:measure,onDeviation:range},cage)
-  expect(measure.mock.calls[0][0].length/3).toBeLessThan(2000)
+  expect(measure.mock.calls[0][0].length/3).toBe(100 * 16 * 25)
   expect(range).toHaveBeenLastCalledWith(expect.objectContaining({preview:true,min:expect.closeTo(-.02),max:expect.closeTo(-.02)}))
   const before = measure.mock.calls.length
   s.layer.hover!({x:100,y:100},false)
@@ -144,9 +200,10 @@ it('keeps measured tolerance visible synchronously through hover and selection r
   }
   s.editor.set(s.cage, {...options, selection:[{kind:'edge',index:0}], tolerance:.1})
   expect(visible()).toBe(true)
-  expect(disposed).toHaveBeenCalledTimes(1)
+  expect(disposed).not.toHaveBeenCalled()
   expect(measureDeviation).toHaveBeenCalledTimes(1)
   s.editor.dispose(); finished.dispose()
+  expect(disposed).toHaveBeenCalledTimes(1)
   expect(materialDisposed).toHaveBeenCalledTimes(1)
 })
 
@@ -1024,4 +1081,19 @@ it('keeps a snapped surface-point move atomic when the scan has no correspondenc
  const f=snappedDrags[1],cage:Cage={positions:Float64Array.from(f.input.positions),faces:f.input.faces,creases:[]},a=cageVertexLimits(cage)[f.vertex]
  const s=setup({mode:'points',controlNet:false,neighbourRadius:0,snapPoint:()=>null},cage),x=100+a[0]*10,y=100-a[1]*10,tx=x+f.travel[0]*10
  s.layer.pointerDown!(s.event('pointerdown',x,y));s.canvas.dispatchEvent(s.event('pointermove',tx,y));s.canvas.dispatchEvent(s.event('pointerup',tx,y));expect(s.onCommit).not.toHaveBeenCalled();expect(Array.from(cage.positions)).toEqual(f.input.positions);s.editor.dispose()
+})
+
+it('paints the measured fourth-corner candidate before a click without creating geometry or history', () => {
+  const measure=vi.fn((p:Float32Array)=>Float32Array.from({length:p.length/3},(_,i)=>p[i*3+2]))
+  const range=vi.fn(), options:FreeformEditorOptions={creating:true,creationCorners:[[0,0,0],[5,0,0],[5,5,0]],display:'deviation',measureDeviation:async p=>measure(p),measureLiveDeviation:measure,onDeviation:range,fitToScan:false}
+  const s=setup(options,{positions:new Float64Array(),faces:[],creases:[]})
+  s.layer.hover!({x:130,y:130},false)
+  const mesh=s.partGroup.getObjectByName('freeform-deviation-surface') as THREE.Mesh
+  expect(mesh.visible).toBe(true)
+  expect(mesh.geometry.getAttribute('analysisCoordinates')).toBeDefined()
+  expect(range).toHaveBeenLastCalledWith(expect.objectContaining({preview:true}))
+  expect(s.onCommit).not.toHaveBeenCalled();expect(s.cage.faces).toHaveLength(0)
+  s.layer.hover!(null,true)
+  expect(s.partGroup.getObjectByName('freeform-deviation-surface')).toBeUndefined()
+  s.editor.dispose()
 })

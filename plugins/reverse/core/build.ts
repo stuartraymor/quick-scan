@@ -1,6 +1,6 @@
 import { snapRayReach, type SnapQuery } from './freeform/snap'
 // SPDX-License-Identifier: AGPL-3.0-only
-import { previewDeviation } from './freeform/previewDeviation'
+import { deviationSampler } from './freeform/previewDeviation'
 // Running the feature list through the kernel. A build plays the steps in
 // order — an extrude or a revolve makes faces of the profiles it picked, a
 // solid of the faces, and joins it to every body it meets, cuts it out of
@@ -163,6 +163,13 @@ export class Builder {
   private bodies = new Map<number, Body>()
   // Only exact body objects constructed from full rectangular freeform
   // charts qualify. Trim/join replacements are new bodies and do not inherit it.
+  private freeformMeshAreas = new WeakMap<Body,Map<number,number>>()
+  private meshAreas(body:Body) {
+    if(!this.untrimmedFreeformBodies.has(body))return undefined
+    let areas=this.freeformMeshAreas.get(body)
+    if(!areas)this.freeformMeshAreas.set(body,areas=new Map())
+    return areas
+  }
   private untrimmedFreeformBodies = new WeakMap<Body, number>()
   /** Bodies gone into another in this build — joined by a feature that
    *  bridged them, combined into it — by the id of the one each went into:
@@ -179,6 +186,7 @@ export class Builder {
    *  worker once the scan is over; null in a build with no scan, where
    *  a split keeps its largest fragment instead. */
   private scan: NominalSurface | null = null
+  private measureDeviation: ReturnType<typeof deviationSampler> | null = null
   /** The scan's vertices, the frame the bodies are built in — what a
    *  surface is fitted through, by the region's indices. */
   private scanPositions: Float32Array | null = null
@@ -302,11 +310,12 @@ export class Builder {
 
   previewSurfaceDeviation(positions: Float32Array): Float32Array {
     if (!this.scan) throw new Error('A reference scan in the model frame is required for surface deviation.')
-    return previewDeviation(positions, this.scan)
+    return this.measureDeviation!(positions)
   }
 
   setScan(surface: NominalSurface | null, positions: Float32Array | null = null): void {
     this.scan = surface
+    this.measureDeviation = surface ? deviationSampler(surface) : null
     this.scanPositions = positions
     this.paths = null
     // A split and a trim test against the scan: built against another one,
@@ -921,7 +930,7 @@ export class Builder {
       }
       const bounds = k.bounds(b.shape)
       const diag = Math.hypot(bounds.max[0] - bounds.min[0], bounds.max[1] - bounds.min[1], bounds.max[2] - bounds.min[2])
-      out.push(k.mesh(b.shape, meshDeflection(diag)))
+      out.push(k.mesh(b.shape, meshDeflection(diag), 0.15, this.meshAreas(b)))
     }
     return out
   }
@@ -3296,7 +3305,7 @@ export class Builder {
     const find = roundTrip === 'find' && !body.surface && before === undefined ? this.roundTripFind(bodyId, trip) : undefined
     const k = this.kernel
     const faces = k.faces(body.shape)
-    const mesh = this.kernel.mesh(body.shape, meshDeflection(diagonalOf(this.kernel, body.shape)))
+    const mesh = this.kernel.mesh(body.shape, meshDeflection(diagonalOf(this.kernel, body.shape)),0.15,this.meshAreas(body))
     const drawn = new Set<number>()
     if (mesh.faceHash) for (let i = 0; i < mesh.faceHash.length; i++) drawn.add(mesh.faceHash[i])
     const folds = body.surface ? null : this.foldsOf(body)
@@ -3387,9 +3396,9 @@ export class Builder {
   meshById(id: number, chord?: number, analysisGrid = false): { id: number; mesh: KernelMesh } | null {
     const b = this.bodyById(id)
     if (!b) return null
-    const mesh = chord !== undefined ? this.kernel.mesh(b.shape, chord, 0.1) : this.meshes([id])[0]
+    const mesh = chord !== undefined ? this.kernel.mesh(b.shape, chord, 0.1,this.meshAreas(b)) : this.meshes([id])[0]
     const chartSize = this.untrimmedFreeformBodies.get(b)
-    if (mesh && analysisGrid) mesh.analysisGrid = this.kernel.deviationGrid(b.shape, mesh, chartSize ?? 17, chartSize !== undefined)
+    if (mesh && analysisGrid) mesh.analysisGrid = this.kernel.deviationGrid(b.shape, mesh, chartSize ?? 17, chartSize !== undefined, chord ?? 1e-5)
     return mesh ? { id: this.resolve(id), mesh } : null
   }
 
@@ -4130,7 +4139,7 @@ export class Builder {
       }
       // A fitted freeform surface is drawn to a chord after its size.
       const deflection = (b.fit ? surfaceMeshDeflection : meshDeflection)(this.diagonal(b))
-      const mesh = k.mesh(b.shape, deflection)
+      const mesh = k.mesh(b.shape, deflection, 0.15, this.meshAreas(b))
       const built: BuiltBody = {
         id,
         key: `${this.keyMark}.${++this.keysGiven}`,
@@ -4799,7 +4808,7 @@ export class Builder {
 
   /** What two solid bodies share — see overlaps. */
   private share(a: Body, b: Body, manifold: ManifoldToplevel): Shared {
-    const meshOf = (body: Body) => this.shown.get(body)?.mesh ?? this.kernel.mesh(body.shape, meshDeflection(diagonalOf(this.kernel, body.shape)))
+    const meshOf = (body: Body) => this.shown.get(body)?.mesh ?? this.kernel.mesh(body.shape, meshDeflection(diagonalOf(this.kernel, body.shape)),0.15,this.meshAreas(body))
     let shared: ReturnType<typeof sharedSolid> = null
     try {
       shared = sharedSolid(manifold, meshOf(a), meshOf(b))

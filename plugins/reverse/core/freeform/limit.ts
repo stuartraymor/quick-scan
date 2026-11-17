@@ -12,7 +12,7 @@
 // arbitrary (u, v) (Stam 1998) is not needed for either and is left out.
 
 import type { Vec3 } from '../../../../src/core/types'
-import { type Cage, edgeKey, topology, vertexCount } from './cage'
+import { type Cage, type CageTopology, edgeKey, topology, vertexCount } from './cage'
 import { subdivided, vertexRule } from './subdivide'
 
 export interface LimitMesh {
@@ -29,12 +29,21 @@ export const DEFAULT_LIMIT_STEPS = 3
 
 /** Every vertex of a quad cage pushed to its limit position. The cage must
  *  be all quads (a subdivided cage is). */
-export function limitPositions(c: Cage): Float64Array {
-  const t = topology(c)
+export function limitPositions(c: Cage, t: CageTopology = topology(c), previous?: Float64Array, dirty?: ReadonlySet<number>): Float64Array {
   const n = vertexCount(c)
   const p = c.positions
-  const out = new Float64Array(n * 3)
+  const out = previous ? previous.slice() : new Float64Array(n * 3)
+  if (out.length !== n * 3) throw new Error('Limit plan vertex count changed.')
+  let affected: Set<number> | undefined
+  if (previous && dirty) {
+    affected = new Set(dirty)
+    for (const v of dirty) {
+      for (const e of t.vertexEdges[v]) { affected.add(t.edges[e].a); affected.add(t.edges[e].b) }
+      for (const f of t.vertexFaces[v]) for (const w of c.faces[f]) affected.add(w)
+    }
+  }
   for (let v = 0; v < n; v++) {
+    if (affected && !affected.has(v)) continue
     const o = v * 3
     const rule = vertexRule(t, v)
     if (rule === 'corner') {

@@ -1100,7 +1100,8 @@ export interface FreeformFeature extends FeatureFlags {
   /** Snap editor gestures to the reference mesh. */
   snap: boolean
   snapType?: 'ray'
-  /** An intentional cage offset stays off the scan when building its surface. */
+  /** False evaluates the control surface independently of gesture snapping.
+   * New manual patches use false. Undefined retains legacy fitted geometry. */
   fitToScan?: boolean
   /** Requested finished-surface fitting tolerance in model millimetres. */
   refitTolerance?: number
