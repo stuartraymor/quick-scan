@@ -17,7 +17,7 @@ import { type Cage, edgeKey, topology, vertexAt } from '../core/freeform/cage'
 import { type Corner, addFace, cloneCage, edgeLine, extrapolateEdges, movePoints } from '../core/freeform/edit'
 import { previewEvaluation, previewTopologyKey } from '../core/freeform/previewEvaluation'
 import { cageVertexLimits } from '../core/freeform/limit'
-import { moveSurfaceAnchor, surfaceAnchorDrag } from './freeformAnchorDrag'
+import { moveSurfaceAnchor, surfaceAnchorDrag, snapSurfaceAnchors } from './freeformAnchorDrag'
 import { fitMergedContact, mergeBoundaryEdge, mergeBoundaryPoint, mergeChainEnds } from '../core/freeform/merge'
 import { liveDeviationGrid } from '../core/freeform/liveDeviationGrid'
 import { deviationAtlasValues } from '../core/freeform/deviationAtlas'
@@ -1250,7 +1250,12 @@ export class FreeformEditorLayer {
         // Keep the raw gesture for contact: fitting the approaching poles
         // first changes the joined surface on curved scans.
         const contactCage = changed && options.snapPoint && !options.rayPoint && mergeSources.length ? cloneCage(current) : null
-        if (changed && options.snapPoint && (!deferSnap || releasing)) {
+        if (changed && options.snapPoint && !options.rayPoint && options.controlNet === false && releasing) {
+          const ids = duplicate ? Array.from({length:(current.positions.length-original.positions.length)/3}, (_, i) => original.positions.length/3+i) : vertices
+          const snapped = snapSurfaceAnchors(current, ids, options.snapPoint)
+          if (snapped) current = snapped
+          else { current = original; nextSelection = this.selection.slice(); changed = false }
+        } else if (changed && options.snapPoint && (!deferSnap || releasing)) {
           for (let i = 0; i < current.positions.length / 3; i++) {
             const moved = i >= original.positions.length / 3 || [0, 1, 2].some(k => current.positions[i * 3 + k] !== original.positions[i * 3 + k])
             if (!moved) continue

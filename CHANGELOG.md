@@ -1,5 +1,11 @@
 # 1.1.68
 
+## 1.1.87 — Surface-point snapping and visible tolerance scale
+
+- Closest Point release with Control Net off projects the visible surface anchors through their local limit response. It no longer mistakes a pole on the scan for a surface point on the scan. Free movement, explicit surface fitting, contact joining and undo remain separate.
+- Show the native-style vertical tolerance scale beside the viewport, with signed thresholds and explanations for off-scale and reverse-side appearance. Keep Mesh Display, Opacity and Offset when closing and reopening Edit Surface in the same session.
+- Reproduced 0.138 mm and 0.765 mm shared-anchor gaps in the saved aerosol example. Six actual pointer trials release within numerical precision, with exact Undo restoration. Full native curved surface and visual equivalence remain under investigation.
+
 ## 1.1.86 — Control surfaces independent of scan fitting
 
 - New manual Freeform patches follow their control points, including nonplanar corners. Placing/snapping points no longer silently fits the evaluated surface to the scan. Existing projects keep their shape; Use control surface provides an explicit undoable conversion, and Refit to tolerance remains explicit.

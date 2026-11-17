@@ -4,6 +4,30 @@ import type { Cage } from '../core/freeform/cage'
 import { movePoints } from '../core/freeform/edit'
 import { cageVertexLimits } from '../core/freeform/limit'
 
+/** Project the points the user edits when Control Net is off. A pole placed
+ * on the scan does not put its limit point there. Solve the local limit
+ * response at release; never fit the intervening surface or query on move. */
+export function snapSurfaceAnchors(cage: Cage, vertices: number[], project: (p: Vec3) => Vec3 | null): Cage | null {
+  const ids = [...new Set(vertices)]
+  const anchors = cageVertexLimits(cage)
+  const targets = ids.map(v => project(anchors[v]))
+  if (targets.some(p => !p || !p.every(Number.isFinite))) return null
+  const solve = surfaceAnchorDrag(cage, ids)
+  if (solve) {
+    const travel = solve(ids.map((v, i) => targets[i]!.map((p, k) => p - anchors[v][k]) as Vec3))
+    return movePoints(cage, ids.map((vertex, i) => ({vertex, by: travel[i]})))
+  }
+  // Large selections use the sparse limit response instead of a dense inverse.
+  let current = cage
+  for (let step = 0; step < 32; step++) {
+    const points = cageVertexLimits(current)
+    const travel = ids.map((v, i) => targets[i]!.map((p, k) => p - points[v][k]) as Vec3)
+    if (travel.every(p => Math.hypot(...p) < 1e-8)) break
+    current = movePoints(current, ids.map((vertex, i) => ({vertex, by: travel[i]})))
+  }
+  return current
+}
+
 /** Native direct evaluated-point drags use five corrections after the initial
  * pole movement. Don't move neighbours preserves all other surface anchors;
  * the unchecked snapped gesture corrects only the selected anchor. */

@@ -3,12 +3,24 @@ import { expect, it } from 'vitest'
 import type { Cage } from '../core/freeform/cage'
 import { movePoints } from '../core/freeform/edit'
 import { cageVertexLimits } from '../core/freeform/limit'
-import { surfaceAnchorDrag } from '../viewer/freeformAnchorDrag'
+import { surfaceAnchorDrag, snapSurfaceAnchors } from '../viewer/freeformAnchorDrag'
 
 const strip: Cage = {
   positions: Float64Array.from([0,0,0, 5,-12,0, 5,5,0, 0,5,0, 10,0,0, 10,5,0]),
   faces: [[0,1,2,3],[1,4,5,2]], creases: [],
 }
+
+it('projects coupled surface anchors to a curved scan without projecting the surface interior', () => {
+  const points=cageVertexLimits(strip), ids=[1,2]
+  const project=(p:[number,number,number]):[number,number,number]=>[p[0],p[1],p[0]*p[0]/100]
+  const result=snapSurfaceAnchors(strip,ids,project)!
+  const after=cageVertexLimits(result)
+  ids.forEach(v=>after[v].forEach((p,k)=>expect(p).toBeCloseTo(project(points[v])[k],10)))
+  for(const v of [0,3,4,5]) expect(Array.from(result.positions.slice(3*v,3*v+3))).toEqual(Array.from(strip.positions.slice(3*v,3*v+3)))
+  expect(result.faces).toEqual(strip.faces)
+  expect(snapSurfaceAnchors(strip,ids,()=>null)).toBeNull()
+  expect(snapSurfaceAnchors(strip,ids,()=>[0,0,NaN])).toBeNull()
+})
 
 it('moves a single surface anchor by the requested amount instead of the smaller pole-mask response', () => {
   const before = cageVertexLimits(strip)[1]

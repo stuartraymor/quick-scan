@@ -107,6 +107,12 @@
 .ff-tolerance { display: grid; gap: 4px; }
 .ff-tolerance input { width: 85px; }
 .ff-tolerance-ramp { height: 8px; background: linear-gradient(to right in srgb, #0000d6, #00d6d6 40%, #00d900 40%, #00d900 60%, #d6d600 60%, #d60000); }
+.ff-viewport-legend { position: fixed; right: 24px; top: 48%; width: 140px; pointer-events: none; color: var(--text, #eee); text-shadow: 0 1px 3px #000; font-size: 14px; z-index: 1; }
+.ff-viewport-scale { position: relative; height: min(30vh, 280px); margin-bottom: 20px; }
+.ff-viewport-scale span { position: absolute; right: 30px; transform: translateY(-50%); white-space: nowrap; }
+.ff-viewport-ramp { position: absolute; right: 0; height: 100%; width: 20px; background: linear-gradient(to bottom in srgb, #d60000, #d6d600 35%, #00d900 35%, #00d900 65%, #00d6d6 65%, #0000d6); }
+.ff-viewport-legend small { display: block; text-align: right; font-size: 11px; }
+@media (max-width: 680px) { .ff-viewport-legend { right: 8px; width: 110px; font-size: 12px; } }
 
 .ff-tolerance-ramp.ff-pass-fail { background: linear-gradient(to right, #820000 40%, #00d900 40%, #00d900 60%, #820000 60%); }
 .ff-tolerance-ticks { display: grid; grid-template-columns: 40% 20% 40%; }

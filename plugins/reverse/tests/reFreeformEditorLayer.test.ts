@@ -14,6 +14,24 @@ import { addRectangle } from '../core/freeform/edit'
 
 afterEach(() => vi.unstubAllGlobals())
 
+it('snaps the visible shared surface point, rather than just its pole, on release', () => {
+  const cage:Cage={positions:Float64Array.from([0,0,0, 5,0,0, 10,0,4, 0,5,0, 5,5,0, 10,5,4]),faces:[[0,1,4,3],[1,2,5,4]],creases:[]}
+  const snapPoint=vi.fn((p:[number,number,number]):[number,number,number]=>[p[0],p[1],0])
+  const s=setup({fitToScan:false,controlNet:false,mode:'points',neighbourRadius:2,snapPoint},cage)
+  const a=cageVertexLimits(cage)[1]
+  s.layer.pointerDown!(s.event('pointerdown',100+a[0]*10,100-a[1]*10))
+  snapPoint.mockClear()
+  s.canvas.dispatchEvent(s.event('pointermove',145,90))
+  expect(snapPoint).not.toHaveBeenCalled()
+  s.canvas.dispatchEvent(s.event('pointerup',145,90))
+  expect(s.onCommit).toHaveBeenCalledOnce()
+  const result=s.onCommit.mock.lastCall?.[0] as Cage
+  expect(Math.abs(cageVertexLimits(result)[1][2])).toBeLessThan(1e-6)
+  expect(result.faces).toEqual(cage.faces)
+  expect(Array.from(cage.positions)).toEqual([0,0,0,5,0,0,10,0,4,0,5,0,5,5,0,10,5,4])
+  s.editor.dispose()
+})
+
 it('keeps a nonplanar four-corner control surface independent of mesh snapping and late CAD', () => {
   const cage = {positions:Float64Array.of(0,0,0,5,0,0,5,5,2,0,5,0),faces:[[0,1,2,3]],creases:[]}
   const snapPoint=vi.fn((p: [number,number,number]) => [p[0],p[1],20] as [number,number,number])
