@@ -34,13 +34,14 @@ export function repairBoundary(c: Cage): Cage {
   return out
 }
 
-/** Two or three one-face corners, or two two-face rows joined at one point.
+/** Two or three one-face corners, two two-face rows, or a one-face corner
+ * and a two-face row joined at one point.
  * Native repair leaves these observed arrangements in place, including when
  * an independent connected fan is repaired by the same warning click. */
 function pointOnlyJunction(c: Cage, v: number): boolean {
   const t = topology(c), faces = t.vertexFaces[v]
-  const groupCount = faces.length === 3 ? 3 : 2
-  if (![2, 3, 4].includes(faces.length) || t.vertexEdges[v].filter(e => t.edges[e].faces.length === 1).length !== 2 * groupCount) return false
+  const boundaryCount = t.vertexEdges[v].filter(e => t.edges[e].faces.length === 1).length
+  if (![2, 3, 4].includes(faces.length) || ![4, 6].includes(boundaryCount)) return false
   const remaining = new Set(faces), groups: number[][] = []
   while (remaining.size) {
     const group = [remaining.values().next().value!]; remaining.delete(group[0])
@@ -51,7 +52,10 @@ function pointOnlyJunction(c: Cage, v: number): boolean {
     }
     groups.push(group)
   }
-  if (groups.length !== groupCount || groups.some(g => g.length !== faces.length / groupCount)) return false
+  const pattern = groups.map(g => g.length).sort((a, b) => a - b).join(',')
+  // Only observed junctions may remain while another component repairs.
+  // Do not skip arbitrary disconnected fans or suppress a failed repair.
+  if (boundaryCount !== 2 * groups.length || !['1,1', '1,2', '2,2', '1,1,1'].includes(pattern)) return false
   for (const group of groups) orderedFan(c, v, group)
   return true
 }

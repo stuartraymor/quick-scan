@@ -1,13 +1,14 @@
 const { app, BrowserWindow, protocol, net, dialog, ipcMain, shell } = require('electron');
 const { spawn } = require('node:child_process');
 const updater = require('./updater.cjs');
-const { createStartupGuard } = require('./desktop-startup.cjs');
+const { createStartupGuard, createUnloadPrompt, createInstallOnQuit, seedProfile } = require('./desktop-startup.cjs');
 const recents = require('./recents.cjs');
 const agentSetup = require('./agent-setup.cjs');
 const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 app.setName('Quick Scan');
+if (!process.argv.includes('--desktop-smoke')) seedProfile({ appData: app.getPath('appData'), version: app.getVersion(), fs, path });
 app.setPath('userData', path.join(app.getPath('appData'), `QuickScan-v${app.getVersion()}${process.argv.includes('--desktop-smoke') ? '-verification' : ''}`));
 protocol.registerSchemesAsPrivileged([{ scheme: 'scanruler', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true, codeCache: true } }]);
 const smoke = process.argv.includes('--desktop-smoke');
@@ -110,6 +111,7 @@ else {
     win.webContents.on('preload-error', () => startup.fail('preload-failed'));
     win.webContents.on('did-fail-load', (_event, code, _description, _url, mainFrame) => { if (mainFrame && code !== -3) startup.fail('load-failed'); });
     win.on('closed', () => startup.close());
+    win.webContents.on('will-prevent-unload', createUnloadPrompt({ automated: smoke, ask: options => win.isDestroyed() ? 0 : dialog.showMessageBoxSync(win, options), onKeep: () => installOnQuit.kept() }));
     wireUpdater();
     wireFiles();
     wireAgentSetup();
@@ -205,11 +207,15 @@ function wireUpdater() {
   });
   ipcMain.handle('updater:install', async event => {
     if (!ours(event) || !installer) return { status: 'error', detail: 'Nothing downloaded.' };
-    spawn(installer, ['/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/RELAUNCH'], { detached: true, stdio: 'ignore' }).unref();
-    setTimeout(() => app.quit(), 300);
-    return { status: 'installing' };
+    return installOnQuit.request(installer);
   });
+  app.on('will-quit', () => { installOnQuit.quitting(); });
 }
+// The installer starts only once Quick Scan is really quitting (see desktop-startup.cjs).
+const installOnQuit = createInstallOnQuit({
+  quit: () => app.quit(),
+  spawn: file => spawn(file, ['/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/RELAUNCH'], { detached: true, stdio: 'ignore' }).unref(),
+});
 
 // Recent documents: remembered in one file shared by all versions.
 const recentFile = () => path.join(app.getPath('appData'), 'QuickScan-shared', 'recent-documents.json');

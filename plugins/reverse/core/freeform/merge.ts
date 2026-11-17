@@ -29,6 +29,17 @@ export function fitMergedContact(input: Cage, selected: readonly number[], contr
     out.positions = Float64Array.from(out.positions, (p, k) => vertices.has(Math.floor(k / 3)) ? p
       : p + anchors[Math.floor(k / 3)][k % 3] - current[Math.floor(k / 3)][k % 3])
   }
+  // Control Net OFF point contact: the merged point's surface position is the
+  // captured hit, the others' stay where they were — the same four
+  // corrections over every pole. Setting the hit as the control pole alone
+  // left the surface 0.97 mm off the drop on a native-paired seam weld.
+  if (point && !controlNet) {
+    const target = anchors.map((a, v) => (v === point.vertex ? point.position : a))
+    for (let step = 0; step < 4; step++) {
+      const current = cageVertexLimits(out)
+      out.positions = Float64Array.from(out.positions, (p, k) => p + target[Math.floor(k / 3)][k % 3] - current[Math.floor(k / 3)][k % 3])
+    }
+  }
   validateContactGeometry(input, out)
   return out
 }
@@ -87,6 +98,70 @@ export function mergeChainEnds(cage: Cage, indices: readonly number[]): number[]
 export function mergeBoundaryPoint(input: Cage, from: number, to: number, contact: 'point' | 'chain' | 'surface-point' = 'point'): { cage: Cage; vertex: number } {
   const result = mergeBoundaryContacts(input, [[from, to]], contact)
   return { cage: result.cage, vertex: result.mapping[to] }
+}
+
+/** A D pull dropped on another boundary: each new pole of the extension that
+ * reached an existing boundary pole is welded to it, one after another, each
+ * weld followed by four corrections that keep the existing poles' surface
+ * points where they were before the pull (the new poles are not corrected).
+ * Paired with QUICKSURFACE 2026-11-17 (analysis/side-joins-2026-11-17/
+ * reference/d-pull-merge.qsf): identical faces, poles within 0.004 mm.
+ * `welds`: [new pole, existing pole], in `extended` indices; the existing
+ * poles are those of `original` (indices below its pole count). */
+export function weldExtension(original: Cage, extended: Cage, welds: readonly (readonly [number, number])[]): { cage: Cage; mapping: number[] } {
+  const refuse = () => { throw new Error('These boundary points cannot be merged without damaging the surface.') }
+  const n = original.positions.length / 3, total = extended.positions.length / 3
+  const goals = cageVertexLimits({ ...original, creases: [] })
+  const before = topology(extended)
+  const boundary = (v: number) => before.vertexEdges[v].some(e => before.edges[e].faces.length === 1)
+  for (const [from, to] of welds) {
+    if (!(from >= n && from < total) || !(to >= 0 && to < n) || !boundary(to)) return refuse()
+    if (extended.faces.some(f => f.includes(from) && f.includes(to))) return refuse()
+  }
+  if (new Set(welds.map(w => w[0])).size !== welds.length || new Set(welds.map(w => w[1])).size !== welds.length) return refuse()
+  let cage: Cage = cloneCage(extended)
+  // Current index of each pole of `extended`; -1 once welded away.
+  let at = Array.from({ length: total }, (_, v) => v)
+  for (const [from, to] of welds) {
+    const f = at[from], t = at[to], count = cage.positions.length / 3
+    const kept = Array.from({ length: count }, (_, v) => v).filter(v => v !== f)
+    const map = (v: number) => kept.indexOf(v === f ? t : v)
+    const positions = Float64Array.from(cage.positions)
+    positions.set(vertexAt(cage, t), f * 3)
+    cage = {
+      positions: Float64Array.from(kept.flatMap(v => Array.from(positions.slice(v * 3, v * 3 + 3)))),
+      faces: cage.faces.map(face => face.map(map)),
+      creases: cage.creases.map(([a, b]) => [map(a), map(b)] as [number, number]),
+    }
+    at = at.map(v => (v < 0 ? -1 : v === f ? -1 : kept.indexOf(v)))
+    // Existing poles keep their pre-pull surface points; the new ones do not move.
+    const source = Array.from({ length: kept.length }, () => -1)
+    at.forEach((v, e) => { if (v >= 0 && e < n) source[v] = e })
+    for (let step = 0; step < 4; step++) {
+      const current = cageVertexLimits({ ...cage, creases: [] })
+      cage.positions = Float64Array.from(cage.positions, (p, k) => {
+        const e = source[Math.floor(k / 3)]
+        return e >= 0 ? p + goals[e][k % 3] - current[Math.floor(k / 3)][k % 3] : p
+      })
+    }
+  }
+  if (!cage.positions.every(Number.isFinite)) return refuse()
+  const top = topology(cage), faces = new Set<string>()
+  for (const f of cage.faces) {
+    if (new Set(f).size !== f.length) return refuse()
+    const key = [...f].sort((a, b) => a - b).join(':')
+    if (faces.has(key)) return refuse()
+    faces.add(key)
+  }
+  for (const e of top.edges) {
+    if (e.faces.length > 2) return refuse()
+    if (e.faces.length === 2) {
+      const forward = e.faces.map(fi => { const f = cage.faces[fi]; return f[(f.indexOf(e.a) + 1) % f.length] === e.b })
+      if (forward[0] === forward[1]) return refuse()
+    }
+  }
+  cage.creases = cage.creases.filter((e, i, all) => e[0] !== e[1] && all.findIndex(q => edgeKey(...q) === edgeKey(...e)) === i)
+  return { cage, mapping: at }
 }
 
 /** A complete single-edge contact captures both ends in the same correction

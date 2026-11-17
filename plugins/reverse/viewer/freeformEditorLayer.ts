@@ -15,10 +15,11 @@ import type { Vec3 } from '../../../src/core/types'
 import type { SceneLayer, SceneLayerHost } from '../../../src/viewer/sceneLayers'
 import { type Cage, edgeKey, topology, vertexAt } from '../core/freeform/cage'
 import { type Corner, addFace, cloneCage, edgeLine, extrapolateEdges, movePoints } from '../core/freeform/edit'
+import { validateAddedFaces } from '../core/freeform/connectionGeometry'
 import { previewEvaluation, previewTopologyKey } from '../core/freeform/previewEvaluation'
 import { cageVertexLimits } from '../core/freeform/limit'
 import { moveSurfaceAnchor, surfaceAnchorDrag, snapSurfaceAnchors } from './freeformAnchorDrag'
-import { fitMergedContact, mergeBoundaryEdge, mergeBoundaryPoint, mergeChainEnds } from '../core/freeform/merge'
+import { fitMergedContact, mergeBoundaryEdge, mergeBoundaryPoint, mergeChainEnds, weldExtension } from '../core/freeform/merge'
 import { liveDeviationGrid } from '../core/freeform/liveDeviationGrid'
 import { deviationAtlasValues } from '../core/freeform/deviationAtlas'
 import type { KernelMesh } from '../core/kernel'
@@ -29,6 +30,16 @@ export interface FreeformDeviationRange {
   rms: number
   preview: boolean
 }
+
+/** How near, in screen pixels, a dragged boundary point captures another to
+ *  join on release. QUICKSURFACE Pro 8.0.128, held drags on 2026-11-17 at two
+ *  zooms (26 and 38 px/mm, 100 % display scale): its ring shows at 10.7 px
+ *  and not at 11 — a screen distance, not a model one. Was 5 px. */
+export const MERGE_CAPTURE_PX = 11
+/** A corner of the dragged point's own quad nearer than this refuses the move. */
+const SAME_FACE_REFUSAL_PX = 5
+/** The ring drawn round the captured point, as QUICKSURFACE's (about 17 px). */
+const MERGE_RING_PX = 18
 
 export interface FreeformPick { kind: 'vertex' | 'edge' | 'face'; index: number }
 export type FreeformSelectionMode = 'points-edges' | 'points' | 'edges' | 'faces' | 'all' | 'boundary'
@@ -203,6 +214,8 @@ export class FreeformEditorLayer {
   private cancelDrag: (() => void) | null = null
   private duplicate: HTMLDivElement | null = null
   private dragHint: HTMLDivElement | null = null
+  /** The ring round the point a held contact will join on release. */
+  private mergeRing: HTMLDivElement | null = null
   private brushRing: HTMLDivElement | null = null
   private lastEdgeClick: { index: number; x: number; y: number; time: number } | null = null
   private manipulator: FreeformManipulator
@@ -227,6 +240,13 @@ export class FreeformEditorLayer {
         background: '#202930', color: '#ffe7a2', padding: '6px 10px', border: '1px solid #99753d',
         borderRadius: '4px', pointerEvents: 'none', display: 'none', zIndex: '5' })
       host.container.append(this.dragHint)
+      // QUICKSURFACE rings the target point while a release would join to it.
+      this.mergeRing = document.createElement('div')
+      this.mergeRing.dataset.test = 'freeform-merge-ring'
+      Object.assign(this.mergeRing.style, { position: 'absolute', width: `${MERGE_RING_PX}px`, height: `${MERGE_RING_PX}px`, borderRadius: '50%',
+        border: '2px solid #1b1d20', boxShadow: '0 0 0 1px rgba(255,255,255,.7), inset 0 0 0 1px rgba(255,255,255,.7)', boxSizing: 'border-box',
+        transform: 'translate(-50%, -50%)', pointerEvents: 'none', display: 'none', zIndex: '6' })
+      host.container.append(this.mergeRing)
       this.brushRing = document.createElement('div')
       this.brushRing.dataset.test = 'freeform-brush-circle'
       Object.assign(this.brushRing.style, { position: 'fixed', pointerEvents: 'none', borderRadius: '50%', border: '1px solid #62c9ff', boxShadow: '0 0 1px #15191e', zIndex: '9999', display: 'none' })
@@ -1164,7 +1184,17 @@ export class FreeformEditorLayer {
       // anchor gesture and contact rule. Ray Projection is not paired here.
       const evaluatedPoint = !!anchors && !grip && !duplicate && (!options.snapPoint || !options.rayPoint) &&
         ((options.neighbourRadius ?? 0) === 0 || !!options.snapPoint) && vertices.length === 1 && hit.kind === 'vertex'
-      const anchorSolver = anchors && !duplicate ? surfaceAnchorDrag(original, vertices, options.neighbourRadius ?? 0) : null
+      // The measured Ray Projection / Control Net OFF point contact uses the
+      // same evaluated-anchor join as Closest Point. Keep its non-contact
+      // movement and unpaired Ray chain/neighbour behavior unchanged.
+      const rayContactPoint = !!anchors && !grip && !duplicate && !!options.snapPoint && !!options.rayPoint &&
+        (options.neighbourRadius ?? 0) === 0 && vertices.length === 1 && hit.kind === 'vertex'
+      const evaluatedContact = evaluatedPoint || rayContactPoint
+      // QUICKSURFACE never drags other control points by distance: with
+      // Control Net ON only the picked points move, with "Don't move
+      // neighbours" or without (paired 5 × 5 grid, 2026-11-17). The radius
+      // is only the checkbox's state now; no falloff is applied.
+      const anchorSolver = anchors && !duplicate ? surfaceAnchorDrag(original, vertices, 0) : null
       const centre = new THREE.Vector3()
       vertices.forEach(i => centre.add(new THREE.Vector3(...(anchors?.[i] ?? vertexAt(original, i)))))
       centre.divideScalar(vertices.length); host.partGroup.updateWorldMatrix(true, false); host.partGroup.localToWorld(centre)
@@ -1181,12 +1211,16 @@ export class FreeformEditorLayer {
       const axis = options.refitPoint ? refitDirection(original) : null
       const checkedOrientation = axis && preservesRefitOrientation(original, axis) ? axis : null
       let current = original, changed = false, done = false, blocked = false, merging = false, nextSelection = this.selection.slice()
+      // A drag that has once left the 2-pixel click band stays a drag: a seam
+      // point pulled out and dropped on a partner 2 px from where it was
+      // grabbed is a contact, as QUICKSURFACE takes it, not a click.
+      let travelled = false
       let activeContact: { from: number; to: number; otherTo?: number } | null = null
       // Direct point contact is paired in both display modes, including the
       // evaluated no-neighbour rule above. Constrained handles stay excluded.
       const chainEnds = !grip && !duplicate && hit.kind === 'edge' && this.selection.every(p => p.kind === 'edge')
         ? mergeChainEnds(original, this.selection.map(p => p.index)) : []
-      const mergeSources = chainEnds.length ? chainEnds : !grip && !duplicate && (!anchors || evaluatedPoint) && vertices.length === 1 && hit.kind === 'vertex' &&
+      const mergeSources = chainEnds.length ? chainEnds : !grip && !duplicate && (!anchors || evaluatedContact) && vertices.length === 1 && hit.kind === 'vertex' &&
         top.vertexEdges[vertices[0]].some(i => top.edges[i].faces.length === 1) ? [vertices[0]] : []
       const visible = this.visible(original)
       const dragFeedback = (invalid: boolean) => {
@@ -1197,12 +1231,20 @@ export class FreeformEditorLayer {
         }
         host.setCursor(invalid ? 'not-allowed' : duplicate ? 'copy' : 'grabbing')
       }
+      const showMergeRing = (at: { x: number; y: number } | null) => {
+        const ring = this.mergeRing
+        if (!ring) return
+        if (!at) { ring.style.display = 'none'; return }
+        const box = host.container.getBoundingClientRect()
+        Object.assign(ring.style, { display: 'block', left: `${at.x - box.left}px`, top: `${at.y - box.top}px` })
+      }
       const update = (ev: PointerEvent, releasing = false) => {
         if (ev.pointerId !== e.pointerId) return
         merging = false
+        let ringAt: { x: number; y: number } | null = null
         const previousContact = activeContact
         activeContact = null
-        let invalidContact = false
+        let invalidContact = false, invalidExtension = false
         nextSelection = this.selection.slice()
         const next = point(ev.clientX, ev.clientY)
         if (!next) return
@@ -1210,7 +1252,8 @@ export class FreeformEditorLayer {
         const strength = Math.max(0, Math.min(1, options.strength ?? 1))
         const delta = next.sub(start).multiplyScalar(strength)
         if (grip?.kind === 'move') delta.copy(grip.axis).multiplyScalar(((ev.clientX-e.clientX)*grip.dx+(ev.clientY-e.clientY)*grip.dy)/grip.unit * (options.strength ?? 1))
-        changed = delta.lengthSq() > 1e-16 && Math.hypot(ev.clientX - e.clientX, ev.clientY - e.clientY) >= 2
+        travelled ||= Math.hypot(ev.clientX - e.clientX, ev.clientY - e.clientY) >= 2
+        changed = delta.lengthSq() > 1e-16 && travelled
         if (changed && directPole && anchorHit && (!deferSnap || releasing)) {
           const target = host.pickScan(e.clientX + (ev.clientX-e.clientX)*strength, e.clientY + (ev.clientY-e.clientY)*strength)?.point
           const projected = target ? new THREE.Vector3(...target).sub(new THREE.Vector3(...anchorHit)) : null
@@ -1227,12 +1270,18 @@ export class FreeformEditorLayer {
           if (edge.clone().cross(delta).lengthSq() <= 1e-20 * Math.max(1, edge.lengthSq() * delta.lengthSq())) changed = false
         }
         if (changed && duplicate) {
-          const extended = extrapolateEdges(original, duplicate.indices, delta.toArray(), tangentExtension)
-          current = extended.cage; nextSelection = extended.edges.map(index => ({ kind: 'edge', index }))
+          try {
+            const extended = extrapolateEdges(original, duplicate.indices, delta.toArray(), tangentExtension)
+            current = extended.cage; nextSelection = extended.edges.map(index => ({ kind: 'edge', index }))
+          } catch {
+            // An inward pull is an invalid preview, not the end of the drag.
+            // Keep capture so moving outward again can recover in this gesture.
+            current = original; changed = false; invalidExtension = true
+          }
         } else {
           const travel = anchorSolver ? anchorSolver(vertices.map(() => delta.toArray() as Vec3)) : vertices.map(() => delta.toArray() as Vec3)
           current = !changed ? original : evaluatedPoint ? moveSurfaceAnchor(original, vertices[0], delta.toArray() as Vec3, (options.neighbourRadius ?? 0) === 0)
-            : movePoints(original, vertices.map((vertex, i) => ({ vertex, by: travel[i] })), options.neighbourRadius ?? 0)
+            : movePoints(original, vertices.map((vertex, i) => ({ vertex, by: travel[i] })))
         }
         if (changed && grip && grip.kind !== 'move') {
           const strength = options.strength ?? 1
@@ -1245,11 +1294,12 @@ export class FreeformEditorLayer {
             return moved.add(grip.centre).sub(old).toArray() as Vec3
           })
           const travel = anchorSolver ? anchorSolver(desired) : desired
-          current = movePoints(original, vertices.map((vertex, i) => ({vertex, by: travel[i]})), options.neighbourRadius ?? 0)
+          current = movePoints(original, vertices.map((vertex, i) => ({vertex, by: travel[i]})))
         }
         // Keep the raw gesture for contact: fitting the approaching poles
         // first changes the joined surface on curved scans.
-        const contactCage = changed && options.snapPoint && !options.rayPoint && mergeSources.length ? cloneCage(current) : null
+        const contactCage = changed && options.snapPoint && (!options.rayPoint || rayContactPoint) && mergeSources.length
+          ? rayContactPoint ? moveSurfaceAnchor(original, vertices[0], delta.toArray() as Vec3, true) : cloneCage(current) : null
         if (changed && options.snapPoint && !options.rayPoint && options.controlNet === false && releasing) {
           const ids = duplicate ? Array.from({length:(current.positions.length-original.positions.length)/3}, (_, i) => original.positions.length/3+i) : vertices
           const snapped = snapSurfaceAnchors(current, ids, options.snapPoint)
@@ -1271,25 +1321,55 @@ export class FreeformEditorLayer {
           }
         }
         if (changed && duplicate) {
-          for (const face of current.faces.slice(original.faces.length)) {
-          const points = face.map(i => new THREE.Vector3(...vertexAt(current, i)))
-          const collapsedEdge = points.some((p, i) => p.distanceToSquared(points[(i + 1) % points.length]) < 1e-20)
-          const area = points[1].clone().sub(points[0]).cross(points[2].clone().sub(points[0])).length() + points[2].clone().sub(points[0]).cross(points[3].clone().sub(points[0])).length()
-          if (collapsedEdge || area < 1e-12) { current = original; changed = false; break }
+          // Projection can fold an otherwise valid raw pull, including on release.
+          try { validateAddedFaces(original, current) }
+          catch { current = original; changed = false; invalidExtension = true }
+        }
+        if (changed && duplicate && !invalidExtension) {
+          // QUICKSURFACE welds a D pull dropped on another boundary: each new
+          // corner within the capture band of an existing boundary point joins
+          // it, Merge and the ring showing while held (paired 2026-11-17).
+          const existing = original.positions.length / 3, welds: [number, number][] = [], taken = new Set<number>()
+          for (let v = existing; v < current.positions.length / 3; v++) {
+            const at = this.project(vertexAt(current, v))
+            let best: { w: number; d: number } | null = null
+            for (let w = 0; w < existing; w++) {
+              if (!visible.vertices[w] || vertices.includes(w) || taken.has(w) || !top.vertexEdges[w].some(i => top.edges[i].faces.length === 1)) continue
+              const s = this.project(anchors ? anchors[w] : vertexAt(original, w)), d = Math.hypot(s.x - at.x, s.y - at.y)
+              if (d < MERGE_CAPTURE_PX && Math.abs(s.z - at.z) <= .01 && (!best || d < best.d)) best = { w, d }
+            }
+            if (best) { welds.push([v, best.w]); taken.add(best.w) }
+          }
+          if (welds.length) {
+            try {
+              current = weldExtension(original, current, welds).cage
+              nextSelection = []
+              merging = true
+              ringAt = this.project(anchors ? anchors[welds[0][1]] : vertexAt(original, welds[0][1]))
+            } catch { /* A weld that would damage the surface leaves the plain pull. */ }
           }
         }
         if (changed) for (const mergeSource of mergeSources) {
-          const at = this.project(evaluatedPoint ? cageVertexLimits(current)[mergeSource] : vertexAt(current, mergeSource))
+          // Release projection must not move an already-visible raw contact
+          // outside the capture band. Search the same gesture used to join.
+          const contact = contactCage ?? current
+          const at = this.project(evaluatedContact ? cageVertexLimits(contact)[mergeSource] : vertexAt(contact, mergeSource))
           const candidates = visible.vertices.flatMap((shown, v) => {
             if (!shown || vertices.includes(v) || !top.vertexEdges[v].some(i => top.edges[i].faces.length === 1)) return []
-            const p = evaluatedPoint ? anchors![v] : vertexAt(original, v), screen = this.project(p), distance = Math.hypot(screen.x - at.x, screen.y - at.y)
-            // The observed capture band accepts five pixels and rejects six.
+            const p = evaluatedContact ? anchors![v] : vertexAt(original, v), screen = this.project(p), distance = Math.hypot(screen.x - at.x, screen.y - at.y)
+            // A corner of the dragged point's own quad can never be joined to.
+            // Dropped on it (within the former 5 px band) the quad would
+            // collapse, so that stays a refused contact; further off it is a
+            // plain move, not a refusal the wider capture band would cause.
+            if (distance >= SAME_FACE_REFUSAL_PX && original.faces.some(f => f.includes(mergeSource) && f.includes(v))) return []
+            // QUICKSURFACE (held drags, 2026-11-17) captures within about 11
+            // screen pixels at any zoom and rings the target while held.
             // A depth guard prevents a screen overlap welding unrelated layers.
             // A fitted contact can cover its original target pole. Keep that
             // already-visible target during release, within the same capture
             // band/depth, instead of letting the preview occlude itself.
             const captured = previousContact?.from === mergeSource && previousContact.to === v
-            if (distance > 5 || (!captured && !this.unobscured(p)) || Math.abs(screen.z - at.z) > .01) return []
+            if (!(distance < MERGE_CAPTURE_PX) || (!captured && !this.unobscured(p)) || Math.abs(screen.z - at.z) > .01) return []
             return [{ v, distance }]
           }).sort((a, b) => a.distance - b.distance)
           for (const candidate of candidates) {
@@ -1298,24 +1378,24 @@ export class FreeformEditorLayer {
               // Test both contacts before changing topology: a partial chain
               // contact still follows the independently observed point path.
               const otherFrom = chainEnds.find(v => v !== mergeSource)
-              const otherAt = otherFrom === undefined ? null : this.project(vertexAt(current, otherFrom))
+              const otherAt = otherFrom === undefined ? null : this.project(vertexAt(contact, otherFrom))
               const otherTo = this.selection.length === 1 && otherAt ? top.vertexEdges[candidate.v]
                 .map(i => top.edges[i]).filter(edge => edge.faces.length === 1)
                 .map(edge => edge.a === candidate.v ? edge.b : edge.a)
                 .find(v => {
                   if (!visible.vertices[v] || vertices.includes(v)) return false
                   const p = vertexAt(original, v), screen = this.project(p)
-                  return Math.hypot(screen.x - otherAt.x, screen.y - otherAt.y) <= 5 && Math.abs(screen.z - otherAt.z) <= .01 &&
+                  return Math.hypot(screen.x - otherAt.x, screen.y - otherAt.y) < MERGE_CAPTURE_PX && Math.abs(screen.z - otherAt.z) <= .01 &&
                     (previousContact?.otherTo === v || this.unobscured(p))
                 }) : undefined
               const paired = otherTo !== undefined && otherFrom !== undefined
                 ? mergeBoundaryEdge(contactCage ?? current, [mergeSource, otherFrom], [candidate.v, otherTo]) : null
               const result = paired ? { cage: paired.cage, vertex: paired.mapping[candidate.v] }
-                : mergeBoundaryPoint(contactCage ?? current, mergeSource, candidate.v, chainEnds.length ? 'chain' : evaluatedPoint ? 'surface-point' : 'point')
+                : mergeBoundaryPoint(contactCage ?? current, mergeSource, candidate.v, chainEnds.length ? 'chain' : evaluatedContact ? 'surface-point' : 'point')
               const map = (v: number) => { if (paired) return paired.mapping[v]; const w = v === mergeSource ? candidate.v : v; return w > mergeSource ? w - 1 : w }
               let joined = result.cage
               if (contactCage) {
-                const screen = this.project(evaluatedPoint ? anchors![candidate.v] : vertexAt(original, candidate.v))
+                const screen = this.project(evaluatedContact ? anchors![candidate.v] : vertexAt(original, candidate.v))
                 const position = !chainEnds.length ? host.pickScan(screen.x, screen.y)?.point : undefined
                 if (!chainEnds.length && !position) throw new Error('No valid mesh contact.')
                 joined = fitMergedContact(joined, vertices.map(map), options.controlNet !== false,
@@ -1331,6 +1411,7 @@ export class FreeformEditorLayer {
               } else nextSelection = [{ kind: 'vertex', index: result.vertex }]
               merging = true
               activeContact = { from: mergeSource, to: candidate.v, otherTo }
+              ringAt = this.project(evaluatedContact ? anchors![candidate.v] : vertexAt(original, candidate.v))
               break
             } catch { /* Try another eligible target before refusing the contact. */ }
           }
@@ -1338,8 +1419,9 @@ export class FreeformEditorLayer {
           if (merging) { invalidContact = false; break }
         }
         changed = current.faces.length !== original.faces.length || current.positions.length !== original.positions.length || current.positions.some((v, i) => Math.abs(v - original.positions[i]) > 1e-10)
-        const folds = invalidContact || (changed && checkedOrientation !== null && !preservesRefitOrientation(current, checkedOrientation))
+        const folds = invalidExtension || invalidContact || (changed && checkedOrientation !== null && !preservesRefitOrientation(current, checkedOrientation))
         dragFeedback(folds)
+        showMergeRing(!folds && merging ? ringAt : null)
         if (folds) {
           current = original
           changed = false
@@ -1359,6 +1441,7 @@ export class FreeformEditorLayer {
         try { el.releasePointerCapture(e.pointerId) } catch { /* capture already released */ }
         host.claimDrag(false)
         if (this.dragHint) this.dragHint.style.display = 'none'
+        showMergeRing(null)
         host.setCursor('default')
         this.preview = null
         // Keep the last measured draft across the handoff to the build. The
@@ -1467,7 +1550,7 @@ export class FreeformEditorLayer {
       if(this.warmTimer!==undefined)clearTimeout(this.warmTimer)
       this.warmRequest=null;this.liveGrid.clear()
       this.nextDeviation?.cancel(); this.nextDeviation = null; this.deviationCache = null; this.liveDeviationCache = null
-      this.cancelDrag?.(); this.clearDrawing(); this.surfaceCache = null; this.topologyCache = null; this.evaluationPlans.clear(); this.group.removeFromParent(); this.duplicate?.remove(); this.dragHint?.remove(); this.brushRing?.remove(); this.manipulator.dispose()
+      this.cancelDrag?.(); this.clearDrawing(); this.surfaceCache = null; this.topologyCache = null; this.evaluationPlans.clear(); this.group.removeFromParent(); this.duplicate?.remove(); this.dragHint?.remove(); this.mergeRing?.remove(); this.brushRing?.remove(); this.manipulator.dispose()
       for (const entry of this.drawingMaterials.values()) entry.material.dispose()
       this.drawingMaterials.clear()
       this.paintedDeviation?.geometry.dispose(); this.paintedDeviation = null

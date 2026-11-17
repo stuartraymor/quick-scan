@@ -520,6 +520,9 @@ export interface ReState {
    *  (core/freeform/edit.ts), not through a box. */
   addConvertedFreeform: (sourceId: number, file: StepFileRef) => number | null
   addFreeform: (data: FreeformData, name?: string) => number
+  /** Combine independent control cages as one editable object, without welding.
+   * Returns the first source id; invalid selections/settings throw before editing. */
+  mergeFreeforms: (ids: number[]) => number
   /** A Fill Surface added to the list (one undo step); its id. */
   addFill: (data: FillData, name?: string) => number
   /** An Extend Surface of a sheet body (core/extend.ts), a body of its own; the sheet is put out of view. The id of the feature. */

@@ -2,7 +2,7 @@
 // Selection rules for the interactive cage editor. These are conservative
 // implementation rules, not a claim that every native context is equivalent.
 import { type Cage, edgeKey, topology, vertexAt, vertexCount } from './cage'
-import { addFace, boundaryLoops, closeHole, deleteFaces, setCrease, splitLoop } from './edit'
+import { addFace, closeHole, deleteFaces, setCrease, splitLoop } from './edit'
 
 export interface FreeformSelection { kind: 'vertex' | 'edge' | 'face'; index: number }
 export type EditorAction = 'split' | 'crease' | 'remove_crease' | 'delete' | 'close_hole' | 'bridge'
@@ -58,8 +58,29 @@ function selectedHole(c: Cage, selection: readonly FreeformSelection[]): number[
   if (selection.some(s => s.kind === 'face')) return undefined
   const vertices = selectedVertices(c, selection)
   if (vertices.length !== 4) return undefined
-  return boundaryLoops(c).find(loop => loop.length === 4 && loop.every(v => vertices.includes(v)) &&
-    !c.faces.some(face => face.length === 4 && face.every(v => loop.includes(v))))
+  const t = topology(c), edgesOnly = selection.every(s => s.kind === 'edge')
+  if (!edgesOnly && selection.some(s => s.kind !== 'vertex')) return undefined
+  const edges = edgesOnly ? selection.map(s => t.edges[s.index])
+    : t.edges.filter(e => e.faces.length === 1 && vertices.includes(e.a) && vertices.includes(e.b))
+  if (edges.length !== 4 || edges.some(e => e.faces.length !== 1)) return undefined
+  // Follow only this selected boundary cycle. Other edges at a shared
+  // vertex must not divert the walk away from the complete opening.
+  const next = new Map<number, number>(), incoming = new Set<number>()
+  for (const edge of edges) {
+    const face = c.faces[edge.faces[0]], k = face.indexOf(edge.a)
+    const a = face[(k + 1) % face.length] === edge.b ? edge.a : edge.b
+    const b = a === edge.a ? edge.b : edge.a
+    if (next.has(a) || incoming.has(b)) return undefined
+    next.set(a, b); incoming.add(b)
+  }
+  const loop = [vertices[0]]
+  for (let i = 1; i < 4; i++) {
+    const v = next.get(loop[i - 1])
+    if (v === undefined || loop.includes(v)) return undefined
+    loop.push(v)
+  }
+  if (next.get(loop[3]) !== loop[0] || c.faces.some(face => face.length === 4 && face.every(v => loop.includes(v)))) return undefined
+  try { closeHole(c, loop); return loop } catch { return undefined }
 }
 
 /** Order two disjoint open boundaries by their adjacent face winding. */
@@ -188,7 +209,7 @@ export function applyEditorAction(c: Cage, selection: readonly FreeformSelection
         : deleteFaces(c, gone)
       break
     }
-    case 'close_hole': cage = closeHole(c, selectedHole(c, picks)![0]); break
+    case 'close_hole': cage = closeHole(c, selectedHole(c, picks)!); break
     case 'bridge': cage = bridgeEdges(c, picks); break
   }
   return { cage, selection: action === 'crease' || action === 'remove_crease' ? picks.map(s => ({ ...s })) : [] }

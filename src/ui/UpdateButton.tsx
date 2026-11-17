@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react'
 type Bridge = {
   check(): Promise<{ status: string; version?: string; detail?: string }>
   download(): Promise<{ status: string; detail?: string }>
-  install(): Promise<{ status: string }>
+  install(): Promise<{ status: string; detail?: string }>
   onProgress(cb: (p: number) => void): () => void
 }
 const bridge = (): Bridge | undefined => (window as unknown as { quickScanUpdater?: Bridge }).quickScanUpdater
@@ -53,7 +53,12 @@ export function useUpdater() {
       : phase.kind === 'ready'
         ? () => {
             setPhase({ kind: 'installing' })
-            void api.install()
+            // Resolves only if Quick Scan stays open (Keep working at the
+            // unsaved-changes prompt): the update is still ready to install.
+            void api.install().then(
+              (r) => { if (r.status !== 'installing') setPhase(r.status === 'error' ? { kind: 'error', detail: r.detail ?? 'Update failed.' } : { kind: 'ready' }) },
+              () => setPhase({ kind: 'ready' }),
+            )
           }
         : check
   return {

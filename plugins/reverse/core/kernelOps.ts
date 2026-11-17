@@ -315,12 +315,18 @@ export function withSubShapes<T>(occt: OcctLike, shape: Shape, type: 'face' | 'e
   }
 }
 
-export function readFace(occt: OcctLike, f: number): RawFace {
+/** `areas`: face areas by hash already measured on this shape (the mesher
+ *  measures the same faces); a face not in it is measured and added. */
+export function readFace(occt: OcctLike, f: number, areas?: Map<number, number>): RawFace {
   const o = occt
   const hash = o.hashCode(f, HASH_BOUND)
   const kind = faceKindOf(o.surfaceType(f))
   const centroid = vec(o.getSurfaceCenterOfMass(f))
-  const area = o.getSurfaceArea(f)
+  let area = areas?.get(hash)
+  if (area === undefined) {
+    area = o.getSurfaceArea(f)
+    areas?.set(hash, area)
+  }
   const uv = o.uvBounds(f)
   const um = (uv.uMin + uv.uMax) / 2
   const vm = (uv.vMin + uv.vMax) / 2

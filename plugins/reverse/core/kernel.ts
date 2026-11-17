@@ -1645,12 +1645,14 @@ export class ReKernel {
     return run('Listing the faces', () => this.occt.subShapeHashes(shape, 'face', HASH_BOUND))
   }
 
-  /** Every face with the geometry a fingerprint is made of. */
-  faces(shape: Shape): RawFace[] {
+  /** Every face with the geometry a fingerprint is made of. `areas`: face
+   *  areas by hash already measured on this shape, shared with mesh() so
+   *  each face's area is measured once. */
+  faces(shape: Shape, areas?: Map<number, number>): RawFace[] {
     return run('Reading the faces', () => {
       const handles = this.occt.getSubShapes(shape, 'face')
       try {
-        return handles.map((f) => readFace(this.occt, f))
+        return handles.map((f) => readFace(this.occt, f, areas))
       } finally {
         for (const f of handles) this.occt.release(f)
       }

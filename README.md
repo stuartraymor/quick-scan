@@ -17,7 +17,7 @@
   <a href="docs/manual.md">Manual</a>
 </p>
 
-> **Early release (0.0.x).** Quick Scan is young software. It is useful for
+> **Young software (1.x).** Quick Scan is under active development. It is useful for
 > real work on the features listed below, and honest about what is missing in
 > [Known limitations](#known-limitations). It is **not** a drop-in replacement
 > for any commercial reverse-engineering package.
@@ -80,6 +80,17 @@ That warning means "unrecognised publisher", not "malware found". Choose
 matched. Build it yourself from this repository if you would rather not.
 
 Requirements: Windows 10 or 11, 64-bit, a GPU able to run WebGL 2.
+
+### Updating
+
+Open the application menu and choose **Check for updates**. Quick Scan asks
+the latest GitHub release, and when a newer version exists the item becomes
+**Update to v…**. The installer is downloaded and checked against the SHA-256
+published with the release; a mismatch is discarded. **Restart to update** then
+closes Quick Scan (asking first if the project has unsaved changes), installs
+the update silently and opens Quick Scan again. Your preferences carry over to
+the new version. Installing a newer `Quick-Scan-Setup-<version>.exe` by hand
+over an existing installation works the same way.
 
 ## Build from source
 

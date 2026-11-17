@@ -13,6 +13,7 @@ import type { Vec3 } from '../../../../src/core/types'
 import { type Cage, edgeKey, topology, vertexCount } from './cage'
 import { cageVertexLimits, vertexNormals } from './limit'
 import { subdivide } from './subdivide'
+import { validateAddedFaces } from './connectionGeometry'
 
 export const cloneCage = (c: Cage): Cage => ({ positions: Float64Array.from(c.positions), faces: c.faces.map((f) => f.slice()), creases: c.creases.map(([a, b]) => [a, b]) })
 
@@ -284,11 +285,16 @@ export function setCrease(c: Cage, edges: [number, number][], on: boolean): Cage
 /** Follow a quad-net line through regular vertices, stopping at corners,
  * hidden faces, ambiguous poles and visibly bent control-net edges. The
  * clicked edge stays first. */
+/** The largest turn, degrees, a double-clicked row follows at each point. */
+export const LINE_TURN_DEG = 45
+
 export function edgeLine(c: Cage, seed: number, hidden: number[] = []): number[] {
   const top = topology(c), blocked = new Set(hidden), found = new Set<number>()
   const visible = (i: number) => top.edges[i]?.faces.every(f => !blocked.has(f))
-  // The reference editor selects one edge on a deformed two-quad sphere cage
-  // whose adjacent boundary edges turn 31 degrees; straight rows continue.
+  // A row continues through bends of up to LINE_TURN_DEG at each point. The
+  // reference editor stops at a 31-degree turn (a deformed two-quad sphere
+  // cage); the user asked for a more forgiving double-click on the curved
+  // rows of scanned parts (2026-11-17), so whole sides follow gentle curves.
   // Keep this in 3D so rotating the camera does not change the result.
   const straight = (first: number, second: number, vertex: number) => {
     const a = top.edges[first], b = top.edges[second]
@@ -297,7 +303,7 @@ export function edgeLine(c: Cage, seed: number, hidden: number[] = []): number[]
     const ax = c.positions[j] - c.positions[i], ay = c.positions[j + 1] - c.positions[i + 1], az = c.positions[j + 2] - c.positions[i + 2]
     const bx = c.positions[k] - c.positions[i], by = c.positions[k + 1] - c.positions[i + 1], bz = c.positions[k + 2] - c.positions[i + 2]
     const lengths = Math.hypot(ax, ay, az) * Math.hypot(bx, by, bz)
-    return lengths > 1e-12 && (ax * bx + ay * by + az * bz) / lengths <= -Math.cos(25 * Math.PI / 180)
+    return lengths > 1e-12 && (ax * bx + ay * by + az * bz) / lengths <= -Math.cos(LINE_TURN_DEG * Math.PI / 180)
   }
   if (!visible(seed)) return []
   found.add(seed)
@@ -367,6 +373,7 @@ export function extrapolateEdges(c: Cage, indices: number[], by: Vec3, followFac
     const np = copy(p), nq = copy(q)
     out.faces.push([q, p, np, nq]); outer.push([np, nq])
   }
+  validateAddedFaces(c, out)
   checked(out)
   const result = topology(out)
   return { cage: out, edges: outer.map(([a, b]) => result.edgeOf.get(edgeKey(a, b))!) }
@@ -401,6 +408,7 @@ export function extrapolate(c: Cage, a: number, b: number, by?: Vec3): Cage {
   const nq = pushPoint(out, qa)
   // The new quad goes against the old face's edge p → q: q → p.
   out.faces.push([q, p, np, nq])
+  validateAddedFaces(c, out)
   return checked(out)
 }
 
@@ -575,17 +583,31 @@ export function boundaryLoops(c: Cage): number[][] {
   return loops
 }
 
-/** Close a four-sided hole: the boundary loop through `vertex` (every
- *  four-sided one when none is given) filled with a quad. */
-export function closeHole(c: Cage, vertex?: number): Cage {
-  const loops = boundaryLoops(c)
-  const chosen = vertex === undefined ? loops.filter((l) => l.length === 4) : loops.filter((l) => l.includes(vertexIn(c, vertex)))
+/** Close a four-sided hole: an explicit boundary cycle, the boundary loop
+ * through a vertex, or every four-sided loop when none is given. Explicit
+ * cycles disambiguate holes touching another boundary at one point. */
+export function closeHole(c: Cage, vertex?: number | readonly number[]): Cage {
+  let chosen: number[][]
+  if (vertex !== undefined && typeof vertex !== 'number') {
+    const loop = vertex.map(v => vertexIn(c, v)), t = topology(c)
+    if (loop.length !== 4 || new Set(loop).size !== 4 || loop.some((v, i) => {
+      const edge = t.edgeOf.get(edgeKey(v, loop[(i + 1) % 4]))
+      return edge === undefined || t.edges[edge].faces.length !== 1
+    })) return fail('Select a complete four-sided boundary cycle.')
+    chosen = [loop]
+  } else {
+    const loops = boundaryLoops(c)
+    chosen = vertex === undefined ? loops.filter((l) => l.length === 4) : loops.filter((l) => l.includes(vertexIn(c, vertex)))
+  }
   if (chosen.length === 0) return fail(vertex === undefined ? 'The cage has no four-sided hole.' : `Vertex ${vertex} is not on a hole.`)
   const bad = chosen.find((l) => l.length !== 4)
   if (bad) return fail(`The hole at vertex ${bad[0]} has ${bad.length} sides; only four-sided holes are closed (add a face, or extrapolate).`)
-  const out = cloneCage(c)
-  // The new face runs against the boundary.
-  for (const l of chosen) out.faces.push(l.slice().reverse())
+  let out = cloneCage(c)
+  // Fit the explicit cycle's winding to every neighbour, refusing mixed
+  // senses or excessive incidence before applying the geometric guard.
+  for (const l of chosen) out = addFace(out, l)
+  // A hole with one corner bent inward closes, as QUICKSURFACE closes it.
+  validateAddedFaces(c, out, true)
   return checked(out)
 }
 

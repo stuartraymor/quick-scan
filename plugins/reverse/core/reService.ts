@@ -25,6 +25,7 @@ import { patchesBody, type ConvertReport, type PatchSet } from './freeform/conve
 import { freeformShell, type FreeformOp, type ShellReport } from './freeform/shell'
 import type { Sketch } from './sketch'
 import { refineDeviation, type MeasuredTriangles } from './freeform/deviationRefinement'
+import { warmFreeform } from './freeform/warm'
 
 export type ReWorkerRequest =
   /** Load the kernel. Answered once it is ready to build. */
@@ -83,6 +84,9 @@ export type ReWorkerRequest =
   /** A freeform cage's patches made a body and written as STEP, nothing
    *  kept — see freeform/convert.ts. */
   | { type: 'freeform-convert'; requestId: number; patches: PatchSet; name: string; step: boolean; op?: FreeformOp }
+  /** The freeform build's kernel calls run once on a small cage, nothing
+   *  kept — see freeform/warm.ts. */
+  | { type: 'freeform-warm'; requestId: number }
 
 export type ReWorkerResponse =
   | { type: 'init-ok'; requestId: number; version: string }
@@ -109,6 +113,7 @@ export type ReWorkerResponse =
   | { type: 'fillet-try-ok'; requestId: number; tried: FilletTries }
   | { type: 'reference-ok'; requestId: number; meshes: KernelMesh[] }
   | { type: 'freeform-convert-ok'; requestId: number; report: ConvertReport; shell?: ShellReport; step?: string; check?: StepCheck }
+  | { type: 'freeform-warm-ok'; requestId: number; ms: number }
   /** A build or a preview overtaken by another of its kind before it was
    *  played (reQueue.ts). */
   | { type: 'skipped'; requestId: number }
@@ -421,6 +426,7 @@ export function createReService(loadKernel: () => Promise<ReKernel>, loadManifol
           k.release(shape)
         }
       }
+      if (msg.type === 'freeform-warm') return answer({ type: 'freeform-warm-ok', requestId: msg.requestId, ms: warmFreeform(kernel!) })
       if (msg.type === 'clearance') return answer({ type: 'clearance-ok', requestId: msg.requestId, ...b.clearance(msg.a, msg.b) })
       if (msg.type === 'overlaps') {
         // A failed load is not kept: the next ask tries again.

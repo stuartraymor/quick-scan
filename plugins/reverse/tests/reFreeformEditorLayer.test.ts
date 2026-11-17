@@ -10,7 +10,9 @@ import chainMerge from './fixtures/freeform-chain-merge-reference.json'
 import surfaceDrags from './fixtures/freeform-surface-drag-reference.json'
 import snappedDrags from './fixtures/freeform-snapped-point-reference.json'
 import aligned from './fixtures/freeform-aligned-edge-reference.json'
+import curvedContacts from './fixtures/freeform-curved-merge.json'
 import { addRectangle } from '../core/freeform/edit'
+import sideSeam from './fixtures/freeform-side-seam.json'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -274,20 +276,44 @@ it('previews a native point merge and commits the welded selection only on relea
   s.editor.dispose()
 })
 
-it('leaves a six-pixel miss unwelded and cancels a captured point merge atomically', () => {
+it('leaves a miss beyond the 11-pixel capture band unwelded and cancels a captured point merge atomically', () => {
   for (const cancel of [false, true]) {
     const f = mergeFixtures[0], cage: Cage = { positions: Float64Array.from(f.input.positions), faces: f.input.faces, creases: [] }
     const s = setup({ mode: 'points', controlNet: true }, cage)
     const x = 100 + cage.positions[f.from * 3] * 10, y = 100 - cage.positions[f.from * 3 + 1] * 10
     const tx = 100 + cage.positions[f.to * 3] * 10
     s.layer.pointerDown!(s.event('pointerdown', x, y))
-    s.canvas.dispatchEvent(s.event('pointermove', tx - (cancel ? 0 : 6), y))
+    s.canvas.dispatchEvent(s.event('pointermove', tx - (cancel ? 0 : 12), y))
     if (cancel) s.win.dispatchEvent(Object.assign(new Event('keydown'), { key: 'Escape' }))
-    s.canvas.dispatchEvent(s.event('pointerup', tx - (cancel ? 0 : 6), y))
+    s.canvas.dispatchEvent(s.event('pointerup', tx - (cancel ? 0 : 12), y))
     if (cancel) { expect(s.onCommit).not.toHaveBeenCalled(); expect(s.onPreview.mock.lastCall).toEqual([cage, false]) }
     else expect(s.onCommit.mock.lastCall?.[0].positions.length).toBe(36)
     s.editor.dispose()
   }
+})
+
+it('welds a point dropped 10 px from its target, inside QUICKSURFACE\'s 11-pixel capture band', () => {
+  const f = mergeFixtures[0], cage: Cage = { positions: Float64Array.from(f.input.positions), faces: f.input.faces, creases: [] }
+  const s = setup({ mode: 'points', controlNet: true }, cage)
+  const x = 100 + cage.positions[f.from * 3] * 10, y = 100 - cage.positions[f.from * 3 + 1] * 10
+  const tx = 100 + cage.positions[f.to * 3] * 10, ty = 100 - cage.positions[f.to * 3 + 1] * 10
+  s.layer.pointerDown!(s.event('pointerdown', x, y))
+  s.canvas.dispatchEvent(s.event('pointermove', tx - 10, ty))
+  s.canvas.dispatchEvent(s.event('pointerup', tx - 10, ty))
+  expect(s.onCommit).toHaveBeenCalledOnce()
+  expect(s.onCommit.mock.lastCall?.[0].positions.length).toBe(cage.positions.length - 3)
+  s.editor.dispose()
+})
+
+it('moves a corner near another corner of its own quad instead of refusing it', () => {
+  const s = setup({ mode: 'points', controlNet: true })
+  // The quad's corner at (0, 0) dragged to 8 px from its corner at (5, 0).
+  s.layer.pointerDown!(s.event('pointerdown', 100, 100))
+  s.canvas.dispatchEvent(s.event('pointermove', 142, 100))
+  s.canvas.dispatchEvent(s.event('pointerup', 142, 100))
+  expect(s.onCommit).toHaveBeenCalledOnce()
+  expect(s.onCommit.mock.lastCall?.[0].positions.length).toBe(12)
+  s.editor.dispose()
 })
 
 it('refuses same-face point contact instead of committing a collapsed quad', () => {
@@ -384,6 +410,103 @@ function setup(options: FreeformEditorOptions = {}, input?: Cage) {
   const event = (type: string, x = 100, y = 100, extra = {}) => Object.assign(new Event(type), { pointerId: 1, button: 0, clientX: x, clientY: y, ...extra }) as PointerEvent
   return { editor, layer: editor.layer(), cage, host, canvas, win, event, onCommit, onSelection, onPreview, onContext, partGroup }
 }
+
+// Same faceted radius-20 scan as the independently saved native contact cases.
+const contactSection = Array.from({ length: 21 }, (_, i) => [i - 10, Math.fround(20 - Math.sqrt(400 - (i - 10) ** 2))])
+const contactClosest = (p: [number, number, number]): [number, number, number] => {
+  let best = Infinity, point = p
+  for (let i = 0; i + 1 < contactSection.length; i++) {
+    const [a,z] = contactSection[i], [b,w] = contactSection[i+1], dx=b-a, dz=w-z
+    const t=Math.max(0,Math.min(1,((p[0]-a)*dx+(p[2]-z)*dz)/(dx*dx+dz*dz)))
+    const x=a+t*dx, h=z+t*dz, distance=(x-p[0])**2+(h-p[2])**2
+    if(distance<best){best=distance;point=[x,p[1],h]}
+  }
+  return point
+}
+const contactRayHeight = (x: number) => {
+  const i=Math.floor(x)+10, a=contactSection[i], b=contactSection[i+1]
+  return a[1]+(x-a[0])*(b[1]-a[1])
+}
+
+it.each(['release','leave','cancel'])('retains the raw curved contact at high zoom through %s', action => {
+  const cage:Cage={...curvedContacts.before,positions:Float64Array.from(curvedContacts.before.positions),creases:[]}
+  const selection=topology(cage).edges.flatMap((e,index)=>[`${e.a}:${e.b}`,`${e.b}:${e.a}`].some(k=>['2:8','3:8'].includes(k))?[{kind:'edge' as const,index}]:[])
+  const s=setup({mode:'edges',selection,controlNet:true,snapPoint:contactClosest},cage)
+  const scale=125/3.93162381649, camera=s.host.camera() as THREE.OrthographicCamera
+  camera.zoom=scale/10;camera.updateProjectionMatrix()
+  const source=cage.positions[9], y=100-(cage.positions[10]+cage.positions[25])/2*scale
+  const x=100+source*scale, end=x+3.774358868598938*scale
+  // The raw endpoint is 4.99999985 px away; projecting first moves it to 5.2195 px.
+  expect((cage.positions[12]-source-3.774358868598938)*scale).toBeLessThan(5)
+  expect((cage.positions[12]-contactClosest([source+3.774358868598938,cage.positions[10],cage.positions[11]])[0])*scale).toBeGreaterThan(5)
+  s.layer.pointerDown!(s.event('pointerdown',x,y));s.canvas.dispatchEvent(s.event('pointermove',end,y))
+  expect(s.onPreview.mock.lastCall?.[0].positions).toHaveLength(33)
+  expect(s.onCommit).not.toHaveBeenCalled()
+  // Leaving: about 13 px from the target, outside the 11-pixel capture band.
+  if(action==='leave')s.canvas.dispatchEvent(s.event('pointermove',end-8,y))
+  if(action==='cancel')s.win.dispatchEvent(Object.assign(new Event('keydown'),{key:'Escape'}))
+  s.canvas.dispatchEvent(s.event('pointerup',action==='leave'?end-8:end,y))
+  if(action==='cancel')expect(s.onCommit).not.toHaveBeenCalled()
+  else {
+    expect(s.onCommit).toHaveBeenCalledOnce()
+    const result=s.onCommit.mock.lastCall?.[0] as Cage
+    expect(result.positions).toHaveLength(action==='leave'?36:33)
+    if(action==='release'){
+      expect(result.faces).toEqual(curvedContacts.after['curved-chain-on'].faces)
+      expect(Math.max(...result.positions.map((v,i)=>Math.abs(v-curvedContacts.after['curved-chain-on'].positions[i])))).toBeLessThan(5e-7)
+    }
+  }
+  s.editor.dispose()
+})
+
+it.each([false,true])('joins the native Ray Projection evaluated point with unchanged other poles (cancel=%s)', cancel => {
+  // Fresh 1.1.89 native Ray/OFF save is bit-identical to the retained Closest/OFF result.
+  const cage:Cage={...curvedContacts.before,positions:Float64Array.from(curvedContacts.before.positions),creases:[]}
+  const s=setup({mode:'points',controlNet:false,snapPoint:contactClosest,
+    rayPoint:p=>[p[0],p[1],contactRayHeight(p[0])]},cage)
+  const anchors=cageVertexLimits(cage),xy=(p:number[])=>[100+p[0]*10,100-p[1]*10],a=xy(anchors[8]),b=xy(anchors[10])
+  vi.mocked(s.host.pickScan).mockImplementation((x,y)=>({point:[(x-100)/10,(100-y)/10,contactRayHeight((x-100)/10)]} as ReturnType<SceneLayerHost['pickScan']>))
+  s.layer.pointerDown!(s.event('pointerdown',a[0],a[1]));s.canvas.dispatchEvent(s.event('pointermove',b[0],b[1]))
+  expect(s.onPreview.mock.lastCall?.[0].positions).toHaveLength(33)
+  expect(s.onCommit).not.toHaveBeenCalled()
+  if(cancel)s.win.dispatchEvent(Object.assign(new Event('keydown'),{key:'Escape'}))
+  s.canvas.dispatchEvent(s.event('pointerup',b[0],b[1]))
+  if(cancel)expect(s.onCommit).not.toHaveBeenCalled()
+  else {
+    expect(s.onCommit).toHaveBeenCalledOnce()
+    const result=s.onCommit.mock.lastCall?.[0] as Cage,expected=curvedContacts.after['curved-point-off']
+    expect(result.faces).toEqual(expected.faces)
+    expect(Math.max(...result.positions.map((v,i)=>Math.abs(v-expected.positions[i])))).toBeLessThan(5e-7)
+    expect(s.onCommit.mock.lastCall?.[1]).toEqual([{kind:'vertex',index:9}])
+  }
+  expect(Array.from(cage.positions)).toEqual(curvedContacts.before.positions)
+  s.editor.dispose()
+})
+it.each([false,true])('welds a seam point pulled out and dropped on a partner under 2 px from where it was grabbed (Control Net %s)', controlNet => {
+  // QUICKSURFACE 2026-11-17: after a whole-side contact welds one end, the
+  // other seam points sit about 2 px from their partners; each is pulled out
+  // and dropped back on its partner. The drop ended under 2 px from the grab,
+  // which counted as "not moved" and threw the weld away.
+  const held=sideSeam.sideHeld,cage:Cage={positions:Float64Array.from(held.positions),faces:held.faces.map(f=>[...f]),creases:[]}
+  const s=setup({mode:'points',controlNet,snapPoint:p=>[p[0],p[1],0]},cage)
+  vi.mocked(s.host.pickScan).mockImplementation((x,y)=>({point:[(x-100)/10,(100-y)/10,0]} as ReturnType<SceneLayerHost['pickScan']>))
+  const shown=controlNet?Array.from({length:cage.positions.length/3},(_,i)=>Array.from(cage.positions.slice(3*i,3*i+3))):cageVertexLimits(cage)
+  // Under 0.5 px apart the pick may take either pole of the pair; either
+  // drop is a weld. The exact native poles are paired in reFreeformSideSeam.
+  const xy=(p:number[])=>[100+p[0]*10,100-p[1]*10],a=xy(shown[9]),b=xy(shown[7])
+  expect(Math.hypot(a[0]-b[0],a[1]-b[1])).toBeLessThan(2)
+  s.layer.pointerDown!(s.event('pointerdown',a[0],a[1]))
+  s.canvas.dispatchEvent(s.event('pointermove',b[0]+30,b[1]))
+  s.canvas.dispatchEvent(s.event('pointermove',b[0],b[1]))
+  s.canvas.dispatchEvent(s.event('pointerup',b[0],b[1]))
+  expect(s.onCommit).toHaveBeenCalledOnce()
+  const result=s.onCommit.mock.lastCall?.[0] as Cage
+  expect(result.positions).toHaveLength(30)
+  // The seam's upper edge is now shared by both strips, as in QUICKSURFACE.
+  const shared=(c:Cage)=>topology(c).edges.filter(e=>e.faces.length===2).length
+  expect(shared(result)).toBe(shared({...sideSeam.middleWelded,positions:Float64Array.from(sideSeam.middleWelded.positions),creases:[]}))
+  s.editor.dispose()
+})
 it('reports finished CAD measurements and switches to live preview during a drag', async () => {
   const finished = new THREE.BufferGeometry().setAttribute(
     'position', new THREE.Float32BufferAttribute([0, 0, -2, 5, 0, 2, 0, 5, 4], 3),
@@ -868,6 +991,39 @@ it('does not commit an extension when snapping collapses its new edges', () => {
   const s = setup({ selection: [{ kind: 'edge', index: 0 }], duplicateHandle: true, snapPoint: p => [p[0], 0, 0] })
   s.layer.pointerDown!(s.event('pointerdown', 125, 100)); s.canvas.dispatchEvent(s.event('pointerup', 125, 120))
   expect(s.onCommit).not.toHaveBeenCalled(); s.editor.dispose()
+})
+
+it('keeps an invalid inward D pull alive and commits once after recovering outward', () => {
+  const onError = vi.fn(), s = setup({ selection: [{ kind: 'edge', index: 0 }], duplicateHandle: true, onError })
+  s.layer.pointerDown!(s.event('pointerdown', 125, 100))
+  s.canvas.dispatchEvent(s.event('pointermove', 125, 80))
+  expect(s.onPreview).toHaveBeenLastCalledWith(s.cage, true)
+  expect(s.host.setCursor).toHaveBeenLastCalledWith('not-allowed')
+  expect(s.canvas.releasePointerCapture).not.toHaveBeenCalled()
+  expect(s.onCommit).not.toHaveBeenCalled()
+  s.canvas.dispatchEvent(s.event('pointermove', 125, 120))
+  expect(s.host.setCursor).toHaveBeenLastCalledWith('copy')
+  expect((s.onPreview.mock.lastCall?.[0] as Cage).faces).toHaveLength(2)
+  s.canvas.dispatchEvent(s.event('pointerup', 125, 120))
+  expect(s.onCommit).toHaveBeenCalledOnce()
+  expect(topology(s.onCommit.mock.lastCall?.[0]).edges.filter(edge => edge.faces.length === 2)).toHaveLength(1)
+  expect(onError).not.toHaveBeenCalled()
+  expect(s.cage.faces).toEqual([[0,1,2,3]])
+  s.editor.dispose()
+})
+
+it.each(['release', 'cancel'])('rejects a post-snap inward folded D extension on %s', action => {
+  const onError = vi.fn(), s = setup({ selection: [{ kind: 'edge', index: 0 }], duplicateHandle: true,
+    snapPoint: p => [p[0], Math.abs(p[1]), p[2]], onError })
+  s.layer.pointerDown!(s.event('pointerdown', 125, 100))
+  s.canvas.dispatchEvent(s.event('pointermove', 125, 120))
+  if (action === 'cancel') s.win.dispatchEvent(Object.assign(new Event('keydown'), { key: 'Escape' }))
+  s.canvas.dispatchEvent(s.event('pointerup', 125, 120))
+  expect(s.onCommit).not.toHaveBeenCalled()
+  expect(s.onPreview).toHaveBeenLastCalledWith(s.cage, false)
+  expect(onError).not.toHaveBeenCalled()
+  expect(s.cage.faces).toEqual([[0,1,2,3]])
+  s.editor.dispose()
 })
 
 const strip: Cage = { positions: Float64Array.from([0,0,0, 5,0,0, 10,0,0, 0,5,0, 5,5,0, 10,5,0]), faces:[[0,1,4,3],[1,2,5,4]], creases:[] }

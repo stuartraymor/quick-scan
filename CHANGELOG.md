@@ -1,4 +1,48 @@
-# 1.1.68
+## 1.1.94 — Safer in-app updates
+
+- "Restart to update" no longer starts the installer while Quick Scan is still open. The installer used to close Quick Scan by force, even after "Keep working" at the unsaved-changes prompt. It now starts only once Quick Scan has really quit; keeping your work open cancels the install and leaves "Restart to update" ready.
+- Preferences carry over to an updated version: the first launch of a new version copies the newest older version's preferences (never a newer one's, never recovery checkpoints, never over an existing profile).
+- README: an Updating section, and the early-release notice now matches 1.x.
+- Evidence: analysis/quick-scan-v1.1.94.
+
+## 1.1.93 — D-handle joins, neighbour moves, line selection
+
+- A D-handle pull dropped on another boundary joins it, as QUICKSURFACE does: each new corner within the capture band welds, with Merge and the ring showing while held. Paired with a QUICKSURFACE held drag; faces identical, poles within 0.004 mm.
+- Moving a point never drags other control points by distance any more. As in QUICKSURFACE, Control Net on moves only the picked points; Control Net off with "Don't move neighbours" corrects only the quads round the picked point (was the whole cage, rippling outward). Paired on a 5 × 5 grid to 5e-7 mm.
+- Double-clicking an edge selects the whole row through bends of up to 45° at each point (was 25°), so curved sides select in one go.
+- Evidence: analysis/quick-scan-v1.1.93 and analysis/side-joins-2026-11-17.
+
+## 1.1.92 — Join reach and ring, concave hole closing
+
+- New Freeform joins from further away: a dragged boundary point captures another within 11 screen pixels, as QUICKSURFACE does (measured with held drags at two zooms; was 5), and a ring is drawn round the point it will join while a release would join. A corner of the dragged point's own quad no longer blocks the move.
+- Close 4-sided hole closes a hole with one corner bent inward, as QUICKSURFACE does; crossed or collapsed holes are still refused.
+- Evidence: analysis/quick-scan-v1.1.92 and analysis/side-joins-2026-11-17.
+
+## 1.1.91 — Seam joins, no rebuild after every quad, window close
+
+- New Freeform joins two strips side to side as QUICKSURFACE does: a side dragged onto another welds one end, and each remaining seam point dropped on its partner welds. A drop under 2 px from where the point was grabbed was treated as a click and discarded; it now welds. With Control Net off, the welded point stays where it was dropped on the surface (it was 0.97 mm off). Paired with fresh QUICKSURFACE held drags; the middle weld matches its poles to 1.2e-7 mm.
+- While a control surface is edited, its CAD body is built when the editing pauses (2.5 s), when the editor closes or before an export, not after every quad. Rebuilds reuse unchanged block faces and measure each face's area once.
+- Closing the window with unsaved work asks Close without saving / Keep working; the close was silently ignored before.
+- Evidence: analysis/quick-scan-v1.1.91 and analysis/side-joins-2026-11-17.
+
+## 1.1.90 — Selected four-sided hole closure
+
+- Close a complete selected four-edge opening even when it touches another boundary at one point. Preserve its existing poles, surrounding faces and creases; retain collapsed, crossed, folded and overlapping-quad rejection. The reported local six-face case matches fresh QUICKSURFACE closure.
+- Carry forward the uninstalled 1.1.89 candidate: consistent capture between drag preview and release before Closest Point projection, the observed Ray Projection point join with Control Net off and Don't move neighbours on, and independent valid fan repair beside an asymmetric one-quad/two-quad point junction.
+- Keep existing capture radius/depth safeguards and face-winding repair refusal. Full native snapping thresholds, arbitrary branching/joins and visual parity remain under investigation. Evidence: analysis/quick-scan-v1.1.89 and analysis/quick-scan-v1.1.90.
+
+## 1.1.89
+
+- Keep boundary capture decisions consistent between drag preview and release before Closest Point projection; retain the existing screen capture radius and depth guard.
+- Allow the native-observed Ray Projection point join with Control Net off and Don't move neighbours on; preserve non-contact ray dragging.
+- Repair an independent valid fan beside an asymmetric one-quad/two-quad point junction, retaining its warning and the face-winding safety guard.
+- Fresh QUICKSURFACE comparisons, regression and packaged workflow evidence: analysis/quick-scan-v1.1.89. Broader ray/edge joins and exact native zoom thresholds remain under investigation.
+
+## 1.1.88 — Quad connectivity and object Merge
+
+- Object Tree multiselection now exposes Merge for editable Freeform objects. It combines their cages without proximity welding, preserves coordinates, winding and creases, and participates in global Undo/Redo and project persistence. Unsupported dependencies and incompatible evaluation settings refuse atomically.
+- Close 4-Sided Hole rejects collapsed or folded closure faces. D extensions reject inward coplanar overlaps and new faces folded by mesh projection, retaining a recoverable preview during the same drag.
+- Shared-edge welding, subsequent editing, Undo/Redo and saving/reopening are checked by source and packaged workflows. Full QUICKSURFACE equivalence remains incomplete; arbitrary/ray contacts, camera-dependent capture, global intersections and complex repair remain documented limits. Tolerance-color mapping is unchanged.
 
 ## 1.1.87 — Surface-point snapping and visible tolerance scale
 

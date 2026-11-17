@@ -4,11 +4,13 @@
 // committed to the list; the bodies a Move carries.
 
 import type { StoreApi } from 'zustand'
-import { type Feature, movableFace, partialRound, type SketchFeature, type TrimTool, withKeptQueries } from '../core/features'
+import { bodyMaker, builtOn, type Feature, movableFace, partialRound, type SketchFeature, type TrimTool, withKeptQueries } from '../core/features'
+import { combineFreeforms } from '../core/freeform/combine'
+import { useFreeformEditor } from './freeformEditorStore'
 import { findRegions } from '../core/regions'
 import { DEFAULT_SURFACE_FIT } from '../core/surfaceFit'
 import { emptyNetworkDraft, networkDraftOf } from './reNetworkDraft'
-import { DEFAULT_DRAFT_DEG, DEFAULT_FILLET_MM, DEFAULT_SPLIT_OVERLAP, DEFAULT_SPLIT_TOLERANCE_MM, DEFAULT_WALL_MM, featureDraftReady, featureOfDraft, historyEditOf, movePivot, roundFaceLength, trimToleranceFor, withMoveBodies } from './reDrafts'
+import { DEFAULT_DRAFT_DEG, DEFAULT_FILLET_MM, DEFAULT_SPLIT_OVERLAP, DEFAULT_SPLIT_TOLERANCE_MM, DEFAULT_WALL_MM, featureDraftReady, featureOfDraft, historyEditOf, movePivot, reEditorOpen, roundFaceLength, trimToleranceFor, withMoveBodies } from './reDrafts'
 import { CLOSE_OTHERS, hideElement, hideSection, hideSketches, KIND_LABELS, lastSolid, leanAfterSnap, nameFor, remember, sketchesUsedBy, withExprs } from './reFeatureHelpers'
 import { unplacedEdge } from './reSketchDraft'
 import type { ReState } from './reStore'
@@ -36,7 +38,7 @@ function varyingRadii(d: Extract<FeatureDraft, { kind: 'fillet' }>, varying: rea
 type StoreSet = StoreApi<ReState>['setState']
 type StoreGet = StoreApi<ReState>['getState']
 
-export const featureSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'featureDraft' | 'startFeature' | 'editFeature' | 'setFeatureDraft' | 'cancelFeature' | 'commitFeature' | 'addToRegion' | 'setRegion' | 'toggleDraftFace' | 'addDraftEdges' | 'addDraftFaces' | 'toggleDraftEdge' | 'clearDraftPicks' | 'setMoveBodies' | 'editNetwork' | 'addFreeform' | 'addConvertedFreeform' | 'updateFreeform' | 'addFill' | 'addExtend'> => ({
+export const featureSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'featureDraft' | 'startFeature' | 'editFeature' | 'setFeatureDraft' | 'cancelFeature' | 'commitFeature' | 'addToRegion' | 'setRegion' | 'toggleDraftFace' | 'addDraftEdges' | 'addDraftFaces' | 'toggleDraftEdge' | 'clearDraftPicks' | 'setMoveBodies' | 'editNetwork' | 'addFreeform' | 'addConvertedFreeform' | 'updateFreeform' | 'mergeFreeforms' | 'addFill' | 'addExtend'> => ({
 
   featureDraft: null,
   startFeature: (kind, init) =>
@@ -458,6 +460,27 @@ export const featureSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'featu
     const next: Feature = { id, kind: 'freeform', name: name?.trim() || named.name, ...data, visible: true }
     set({ ...remember(s), features: [...s.features, next], nextFeatureId: id + 1, nextOfKind: named.nextOfKind, buildVersion: s.buildVersion + 1 })
     return id
+  },
+  mergeFreeforms: ids => {
+    const s = get()
+    if (s.building) throw new Error('Wait for the current surface build before Merge.')
+    if (s.playback || s.rolledBack.length) throw new Error('Finish history playback and restore the full feature history before Merge.')
+    if (reEditorOpen(s) || useFreeformEditor.getState().open) throw new Error('Finish or close the current editor before merging Freeform objects.')
+    if (ids.length < 2 || new Set(ids).size !== ids.length || ids.some(id => !Number.isInteger(id))) throw new Error('Select at least two different Freeform surfaces to merge.')
+    const sources = ids.map(id => {
+      const f = s.features.find(f => f.id === id)
+      if (!f || f.kind !== 'freeform') throw new Error('Every selected object must be an existing Freeform surface.')
+      return f
+    })
+    const chosen = new Set(ids)
+    const dependent = [...s.features, ...s.rolledBack].find(f => !chosen.has(f.id) && builtOn(f).some(id => chosen.has(id)))
+    if (dependent) throw new Error(`Cannot merge these Freeform surfaces while “${dependent.name}” depends on them.`)
+    const merged = combineFreeforms(sources), removed = new Set(ids.slice(1))
+    const bodyStyles = Object.fromEntries(Object.entries(s.bodyStyles).filter(([id]) => !removed.has(bodyMaker(Number(id)))))
+    const bodyFolders = s.bodyFolders.map(folder => ({ ...folder, bodies: folder.bodies.filter(id => !removed.has(bodyMaker(id))) }))
+    set({ ...remember(s), features: s.features.flatMap(f => f.id === merged.id ? [merged] : removed.has(f.id) ? [] : [f]),
+      bodyStyles, bodyFolders, selection: null, bodyPick: null, preview: { status: 'idle' }, buildVersion: s.buildVersion + 1 })
+    return merged.id
   },
   addFill: (data, name) => {
     const s = get()

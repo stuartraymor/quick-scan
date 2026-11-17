@@ -41,6 +41,9 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e))
 /** How long builds stay held back (session.hold) after the last change
  *  that held them, at most. */
 const HOLD_MS = 30_000
+/** A control surface's CAD body is built this long after its last edit
+ *  while the editor stays open (see deferBuilds). */
+const EDIT_IDLE_MS = 2_500
 
 /** How long the kernel spends on the bodies' overlaps at a go, ms, before
  *  what else is waiting for it gets a turn — see Builder.overlaps. */
@@ -161,6 +164,17 @@ export function createReverseSession({
   let holding: ReturnType<typeof setTimeout> | null = null
   /** A build asked for while they were held. */
   let heldBack = false
+  /** While the New Freeform editor works on a control surface it draws that
+   *  surface itself, as QUICKSURFACE does, and the CAD body it stands for is
+   *  hidden: the body is built once the editing pauses (EDIT_IDLE_MS after
+   *  the last change), when the editor closes, or when something waits for
+   *  the part (settled) — not after every quad. Unlike a hold, nothing is
+   *  marked building meanwhile. */
+  let deferring = false
+  let deferredBack = false
+  let deferTimer: ReturnType<typeof setTimeout> | null = null
+  /** One build let through while deferring (flushDeferred). */
+  let flushing = false
 
   const resolveContext = (): ResolveContext => {
     const store = useStore.getState()
@@ -359,9 +373,19 @@ export function createReverseSession({
     })
   }
 
+  const deferNow = () => {
+    deferredBack = true
+    if (deferTimer) clearTimeout(deferTimer)
+    deferTimer = setTimeout(flushDeferred, EDIT_IDLE_MS)
+  }
+
   const schedule = () => {
     if (holding) {
       heldBack = true
+      return
+    }
+    if (deferring && !flushing) {
+      deferNow()
       return
     }
     if (scheduled) return
@@ -369,8 +393,32 @@ export function createReverseSession({
     queueMicrotask(() => {
       scheduled = false
       if (holding) heldBack = true
-      else build()
+      else if (deferring && !flushing) deferNow()
+      else {
+        flushing = false
+        build()
+      }
     })
+  }
+
+  /** The build deferred while editing, started now: nothing when none is. */
+  const flushDeferred = () => {
+    if (deferTimer) clearTimeout(deferTimer)
+    deferTimer = null
+    if (!deferredBack) return
+    deferredBack = false
+    const s = useReverse.getState()
+    if (client && s.kernelStatus === 'ready' && !s.building) s.beginBuild()
+    flushing = true
+    schedule()
+  }
+
+  /** Defer builds while a control surface is edited (see deferring); off,
+   *  the build deferred starts at once. */
+  const deferBuilds = (on: boolean) => {
+    if (deferring === on) return
+    deferring = on
+    if (!on) flushDeferred()
   }
 
   /** Hold builds back — the changes about to be made build once, when
@@ -405,7 +453,7 @@ export function createReverseSession({
       // `building` after the change — a box reopened on a feature, which
       // finds its picks on the part only once the part before it is built —
       // sees it, as it saw the effect this replaces.
-      if (client && s.kernelStatus === 'ready' && !s.building) s.beginBuild()
+      if (client && s.kernelStatus === 'ready' && !s.building && !deferring) s.beginBuild()
       schedule()
     })
     schedule()
@@ -550,6 +598,7 @@ export function createReverseSession({
   const settled = (timeoutMs = limitMs): Promise<void> =>
     new Promise((resolve, reject) => {
       release()
+      flushDeferred()
       let started = Date.now()
       const stopsBefore = stopsSaid.length
       let stopsSeen = stopsBefore
@@ -667,6 +716,8 @@ export function createReverseSession({
    *  each a part under its name, in its colour — named after the scan the
    *  part was reversed from, or as the model it is. */
   const stepFile = async (bodyIds: number[], verify = false): Promise<{ name: string; text: string; check?: StepCheck; mended?: StepMend[] }> => {
+    // A body whose build is deferred while it is edited is written as edited.
+    if (deferredBack) await settled()
     const bodies = useReverse.getState().bodies
     const labels = bodyIds.map((id) => {
       const b = bodies.find((x) => x.id === id)
@@ -725,6 +776,7 @@ export function createReverseSession({
    *  as one binary STL, or a 3MF with each body an object of its own under
    *  its name, and how many triangles it holds. */
   const meshFile = async (bodies: { id: number; name: string }[], chord: number, format: MeshFormat): Promise<(MeshFile & { name: string }) | null> => {
+    if (deferredBack) await settled()
     const meshes = await requireClient().referenceMeshes(bodies.map((b) => b.id), chord)
     const parts = meshes.map((m, i) => ({ name: meshes.length === bodies.length ? bodies[i].name : `Body ${i + 1}`, positions: m.positions, indices: m.indices }))
     const file = buildMeshFile(format, parts, null, 'ScanRuler - bodies from Reverse engineer')
@@ -782,6 +834,7 @@ export function createReverseSession({
     playing: () => client?.playing() ?? null,
     hold,
     release,
+    deferBuilds,
     /** Whether builds are held back (hold). */
     held: () => holding !== null,
     syncScan,

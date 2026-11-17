@@ -252,23 +252,28 @@ describe('extrapolate', () => {
     expect(travels[1]).toBeCloseTo(travels[2],9)
     expect(consistent(result.cage)).toBe(true)
   })
-  it('selects straight or gently curved rows but stops at the reference sphere cage bend', () => {
+  it('selects straight and curved rows up to a 45-degree turn, and stops at a sharper corner', () => {
     const row = patch(2, 1)
     const bottom = topology(row).edgeOf.get(edgeKey(0, 1))!
     expect(edgeLine(row, bottom)).toHaveLength(2)
     const gentle = movePoints(row, [{ vertex: 1, by: [0, -0.1, 0] }])
     expect(edgeLine(gentle, bottom)).toHaveLength(2)
-    const bent = movePoints(row, [{ vertex: 1, by: [0, -0.3, 0] }])
+    // A 33-degree bend: QUICKSURFACE stops here; the user asked for more forgiving.
+    const curved = movePoints(row, [{ vertex: 1, by: [0, -0.3, 0] }])
+    expect(edgeLine(curved, bottom)).toHaveLength(2)
+    // A 53-degree turn is a corner, not a curve.
+    const bent = movePoints(row, [{ vertex: 1, by: [0, -0.5, 0] }])
     expect(edgeLine(bent, bottom)).toEqual([bottom])
 
-    // Same six control points and faces as the visible QUICKSURFACE test copy.
+    // QUICKSURFACE's sphere test copy: the row turning 31 degrees now
+    // continues; the one turning 79 degrees still stops at the corner.
     const native: Cage = {
       positions: Float64Array.from([3.188220262527466,-9.33298397064209,17.335430145263672, 11.977066040039062,0.8710759282112122,15.845459938049316, 18.408493041992188,-4.443119049072266,6.045158863067627, 9.742839813232422,-15.887602806091309,7.179612159729004, 6.817294120788574,-2.991267204284668,21.99803924560547, 15.534045219421387,-11.26496696472168,7.39190673828125]),
       faces: [[0,4,5,3],[4,1,2,5]], creases: [],
     }
-    for (const [a, b] of [[0,4],[3,5]] as const) {
+    for (const [a, b, length] of [[0,4,1],[3,5,2]] as const) {
       const selected = topology(native).edgeOf.get(edgeKey(a, b))!
-      expect(edgeLine(native, selected)).toEqual([selected])
+      expect(edgeLine(native, selected)).toHaveLength(length)
     }
   })
   it('pulls a boundary edge out into a quad, continuing the face beside it or by a step', () => {

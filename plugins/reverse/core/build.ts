@@ -1530,7 +1530,7 @@ export class Builder {
 
   private readTopology(body: Body, deflection: number): { faces: FaceInfo[]; edges: EdgeInfo[] } {
     const k = this.kernel
-    const faces: FaceInfo[] = k.faces(body.shape).map((f) => {
+    const faces: FaceInfo[] = k.faces(body.shape, this.meshAreas(body)).map((f) => {
       const fingerprint: FaceFingerprint = { kind: f.kind, centroid: f.centroid, dir: f.dir, area: f.area, origin: body.origins.get(f.hash) ?? -1 }
       if (f.radius !== undefined) fingerprint.radius = f.radius
       if (f.center !== undefined) fingerprint.center = f.center

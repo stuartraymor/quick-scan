@@ -34,6 +34,8 @@ import { useFreeformEditor } from '../state/freeformEditorStore'
 
 export { useFreeformEditor } from '../state/freeformEditorStore'
 const empty = (): Cage => ({ positions: new Float64Array(), faces: [], creases: [] })
+/** Kernel clients whose freeform calls have been warmed up (warmFreeform). */
+const warmedClients = new WeakSet<object>()
 const fromFeature = (f: FreeformFeature): Cage => ({ positions: Float64Array.from(f.positions), faces: f.faces.map(x => [...x]), creases: f.creases.map(e => [...e]) })
 const labels: Record<EditorAction, string> = { split: 'Split', bridge: 'Bridge Edges', close_hole: 'Close 4-sided hole', crease: 'Crease', remove_crease: 'Remove Crease', delete: 'Delete' }
 const FREEFORM_SCAN_TINT = [230, 215, 185] as const
@@ -222,6 +224,26 @@ export function FreeformEditor() {
   }, [scene, Boolean(cage), meshDisplay, meshOpacity, meshOffset])
   const available = cage ? editorActions(cage, selection) : null
   const close = () => { if (!busy.current) useFreeformEditor.getState().setOpen(false) }
+  // A control surface is drawn by the editor itself and its CAD body is
+  // hidden while editing: the body is built when the editing pauses or the
+  // editor closes, not after every quad (reSession deferBuilds).
+  const deferCad = feature ? feature.fitToScan === false : true
+  useEffect(() => {
+    const session = reverseSession()
+    if (!session || !deferCad) return
+    session.deferBuilds(true)
+    return () => session.deferBuilds(false)
+  }, [deferCad])
+  // The freeform build's kernel calls compiled before the first edit needs them.
+  const kernelReady = state.kernelStatus === 'ready'
+  useEffect(() => {
+    if (!kernelReady) return
+    const client = reverseSession()?.client()
+    if (client && !warmedClients.has(client)) {
+      warmedClients.add(client)
+      void client.warmFreeform().catch(() => {})
+    }
+  }, [kernelReady])
   useEffect(() => {
     const wasOpen = useShell.getState().inspectorOpen
     useShell.getState().setInspectorOpen(false)

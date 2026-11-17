@@ -29,16 +29,21 @@ export function snapSurfaceAnchors(cage: Cage, vertices: number[], project: (p: 
 }
 
 /** Native direct evaluated-point drags use five corrections after the initial
- * pole movement. Don't move neighbours preserves all other surface anchors;
- * the unchecked snapped gesture corrects only the selected anchor. */
+ * pole movement. Don't move neighbours corrects the picked point and the
+ * points of the quads round it — not the whole cage, whose corrections
+ * rippled outward ring by ring (QUICKSURFACE 5 × 5 grid, 2026-11-17: nine
+ * poles move, matched to 5.3e-7 mm; the whole-cage solve moved sixteen and
+ * was 0.085 mm off). The unchecked gesture corrects only the picked point. */
 export function moveSurfaceAnchor(cage: Cage, vertex: number, travel: Vec3, keepNeighbours = true): Cage {
   const goals = cageVertexLimits(cage)
   goals[vertex] = goals[vertex].map((p, k) => p + travel[k]) as Vec3
+  const corrected = new Set<number>([vertex])
+  if (keepNeighbours) for (const f of cage.faces) if (f.includes(vertex)) for (const v of f) corrected.add(v)
   const result = movePoints(cage, [{ vertex, by: travel }])
   for (let step = 0; step < 5; step++) {
     const current = cageVertexLimits(result)
     result.positions = Float64Array.from(result.positions, (p, k) =>
-      keepNeighbours || Math.floor(k / 3) === vertex ? p + goals[Math.floor(k / 3)][k % 3] - current[Math.floor(k / 3)][k % 3] : p)
+      corrected.has(Math.floor(k / 3)) ? p + goals[Math.floor(k / 3)][k % 3] - current[Math.floor(k / 3)][k % 3] : p)
   }
   return result
 }

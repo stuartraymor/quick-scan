@@ -365,6 +365,15 @@ export class ReClient {
     return { report: res.report, ...(res.shell ? { shell: res.shell } : {}), ...(res.step !== undefined ? { step: res.step } : {}), ...(res.check ? { check: res.check } : {}) }
   }
 
+  /** The freeform build's kernel calls run once on a small cage, so the
+   *  first real edit does not pay for compiling them (freeform/warm.ts).
+   *  Milliseconds it took. */
+  async warmFreeform(): Promise<number> {
+    const requestId = this.nextId++
+    const res = await this.request<Extract<ReWorkerResponse, { type: 'freeform-warm-ok' }>>({ type: 'freeform-warm', requestId }, [], HEAVY_MS)
+    return res.ms
+  }
+
   /** How two bodies stand to each other: the gap between them, or the
    *  volume they share. */
   async clearance(a: number, b: number): Promise<{ gap: number; overlap: number }> {

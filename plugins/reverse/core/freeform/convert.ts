@@ -66,7 +66,8 @@ const MIN_PIECE = 5
  *  surface swings off the samples between them at some sizes and not at
  *  others; two halves of the same samples sit apart from the swing). The
  *  pieces share the line they were cut along, so they sew. */
-function facesThrough(k: ReKernel, g: PatchGrid, out: Shape[], index: number, cells: boolean, last = false): void {
+/** reas: each face pushed, with the area its check measured. */
+function facesThrough(k: ReKernel, g: PatchGrid, out: Shape[], index: number, cells: boolean, last = false, areas?: Map<Shape, number>): void {
   g = compactRepeatedGrid(g)
   // A cell of four samples is its bilinear face: it cannot swing off them.
   if (last && g.rows === 2 && g.cols === 2) {
@@ -74,9 +75,11 @@ function facesThrough(k: ReKernel, g: PatchGrid, out: Shape[], index: number, ce
     return
   }
   const face = k.surfaceThrough(g.points, g.rows, g.cols)
-  const off = k.surfaceArea(face) / Math.max(gridArea(g), 1e-12)
+  const area = k.surfaceArea(face)
+  const off = area / Math.max(gridArea(g), 1e-12)
   if (!(off > GRID_AREA_SLACK)) {
     out.push(face)
+    areas?.set(face, area)
     return
   }
   k.release(face)
@@ -96,11 +99,81 @@ function facesThrough(k: ReKernel, g: PatchGrid, out: Shape[], index: number, ce
   const deeper = last || small
   const cut = Math.floor((n - 1) / 2)
   if (alongRows) {
-    facesThrough(k, piece(g, 0, cut, 0, g.cols - 1), out, index, cells, deeper)
-    facesThrough(k, piece(g, cut, g.rows - 1, 0, g.cols - 1), out, index, cells, deeper)
+    facesThrough(k, piece(g, 0, cut, 0, g.cols - 1), out, index, cells, deeper, areas)
+    facesThrough(k, piece(g, cut, g.rows - 1, 0, g.cols - 1), out, index, cells, deeper, areas)
   } else {
-    facesThrough(k, piece(g, 0, g.rows - 1, 0, cut), out, index, cells, deeper)
-    facesThrough(k, piece(g, 0, g.rows - 1, cut, g.cols - 1), out, index, cells, deeper)
+    facesThrough(k, piece(g, 0, g.rows - 1, 0, cut), out, index, cells, deeper, areas)
+    facesThrough(k, piece(g, 0, g.rows - 1, cut, g.cols - 1), out, index, cells, deeper, areas)
+  }
+}
+
+/** Faces already fitted through a grid, by the grid's exact samples: an
+ *  edit to a cage changes one or two of its blocks, and the others' grids
+ *  come again sample for sample, so their faces are taken as they were
+ *  instead of fitted and checked again. Per kernel: a kernel started anew
+ *  holds none of the old one's shapes. The faces are the cache's; a build
+ *  sews copies of them in and never releases them. */
+interface FittedGrid { rows: number; cols: number; points: Float64Array; cells: boolean; faces: Shape[]; areas: (number | undefined)[] }
+const fittedGrids = new WeakMap<ReKernel, Map<string, FittedGrid>>()
+/** Grids remembered per kernel: a few cages' blocks. */
+const FITTED_GRIDS_KEPT = 256
+
+function gridKey(g: PatchGrid, cells: boolean): string {
+  // FNV-1a over the samples' bits; a hit is confirmed sample for sample.
+  const words = new Uint32Array(g.points.buffer, g.points.byteOffset, g.points.length * 2)
+  let h = 0x811c9dc5
+  for (let i = 0; i < words.length; i++) h = Math.imul(h ^ words[i], 0x01000193)
+  return `${g.rows}x${g.cols}${cells ? 'c' : ''}:${(h >>> 0).toString(36)}`
+}
+
+function sameSamples(a: Float64Array, b: Float64Array): boolean {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
+  return true
+}
+
+/** The faces through a grid, from the cache where the same samples were
+ *  fitted before; pushed to `out`, and the ones the cache holds to `held`. */
+function cachedFacesThrough(k: ReKernel, g: PatchGrid, out: Shape[], held: Set<Shape>, areas: Map<Shape, number>, index: number, cells: boolean): void {
+  let cache = fittedGrids.get(k)
+  if (!cache) fittedGrids.set(k, (cache = new Map()))
+  const key = gridKey(g, cells)
+  const hit = cache.get(key)
+  if (hit && hit.rows === g.rows && hit.cols === g.cols && hit.cells === cells && sameSamples(hit.points, g.points)) {
+    // Most recently used last.
+    cache.delete(key)
+    cache.set(key, hit)
+    hit.faces.forEach((f, i) => {
+      out.push(f)
+      held.add(f)
+      const area = hit.areas[i]
+      if (area !== undefined) areas.set(f, area)
+    })
+    return
+  }
+  const made: Shape[] = []
+  try {
+    facesThrough(k, g, made, index, cells, false, areas)
+  } catch (e) {
+    k.release(...made)
+    throw e
+  }
+  out.push(...made)
+  if (hit) cache.delete(key)
+  cache.set(key, { rows: g.rows, cols: g.cols, points: Float64Array.from(g.points), cells, faces: made, areas: made.map((f) => areas.get(f)) })
+  for (const f of made) held.add(f)
+}
+
+/** Forget the oldest fitted grids past the limit, releasing their faces —
+ *  never one the build in hand is using. */
+function trimFittedGrids(k: ReKernel, inUse: ReadonlySet<Shape>): void {
+  const cache = fittedGrids.get(k)
+  if (!cache || cache.size <= FITTED_GRIDS_KEPT) return
+  for (const [key, entry] of cache) {
+    if (cache.size <= FITTED_GRIDS_KEPT) break
+    if (entry.faces.some((f) => inUse.has(f))) continue
+    cache.delete(key)
+    k.release(...entry.faces)
   }
 }
 
@@ -111,15 +184,19 @@ function facesThrough(k: ReKernel, g: PatchGrid, out: Shape[], index: number, ce
  *  refined further. */
 export function patchesBody(k: ReKernel, patches: PatchSet, cells = false, sharedCellEdges = false): { shape: Shape; report: ConvertReport } {
   const faces: Shape[] = []
+  // Faces the fitted-grid cache owns: sewn in, never released here.
+  const held = new Set<Shape>()
+  // Each face's area, where its check measured it.
+  const areas = new Map<Shape, number>()
   try {
     for (const [index, grid] of patches.grids.entries()) {
       if (sharedCellEdges) {
         for (let row = 0; row < grid.rows - 1; row++) {
           for (let col = 0; col < grid.cols - 1; col++) {
-            facesThrough(k, piece(grid, row, row + 1, col, col + 1), faces, index, true, true)
+            facesThrough(k, piece(grid, row, row + 1, col, col + 1), faces, index, true, true, areas)
           }
         }
-      } else facesThrough(k, grid, faces, index, cells)
+      } else cachedFacesThrough(k, grid, faces, held, areas, index, cells)
     }
     if (faces.length === 0) throw new Error('The cage has no faces to convert.')
     let shape = faces.length === 1 ? k.copy(faces[0]) : k.sewPatches(faces, SEW_TOLERANCE, patches.closed)
@@ -138,19 +215,24 @@ export function patchesBody(k: ReKernel, patches: PatchSet, cells = false, share
     }
     const solid = patches.closed && k.isClosedSolid(shape)
     const largest = patches.blocks.reduce((m, b) => (b.faces.length > m.rows * m.cols ? { rows: b.rows - 1, cols: b.cols - 1 } : m), { rows: 0, cols: 0 })
+    const count = k.faceCount(shape)
+    // Sewn face for face, the body's area is its faces' areas, each measured
+    // already: summed rather than measured again (a B-spline area is slow).
+    const known = count === faces.length && faces.every((f) => areas.has(f))
     const report: ConvertReport = {
-      faces: k.faceCount(shape),
+      faces: count,
       quads: patches.blocks.reduce((n, b) => n + b.faces.length, 0),
       blocks: patches.blocks.length,
       solid,
       valid: k.isValid(shape),
-      area: k.surfaceArea(shape),
+      area: known ? faces.reduce((sum, f) => sum + areas.get(f)!, 0) : k.surfaceArea(shape),
       volume: solid ? k.volume(shape) : null,
       largestBlock: largest,
       samples: patches.grids.reduce((n: number, g: PatchGrid) => n + g.rows * g.cols, 0),
     }
     return { shape, report }
   } finally {
-    k.release(...faces)
+    k.release(...faces.filter((f) => !held.has(f)))
+    trimFittedGrids(k, held)
   }
 }

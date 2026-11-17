@@ -220,10 +220,10 @@ const plugin: ScanRulerPlugin = {
         {
           store: useReverse,
           label: 'Reverse engineer',
-          names: ['commitSketch', 'commitExtrude', 'commitRevolve', 'commitFeature', 'addConvertedFreeform', 'removeFeature', 'toggleFeatureVisible', 'setSuppressed', 'setKeyParameter', 'rollTo', 'setScanSeeThrough', 'setBodiesSeeThrough', 'setOverlapsShown', 'setElementsShown', 'extrudeFace', 'addParameter', 'setParameter', 'removeParameter', 'addBodyFolder', 'renameBodyFolder', 'removeBodyFolder', 'moveToBodyFolder'],
+          names: ['commitSketch', 'commitExtrude', 'commitRevolve', 'commitFeature', 'addConvertedFreeform', 'mergeFreeforms', 'removeFeature', 'toggleFeatureVisible', 'setSuppressed', 'setKeyParameter', 'rollTo', 'setScanSeeThrough', 'setBodiesSeeThrough', 'setOverlapsShown', 'setElementsShown', 'extrudeFace', 'addParameter', 'setParameter', 'removeParameter', 'addBodyFolder', 'renameBodyFolder', 'removeBodyFolder', 'moveToBodyFolder'],
           labels: {
             commitSketch: 'finish sketch', commitExtrude: 'save extrusion', commitRevolve: 'save revolution',
-            commitFeature: 'save feature', addConvertedFreeform: 'convert Freeform to CAD body', rollTo: 'move rollback bar', setKeyParameter: 'edit feature parameter',
+            commitFeature: 'save feature', addConvertedFreeform: 'convert Freeform to CAD body', mergeFreeforms: 'merge Freeform surfaces', rollTo: 'move rollback bar', setKeyParameter: 'edit feature parameter',
             addParameter: 'add parameter', setParameter: 'edit parameter', removeParameter: 'remove parameter',
             setSuppressed: 'suppress or build features',
             addBodyFolder: 'new component', renameBodyFolder: 'rename component', removeBodyFolder: 'remove component', moveToBodyFolder: 'move into a component',

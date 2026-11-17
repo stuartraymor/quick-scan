@@ -171,12 +171,26 @@ function FeatureTreeRow({ feature, locked, rolled = false, location, outputBodie
 export function ReverseObjects() {
   const { state, locked } = useExplorerLocked()
   const fileName = useStore(s => s.fileName)
+  const rolledDocument = useDocumentOrder(s => s.rollbackAt !== null)
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+  useDismiss(menu !== null, () => setMenu(null), { outside: '.explorer-body-menu' })
+  useEffect(() => { setMenu(null) }, [fileName, locked])
   useEffect(() => { useTreeSelection.setState({ id: null }) }, [fileName])
   useEffect(() => {
     const id = useTreeSelection.getState().id
     if (id !== null && ![...state.features, ...state.rolledBack].some(f => f.id === id)) useTreeSelection.setState({ id: null })
   }, [state.features, state.rolledBack])
   const picked = state.listSelection.bodies
+  const mergeIds = [...new Set(picked.map(bodyMaker))]
+  const canMerge = mergeIds.length >= 2 && mergeIds.length === picked.length && picked.every(id => state.bodies.some(body => body.id === id))
+    && mergeIds.every(id => state.features.some(feature => feature.id === id && feature.kind === 'freeform' && !feature.suppressed))
+  const merge = () => {
+    setMenu(null)
+    if (objectsLockedNow() || useDocumentOrder.getState().rollbackAt !== null) return
+    const current = useReverse.getState()
+    try { current.mergeFreeforms(current.listSelection.bodies.map(bodyMaker)) }
+    catch (error) { useStore.getState().setError(error instanceof Error ? error.message : String(error)) }
+  }
   const sketches = state.features.filter(f => f.kind === 'sketch')
   return <>
   {(['Surfaces', 'Solids'] as const).map(label => { const bodies = state.bodies.filter(body => Boolean(body.surface) === (label === 'Surfaces')); return <ExplorerGroup key={label} label={label} values={bodies.map(body => body.visible && !state.bodiesHidden)} disabled={locked} onSet={on => setBodyVisibility(bodies.map(body => body.id), on)} testId={`explorer-${label.toLowerCase()}`}>
@@ -185,11 +199,18 @@ export function ReverseObjects() {
         const folder = state.bodyFolders.find((f) => f.bodies.includes(body.id))
         const location = folder ? folderPathText(state.bodyFolders, folder.id) : ''
         return <div key={body.id} className={`explorer-row${picked.includes(body.id) ? ' selected' : ''}`}
+          onContextMenu={event => {
+            event.preventDefault()
+            if (locked) return
+            // Opening actions for one of the selected objects retains the group.
+            if (!picked.includes(body.id)) state.setListSelection({ bodies: [body.id], folders: [] })
+            setMenu({ x: Math.max(4, Math.min(event.clientX, window.innerWidth - 210)), y: Math.max(4, Math.min(event.clientY, window.innerHeight - 90)) })
+          }}
           onMouseEnter={() => state.setBodyHover({ ids: [body.id], from: 'list' })}
           onMouseLeave={() => { if (useReverse.getState().bodyHover?.from === 'list') useReverse.getState().setBodyHover(null) }}>
           <ExplorerCheckbox values={[body.visible && !state.bodiesHidden]} label={`${body.name} visibility`} disabled={locked} onSet={on => setBodyVisibility([body.id], on)} />
           <button type="button" className="explorer-item" disabled={locked} data-test={`explorer-body-${body.id}`}
-            title={`${location ? `${location} / ` : ''}${body.name} · ${body.surface ? 'surface' : 'solid'} · click to select, double-click to edit its feature`}
+            title={`${location ? `${location} / ` : ''}${body.name} · ${body.surface ? 'surface' : 'solid'} · click to select, right-click for actions, double-click to edit its feature`}
             onClick={(event) => {
               let next = [body.id]
               if (event.ctrlKey || event.metaKey) next = picked.includes(body.id) ? picked.filter((id) => id !== body.id) : [...picked, body.id]
@@ -209,6 +230,11 @@ export function ReverseObjects() {
   <ExplorerGroup label="Sketches" values={sketches.map(f => f.visible)} disabled={locked} onSet={on => setSketchVisibility(sketches.map(f => f.id), on)} testId="explorer-sketches">
       {sketches.map(feature => <FeatureTreeRow key={feature.id} feature={feature} locked={locked} location="object" />)}
   </ExplorerGroup>
+  {menu && !locked && createPortal(<div role="menu" aria-label="Object actions" className="re-menu explorer-body-menu" style={{ left: menu.x, top: menu.y, zIndex: 1000 }}>
+    <div className="re-menu-head">{picked.length} {picked.length === 1 ? 'object' : 'objects'}</div>
+    <button type="button" role="menuitem" disabled={!canMerge || rolledDocument} data-test="explorer-merge-freeform" onClick={merge}
+      title="Combine selected Freeform objects into one editable control mesh">Merge</button>
+  </div>, document.body)}
   </>
 }
 
