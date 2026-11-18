@@ -6,6 +6,7 @@ import { useSketchProject } from './sketchProjectStore'
 import { useSketchPresentation, type ExtraSketchTool, type SketchEditPanel } from './sketchPresentation'
 import { mirrorSketchSelection } from './sketchExtraTools'
 import { useSketchMirror } from './sketchMirrorStore'
+import { useSketchPattern } from './sketchPatternStore'
 
 /** Buttons and shortcuts leave the same provisional tools before the next
  * command takes the pointer. None of these cancellations changes geometry. */
@@ -15,6 +16,7 @@ export function closeSketchToolOverlays(): void {
   useSketchCornerTrim.getState().cancel()
   useSketchProject.getState().cancel()
   useSketchMirror.getState().cancel()
+  useSketchPattern.getState().cancel()
 }
 
 export function activateSketchTool(tool: SketchTool): void {
@@ -45,6 +47,18 @@ export function mirrorSelectedSketchEntities(): void {
   if (axes.length === 1 && draft.selection.length > 1) { mirrorSketchSelection(); return }
   activateSketchTool('select')
   useSketchMirror.getState().start(draft.selection)
+}
+
+/** Duplicate / Pattern: the selected pieces copied in one of four modes,
+ *  previewed until Accept. */
+export function openSketchPatternPanel(): void {
+  const draft = useReverse.getState().sketchDraft
+  if (!draft?.selection.length) return
+  const ids = [...draft.selection]
+  closeSketchToolOverlays()
+  activateSketchTool('select')
+  useSketchPresentation.getState().setEdit(null)
+  useSketchPattern.getState().start(ids)
 }
 
 export function openSketchEditPanel(edit: SketchEditPanel): void {

@@ -45,6 +45,9 @@ import { SketchCornerTrimPanel } from './SketchCornerTrimPanel'
 import { SketchProjectPanel } from './SketchProjectPanel'
 import { SketchMirrorPanel } from './SketchMirrorPanel'
 import { useSketchMirror } from '../state/sketchMirrorStore'
+import { SketchPatternPanel } from './SketchPatternPanel'
+import { openSketchPatternPanel } from '../state/sketchToolActions'
+import { useSketchPattern } from '../state/sketchPatternStore'
 
 /** The ways each of the shape tools draws: pictures in the strip that opens
  *  on the tool's key, the one chosen last on the key itself — and what each
@@ -336,12 +339,14 @@ export function SketchEditor({ chainsOf }: { chainsOf: () => SketchChains | null
   const cornerTrimming = useSketchCornerTrim((s) => s.open)
   const projecting = useSketchProject((s) => s.open)
   const mirroring = useSketchMirror((s) => s.open)
+  const patterning = useSketchPattern((s) => s.open)
 
   if (!draft) return null
   if (extracting) return <SketchExtractPanel chainsOf={chainsOf} />
   if (cornerTrimming) return <div className="sketch-editor-parity"><SketchCornerTrimPanel chainsOf={chainsOf} /></div>
   if (projecting) return <div className="sketch-editor-parity"><SketchProjectPanel /></div>
   if (mirroring) return <div className="sketch-editor-parity"><SketchMirrorPanel /></div>
+  if (patterning) return <div className="sketch-editor-parity"><SketchPatternPanel /></div>
 
   const sketch = draft.sketch
   const relations = sketch.constraints.filter((c) => !isDimension(c) && !c.inferred)
@@ -596,7 +601,7 @@ export function SketchEditor({ chainsOf }: { chainsOf: () => SketchChains | null
       <div className="toolrow">
         <button data-test="sketch-delete" disabled={!hasSelection} onClick={()=>re.getState().deleteSelected()}>Delete selected</button>
         <button data-test="sketch-tool-chamfer" onClick={()=>re.getState().setSketchTool('chamfer')}>Chamfer</button>
-        <button data-test="sketch-pattern" disabled={!hasSelection} onClick={()=>re.getState().openSketchPattern()}>Pattern…</button>
+        <button data-test="sketch-pattern" disabled={!hasSelection} onClick={()=>openSketchPatternPanel()}>Pattern…</button>
         <button data-test="sketch-align" disabled={!oneLine} onClick={()=>re.getState().alignToSelected()}>Align sheet</button>
       </div>
       <div className="toolrow">

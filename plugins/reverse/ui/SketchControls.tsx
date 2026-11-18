@@ -9,7 +9,7 @@ import { useSketchCornerTrim } from '../state/sketchCornerTrimStore'
 import { useSketchProject } from '../state/sketchProjectStore'
 import { useSketchPresentation } from '../state/sketchPresentation'
 import { duplicateSketchSelection, offsetSketchSelection, middleLineSketchSelection } from '../state/sketchExtraTools'
-import { activateSketchTool, activateExtraSketchTool, closeSketchToolOverlays, dimensionSketchSelection, mirrorSelectedSketchEntities, openSketchEditPanel } from '../state/sketchToolActions'
+import { activateSketchTool, activateExtraSketchTool, closeSketchToolOverlays, dimensionSketchSelection, mirrorSelectedSketchEntities, openSketchEditPanel, openSketchPatternPanel } from '../state/sketchToolActions'
 import { SketchCommandIcon, type SketchCommandIconName } from './SketchCommandIcon'
 import { useLength } from '../../../src/app/useUnits'
 import { saveFile } from '../../../src/app/exports'
@@ -75,7 +75,7 @@ export function SketchControls({chainsOf}:{chainsOf:()=>SketchChains|null}) {
   </div>
   {edit&&<div className="sketch-edit-values" data-test="sketch-edit-values">
    {edit==='offset'?<label>Offset <input data-test="sketch-offset-distance" type="number" value={len.toDisplay(distance)} step={len.step(0.1)} onChange={e=>setDistance(len.fromDisplay(Number(e.target.value)))}/> {len.word()} <button onClick={()=>setDistance(-distance)}>Flip</button></label>:<><label>X ({len.word()}) <input data-test="sketch-duplicate-x" type="number" value={len.toDisplay(dx)} onChange={e=>setDuplicateDelta([len.fromDisplay(Number(e.target.value)),dy])}/></label><label>Y ({len.word()}) <input data-test="sketch-duplicate-y" type="number" value={len.toDisplay(dy)} onChange={e=>setDuplicateDelta([dx,len.fromDisplay(Number(e.target.value))])}/></label></>}
-   <button data-test="sketch-edit-apply" onClick={()=>{if(edit==='offset'?offsetSketchSelection(distance):duplicateSketchSelection([dx,dy]))setEdit(null)}}>Apply</button><button onClick={()=>setEdit(null)}>Cancel</button>
+   {edit==='duplicate'&&<button data-test="sketch-duplicate-pattern" title="Linear, Circular, Angular or Along-curve copies, previewed" onClick={()=>{setEdit(null);openSketchPatternPanel()}}>Pattern…</button>}<button data-test="sketch-edit-apply" onClick={()=>{if(edit==='offset'?offsetSketchSelection(distance):duplicateSketchSelection([dx,dy]))setEdit(null)}}>Apply</button><button onClick={()=>setEdit(null)}>Cancel</button>
   </div>}
   <div className="sketch-section-label">Constraints</div>
   <div className="sketch-command-row constraints" data-test="sketch-relations">
@@ -90,12 +90,26 @@ export function SketchControls({chainsOf}:{chainsOf:()=>SketchChains|null}) {
    <div className="sketch-display-grid">
     <label><input data-test="sketch-show-control-points" type="checkbox" checked={prefs.sketchControlPoints} onChange={e=>prefs.setSketchControlPoints(e.target.checked)}/>Control Points</label>
     <label title="A 3D sketch manipulator is not implemented"><input type="checkbox" disabled/>Manipulator</label>
-    <label title="A comb along each arc, circle and spline: tooth length is the curvature there"><input data-test="sketch-curvature" type="checkbox" checked={comb.on} onChange={e=>comb.setOn(e.target.checked)}/>Curvature</label><input data-test="sketch-curvature-scale" type="range" min={5} max={500} step={5} value={comb.scale} disabled={!comb.on} aria-label="Curvature comb scale" onChange={e=>comb.setScale(Number(e.target.value))}/>
+    <label title="A comb along each arc, circle and spline: tooth length is the curvature there"><input data-test="sketch-curvature" type="checkbox" checked={comb.on} onChange={e=>comb.setOn(e.target.checked)}/>Curvature</label><span style={{display:'flex',gap:4,alignItems:'center',minWidth:0}}><input data-test="sketch-curvature-scale" style={{flex:1,minWidth:0}} type="range" min={5} max={500} step={5} value={comb.scale} disabled={!comb.on} aria-label="Curvature comb scale" onChange={e=>comb.setScale(Number(e.target.value))}/><button data-test="sketch-curvature-options" aria-expanded={comb.optionsOpen} onClick={()=>comb.set({optionsOpen:!comb.optionsOpen})}>Options …</button></span>
     <label title="Colour each portion of the sketch by its distance from the scan's section"><input data-test="sketch-analysis" type="checkbox" checked={analysis.on} onChange={e=>analysis.setOn(e.target.checked)}/>Analysis</label><button data-test="sketch-analysis-options" aria-expanded={analysis.optionsOpen} onClick={()=>analysis.setOptionsOpen(!analysis.optionsOpen)}>Options …</button>
     <label><input data-test="sketch-show-relations" type="checkbox" checked={prefs.sketchRelations} onChange={e=>prefs.setSketchRelations(e.target.checked)}/>Constraints</label>
     <label><input data-test="sketch-show-dimensions" type="checkbox" checked={prefs.sketchDimensions} onChange={e=>prefs.setSketchDimensions(e.target.checked)}/>Dimensions</label>
    </div>
   </fieldset>
+  {comb.optionsOpen&&<fieldset className="sketch-display" data-test="sketch-curvature-options-panel"><legend>Curvature options</legend>
+   <CombField label="Scale" value={comb.scale} kind="plain" testId="sketch-curvature-scale-value" unit="×" onValue={v=>comb.set({scale:v})}/>
+   <CombField label="Density" value={comb.density} kind="count" testId="sketch-curvature-density" unit="teeth" onValue={v=>comb.set({density:v})}/>
+   <CombField label="Max length" value={comb.maxLength} kind="length" testId="sketch-curvature-max" onValue={v=>comb.set({maxLength:v})}/>
+   <CombField label="Noise filter" value={comb.smooth} kind="count0" testId="sketch-curvature-smooth" unit="± samples" onValue={v=>comb.set({smooth:v})}/>
+   <div className="sketch-entry-row">
+    <label title="Teeth point out of each bend and cross over at an inflection"><input type="checkbox" data-test="sketch-curvature-signed" checked={comb.signed} onChange={e=>comb.set({signed:e.target.checked})}/>Signed</label>
+    <label title="Label the smallest radius on each curved piece"><input type="checkbox" data-test="sketch-curvature-labels" checked={comb.labels} onChange={e=>comb.set({labels:e.target.checked})}/>Labels</label>
+   </div>
+   <label><input type="checkbox" data-test="sketch-curvature-offset-on" checked={comb.offsetOn} onChange={e=>comb.set({offsetOn:e.target.checked})}/>Offset reference line</label>
+   <div>
+    <CombField label="Offset" value={comb.offset} kind="length" testId="sketch-curvature-offset" disabled={!comb.offsetOn} onValue={v=>comb.set({offset:v})}/>
+   </div>
+  </fieldset>}
   {analysis.optionsOpen&&<fieldset className="sketch-display" data-test="sketch-analysis-options-panel"><legend>Analysis options</legend>
    <ToleranceField/>
    <div role="radiogroup" aria-label="Analysis colouring" className="sketch-entry-row">
@@ -133,6 +147,27 @@ export function SketchControls({chainsOf}:{chainsOf:()=>SketchChains|null}) {
       <footer style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button type="button" onClick={()=>setExportOptions(false)}>Cancel</button><button type="submit" data-test="sketch-export-options-ok">OK</button></footer>
     </form></div>,document.body)}
  </div>
+}
+
+/** A number of the curvature options: a length in the units shown, a
+ *  plain factor, or a whole count. Valid values are taken at once; the
+ *  field follows the units when they change. */
+function CombField({label,value,kind,testId,unit,disabled,onValue}:{label:string;value:number;kind:'length'|'plain'|'count'|'count0';testId:string;unit?:string;disabled?:boolean;onValue:(v:number)=>void}){
+ const len=useLength()
+ const shown=()=>String(Number((kind==='length'?len.toDisplay(value):value).toFixed(6)))
+ const [text,setText]=useState(shown)
+ const word=kind==='length'?len.word():unit??''
+ const [seen,setSeen]=useState(word)
+ if(seen!==word){setSeen(word);setText(shown())}
+ const parse=(t:string)=>{const n=Number(t);if(t.trim()===''||!Number.isFinite(n))return null
+  if(kind==='count')return Number.isInteger(n)&&n>=4&&n<=2000?n:null
+  if(kind==='count0')return Number.isInteger(n)&&n>=0&&n<=20?n:null
+  return n>0?(kind==='length'?len.fromDisplay(n):n):null}
+ const [last,setLast]=useState(value)
+ if(last!==value){setLast(value);const v=parse(text);if(v===null||Math.abs(v-value)>1e-9*Math.max(1,Math.abs(value)))setText(shown())}
+ const bad=parse(text)===null
+ return <label className="field"><span>{label}</span><input data-test={testId} type="number" disabled={disabled} aria-invalid={bad} value={text}
+  onChange={e=>{const t=e.currentTarget.value;setText(t);const v=parse(t);if(v!==null)onValue(v)}} onBlur={()=>{if(bad)setText(shown())}}/><span>{word}</span></label>
 }
 
 /** The analysis tolerance, typed in the units shown. The text is the

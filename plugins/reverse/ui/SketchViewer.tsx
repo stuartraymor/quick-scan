@@ -21,6 +21,8 @@ import { SketchExtraOverlay } from './SketchExtraOverlay'
 import { SketchSelectionTools } from './SketchSelectionTools'
 import { SketchCornerTrimOverlay } from './SketchCornerTrimOverlay'
 import { SketchMirrorOverlay } from './SketchMirrorOverlay'
+import { SketchPatternOverlay } from './SketchPatternOverlay'
+import { SketchSplineOverlay } from './SketchSplineOverlay'
 import { SketchCornerGestureOverlay } from './SketchCornerGestureOverlay'
 import { SketchProjectOverlay } from './SketchProjectPanel'
 import { SketchEditPreview } from './SketchEditPreview'
@@ -129,6 +131,8 @@ export function SketchViewer({
       <SketchBrushOverlay scene={activeScene} chainsOf={chainsOf} />
       <SketchCornerTrimOverlay scene={activeScene} chainsOf={chainsOf} />
       <SketchMirrorOverlay scene={activeScene} />
+      <SketchPatternOverlay scene={activeScene} />
+      <SketchSplineOverlay scene={activeScene} />
       <SketchCornerGestureOverlay scene={activeScene} chainsOf={chainsOf} />
       <SketchProjectOverlay scene={activeScene} />
       <SketchEditPreview scene={activeScene} />

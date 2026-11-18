@@ -243,6 +243,8 @@ const entityIn = byKind(
         closed: bool('Round back to the first point, smooth there too (three points at least); its anchors are then p0, p1, ….'),
         startDir: num('The direction it leaves its first point, radians from +u — the solver’s while a tangent holds that end; left out, the end is natural.'),
         endDir: num('The direction it arrives at its last point, radians — as startDir.'),
+        startSet: bool('startDir was set by hand (the end tangent handle): kept though no tangent relation holds the start.'),
+        endSet: bool('As startSet, for endDir.'),
       },
       ['kind', 'pts'],
       'A curve through fit points — a freeform outline, a blend no arc makes. It is held tangent to a line, an arc or another spline where one of its ends is coincident with that piece’s end; a point is held on it by pointOn { curve }. Fit one to the slice with fit.spline.',

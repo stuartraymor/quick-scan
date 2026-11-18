@@ -25,13 +25,13 @@ import { patternPieces, polygonCorners, sketchBounds, type SketchPatternSpec } f
 import { projectableAt, type Projectable } from '../core/project'
 import { lineIntent, snapSketchPoint, type SnapContext, type SnapKind } from '../core/snap'
 import { usePrefs } from '../../../src/state/prefsStore'
+import { fmtLen } from '../../../src/core/units'
 import { useRePrefs } from '../state/rePrefs'
 import { arcThrough, chainArcStart, dragHandleAt, sketchHoverAt, splineClosesAt, useReverse, type SketchHover } from '../state/reStore'
 import { sketchDragGuide, sketchDragSnap } from '../state/reSketchSlice'
 import type { FlatScene, SketchDimensionItem } from '../../../src/viewer/FlatScene'
 import { SKETCH_DOT, SKETCH_LINE, sketchPalette } from '../viewer/sketchPalette'
-import { curvatureComb } from '../core/curvatureComb'
-import { entityPolyline } from '../core/sketch'
+import { exactComb } from '../core/curvatureComb'
 import { useSketchCurvature } from '../state/sketchCurvatureStore'
 import { useSketchBrush } from '../state/sketchBrushStore'
 import { dimensionFieldText, dimensionText } from '../viewer/sketchDimText'
@@ -642,15 +642,33 @@ export function useSketchSceneSync({
         if (fit) items.push({ fit, color: palette.selected, name: '', value: '', label: false, width: SKETCH_LINE.selected })
       }
     }
-    // Display → Curvature: a comb along each curved piece.
+    // Display → Curvature: a comb along each curved piece, from the true
+    // curvature (0 on a line, 1/R on an arc), teeth clamped, broken at
+    // corners; optionally an offset reference line and the extreme labelled.
     const comb = useSketchCurvature.getState()
     if (comb.on) {
+      const options = { scale: comb.scale, density: comb.density, maxLength: comb.maxLength, signed: comb.signed, smooth: comb.smooth, offset: comb.offsetOn ? comb.offset : null }
       for (const e of sketch.entities) {
         if (e.construction || (e.kind !== 'arc' && e.kind !== 'circle' && e.kind !== 'spline')) continue
-        const { teeth, envelope } = curvatureComb(entityPolyline(e, 64), comb.scale)
-        for (const [a, b] of [...teeth, ...envelope]) {
+        const c = exactComb(e, options)
+        if (!c) continue
+        for (const [a, b] of c.teeth) {
           const fit = lineFit(a, b)
           if (fit) items.push({ fit, color: palette.datum, name: '', value: '', label: false, width: SKETCH_LINE.datum })
+        }
+        for (const env of c.envelopes) {
+          const fit = lineFit(env[0], env[1])
+          if (fit) items.push({ fit, polyline: env, color: palette.datum, name: '', value: '', label: false, width: SKETCH_LINE.datum })
+        }
+        if (c.offsetLine && c.offsetLine.length > 1) {
+          const fit = lineFit(c.offsetLine[0], c.offsetLine[1])
+          if (fit) items.push({ fit, polyline: c.offsetLine, color: palette.datum, name: '', value: '', label: false, width: SKETCH_LINE.datum, dash: CONSTRUCTION_DASH, opacity: 0.6 })
+        }
+        if (comb.labels && c.extreme && Math.abs(c.extreme.k) > 1e-12) {
+          const r = 1 / Math.abs(c.extreme.k), tip = c.extreme.tip
+          const text = `R ${fmtLen(r, usePrefs.getState().units, 3)}`
+          const fit = lineFit(tip, [tip[0] + 1e-6, tip[1]])
+          if (fit) items.push({ fit, color: palette.datum, name: '', value: text, label: true, width: 0.01, opacity: 0 })
         }
       }
     }
@@ -818,13 +836,13 @@ export function useSketchSceneSync({
   const combOn = useSketchCurvature((s) => s.on)
   const brushPreview = useSketchBrush((s) => s.preview)
   const brushOpen = useSketchBrush((s) => s.open)
-  const combScale = useSketchCurvature((s) => s.scale)
+  const combState = useSketchCurvature((s) => s)
   const analysisOn = useSketchAnalysis((s) => s.on)
   const analysisTolerance = useSketchAnalysis((s) => s.toleranceMm)
   const analysisMode = useSketchAnalysis((s) => s.mode)
   const dark = usePrefs((s) => s.dark)
   const units = usePrefs((s) => s.units)
-  useEffect(pushSketch, [draft, showRelations, showDimensions, showControlPoints, combOn, combScale, brushPreview, brushOpen, dark, units, analysisOn, analysisTolerance, analysisMode, chainsVersion])
+  useEffect(pushSketch, [draft, showRelations, showDimensions, showControlPoints, combOn, combState, brushPreview, brushOpen, dark, units, analysisOn, analysisTolerance, analysisMode, chainsVersion])
   useEffect(() => {
     scene()?.setEdgeColor(colors().slice, colors().sliceOpacity)
     // Runs on the listed dependencies only, not on everything it reads.

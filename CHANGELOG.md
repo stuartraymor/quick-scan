@@ -1,3 +1,9 @@
+## 1.1.97 — 2D Sketch: Pattern panel, curvature comb, spline editing
+
+- Duplicate → Pattern…: linear in two directions (X, Y or a picked line), circular, angular and along a curve by true arc length, with a dashed live preview, draggable spacing arrows, mm/inch fields, Accept and Cancel, one undo step.
+- Display → Curvature: the comb is drawn from the true curvature, evenly by arc length, with Options for scale, density, maximum length, signed teeth, noise filter, an offset reference line and a smallest-radius label; it breaks at corners and has no teeth on lines.
+- Spline: right-click while drawing offers Finish, Close and finish, Remove last point and Restart; a double-click finishes. Right-click on a spline offers Modify, Add point here, Remove this point, Rebuild…, Fixed, Construction and Delete. End tangent handles set the direction by drag (snapping upright), and a double-click frees it; hand-set ends now survive the solver.
+- Evidence: analysis/quick-scan-v1.1.97.
 ## 1.1.96 — 2D Sketch: Corner Trim, Mirror, angle sectors and live tolerance
 
 - First public build of the 2D Sketch work below (1.1.95 was built but not published).

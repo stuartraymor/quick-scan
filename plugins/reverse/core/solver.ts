@@ -224,6 +224,9 @@ function withHeldEnds(s: SketchSpline, sketch: Sketch): SketchSpline {
   }
   const held = new Set<'a' | 'b'>()
   if (!isClosed(s)) {
+    // An end whose direction was set by hand keeps it.
+    if (s.startSet && s.startDir !== undefined) held.add('a')
+    if (s.endSet && s.endDir !== undefined) held.add('b')
     for (const c of sketch.constraints) {
       if (c.kind !== 'tangent' || (c.a !== s.id && c.b !== s.id)) continue
       const joint = splineJoint(sketch, s.id, c.a === s.id ? c.b : c.a)

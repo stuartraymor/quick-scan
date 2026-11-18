@@ -27,6 +27,9 @@
     "scripts/e2e-sketch-corner-paint.mjs",
     "scripts/e2e-qsf-project.mjs",
     "scripts/e2e-stacked-reference.mjs",
-    "scripts/e2e-stack-box.mjs"
+    "scripts/e2e-stack-box.mjs",
+    "scripts/e2e-sketch-pattern.mjs",
+    "scripts/e2e-sketch-curvature.mjs",
+    "scripts/e2e-sketch-spline-edit.mjs"
   ]
 }

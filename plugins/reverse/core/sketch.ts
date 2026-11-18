@@ -113,6 +113,10 @@ export interface SketchSpline {
   closed?: boolean
   startDir?: number
   endDir?: number
+  /** The end's direction was set by hand (its tangent handle): kept as
+   *  `startDir` / `endDir` though no tangent relation holds that end. */
+  startSet?: boolean
+  endSet?: boolean
   points?: Vec2[]
   scatter?: number
   fixed?: boolean
@@ -770,7 +774,7 @@ function patternPlacements(spec: SketchPatternSpec): { move: Vec2; turn: number;
 }
 
 /** A point carried by one of a pattern's placements. */
-function placePoint(p: Vec2, at: { move: Vec2; turn: number; about: Vec2 }): Vec2 {
+export function placePoint(p: Vec2, at: { move: Vec2; turn: number; about: Vec2 }): Vec2 {
   const cos = Math.cos(at.turn)
   const sin = Math.sin(at.turn)
   const d = sub2(p, at.about)
@@ -803,6 +807,20 @@ export function renumbered(c: ConstraintInput, id: (old: number) => number): Con
  * new pieces, copy by copy, in the order the pieces were given.
  */
 export function patternPieces(sketch: Sketch, ids: readonly number[], spec: SketchPatternSpec): number[][] {
+  return copyPiecesAt(sketch, ids, patternPlacements(spec))
+}
+
+/** A rigid motion of the sheet: turn by `turn` radians about `about`, then
+ *  move by `move`. */
+export interface SheetMotion {
+  move: Vec2
+  turn: number
+  about: Vec2
+}
+
+/** Copies of the pieces given, one set per motion — as patternPieces lays
+ *  them, for motions worked out elsewhere (a pattern along a curve). */
+export function copyPiecesAt(sketch: Sketch, ids: readonly number[], motions: readonly SheetMotion[]): number[][] {
   const set = new Set(ids)
   const pieces = sketch.entities.filter((e) => set.has(e.id))
   if (pieces.length === 0) return []
@@ -813,7 +831,7 @@ export function patternPieces(sketch: Sketch, ids: readonly number[], spec: Sket
     return true
   })
   const copies: number[][] = []
-  for (const at of patternPlacements(spec)) {
+  for (const at of motions) {
     const place = (p: Vec2) => placePoint(p, at)
     const map = new Map<number, number>()
     for (const e of pieces) {
@@ -832,6 +850,8 @@ export function patternPieces(sketch: Sketch, ids: readonly number[], spec: Sket
                     ...(e.closed ? { closed: true } : {}),
                     ...(e.startDir !== undefined ? { startDir: e.startDir + at.turn } : {}),
                     ...(e.endDir !== undefined ? { endDir: e.endDir + at.turn } : {}),
+                    ...(e.startSet ? { startSet: true } : {}),
+                    ...(e.endSet ? { endSet: true } : {}),
                     ...base,
                   }
                 : { kind: 'point', p: place(e.p), ...base }
