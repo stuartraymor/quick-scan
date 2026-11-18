@@ -15,6 +15,7 @@ import { useNotes } from '../state/noteStore'
 import { networkFinishPlacing, networkKey } from './useNetworkLayer'
 import { activateSketchTool, activateExtraSketchTool, dimensionSketchSelection, mirrorSelectedSketchEntities, openSketchEditPanel } from '../state/sketchToolActions'
 import { useSketchPresentation } from '../state/sketchPresentation'
+import { useSketchProject } from '../state/sketchProjectStore'
 import { useRePrefs } from '../state/rePrefs'
 
 /** The sketch's tools by the letters QUICKSURFACE has them on (L, C, R = Arc,
@@ -70,6 +71,8 @@ export const reverseKeyboard: KeyboardContribution = {
       if (d.placing && !e.ctrlKey && !e.altKey && !e.metaKey && 'lcrdsftmo'.includes(e.key.toLowerCase()) && e.key.length === 1) return true
       const tool = !e.ctrlKey && !e.altKey && !e.metaKey ? SKETCH_TOOL_KEYS[e.key.toLowerCase()] : undefined
       if (e.key === 'Escape') {
+        // The Project prompt is a question: Escape answers Cancel.
+        if (useSketchProject.getState().open) { useSketchProject.getState().cancel(); return true }
         if (useSketchPresentation.getState().edit) { useSketchPresentation.getState().setEdit(null); return true }
         // A dimension following the cursor is taken back, never made; a
         // spline's points are made the curve, as a chain of lines is ended

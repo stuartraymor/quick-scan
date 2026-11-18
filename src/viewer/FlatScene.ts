@@ -555,6 +555,7 @@ export class FlatScene {
         input.inputMode = 'decimal'
         input.spellcheck = false
         input.value = shown
+        input.dataset.passUndo = shown
         let done = false
         const close = (commit: boolean) => {
           if (done) return
@@ -564,6 +565,9 @@ export class FlatScene {
           if (commit && typed !== '' && typed !== shown) this.onDimensionEdit?.(edit.id, typed)
         }
         input.addEventListener('keydown', (ev) => {
+          // Untouched, Ctrl+Z / Ctrl+Y go on to the drawing's undo (see
+          // useGlobalShortcuts): the field closes and the key carries on.
+          if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && /^[zy]$/i.test(ev.key) && input.value === shown) { close(false); return }
           ev.stopPropagation()
           if (ev.key === 'Enter') close(true)
           else if (ev.key === 'Escape') close(false)

@@ -121,6 +121,7 @@ export function ExprInput({
           list={PARAMETER_NAMES_LIST}
           data-test={testId}
           data-dimension={dataDimension}
+          data-pass-undo={shown}
           key={shown}
           defaultValue={shown}
           title={expr ? `${expr} = ${result}` : undefined}

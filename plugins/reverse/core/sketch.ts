@@ -556,6 +556,23 @@ export function relationTakes(kind: ConstraintKind, entities: readonly SketchEnt
 }
 
 /** A deep copy, for a draft to work on. */
+/** Why pieces cannot be edited, or null: a position, radius or angle in
+ *  one that is not a finite number — what a damaged file or a bad paste
+ *  leaves — or a circle or arc of no radius. Copying, mirroring or cutting
+ *  such a piece would spread the damage, so the tools refuse it by name. */
+export function damagedPiece(sketch: Sketch, ids: readonly number[]): string | null {
+  const ok = (x: unknown): boolean => (typeof x === 'number' ? Number.isFinite(x) : Array.isArray(x) ? x.every(ok) : x === undefined)
+  for (const id of ids) {
+    const e = entityOf(sketch, id)
+    if (!e) continue
+    const g = e as unknown as Record<string, unknown>
+    const fields = ['a', 'b', 'c', 'r', 'start', 'sweep', 'p', 'pts', 'startDir', 'endDir', 'controlKnots']
+    if (!fields.every((k) => ok(g[k]))) return `Piece ${id} has a position that is not a number — the file is damaged there. Delete it or draw it again.`
+    if ((e.kind === 'circle' || e.kind === 'arc') && !(e.r > 0)) return `Piece ${id} is a ${e.kind} of no radius. Delete it or draw it again.`
+  }
+  return null
+}
+
 export function cloneSketch(sketch: Sketch): Sketch {
   return JSON.parse(JSON.stringify(sketch)) as Sketch
 }

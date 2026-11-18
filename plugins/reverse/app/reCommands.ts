@@ -21,6 +21,7 @@ import { buildStop } from './reBuildStop'
 import { bodySet, check, clearance, compare, compareInDeviationCommand, describe, step, stl } from './reBodyCommands'
 import { volumeCompare } from './reVolumeCompare'
 import { review } from './reReview'
+import { sketchAnalyse, sketchMirror, sketchPattern, sketchSelect, sketchSpline } from './reSketchToolCommands'
 import { planeDescribe, sectionFit, sectionOutline, sectionStack, sketchCandidates, tubeTrace } from './reSectionCommands'
 import { filletRead } from './reFilletRead'
 import { filletTry } from './reFilletTry'
@@ -96,7 +97,7 @@ function withNotes(command: Command<never>): Command<never> {
  *  run headless (src/headless/engine.ts): modelling, parameters, the bodies
  *  described and checked, notes, and the files. */
 const HEADLESS = new Set([
-  'feature.list', 'feature.add', 'feature.schema', 'feature.update', 'feature.remove', 'feature.move', 'feature.suppress', 'feature.clear', 'feature.rollback', 'sketch.edit', 'build',
+  'feature.list', 'feature.add', 'feature.schema', 'feature.update', 'feature.remove', 'feature.move', 'feature.suppress', 'feature.clear', 'feature.rollback', 'sketch.edit', 'sketch.mirror', 'sketch.pattern', 'sketch.spline', 'build',
   'body.describe', 'body.check', 'body.fillet_try', 'export.step', 'export.stl', 'import.step', 'plane.describe',
   'parameter.list', 'parameter.add', 'parameter.set', 'parameter.rename', 'parameter.remove',
   'note.list', 'note.add', 'note.resolve', 'plan.set', 'plan.update', 'plan.tick', 'plan.replace',
@@ -121,6 +122,11 @@ export const reverseCommands: Command<never>[] = ([
   { ...rollback, name: 'feature.rollback' },
   { ...sketchEdit, name: 'sketch.edit' },
   { ...sketchCandidates, name: 'sketch.candidates' },
+  { ...sketchMirror, name: 'sketch.mirror' },
+  { ...sketchPattern, name: 'sketch.pattern' },
+  { ...sketchSpline, name: 'sketch.spline' },
+  { ...sketchSelect, name: 'sketch.select' },
+  { ...sketchAnalyse, name: 'sketch.analyse' },
   build,
   buildStop,
   { ...describe, name: 'body.describe' },

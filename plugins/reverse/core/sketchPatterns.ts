@@ -24,7 +24,7 @@
 
 import type { Vec2 } from '../../../src/core/flat/types'
 import { curveOf, tangentOf } from './curveEval'
-import { cloneSketch, copyPiecesAt, entityOf, sketchBounds, type SheetMotion, type Sketch } from './sketch'
+import { cloneSketch, copyPiecesAt, damagedPiece, entityOf, sketchBounds, type SheetMotion, type Sketch } from './sketch'
 import type { SketchEditResult } from './sketchEdits'
 
 /** At most this many instances in one direction, and this many pieces made
@@ -67,11 +67,18 @@ export function defaultPattern(mode: PatternMode, size: number): PatternSpec {
   }
 }
 
-/** A round spacing a little over the selection's size. */
-function niceStep(size: number): number {
+/** Round steps per decade the default spacing is taken from: fine enough
+ *  that the copies start close by (a 140 mm selection starts at 200 mm,
+ *  not 500 mm, and a 90 mm one at 120 mm, not 200 mm). */
+const NICE = [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]
+
+/** A round spacing a little over the selection's size (about 1.2×), so
+ *  the first copies sit just clear of the original and on screen. */
+export function niceStep(size: number): number {
   if (!(size > 0) || !Number.isFinite(size)) return 10
-  const raw = size * 1.5, p = 10 ** Math.floor(Math.log10(raw)), m = raw / p
-  return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * p
+  const raw = size * 1.2, p = 10 ** Math.floor(Math.log10(raw)), m = raw / p
+  const n = NICE.find((x) => m <= x + 1e-9) ?? 10
+  return Number((n * p).toPrecision(12))
 }
 
 const rad = (deg: number) => (deg * Math.PI) / 180
@@ -119,6 +126,8 @@ export type PatternPlanResult = PatternPlan | { ok: false; error: string }
 export function planPattern(sketch: Sketch, ids: readonly number[], spec: PatternSpec): PatternPlanResult {
   const fail = (error: string): PatternPlanResult => ({ ok: false, error })
   if (!ids.some((id) => entityOf(sketch, id))) return fail('Select the pieces to pattern.')
+  const damaged = damagedPiece(sketch, spec.mode === 'alongCurve' && spec.curve !== null ? [...ids, spec.curve] : ids)
+  if (damaged) return fail(damaged)
   const motions: SheetMotion[] = []
   let note: string | null = null
   if (spec.mode === 'linear') {

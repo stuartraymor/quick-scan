@@ -10,6 +10,7 @@
 import type { Vec2 } from '../../../src/core/flat/types'
 import type { SketchEntity } from './sketch'
 import { splineCurve, splineEnd, splineStretchBeziers, type Bezier } from './sketchSpline'
+import { validControlSpline } from './controlSpline'
 
 /** A piece of curve, parameter 0 to `end`. Segments meet at whole numbers
  *  (one segment for a line or an arc). */
@@ -115,6 +116,9 @@ export function curveOf(e: SketchEntity): CurveEval | null {
       (t) => { const a = start + sweep * t; return [-r * sweep * sweep * Math.cos(a), -r * sweep * sweep * Math.sin(a)] })
   }
   if (e.kind === 'spline') {
+    // Knots that do not fit the poles are refused by splineCurve (and on
+    // loading); here they are a piece with no curve to read, not a crash.
+    if (!validControlSpline(e)) return null
     const fit = splineCurve(e)
     const end = splineEnd(fit)
     if (!(end > 0)) return null

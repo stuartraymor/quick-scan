@@ -1,3 +1,11 @@
+## 1.1.98 — 2D Sketch: full audit, agent sketch tools, stability
+
+- Audit: every sketch button was driven on the sheet (create, modify, constraints, display, keys); each draws or changes what it should, Ctrl+Z / Ctrl+Y round-trip it, Esc part-way leaves nothing, and every relation changes the solve when applied and when removed.
+- Fixed: Ctrl+Z right after a Fillet or Chamfer (the radius field had the focus and kept the key) now undoes it; Esc now closes the Project prompt.
+- Agent tools (MCP): reverse.sketch.mirror, .pattern, .spline (add, remove, rebuild, end direction), .select (selects in the open editor, the status bar saying the assistant picked them) and .analyse (deviation from the scan within a tolerance, true curvature, loose ends, regions, solve), through the same geometry as the panel. Agent steps are labelled "Agent:" in the undo history.
+- Stability: every sketch tool refuses a piece with a non-finite position (a damaged file) by name instead of copying it, and the curvature reading never throws on bad spline knots.
+- Pattern: the default spacing starts just clear of the selection (about 1.2 × its size) instead of up to 3.3 ×.
+- Evidence: analysis/quick-scan-v1.1.98.
 ## 1.1.97 — 2D Sketch: Pattern panel, curvature comb, spline editing
 
 - Duplicate → Pattern…: linear in two directions (X, Y or a picked line), circular, angular and along a curve by true arc length, with a dashed live preview, draggable spacing arrows, mm/inch fields, Accept and Cancel, one undo step.

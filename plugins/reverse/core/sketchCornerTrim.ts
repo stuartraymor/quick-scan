@@ -4,7 +4,7 @@
 import type { Vec2 } from '../../../src/core/flat/types'
 import { lineIntersection } from './corners'
 import { filletLines } from './filletCorner'
-import { addConstraint, anchorPoint, cloneSketch, constraintEntities, endsOf, entityOf, type Anchor, type Constraint, type Sketch, type SketchEntity, type SketchLine } from './sketch'
+import { addConstraint, anchorPoint, cloneSketch, constraintEntities, damagedPiece, endsOf, entityOf, type Anchor, type Constraint, type Sketch, type SketchEntity, type SketchLine } from './sketch'
 import { joinCurveEnds } from './cornerJoin'
 import { solveSketch } from './solver'
 import { pathDistance } from './cornerGesture'
@@ -192,6 +192,8 @@ function curveCornerTrim(source: Sketch, ids: readonly number[], ends?: readonly
 export function buildCornerTrim(source: Sketch, ids: readonly number[], options: CornerTrimOptions, points: readonly Vec2[] = [], ends?: readonly Anchor[]): CornerTrimResult {
   const fail = (error: string): CornerTrimResult => ({ ok: false, error })
   if (ids.length !== 2 || new Set(ids).size !== 2) return fail('Paint over one endpoint on each of two lines.')
+  const damaged = damagedPiece(source, ids)
+  if (damaged) return fail(damaged)
   if (ends && (ends.length !== 2 || ids.some((id) => ends.filter((p) => p.entity === id && (p.at === 'a' || p.at === 'b')).length !== 1))) return fail('Paint exactly two endpoints, one on each line.')
   const chosen = ids.map((id) => entityOf(source, id))
   if (chosen.every((e) => e && (e.kind === 'line' || e.kind === 'arc' || e.kind === 'spline')) && chosen.some((e) => e!.kind !== 'line')) {

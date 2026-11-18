@@ -70,4 +70,22 @@ describe('exact curvature comb', () => {
     for (const [a, b] of c.teeth) expect([...a, ...b].every(Number.isFinite)).toBe(true)
     expect(c.offsetLine).toBeNull()
   })
+
+  it('breaks the envelope where a spline turns a corner, and nowhere on a smooth one', () => {
+    // A control-pole spline with three poles in a row at the middle joint
+    // stands still there: a cusp, where the comb must not draw across.
+    const s = emptySketch()
+    const smooth = addEntity(s, { kind: 'spline', pts: [[0, 0], [10, 6], [20, -2], [30, 4]] })
+    const cusp = addEntity(s, { kind: 'spline', pts: [[0, 0], [5, 8], [10, 0], [10, 0], [10, 0], [15, 8], [20, 0]], controlKnots: [0, 1, 2, 3, 4] })
+    const a = exactComb(entityOf(s, smooth)!, { ...DEFAULT_COMB, density: 80 })!
+    expect(a.breaks).toBe(0)
+    expect(a.envelopes).toHaveLength(1)
+    const b = exactComb(entityOf(s, cusp)!, { ...DEFAULT_COMB, density: 80 })!
+    expect(b.breaks).toBeGreaterThanOrEqual(1)
+    expect(b.envelopes.length).toBe(b.breaks + 1)
+    for (const t of b.teeth) for (const p of t) expect(p.every(Number.isFinite)).toBe(true)
+    // Knots that do not fit the poles: no comb, never a throw.
+    const bad = addEntity(s, { kind: 'spline', pts: [[0, 0], [5, 8], [10, 0], [15, 8], [20, 0]], controlKnots: [0, 1] })
+    expect(exactComb(entityOf(s, bad)!, DEFAULT_COMB)).toBeNull()
+  })
 })

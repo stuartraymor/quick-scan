@@ -3,7 +3,7 @@
 import type { Vec2 } from '../../../src/core/flat/types'
 import { tangentArc } from './draw'
 import { mirrorPoint } from './mirrorRelation'
-import { addConstraint, addEntity, arcPoint, cloneSketch, entityOf, patternPieces, removeEntities, type EntityInput, type Sketch, type SketchEntity, type SketchLine } from './sketch'
+import { addConstraint, addEntity, arcPoint, cloneSketch, damagedPiece, entityOf, patternPieces, removeEntities, type EntityInput, type Sketch, type SketchEntity, type SketchLine } from './sketch'
 
 export type SketchEditResult = { ok: true; sketch: Sketch; ids: number[] } | { ok: false; error: string }
 const fail = (error: string): SketchEditResult => ({ ok: false, error })
@@ -34,6 +34,8 @@ const free = (e: SketchEntity): EntityInput => {
 export function duplicateSelected(input: Sketch, ids: readonly number[], delta: Vec2 = [10, 0]): SketchEditResult {
   if (!delta.every(Number.isFinite)) return fail('The copy displacement must be finite.')
   if (!selected(input, ids).length) return fail('Select the pieces to duplicate.')
+  const damaged = damagedPiece(input, ids)
+  if (damaged) return fail(damaged)
   const sketch = cloneSketch(input)
   return good(sketch, patternPieces(sketch, ids, { kind: 'rectangular', count: 2, step: delta }).flat())
 }
@@ -56,6 +58,8 @@ export interface MirrorAxis { a: Vec2; b: Vec2 }
  *  and the originals are left as they are. Nothing is joined to the line. */
 export function mirrorAbout(input: Sketch, ids: readonly number[], axis: MirrorAxis): SketchEditResult {
   if (!axis.a.every(Number.isFinite) || !axis.b.every(Number.isFinite)) return fail('The mirror line must be finite.')
+  const damaged = damagedPiece(input, ids)
+  if (damaged) return fail(damaged)
   const d = sub(axis.b, axis.a), length = norm(d)
   if (length < EPS) return fail('The mirror line has no length.')
   const copyIds = selected(input, ids).map(e => e.id)
@@ -102,6 +106,8 @@ export function offsetSelected(input: Sketch, ids: readonly number[], distance: 
   if (!Number.isFinite(distance) || Math.abs(distance) < EPS) return fail('Enter a finite nonzero offset.')
   const pieces = selected(input, ids)
   if (!pieces.length) return fail('Select the pieces to offset.')
+  const damaged = damagedPiece(input, ids)
+  if (damaged) return fail(damaged)
   if (pieces.some(e => e.kind !== 'line' && e.kind !== 'arc' && e.kind !== 'circle')) return fail('Offset currently supports lines, arcs and circles; select those pieces only.')
   const sketch = cloneSketch(input), copies = new Map<number, SketchEntity>(), made: number[] = []
   for (const e of pieces) {
@@ -208,6 +214,8 @@ export function trimAt(input: Sketch, entityId: number, point: Vec2): SketchEdit
   if (!e || (e.kind !== 'line' && e.kind !== 'arc' && e.kind !== 'circle')) return fail('Trim supports a line, arc or circle at an intersection.')
   if (e.projected) return fail('Projected geometry must be detached before trimming.')
   if (!point.every(Number.isFinite)) return fail('The trim point must be finite.')
+  const damaged = damagedPiece(input, [entityId])
+  if (damaged) return fail(damaged)
   const t = parameter(e, point)
   if (t === null) return fail('Click on the span to trim.')
   const cuts = input.entities.flatMap(other => other.id !== e.id && (other.kind === 'line' || other.kind === 'arc' || other.kind === 'circle') ? intersections(e, other).map(p => parameter(e, p)!) : [])

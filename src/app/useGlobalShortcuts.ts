@@ -128,7 +128,15 @@ export function useGlobalShortcuts({
     }
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null
-      if (target && (['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName) || target.isContentEditable)) {
+      // A number field that opened by itself — a fillet's radius, a new
+      // dimension — and has had nothing typed into it has no edit of its own
+      // to undo: Ctrl+Z / Ctrl+Y there are the drawing's, so the step that
+      // opened the field can be taken back at once. The field says what it
+      // showed in data-pass-undo; anything typed keeps the keys its own.
+      const passUndo = target instanceof HTMLInputElement && target.dataset.passUndo !== undefined && target.value === target.dataset.passUndo
+        && (e.ctrlKey || e.metaKey) && !e.altKey && ['z', 'y'].includes(e.key.toLowerCase())
+      if (passUndo) target.blur()
+      else if (target && (['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName) || target.isContentEditable)) {
         // Escape in a field of a box or a tool leaves the field and goes on
         // to close what it is in, as it does with the focus anywhere else —
         // a box set up by typing into it would otherwise not close on the

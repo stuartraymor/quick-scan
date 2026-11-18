@@ -18,7 +18,7 @@ import type { Vec2 } from '../../../src/core/flat/types'
 import { add2, dot2, len2, normalize2, perp2, scale2, sub2 } from '../../../src/core/flat/vec2'
 import { lineIntersection } from './corners'
 import { nominalOf } from './nominal'
-import { addConstraint, addEntity, entityOf, lineDir, removeEntities, type Anchor, type AnchorAt, type DimPlace, type Sketch, type SketchLine } from './sketch'
+import { addConstraint, addEntity, damagedPiece, entityOf, lineDir, removeEntities, type Anchor, type AnchorAt, type DimPlace, type Sketch, type SketchLine } from './sketch'
 
 export interface FilletResult {
   /** The arc put in, and the radius dimension on it. */
@@ -82,6 +82,8 @@ export function filletLines(sketch: Sketch, idA: number, idB: number, radius?: n
   const la = entityOf(sketch, idA)
   const lb = entityOf(sketch, idB)
   if (!la || !lb || la.kind !== 'line' || lb.kind !== 'line' || la.id === lb.id) return 'A round goes between two lines.'
+  const damaged = damagedPiece(sketch, [idA, idB])
+  if (damaged) return damaged
   if (la.projected || lb.projected) return 'A projected piece stays as the part made it — it cannot be cut back for a round.'
   const x = lineIntersection(la, lb)
   if (!x) return 'The two lines are parallel — no round fits between them.'
@@ -179,6 +181,8 @@ export function chamferLines(sketch: Sketch, idA: number, idB: number, setback?:
   const la = entityOf(sketch, idA)
   const lb = entityOf(sketch, idB)
   if (!la || !lb || la.kind !== 'line' || lb.kind !== 'line' || la.id === lb.id) return 'A chamfer goes between two lines.'
+  const damaged = damagedPiece(sketch, [idA, idB])
+  if (damaged) return damaged
   if (la.projected || lb.projected) return 'A projected piece stays as the part made it — it cannot be cut back for a chamfer.'
   const x = lineIntersection(la, lb)
   if (!x) return 'The two lines are parallel — no chamfer fits between them.'

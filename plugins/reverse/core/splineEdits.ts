@@ -9,7 +9,7 @@
 import type { Vec2 } from '../../../src/core/flat/types'
 import { type DisplayUnits, fmtLen } from '../../../src/core/units'
 import { curveOf } from './curveEval'
-import { cloneSketch, entityOf, type Sketch, type SketchSpline } from './sketch'
+import { cloneSketch, damagedPiece, entityOf, type Sketch, type SketchSpline } from './sketch'
 import { isClosed, nearestOnSpline, splineAt, splineCurve } from './sketchSpline'
 import type { SketchEditResult } from './sketchEdits'
 
@@ -22,7 +22,7 @@ function splineOf(sketch: Sketch, id: number): SketchSpline | string {
   const e = entityOf(sketch, id)
   if (!e) return 'That spline is no longer in the sketch.'
   if (e.kind !== 'spline') return 'That piece is not a spline.'
-  return e
+  return damagedPiece(sketch, [id]) ?? e
 }
 
 /** Every anchor `{ entity: id, at: 'pK' }` in the relations renumbered by

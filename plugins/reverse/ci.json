@@ -30,6 +30,8 @@
     "scripts/e2e-stack-box.mjs",
     "scripts/e2e-sketch-pattern.mjs",
     "scripts/e2e-sketch-curvature.mjs",
-    "scripts/e2e-sketch-spline-edit.mjs"
+    "scripts/e2e-sketch-spline-edit.mjs",
+    "scripts/e2e-sketch-audit.mjs",
+    "scripts/e2e-agent-sketch.mjs"
   ]
 }

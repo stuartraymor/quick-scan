@@ -3,7 +3,7 @@
 // curve evaluation behind Along Curve spacing.
 import { describe, expect, it } from 'vitest'
 import { addEntity, addRectangle, emptySketch, entityOf, type SketchArc, type SketchCircle, type SketchLine, type SketchPoint } from '../core/sketch'
-import { applyPattern, defaultPattern, planPattern, type PatternSpec } from '../core/sketchPatterns'
+import { applyPattern, defaultPattern, niceStep, planPattern, type PatternSpec } from '../core/sketchPatterns'
 import { curveOf, curvatureOf } from '../core/curveEval'
 
 const close = (p: readonly number[], q: readonly number[], tol = 1e-9) => expect(Math.hypot(p[0] - q[0], p[1] - q[1])).toBeLessThan(tol)
@@ -163,5 +163,20 @@ describe('pattern along a curve', () => {
     expect(r.ok).toBe(true); if (!r.ok) return
     const last = entityOf(r.sketch, r.ids[2]) as SketchCircle
     close(last.c, [3, 30], 1e-9); expect(last.r).toBe(1.5)
+  })
+})
+
+describe('default spacing', () => {
+  it('starts just clear of the selection, at a round number', () => {
+    // 1.2 × the size, rounded up to 1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8 × 10ⁿ.
+    expect([140, 90, 10, 3, 0.003, 400].map(niceStep)).toEqual([200, 120, 12, 4, 0.004, 500])
+    for (const size of [0.07, 1, 7.3, 33, 141, 999, 12345]) {
+      const step = niceStep(size)
+      expect(step).toBeGreaterThan(size)
+      expect(step).toBeLessThanOrEqual(size * 1.2 * (4 / 3) + 1e-9)
+    }
+    expect([0, -5, NaN, Infinity].map(niceStep)).toEqual([10, 10, 10, 10])
+    const linear = defaultPattern('linear', 140) as Extract<PatternSpec, { mode: 'linear' }>
+    expect(linear.d1.spacing).toBe(200)
   })
 })
