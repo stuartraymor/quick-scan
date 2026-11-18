@@ -1,3 +1,9 @@
+## 1.1.96 — 2D Sketch: Corner Trim, Mirror, angle sectors and live tolerance
+
+- First public build of the 2D Sketch work below (1.1.95 was built but not published).
+- Corner Trim's held stroke is drawn in its opaque grey again; 1.1.95 had made it slightly see-through, which the corner paint browser check caught.
+- Evidence: analysis/quick-scan-v1.1.96.
+
 ## 1.1.95 — 2D Sketch: Corner Trim, Mirror, angle sectors and live tolerance
 
 - Corner Trim has its own icon (two sides joined by a rounded corner) and a brush: a ring follows the cursor, the ends it would take are ringed, and the result is previewed while the button is held. Release commits it as one undo step; Esc cancels.

@@ -47,7 +47,7 @@ export function SketchCornerTrimOverlay({ scene, chainsOf }: { scene: FlatScene 
       const units = scene.unitsPerScreenPx(), reach = radiusPx * units
       // The stroke, as the native tool paints it.
       if (path.length) {
-        ctx.strokeStyle = 'rgba(113,131,139,0.85)'; ctx.lineWidth = radiusPx * 2; ctx.lineCap = ctx.lineJoin = 'round'
+        ctx.strokeStyle = '#71838b'; ctx.lineWidth = radiusPx * 2; ctx.lineCap = ctx.lineJoin = 'round'
         ctx.beginPath()
         path.forEach((p, i) => { const at = toLocal(p, rect); if (at) { if (!i) ctx.moveTo(at.x, at.y); else ctx.lineTo(at.x, at.y) } })
         if (path.length === 1) { const at = toLocal(path[0], rect); if (at) ctx.lineTo(at.x + .01, at.y) }
