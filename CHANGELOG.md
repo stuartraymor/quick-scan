@@ -1,3 +1,8 @@
+## 1.2.1 — New Freeform: joins on a cage with a crossed quad
+
+- Joining: a point join was refused ("This move would fold a quad") on any cage that already had a quad crossed on itself anywhere, however far from the join. Only a quad the join itself crosses or turns over is refused now. Found on a user's impeller cage, where two tab corners would not join.
+- Quick release for testing: the focused tests, type check, build and packaged smoke test ran; the full suite runs with the next version.
+
 ## 1.2.0 — New Freeform: joins, displays and a sound surface
 
 - Joining: a point dropped on another now joins across a slope (the depth allowance grows with the drag instead of a fixed 1 mm band); quads drawn in opposite directions join, one part being turned to fit, in point and side joins, D-pull welds, Add face, Close 4-sided hole and Bridge.

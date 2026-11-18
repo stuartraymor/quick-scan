@@ -80,17 +80,25 @@ export function joinFolds(before: Cage, after: Cage, map: (v: number) => number)
     const k = now.indexOf(map(was[0])), turned = now[(k + 1) % now.length] !== map(was[1])
     const a = normal(before, was), b = normal(after, now), sign = turned ? -1 : 1
     if (!(a.reduce((s, v, axis) => s + v * b[axis], 0) * sign > 0)) return true
-    // Two corners bending against the face are a quad crossed on itself.
-    let against = 0
-    for (let c = 0; c < now.length; c++) {
-      const p = vertexAt(after, now[c]), q = vertexAt(after, now[(c + 1) % now.length]), r = vertexAt(after, now[(c + now.length - 1) % now.length])
-      const u = q.map((v, axis) => v - p[axis]), w = r.map((v, axis) => v - p[axis])
-      const corner = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]]
-      if (corner.reduce((s, v, axis) => s + v * b[axis], 0) < 0) against++
-    }
-    if (against > 1) return true
+    // Two corners bending against the face are a quad crossed on itself. Only
+    // a quad the join crossed counts: a user cage (impeller, 2026-11-18) had
+    // four quads far from the contact already crossed, which refused every
+    // join on that surface.
+    if (crossedCorners(after, now, b) > 1 && crossedCorners(after, now, b) > crossedCorners(before, was, a)) return true
   }
   return false
+}
+
+/** How many corners of a face bend against its area normal `n`. */
+function crossedCorners(c: Cage, f: readonly number[], n: Vec3): number {
+  let against = 0
+  for (let k = 0; k < f.length; k++) {
+    const p = vertexAt(c, f[k]), q = vertexAt(c, f[(k + 1) % f.length]), r = vertexAt(c, f[(k + f.length - 1) % f.length])
+    const u = q.map((v, axis) => v - p[axis]), w = r.map((v, axis) => v - p[axis])
+    const corner = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]]
+    if (corner.reduce((s, v, axis) => s + v * n[axis], 0) < 0) against++
+  }
+  return against
 }
 
 function validateContactGeometry(input: Cage, cage: Cage) {

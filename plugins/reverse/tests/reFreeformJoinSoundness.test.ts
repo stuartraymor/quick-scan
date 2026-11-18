@@ -35,6 +35,18 @@ it('finds a quad crossed on itself', () => {
   expect(joinFolds(before, after, same)).toBe(true)
 })
 
+it('passes a join on a cage that already has a crossed quad elsewhere (user impeller, 2026-11-18)', () => {
+  // Q0 is joined; Q1, far away, was crossed on itself before the drag. Every
+  // join on such a cage used to be refused as "This move would fold a quad".
+  const crossed = [20, 0, 0, 25, 0, 0, 18, 5, 0, 27, 5, 0]
+  const before = cage([0, 0, 0, 5, 0, 0, 5, 5, 0, 0, 5, 0, ...crossed], [[0, 1, 2, 3], [4, 5, 6, 7]])
+  const after = cage([0, 0, 0, 6, 0, 0, 5, 5, 0, 0, 5, 0, ...crossed], [[0, 1, 2, 3], [4, 5, 6, 7]])
+  expect(joinFolds(before, after, same)).toBe(false)
+  // The join itself crossing a quad is still found.
+  const crossing = cage([0, 0, 0, 5, 0, 0, -2, 5, 0, 7, 5, 0, ...crossed], [[0, 1, 2, 3], [4, 5, 6, 7]])
+  expect(joinFolds(before, crossing, same)).toBe(true)
+})
+
 it('refuses a point join that would lay one quad on its neighbour', () => {
   // Q1 and Q3 share a side; Q1's free corner joined to Q3's far corner would
   // leave them sharing three points.
