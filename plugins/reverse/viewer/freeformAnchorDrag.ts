@@ -48,6 +48,22 @@ export function moveSurfaceAnchor(cage: Cage, vertex: number, travel: Vec3, keep
   return result
 }
 
+/** Snap on release with Don't move neighbours ticked. QUICKSURFACE takes the
+ * scan point as the gesture's goal and makes the one five-correction move to
+ * it, so the control points round the picked one take up the snap as they do
+ * the drag (lifted 5 x 5 sheet, 2026-11-18, analysis/freeform-refine-2026-11-18/
+ * native: the four beside it rise 0.217 mm as the picked one drops 1.244; this
+ * fits its 36 poles to 0.016 mm). Snapping the picked control point alone, as
+ * the unticked gesture does, was 0.077 mm from it and carried the surface
+ * round the point along (0.73 mm on a curved scan); holding the ring exactly
+ * was 0.098 mm from it. `rest`: the surface points before the drag; `aim`:
+ * where the drag asked the picked one to go. */
+export function snapSurfaceAnchorHeld(cage: Cage, vertex: number, project: (p: Vec3) => Vec3 | null, rest: readonly Vec3[], aim: Vec3): Cage | null {
+  const target = project(aim)
+  if (!target || !target.every(Number.isFinite)) return null
+  return moveSurfaceAnchor(cage, vertex, target.map((p, k) => p - rest[vertex][k]) as Vec3, true)
+}
+
 /** Convert requested limit-surface anchor travel into control-pole travel.
  * The response includes the editor's optional neighbour falloff. It is
  * assembled once at pointer-down, rather than during every preview frame. */

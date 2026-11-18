@@ -1,3 +1,15 @@
+## 1.1.99 — New Freeform: joins, displays and a sound surface
+
+- Joining: a point dropped on another now joins across a slope (the depth allowance grows with the drag instead of a fixed 1 mm band); quads drawn in opposite directions join, one part being turned to fit, in point and side joins, D-pull welds, Add face, Close 4-sided hole and Bridge.
+- D handle: the join the ring shows while a pull is held is the join made on release; a pull dragged back over its own quad is refused ("Pull outward to add a quad"); the handle shows on every boundary edge at a low viewing angle.
+- Rectangle tool: a corner landing on an open point of the surface joins to it (within the 11 px join band).
+- Refused instead of made: a join that would fold the dragged quad over its neighbour, or lay two quads on one another ("This move would fold a quad").
+- Displays: a new quad always faces the viewer, whichever way it is drawn, so Shaded, Tolerance and Zebra show its front; a transparent surface keeps its front finish and its Zebra stripes.
+- Editing a control surface: points and edges are drawn and picked on the surface being edited, not on a finished body some quads behind it.
+- Undo and Redo: Undo back past the first quad and Redo return the surface to the editor instead of leaving a finished body that cannot be edited.
+- Don't move neighbours with Snap Mode on: the snap is part of the same move, as measured on the reference app; on a curved scan the surface round the dragged point moves 0.23 mm where it moved 0.73.
+- Finished CAD: a joined cage with a T join or notch is sampled more finely and sewn (four patches with three shared seams and under 0.02 mm from the edited surface, where it had no shared seam and stood 0.38 mm off).
+- Evidence: analysis/quick-scan-v1.1.99, analysis/freeform-refine-2026-11-18.
 ## 1.1.98 — 2D Sketch: full audit, agent sketch tools, stability
 
 - Audit: every sketch button was driven on the sheet (create, modify, constraints, display, keys); each draws or changes what it should, Ctrl+Z / Ctrl+Y round-trip it, Esc part-way leaves nothing, and every relation changes the solve when applied and when removed.

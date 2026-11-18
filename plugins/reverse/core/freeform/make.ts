@@ -9,7 +9,7 @@
 
 import type { FreeformAsk } from '../features'
 import type { ReKernel, Shape } from '../kernel'
-import type { Cage } from './cage'
+import { type Cage, topology } from './cage'
 import { type ConvertReport, type PatchSet, patchesBody } from './convert'
 import { displacedAlongNormals, vertexNormals } from './limit'
 import { type CagePatches, cagePatches, MAX_BLOCK_SIDE } from './patches'
@@ -21,6 +21,25 @@ import { smoothSnappedSheet, type SmoothSnapReference } from './smoothSnap'
 export const MAX_STEPS = 4
 /** The most refined quads sampled: a cage's faces × 4^steps. */
 export const MAX_SAMPLED_QUADS = 600_000
+
+/** The refinement a control surface with an irregular point is sampled at,
+ *  and the most refined quads that is done for: a larger cage keeps the
+ *  refinement it asked for. */
+const IRREGULAR_STEPS = 4
+const IRREGULAR_SAMPLED_QUADS = 160_000
+
+/** A point the limit surface is not bicubic round: inside the cage with
+ *  other than four faces, or on its boundary with more than two (a notch, or
+ *  quads joined to a T). A creased cage is left to the refinement it asked. */
+function hasIrregularPoint(cage: Cage): boolean {
+  if (cage.creases.length > 0 || cage.faces.some((f) => f.length !== 4)) return false
+  const t = topology(cage)
+  return t.vertexFaces.some((faces, v) => {
+    if (faces.length === 0) return false
+    const boundary = t.vertexEdges[v].some((e) => t.edges[e].faces.length < 2)
+    return boundary ? faces.length > 2 : faces.length !== 4
+  })
+}
 
 /** What a freeform step reports. */
 export interface FreeformReport {
@@ -89,6 +108,15 @@ export function freeformBody(k: ReKernel, cage: Cage, opts: { steps: number; sna
       return shift === 0 ? positions : displacedAlongNormals(positions, fine.faces, shift)
     }, maxSide)
   let used = Math.max(1, Math.min(MAX_STEPS, Math.round(opts.steps)))
+  // A control surface is made the surface the editor shows. Where the cage
+  // is regular that surface is a bicubic one and a face through a few
+  // samples of it is it. Round an irregular point — quads joined to a T, a
+  // notch, a pole with three or five quads — it is not, and at two
+  // refinements the faces stood 0.38 mm off the surface edited and measured
+  // (joined 10-quad sheet, 2026-11-18) and would not sew; at four, 0.007 mm.
+  // A thickened or offset cage keeps its own refinement: its walls are
+  // sampled to match, and were proved at that.
+  if (!snap && !ask && used < IRREGULAR_STEPS && cage.faces.length * 4 ** IRREGULAR_STEPS <= IRREGULAR_SAMPLED_QUADS && hasIrregularPoint(cage)) used = IRREGULAR_STEPS
   for (;;) {
     if (cage.faces.length * 4 ** used > MAX_SAMPLED_QUADS) throw new Error(`The cage has ${cage.faces.length} faces; refined ${used} times it is more than ${MAX_SAMPLED_QUADS} quads to sample.`)
     let made: ReturnType<typeof patchesBody> | undefined
@@ -98,7 +126,9 @@ export function freeformBody(k: ReKernel, cage: Cage, opts: { steps: number; sna
       const last = used >= MAX_STEPS || cage.faces.length * 4 ** (used + 1) > MAX_SAMPLED_QUADS
       // Global refinement can collapse projected samples. Split a poorly fitting
       // snapped grid locally while retaining the requested sample resolution.
-      made = patchesBody(k, patchSet(patches), snap || last)
+      // An open control surface is one sheet: its faces sew along every
+      // edge two blocks share, leaving only the cage's own boundary open.
+      made = patchesBody(k, patchSet(patches), snap || last, false, !snap && !patches.closed ? expectedBoundary(patches) * 1.03 + .05 : undefined)
       // Independently interpolated CAD faces can leave open edges along
       // what should be shared by adjacent grids. A bounded fallback uses
       // the same straight boundary on both sides of every sample cell.

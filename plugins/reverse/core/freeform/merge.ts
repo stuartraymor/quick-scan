@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { type Cage, edgeKey, topology, vertexAt } from './cage'
-import { cloneCage, snapSelected } from './edit'
+import { cloneCage, snapSelected, windConsistently } from './edit'
 import { cageVertexLimits } from './limit'
 import type { Vec3 } from '../../../../src/core/types'
 
@@ -44,17 +44,58 @@ export function fitMergedContact(input: Cage, selected: readonly number[], contr
   return out
 }
 
+/** A face's area normal (twice its area long), by its own winding. */
+function normal(c: Cage, f: readonly number[]): Vec3 {
+  const p = vertexAt(c, f[0]), result: Vec3 = [0, 0, 0]
+  for (let i = 1; i + 1 < f.length; i++) {
+    const u = vertexAt(c, f[i]).map((v, k) => v - p[k]), v = vertexAt(c, f[i + 1]).map((v, k) => v - p[k])
+    result[0] += u[1] * v[2] - u[2] * v[1]; result[1] += u[2] * v[0] - u[0] * v[2]; result[2] += u[0] * v[1] - u[1] * v[0]
+  }
+  return result
+}
+
+/** A face at one of `vertices` that shares three or more points with
+ *  another: the two lie on one another, joined along two sides at once. */
+function doubledAt(c: Cage, vertices: readonly number[]): boolean {
+  const top = topology(c)
+  for (const i of new Set(vertices.flatMap(v => top.vertexFaces[v] ?? []))) {
+    const shared = new Map<number, number>()
+    for (const v of c.faces[i]) for (const f of top.vertexFaces[v]) if (f !== i) shared.set(f, (shared.get(f) ?? 0) + 1)
+    for (const count of shared.values()) if (count > 2) return true
+  }
+  return false
+}
+
+/** Whether a join left a quad turned over or crossed on itself, measured
+ *  against the cage as it was before the drag began. The join's own check
+ *  compares with the cage already dragged, where a point pulled through its
+ *  quad has turned it over before the contact is made. `after` has `before`'s
+ *  faces in order, its points renumbered by `map`. */
+export function joinFolds(before: Cage, after: Cage, map: (v: number) => number): boolean {
+  if (after.faces.length !== before.faces.length) return true
+  for (let i = 0; i < after.faces.length; i++) {
+    const was = before.faces[i], now = after.faces[i]
+    if (now.length !== was.length) return true
+    // A part turned to fit runs its faces the other way round.
+    const k = now.indexOf(map(was[0])), turned = now[(k + 1) % now.length] !== map(was[1])
+    const a = normal(before, was), b = normal(after, now), sign = turned ? -1 : 1
+    if (!(a.reduce((s, v, axis) => s + v * b[axis], 0) * sign > 0)) return true
+    // Two corners bending against the face are a quad crossed on itself.
+    let against = 0
+    for (let c = 0; c < now.length; c++) {
+      const p = vertexAt(after, now[c]), q = vertexAt(after, now[(c + 1) % now.length]), r = vertexAt(after, now[(c + now.length - 1) % now.length])
+      const u = q.map((v, axis) => v - p[axis]), w = r.map((v, axis) => v - p[axis])
+      const corner = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]]
+      if (corner.reduce((s, v, axis) => s + v * b[axis], 0) < 0) against++
+    }
+    if (against > 1) return true
+  }
+  return false
+}
+
 function validateContactGeometry(input: Cage, cage: Cage) {
   const refuse = () => { throw new Error('These boundary points cannot be merged without damaging the surface.') }
   if (!cage.positions.every(Number.isFinite)) return refuse()
-  const normal = (c: Cage, f: number[]) => {
-    const p = vertexAt(c, f[0]), result = [0, 0, 0]
-    for (let i = 1; i + 1 < f.length; i++) {
-      const u = vertexAt(c, f[i]).map((v, k) => v - p[k]), v = vertexAt(c, f[i + 1]).map((v, k) => v - p[k])
-      result[0] += u[1] * v[2] - u[2] * v[1]; result[1] += u[2] * v[0] - u[0] * v[2]; result[2] += u[0] * v[1] - u[1] * v[0]
-    }
-    return result
-  }
   for (let i = 0; i < cage.faces.length; i++) {
     const a = normal(input, input.faces[i]), b = normal(cage, cage.faces[i]), scale = Math.hypot(...a)
     if (!(a.reduce((s, v, k) => s + v * b[k], 0) > scale * scale * 1e-12)) return refuse()
@@ -153,13 +194,9 @@ export function weldExtension(original: Cage, extended: Cage, welds: readonly (r
     if (faces.has(key)) return refuse()
     faces.add(key)
   }
-  for (const e of top.edges) {
-    if (e.faces.length > 2) return refuse()
-    if (e.faces.length === 2) {
-      const forward = e.faces.map(fi => { const f = cage.faces[fi]; return f[(f.indexOf(e.a) + 1) % f.length] === e.b })
-      if (forward[0] === forward[1]) return refuse()
-    }
-  }
+  if (top.edges.some(e => e.faces.length > 2) || doubledAt(cage, welds.map(([, to]) => at[to]))) return refuse()
+  // A pull welded onto a part wound the other way turns one part to fit.
+  cage.faces = windConsistently(cage.faces)
   cage.creases = cage.creases.filter((e, i, all) => e[0] !== e[1] && all.findIndex(q => edgeKey(...q) === edgeKey(...e)) === i)
   return { cage, mapping: at }
 }
@@ -180,8 +217,8 @@ function mergeBoundaryContacts(input: Cage, pairs: readonly (readonly [number, n
   const boundary = (v: number) => before.vertexEdges[v].some(e => before.edges[e].faces.length === 1)
   if (new Set(pairs.flat()).size !== pairs.length * 2) return refuse()
   for (const [from, to] of pairs) {
-  if (![from, to].every(v => Number.isInteger(v) && v >= 0 && v < n) || from === to) return refuse()
-  if (!boundary(from) || !boundary(to) || input.faces.some(f => f.includes(from) && f.includes(to))) return refuse()
+    if (![from, to].every(v => Number.isInteger(v) && v >= 0 && v < n) || from === to) return refuse()
+    if (!boundary(from) || !boundary(to) || input.faces.some(f => f.includes(from) && f.includes(to))) return refuse()
   }
   const moved = cloneCage(input)
   for (const [from, to] of pairs) moved.positions.set(vertexAt(input, to), from * 3)
@@ -209,26 +246,22 @@ function mergeBoundaryContacts(input: Cage, pairs: readonly (readonly [number, n
     if (faces.has(key)) return refuse()
     faces.add(key)
   }
-  for (const e of top.edges.filter(e => e.faces.length === 2)) {
-    const forward = e.faces.map(fi => { const f = cage.faces[fi]; return f[(f.indexOf(e.a) + 1) % f.length] === e.b })
-    if (forward[0] === forward[1]) return refuse()
-  }
+  if (doubledAt(cage, pairs.map(([, to]) => mapping[to]))) return refuse()
+  // Two quads drawn in opposite senses meet with their shared edge running
+  // the same way in both. That used to refuse the join (after the first
+  // point had welded, the second never would); the part being joined on is
+  // turned to fit instead, the part it is dropped on keeping its sense.
+  const joined = cage.faces
+  cage.faces = windConsistently(joined, joined.flatMap((f, i) => pairs.some(([, to]) => f.includes(mapping[to])) ? [i] : []))
+  const turned = cage.faces.map((f, i) => f !== joined[i])
   for (let step = 0; step < 4; step++) {
     const current = contactLimits(cage)
     cage.positions = Float64Array.from(cage.positions, (p, k) => p + anchors[kept[Math.floor(k / 3)]][k % 3] - current[Math.floor(k / 3)][k % 3])
   }
   if (!cage.positions.every(Number.isFinite)) return refuse()
-  const normal = (c: Cage, f: number[]) => {
-    const p = vertexAt(c, f[0]), result = [0, 0, 0]
-    for (let i = 1; i + 1 < f.length; i++) {
-      const u = vertexAt(c, f[i]).map((v, k) => v - p[k]), v = vertexAt(c, f[i + 1]).map((v, k) => v - p[k])
-      result[0] += u[1] * v[2] - u[2] * v[1]; result[1] += u[2] * v[0] - u[0] * v[2]; result[2] += u[0] * v[1] - u[1] * v[0]
-    }
-    return result
-  }
   for (let i = 0; i < cage.faces.length; i++) {
     const a = normal(input, input.faces[i]), b = normal(cage, cage.faces[i]), scale = Math.hypot(...a)
-    if (!(a.reduce((s, v, k) => s + v * b[k], 0) > scale * scale * 1e-12)) return refuse()
+    if (!(a.reduce((s, v, k) => s + v * b[k], 0) * (turned[i] ? -1 : 1) > scale * scale * 1e-12)) return refuse()
     for (const v of cage.faces[i]) for (const ei of top.vertexEdges[v]) {
       const e = top.edges[ei], p = vertexAt(cage, e.a), q = vertexAt(cage, e.b)
       if (!(p.reduce((s, v, k) => s + (v - q[k]) ** 2, 0) > scale * 1e-20)) return refuse()

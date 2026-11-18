@@ -65,13 +65,29 @@ function selectedHole(c: Cage, selection: readonly FreeformSelection[]): number[
   if (edges.length !== 4 || edges.some(e => e.faces.length !== 1)) return undefined
   // Follow only this selected boundary cycle. Other edges at a shared
   // vertex must not divert the walk away from the complete opening.
-  const next = new Map<number, number>(), incoming = new Set<number>()
+  let next: Map<number, number> | null = new Map<number, number>()
+  const incoming = new Set<number>()
   for (const edge of edges) {
     const face = c.faces[edge.faces[0]], k = face.indexOf(edge.a)
     const a = face[(k + 1) % face.length] === edge.b ? edge.a : edge.b
     const b = a === edge.a ? edge.b : edge.a
-    if (next.has(a) || incoming.has(b)) return undefined
+    if (next.has(a) || incoming.has(b)) { next = null; break }
     next.set(a, b); incoming.add(b)
+  }
+  if (!next) {
+    // The quads round the hole are not all wound one way (quads drawn in
+    // opposite senses, meeting only at corners): the four edges still close
+    // one cycle, walked by which edge follows which. Closing the hole winds
+    // the parts to fit.
+    const around = new Map<number, number[]>()
+    for (const edge of edges) for (const [a, b] of [[edge.a, edge.b], [edge.b, edge.a]]) around.set(a, [...(around.get(a) ?? []), b])
+    if (around.size !== 4 || [...around.values()].some(n => n.length !== 2)) return undefined
+    next = new Map<number, number>()
+    let before = -1, at = vertices[0]
+    for (let i = 0; i < 4; i++) {
+      const to: number = around.get(at)!.find(v => v !== before)!
+      next.set(at, to); before = at; at = to
+    }
   }
   const loop = [vertices[0]]
   for (let i = 1; i < 4; i++) {
@@ -129,19 +145,29 @@ function bridgeChains(c: Cage, selection: readonly FreeformSelection[]): number[
  * from the face-to-face tube operation exposed through the shared API. */
 function bridgeEdges(c: Cage, selection: readonly FreeformSelection[]): Cage {
   const [a, b] = bridgeChains(c, selection)
-  const opposite = b.slice().reverse()
+  // Each chain runs the way its own faces are wound. Across a gap between
+  // parts wound one way the second runs back along the first; between parts
+  // wound against one another it runs alongside, and is paired as it comes
+  // (the new quads then wind the parts to fit).
+  try { return bridgeBetween(c, a, b.slice().reverse()) }
+  catch (error) {
+    try { return bridgeBetween(c, a, b) } catch { throw error }
+  }
+}
+
+function bridgeBetween(c: Cage, a: number[], opposite: number[]): Cage {
   let result = c
   for (let k = 0; k < a.length - 1; k++) {
-  const corners = [a[k + 1], a[k], opposite[k], opposite[k + 1]]
-  if (c.faces.some(face => face.length === 4 && face.every(v => corners.includes(v)))) throw new Error('The selected edges already bound one face.')
-  // Two triangle normals must agree: reject collapsed or twisted-over quads.
-  const points = corners.map(v => vertexAt(c, v))
-  const sub = (a: number[], b: number[]) => a.map((v, i) => v - b[i])
-  const cross = (a: number[], b: number[]) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]
-  const n1 = cross(sub(points[1], points[0]), sub(points[2], points[0]))
-  const n2 = cross(sub(points[2], points[0]), sub(points[3], points[0]))
-  if (!(n1.reduce((sum, v, i) => sum + v*n2[i], 0) > 1e-20)) throw new Error('The bridge would be folded or collapsed.')
-  result = addFace(result, corners)
+    const corners = [a[k + 1], a[k], opposite[k], opposite[k + 1]]
+    if (c.faces.some(face => face.length === 4 && face.every(v => corners.includes(v)))) throw new Error('The selected edges already bound one face.')
+    // Two triangle normals must agree: reject collapsed or twisted-over quads.
+    const points = corners.map(v => vertexAt(c, v))
+    const sub = (a: number[], b: number[]) => a.map((v, i) => v - b[i])
+    const cross = (a: number[], b: number[]) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]
+    const n1 = cross(sub(points[1], points[0]), sub(points[2], points[0]))
+    const n2 = cross(sub(points[2], points[0]), sub(points[3], points[0]))
+    if (!(n1.reduce((sum, v, i) => sum + v*n2[i], 0) > 1e-20)) throw new Error('The bridge would be folded or collapsed.')
+    result = addFace(result, corners)
   }
   return result
 }

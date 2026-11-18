@@ -293,7 +293,9 @@ try {
  assert.equal(await page.evaluate(()=>[...window.__re.reScene().bodyMeshes.values()].every(m=>!m.visible)),true)
  await page.evaluate(()=>Array.from(document.querySelectorAll('[data-test=freeform-editor] form button')).find(e=>e.textContent==='Close').click())
  await page.waitForSelector('[data-test=freeform-editor]',{hidden:true})
- assert.equal(await page.evaluate(()=>[...window.__re.reScene().bodyMeshes.values()].some(m=>m.visible)),true)
+ // The body of a control surface is built when the editor closes, unless an
+ // editing pause built it already: shown as soon as that build is in.
+ await page.waitForFunction(()=>!window.__re.store.getState().building&&[...window.__re.reScene().bodyMeshes.values()].some(m=>m.visible),{timeout:60000})
  await page.click('[data-test=ribbon-new-freeform]'); await page.waitForSelector('[data-test=freeform-editor]')
  await page.select('[aria-label="Freeform surface"]',String((await state()).features[0].id))
  await page.waitForFunction(()=>document.querySelector('[data-test=freeform-status]')?.textContent.includes('3 faces'))

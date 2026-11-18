@@ -18,8 +18,8 @@ import { type Corner, addFace, cloneCage, edgeLine, extrapolateEdges, movePoints
 import { validateAddedFaces } from '../core/freeform/connectionGeometry'
 import { previewEvaluation, previewTopologyKey } from '../core/freeform/previewEvaluation'
 import { cageVertexLimits } from '../core/freeform/limit'
-import { moveSurfaceAnchor, surfaceAnchorDrag, snapSurfaceAnchors } from './freeformAnchorDrag'
-import { fitMergedContact, mergeBoundaryEdge, mergeBoundaryPoint, mergeChainEnds, weldExtension } from '../core/freeform/merge'
+import { moveSurfaceAnchor, snapSurfaceAnchorHeld, snapSurfaceAnchors, surfaceAnchorDrag } from './freeformAnchorDrag'
+import { fitMergedContact, joinFolds, mergeBoundaryEdge, mergeBoundaryPoint, mergeChainEnds, weldExtension } from '../core/freeform/merge'
 import { liveDeviationGrid } from '../core/freeform/liveDeviationGrid'
 import { deviationAtlasValues } from '../core/freeform/deviationAtlas'
 import type { KernelMesh } from '../core/kernel'
@@ -76,7 +76,8 @@ export interface FreeformEditorOptions {
   onCommit?(cage: Cage, selection?: FreeformPick[]): void
   creationTool?: 'face' | 'rectangle'
   onCreatePoint?(point: Vec3, vertex?: number): void
-  onCreateRectangle?(corners: Vec3[]): void
+  /** `vertices[i]`: the open point of the surface corner `i` landed on. */
+  onCreateRectangle?(corners: Vec3[], vertices: (number | undefined)[]): void
   onCancelCreation?(): void
   brush?: { kind: 'faces' } | { kind: 'smooth'; radius: number; onStroke(vertices: number[]): void }
   onPreview?(cage: Cage, dragging: boolean): void
@@ -205,6 +206,7 @@ export class FreeformEditorLayer {
   }
   private rectangleStart: { x: number; y: number } | null = null
   private rectanglePreview: Vec3[] | null = null
+  private rectangleVertices: (number | undefined)[] = []
   private hovered: FreeformPick | null = null
   private group = new THREE.Group()
   private faces: THREE.Mesh[] = []
@@ -429,8 +431,8 @@ export class FreeformEditorLayer {
       const corners = this.rectanglePreview ?? (this.options.creationCorners?.length === 3 && this.placementPoint
         ? [...this.options.creationCorners, this.placementPoint] : null)
       if (corners) {
-        const vertices = this.rectanglePreview ? [] : [...(this.options.creationVertices ?? []), this.placementVertex]
-        try { cage = addFace(cage ?? {positions:new Float64Array(),faces:[],creases:[]}, corners.map((p,i) => vertices[i] ?? p)) }
+        const vertices = this.rectanglePreview ? this.rectangleVertices : [...(this.options.creationVertices ?? []), this.placementVertex]
+        try { cage = addFace(cage ?? {positions:new Float64Array(),faces:[],creases:[]}, corners.map((p,i) => vertices[i] ?? p), this.seenAlong(corners)) }
         catch { /* An incomplete/invalid candidate retains the placement markers. */ }
       }
     }
@@ -464,7 +466,15 @@ export class FreeformEditorLayer {
         #ifdef USE_COLOR
           plainSurface = distance(vColor, vec3(${new THREE.Color(SURFACE).toArray().join(', ')})) < 0.001;
         #endif
-        if (gl_FrontFacing && plainSurface) {
+        // A transparent surface is drawn in two passes, the first with the
+        // front-face sense turned round (FLIP_SIDED): read there as it stood,
+        // gl_FrontFacing gave the side facing the viewer the reverse finish,
+        // so a transparent surface turned orange and lost its zebra stripes.
+        bool reverseSide = gl_FrontFacing;
+        #ifdef FLIP_SIDED
+          reverseSide = !reverseSide;
+        #endif
+        if (reverseSide && plainSurface) {
           float backLight = max(0.0, 0.5292 + dot(normalize(normal), vec3(-0.1469, 0.2070, 0.5218))) / 1.051;
           gl_FragColor.rgb = clamp(vec3(242.0, 106.0, 48.0) / 255.0 * backLight, 0.0, 1.0);
         }
@@ -838,10 +848,24 @@ export class FreeformEditorLayer {
       }
       this.tick(); this.host.invalidate()
     }
+    /** The way the viewer looks at these points, in the part's own frame: a
+     *  face drawn through them is wound to show this side its front. */
+    seenAlong(points: readonly Vec3[]): Vec3 {
+      const camera = this.host.camera(), part = this.host.partGroup
+      part.updateWorldMatrix(true, false)
+      const along = camera.getWorldDirection(new THREE.Vector3())
+      if (camera instanceof THREE.PerspectiveCamera && points.length) {
+        const centre = new THREE.Vector3()
+        for (const p of points) centre.add(part.localToWorld(new THREE.Vector3(...p)))
+        along.copy(centre.divideScalar(points.length)).sub(camera.getWorldPosition(new THREE.Vector3())).normalize()
+      }
+      return along.applyQuaternion(part.getWorldQuaternion(new THREE.Quaternion()).invert()).toArray() as Vec3
+    }
     cancelPlacement(): void {
       this.placementPoint = null
       this.rectangleStart = null
       this.rectanglePreview = null
+      this.rectangleVertices = []
     }
     private faceCorner(x: number, y: number): { point: Vec3; corner: Corner } | null {
       // The Add face tool can reuse a pole even when the editor is in an
@@ -851,11 +875,39 @@ export class FreeformEditorLayer {
       const hit = this.host.pickScan(x, y)
       return hit ? { point: hit.point, corner: hit.point } : null
     }
-    private rectangleAt(x: number, y: number): Vec3[] | null {
+    private rectangleAt(x: number, y: number): { points: Vec3[]; vertices: (number | undefined)[] } | null {
       const start = this.rectangleStart
       if (!start || Math.abs(x - start.x) < 2 || Math.abs(y - start.y) < 2) return null
-      const points = [[start.x, start.y], [x, start.y], [x, y], [start.x, y]].map(([a, b]) => this.host.pickScan(a, b)?.point)
-      return points.every((p): p is Vec3 => p !== undefined) ? points : null
+      const points: Vec3[] = [], vertices: (number | undefined)[] = []
+      for (const [a, b] of [[start.x, start.y], [x, start.y], [x, y], [start.x, y]]) {
+        const scan = this.host.pickScan(a, b)?.point
+        const vertex = this.openPointAt(a, b, scan)
+        const point = vertex !== undefined && this.cage ? this.displayPoint(this.cage, vertex) : scan
+        if (!point) return null
+        points.push(point); vertices.push(vertex)
+      }
+      return { points, vertices }
+    }
+    /** The open (boundary) point of the surface a rectangle's corner lands
+     *  on, within the band a dragged point joins in: the rectangle is joined
+     *  to the surface there, as Add face is by picking the point. A point
+     *  lying behind the scan under the corner is not taken. */
+    private openPointAt(x: number, y: number, scan: Vec3 | undefined): number | undefined {
+      const cage = this.cage
+      if (!cage) return undefined
+      const visible = this.visible(cage), top = visible.top, part = this.host.partGroup
+      part.updateWorldMatrix(true, false)
+      const along = this.host.camera().getWorldDirection(new THREE.Vector3())
+      const depth = (p: Vec3) => part.localToWorld(new THREE.Vector3(...p)).dot(along)
+      const limit = scan ? depth(scan) + this.host.modelRadius() * .02 : Infinity
+      let best: number | undefined, nearest = MERGE_CAPTURE_PX
+      for (let v = 0; v < cage.positions.length / 3; v++) {
+        if (!visible.vertices[v] || !top.vertexEdges[v].some(e => top.edges[e].faces.length === 1)) continue
+        const p = this.displayPoint(cage, v), at = this.project(p), d = Math.hypot(at.x - x, at.y - y)
+        if (at.z < -1 || at.z > 1 || !(d < nearest) || depth(p) > limit) continue
+        best = v; nearest = d
+      }
+      return best
     }
     private displayPoint(cage: Cage, index: number): Vec3 {
       if (this.options.controlNet !== false) return vertexAt(cage, index)
@@ -864,6 +916,11 @@ export class FreeformEditorLayer {
     }
     private guideSurface(cage: Cage) {
       if (cage !== this.cage || this.preview || this.options.hiddenFaces?.length) return null
+      // A control surface is drawn from its own evaluation, and its CAD body
+      // is built only after a pause: that body can be several quads behind
+      // the cage. Guiding points and edges onto it drew and picked the new
+      // quads' corners on the old body.
+      if (this.options.fitToScan === false) return null
       const geometry = this.options.finishedSurface
       if (!geometry?.index?.count) return null
       const surface = this.surface(cage)
@@ -874,7 +931,10 @@ export class FreeformEditorLayer {
       return this.finishedGuides = { geometry, surface, tree: new MeshBVH(geometry, options), paths: new Map() }
     }
     private finishedPoint(cage: Cage, point: THREE.Vector3) {
-      return this.guideSurface(cage)?.tree.closestPointToPoint(point, undefined, 0, this.host.modelRadius() * .02)?.point
+      // The search bound only prunes: a hit beyond it is still returned.
+      const reach = this.host.modelRadius() * .02
+      const hit = this.guideSurface(cage)?.tree.closestPointToPoint(point, undefined, 0, reach)
+      return hit && hit.distance <= reach ? hit.point : undefined
     }
     private edgePath(cage: Cage, index: number): Vec3[] {
       if (this.options.controlNet !== false) {
@@ -991,7 +1051,7 @@ export class FreeformEditorLayer {
           const a = vertexAt(cage, edge.a), b = vertexAt(cage, edge.b)
           midpoint = a.map((value, axis) => (value + b[axis]) / 2) as Vec3
         }
-        if (this.preview || this.unobscured(midpoint)) {
+        if (this.preview || this.unobscured(midpoint, edge.faces)) {
           return { edge, indices: selection.map(pick => pick.index), at: this.project(midpoint) }
         }
       }
@@ -1009,11 +1069,15 @@ export class FreeformEditorLayer {
       const r = this.host.container.getBoundingClientRect()
       Object.assign(this.duplicate.style, { display: 'block', left: `${handle.at.x - r.left - 10}px`, top: `${handle.at.y - r.top - 10}px` })
     }
-    private unobscured(point: Vec3) {
+    /** `own`: faces the point lies on, which cannot hide it. The drawn
+     *  surface is flat pieces of a curved one, so seen at a low angle a point
+     *  of the true edge can lie just behind the piece it belongs to. */
+    private unobscured(point: Vec3, own?: readonly number[]) {
       const p=this.project(point)
       if(p.z < -1 || p.z > 1) return false
       this.host.setPickRay(p.x,p.y);this.group.updateWorldMatrix(true,true)
       const hit=this.host.raycaster.intersectObjects(this.options.controlNet===false?this.faces:this.controlOccluders,false)[0]
+      if(own && hit?.faceIndex!=null && own.includes(hit.object.userData.faceOwners?.[hit.faceIndex])) return true
       const world=this.host.partGroup.localToWorld(new THREE.Vector3(...point))
       return !hit || world.sub(this.host.raycaster.ray.origin).dot(this.host.raycaster.ray.direction)<=hit.distance+this.host.modelRadius()*1e-4
     }
@@ -1216,6 +1280,10 @@ export class FreeformEditorLayer {
       // grabbed is a contact, as QUICKSURFACE takes it, not a click.
       let travelled = false
       let activeContact: { from: number; to: number; otherTo?: number } | null = null
+      // The welds a held D pull was showing (new corner, existing point). On
+      // release the new corners are first snapped to the scan, which can carry
+      // them out of the band: the join the ring promised is kept.
+      let shownWelds: [number, number][] = []
       // Direct point contact is paired in both display modes, including the
       // evaluated no-neighbour rule above. Constrained handles stay excluded.
       const chainEnds = !grip && !duplicate && hit.kind === 'edge' && this.selection.every(p => p.kind === 'edge')
@@ -1223,6 +1291,25 @@ export class FreeformEditorLayer {
       const mergeSources = chainEnds.length ? chainEnds : !grip && !duplicate && (!anchors || evaluatedContact) && vertices.length === 1 && hit.kind === 'vertex' &&
         top.vertexEdges[vertices[0]].some(i => top.edges[i].faces.length === 1) ? [vertices[0]] : []
       const visible = this.visible(original)
+      // A dragged point travels in the screen plane, so on a curved scan it
+      // reaches its target at another depth than the target's. The former
+      // fixed band (0.01 of the depth range, about 1 mm on a 140 mm part)
+      // silently refused such joins and left two points lying on one another.
+      // The band still passes; beyond it the depths may differ by what a
+      // surface sloping up to 63° gains between where the point was picked up
+      // and the target, which keeps a drop of a few pixels from welding
+      // through to another layer.
+      const viewDirection = host.camera().getWorldDirection(new THREE.Vector3())
+      const worldOf = (p: Vec3) => host.partGroup.localToWorld(new THREE.Vector3(...p))
+      const pickedUp = vertices.map(v => worldOf(anchors?.[v] ?? vertexAt(original, v)))
+      const sameLayer = (dropped: Vec3, target: Vec3) => {
+        if (Math.abs(this.project(dropped).z - this.project(target).z) <= .01) return true
+        const t = worldOf(target), depth = Math.abs(worldOf(dropped).sub(t).dot(viewDirection))
+        return pickedUp.some(from => {
+          const d = t.clone().sub(from), along = d.dot(viewDirection)
+          return depth <= 2 * Math.sqrt(Math.max(0, d.lengthSq() - along * along))
+        })
+      }
       const dragFeedback = (invalid: boolean) => {
         blocked = invalid
         if (this.dragHint) {
@@ -1302,7 +1389,9 @@ export class FreeformEditorLayer {
           ? rayContactPoint ? moveSurfaceAnchor(original, vertices[0], delta.toArray() as Vec3, true) : cloneCage(current) : null
         if (changed && options.snapPoint && !options.rayPoint && options.controlNet === false && releasing) {
           const ids = duplicate ? Array.from({length:(current.positions.length-original.positions.length)/3}, (_, i) => original.positions.length/3+i) : vertices
-          const snapped = snapSurfaceAnchors(current, ids, options.snapPoint)
+          const snapped = evaluatedPoint && (options.neighbourRadius ?? 0) === 0 && anchors
+            ? snapSurfaceAnchorHeld(original, vertices[0], options.snapPoint, anchors, anchors[vertices[0]].map((p, k) => p + delta.getComponent(k)) as Vec3)
+            : snapSurfaceAnchors(current, ids, options.snapPoint)
           if (snapped) current = snapped
           else { current = original; nextSelection = this.selection.slice(); changed = false }
         } else if (changed && options.snapPoint && (!deferSnap || releasing)) {
@@ -1331,15 +1420,20 @@ export class FreeformEditorLayer {
           // it, Merge and the ring showing while held (paired 2026-11-17).
           const existing = original.positions.length / 3, welds: [number, number][] = [], taken = new Set<number>()
           for (let v = existing; v < current.positions.length / 3; v++) {
-            const at = this.project(vertexAt(current, v))
+            // A new corner has one quad, so it is drawn where its control point is.
+            const corner = vertexAt(current, v), at = this.project(corner)
             let best: { w: number; d: number } | null = null
-            for (let w = 0; w < existing; w++) {
+            const shown = releasing ? shownWelds.find(([corner]) => corner === v) : undefined
+            if (shown && !taken.has(shown[1])) best = { w: shown[1], d: 0 }
+            else for (let w = 0; w < existing; w++) {
               if (!visible.vertices[w] || vertices.includes(w) || taken.has(w) || !top.vertexEdges[w].some(i => top.edges[i].faces.length === 1)) continue
-              const s = this.project(anchors ? anchors[w] : vertexAt(original, w)), d = Math.hypot(s.x - at.x, s.y - at.y)
-              if (d < MERGE_CAPTURE_PX && Math.abs(s.z - at.z) <= .01 && (!best || d < best.d)) best = { w, d }
+              const target = anchors ? anchors[w] : vertexAt(original, w)
+              const s = this.project(target), d = Math.hypot(s.x - at.x, s.y - at.y)
+              if (d < MERGE_CAPTURE_PX && (!best || d < best.d) && sameLayer(corner, target)) best = { w, d }
             }
             if (best) { welds.push([v, best.w]); taken.add(best.w) }
           }
+          if (!releasing) shownWelds = welds
           if (welds.length) {
             try {
               current = weldExtension(original, current, welds).cage
@@ -1353,7 +1447,8 @@ export class FreeformEditorLayer {
           // Release projection must not move an already-visible raw contact
           // outside the capture band. Search the same gesture used to join.
           const contact = contactCage ?? current
-          const at = this.project(evaluatedContact ? cageVertexLimits(contact)[mergeSource] : vertexAt(contact, mergeSource))
+          const dropped = evaluatedContact ? cageVertexLimits(contact)[mergeSource] : vertexAt(contact, mergeSource)
+          const at = this.project(dropped)
           const candidates = visible.vertices.flatMap((shown, v) => {
             if (!shown || vertices.includes(v) || !top.vertexEdges[v].some(i => top.edges[i].faces.length === 1)) return []
             const p = evaluatedContact ? anchors![v] : vertexAt(original, v), screen = this.project(p), distance = Math.hypot(screen.x - at.x, screen.y - at.y)
@@ -1369,7 +1464,7 @@ export class FreeformEditorLayer {
             // already-visible target during release, within the same capture
             // band/depth, instead of letting the preview occlude itself.
             const captured = previousContact?.from === mergeSource && previousContact.to === v
-            if (!(distance < MERGE_CAPTURE_PX) || (!captured && !this.unobscured(p)) || Math.abs(screen.z - at.z) > .01) return []
+            if (!(distance < MERGE_CAPTURE_PX) || (!captured && !this.unobscured(p)) || !sameLayer(dropped, p)) return []
             return [{ v, distance }]
           }).sort((a, b) => a.distance - b.distance)
           for (const candidate of candidates) {
@@ -1385,7 +1480,7 @@ export class FreeformEditorLayer {
                 .find(v => {
                   if (!visible.vertices[v] || vertices.includes(v)) return false
                   const p = vertexAt(original, v), screen = this.project(p)
-                  return Math.hypot(screen.x - otherAt.x, screen.y - otherAt.y) < MERGE_CAPTURE_PX && Math.abs(screen.z - otherAt.z) <= .01 &&
+                  return Math.hypot(screen.x - otherAt.x, screen.y - otherAt.y) < MERGE_CAPTURE_PX && sameLayer(vertexAt(contact, otherFrom!), p) &&
                     (previousContact?.otherTo === v || this.unobscured(p))
                 }) : undefined
               const paired = otherTo !== undefined && otherFrom !== undefined
@@ -1401,6 +1496,10 @@ export class FreeformEditorLayer {
                 joined = fitMergedContact(joined, vertices.map(map), options.controlNet !== false,
                   options.snapPoint!, position ? { vertex: result.vertex, position } : undefined)
               }
+              // A point dragged through its own quad and dropped on a point
+              // beyond it joined, leaving the quad turned over on its
+              // neighbour. That is a refused contact like any other.
+              if (joinFolds(original, joined, map)) throw new Error('The join would fold a quad.')
               current = joined
               if (chainEnds.length) {
                 const newEdges = topology(current).edges
@@ -1495,7 +1594,7 @@ export class FreeformEditorLayer {
                 const corners = this.rectangleAt(x, y)
                 if (corners) {
                   this.cancelPlacement()
-                  this.options.onCreateRectangle?.(corners)
+                  this.options.onCreateRectangle?.(corners.points, corners.vertices)
                 } else this.options.onError?.(new Error('All four rectangle corners must land on the reference mesh.'))
               }
             } else {
@@ -1518,7 +1617,9 @@ export class FreeformEditorLayer {
           }
           if (this.options.creating) {
             if (this.options.creationTool === 'rectangle' && this.rectangleStart) {
-              this.rectanglePreview = !covered && at ? this.rectangleAt(at.x, at.y) : null
+              const rectangle = !covered && at ? this.rectangleAt(at.x, at.y) : null
+              this.rectanglePreview = rectangle?.points ?? null
+              this.rectangleVertices = rectangle?.vertices ?? []
               this.draw(this.cage)
               this.host.setCursor('crosshair')
               return !!this.rectanglePreview

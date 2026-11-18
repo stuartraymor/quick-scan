@@ -182,7 +182,12 @@ function trimFittedGrids(k: ReKernel, inUse: ReadonlySet<Shape>): void {
 /** `cells`: a piece that will not follow its samples at the smallest size
  *  is cut to its cells rather than refused — for a cage that cannot be
  *  refined further. */
-export function patchesBody(k: ReKernel, patches: PatchSet, cells = false, sharedCellEdges = false): { shape: Shape; report: ConvertReport } {
+/** `openLimit`: for an open cage, the length of open edge its body should
+ *  have (its own boundary, with some slack). Sewn at a micron with more than
+ *  that left open, neighbouring faces did not take one another's edge — each
+ *  is a surface through its own samples and they part between the samples —
+ *  and the looser tolerances are tried in turn, as for a closed cage. */
+export function patchesBody(k: ReKernel, patches: PatchSet, cells = false, sharedCellEdges = false, openLimit?: number): { shape: Shape; report: ConvertReport } {
   const faces: Shape[] = []
   // Faces the fitted-grid cache owns: sewn in, never released here.
   const held = new Set<Shape>()
@@ -212,6 +217,17 @@ export function patchesBody(k: ReKernel, patches: PatchSet, cells = false, share
         k.release(tried)
       }
       shape = closed ?? k.sewPatches(faces, SEW_TOLERANCE, false)
+    }
+    if (!patches.closed && faces.length > 1 && openLimit !== undefined && k.openEdgeLength(shape, true) > openLimit) {
+      for (const tolerance of SEW_LOOSER) {
+        const tried = k.sewPatches(faces, tolerance, false)
+        if (k.openEdgeLength(tried, true) <= openLimit && k.isValid(tried)) {
+          k.release(shape)
+          shape = tried
+          break
+        }
+        k.release(tried)
+      }
     }
     const solid = patches.closed && k.isClosedSolid(shape)
     const largest = patches.blocks.reduce((m, b) => (b.faces.length > m.rows * m.cols ? { rows: b.rows - 1, cols: b.cols - 1 } : m), { rows: 0, cols: 0 })

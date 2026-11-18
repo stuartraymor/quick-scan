@@ -438,9 +438,9 @@ export function FreeformEditor() {
       onContext: (x, y, hit) => {toolbarHover.current=false;setMenuText(true);setMenu({ x, y, hit: !!hit || selection.length > 0 })},
       onCommit: (next, picks) => { if (!busy.current) void commit(next, picks) },
       onError: e => setError(e.message),
-      onCreateRectangle: points => {
+      onCreateRectangle: (points, vertices) => {
         try {
-          const next = addFace(cage ?? empty(), points)
+          const next = addFace(cage ?? empty(), points.map((p, i) => vertices[i] ?? p), layer.current?.seenAlong(points))
           chooseTool('manipulate')
           void commit(next)
         } catch (e) { setError((e as Error).message) }
@@ -459,7 +459,7 @@ export function FreeformEditor() {
         current.current.corners = next
         if (next.length === 4) {
           try {
-            const result = addFace(cage ?? empty(), next.map((p, i) => vertices[i] ?? p))
+            const result = addFace(cage ?? empty(), next.map((p, i) => vertices[i] ?? p), layer.current?.seenAlong(next))
             chooseTool('manipulate')
             placementVertices.current = []
             void commit(result)
@@ -496,9 +496,25 @@ export function FreeformEditor() {
   useEffect(() => { setPicked({ feature, items: feature ? selectionHistory.current.get(feature) ?? [] : [] }); setMenu(null) }, [feature])
   const topologyKey=cage?JSON.stringify([cage.positions.length,cage.faces]):''
   useEffect(()=>{setHidden([])},[id,topologyKey])
+  // Undo past the surface's first quad takes the feature out of the document,
+  // and Redo puts it back under the same id. The editor let go of it on the
+  // way down and never took it up again: the redone surface showed as a
+  // finished body that could not be edited, and the next quad began a second
+  // surface over it.
+  const undone = useRef<number | null>(null)
   useEffect(() => {
-    if (id !== null && !feature && !working) { setId(null); setCorners([]) }
+    if (id !== null && !feature && !working) { undone.current = id; setId(null); setCorners([]) }
+    else if (id !== null) undone.current = null
   }, [id, feature, working])
+  const redone = id === null && !working && undone.current !== null &&
+    state.features.some(f => f.id === undone.current && f.kind === 'freeform') ? undone.current : null
+  useEffect(() => {
+    if (redone === null) return
+    undone.current = null
+    current.current.corners = []; placementVertices.current = []
+    layer.current?.cancelPlacement()
+    setCorners([]); setTool('manipulate'); setId(redone)
+  }, [redone])
   useEffect(() => { if (feature) setSnap(feature.snap) }, [id, feature?.snap])
   useEffect(() => {
     const key = (e: KeyboardEvent) => {

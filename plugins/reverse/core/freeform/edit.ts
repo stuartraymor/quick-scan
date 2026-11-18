@@ -120,7 +120,7 @@ export type Corner = number | Vec3
 /** A face added through three or more corners — four clicks for a quad —
  *  wound to agree with its neighbours; refused where an edge would have a
  *  third face. */
-export function addFace(c: Cage, corners: Corner[]): Cage {
+export function addFace(c: Cage, corners: Corner[], seenAlong?: Vec3): Cage {
   if (corners.length < 3) return fail('A face takes three corners at least.')
   const out = cloneCage(c)
   const ids = corners.map((k) => (Array.isArray(k) ? pushPoint(out, finite(k, 'A corner')) : vertexIn(out, k, 'corner')))
@@ -129,9 +129,64 @@ export function addFace(c: Cage, corners: Corner[]): Cage {
   const edges = ids.map((a, k) => [a, ids[(k + 1) % ids.length]] as const)
   const same = edges.some(([a, b]) => used.has(`${a}>${b}`))
   const flipped = edges.some(([a, b]) => used.has(`${b}>${a}`))
-  const face = same && flipped ? fail('The new face meets the cage’s faces in opposite senses; it cannot be wound to fit.') : same ? ids.slice().reverse() : ids
-  out.faces.push(face)
+  // A face that shares no edge has no neighbour to follow. Drawn on the
+  // screen it shows the viewer its front whichever way round its corners
+  // were picked: the front winds clockwise as seen (the editor's shading,
+  // Tolerance and Zebra all read the other side as the reverse).
+  let away = false
+  if (!same && !flipped && seenAlong) {
+    const p = ids.map((v) => point(out, v)), n: Vec3 = [0, 0, 0]
+    for (let k = 1; k + 1 < p.length; k++) {
+      const u = sub(p[k], p[0]), w = sub(p[k + 1], p[0])
+      n[0] += u[1] * w[2] - u[2] * w[1]; n[1] += u[2] * w[0] - u[0] * w[2]; n[2] += u[0] * w[1] - u[1] * w[0]
+    }
+    away = n[0] * seenAlong[0] + n[1] * seenAlong[1] + n[2] * seenAlong[2] < 0
+  }
+  out.faces.push(same !== flipped ? (same ? ids.slice().reverse() : ids) : away ? ids.slice().reverse() : ids)
+  // Between two parts wound against one another the new face fits neither as
+  // they are: one part is turned, the cage staying one orientable surface.
+  if (same && flipped) out.faces = windConsistently(out.faces, c.faces.map((_, i) => i))
   return checked(out)
+}
+
+/** The faces wound to agree across every shared edge. Parts wound against
+ *  one another — two quads drawn in opposite senses and then joined — are
+ *  turned to fit: the smaller part turns, and of two equal parts the one with
+ *  fewer of the faces in `keep`. The faces come back as they were where they
+ *  already agree. Refused where no winding fits (a band joined with a twist). */
+export function windConsistently(faces: number[][], keep: readonly number[] = []): number[][] {
+  const uses = new Map<string, { face: number; forward: boolean }[]>()
+  faces.forEach((f, face) => f.forEach((a, k) => {
+    const b = f[(k + 1) % f.length], key = edgeKey(a, b)
+    uses.set(key, [...(uses.get(key) ?? []), { face, forward: a < b }])
+  }))
+  const neighbours: { face: number; same: boolean }[][] = faces.map(() => [])
+  let clash = false
+  for (const u of uses.values()) {
+    if (u.length !== 2) continue
+    const same = u[0].forward === u[1].forward
+    clash ||= same
+    neighbours[u[0].face].push({ face: u[1].face, same }); neighbours[u[1].face].push({ face: u[0].face, same })
+  }
+  if (!clash) return faces
+  const turned: (boolean | undefined)[] = faces.map(() => undefined), kept = new Set(keep), out = faces.slice()
+  for (let seed = 0; seed < faces.length; seed++) {
+    if (turned[seed] !== undefined) continue
+    const part = [seed]
+    turned[seed] = false
+    for (let i = 0; i < part.length; i++) for (const n of neighbours[part[i]]) {
+      const want = n.same ? !turned[part[i]] : turned[part[i]]!
+      if (turned[n.face] === undefined) { turned[n.face] = want; part.push(n.face) }
+      else if (turned[n.face] !== want) return fail('These faces cannot be wound to fit one another: joined here the surface would have a twist in it.')
+    }
+    const turns = part.filter((f) => turned[f])
+    if (!turns.length) continue
+    const keptTurned = turns.filter((f) => kept.has(f)).length
+    const keptStill = part.filter((f) => !turned[f] && kept.has(f)).length
+    const invert = turns.length * 2 > part.length || (turns.length * 2 === part.length && keptTurned > keptStill)
+    for (const f of part) if (turned[f] !== invert) out[f] = faces[f].slice().reverse()
+  }
+  return out
 }
 
 /** Offset each control pole using the equally weighted unit corner normals.

@@ -10,6 +10,11 @@ const normal = (p: Vec3[]) => p.slice(1, -1).reduce<Vec3>((sum, _, i) => {
   return sum.map((v, k) => v + n[k]) as Vec3
 }, [0, 0, 0])
 
+/** How far, as a share of its size, a new quad facing against its neighbour
+ *  may stand off the neighbour's plane and still count as folded back on it.
+ *  Beyond that it is a surface turned sharply round the shared edge. */
+const FOLD_BACK_RISE = .1
+
 /** Validate newly connected faces before committing them. Incidence alone
  * accepts collapsed quads and a coplanar D pull back over its source face.
  * This is a local connection guard, not a global self-intersection test. */
@@ -43,10 +48,16 @@ export function validateAddedFaces(before: Cage, after: Cage, allowConcave = fal
     } else for (let i = 0; i < 4; i++) if (!faces(i)) return refuse()
     const neighbours = new Set(face.flatMap((v, k) => existing.get(edgeKey(v, face[(k + 1) % face.length])) ?? []))
     for (const fi of neighbours) {
-      const q = before.faces[fi].map(v => vertexAt(before, v)), oldNormal = normal(q), oldLength = Math.hypot(...oldNormal)
+      // As the neighbour is wound now: joining two parts wound against one
+      // another turns one of them, and its old sense would read as a fold.
+      const q = (after.faces[fi] ?? before.faces[fi]).map(v => vertexAt(before, v)), oldNormal = normal(q), oldLength = Math.hypot(...oldNormal)
       if (dot(n, oldNormal) >= 0 || oldLength === 0) continue
       const reach = Math.max(size, ...q.map(v => Math.hypot(...sub(v, q[0]))))
-      if ([...p, ...q].every(v => Math.abs(dot(sub(v, q[0]), oldNormal)) <= reach * oldLength * 1e-10)) return refuse()
+      // Facing the other way and lying within a tenth of its size of the
+      // neighbour's plane, the new quad is folded back over it. On a curved
+      // scan such a pull is never exactly in the plane: held to that, it was
+      // let through and left a quad showing its reverse side on its source.
+      if ([...p, ...q].every(v => Math.abs(dot(sub(v, q[0]), oldNormal)) <= reach * oldLength * FOLD_BACK_RISE)) return refuse()
     }
   }
 }
