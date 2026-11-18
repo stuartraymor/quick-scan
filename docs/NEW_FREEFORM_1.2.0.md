@@ -1,4 +1,4 @@
-# Quick Scan 1.1.99: New Freeform refinement report
+# Quick Scan 1.2.0: New Freeform refinement report
 
 This report covers one batch of work on the New Freeform editor (Edit Surface): joining quads, the surface displays, editing behaviour and the finished CAD of a joined cage.
 
@@ -23,7 +23,7 @@ This report covers one batch of work on the New Freeform editor (Edit Surface): 
 
 ## Measured in QUICKSURFACE for this batch
 
-| Question | Set-up | QUICKSURFACE | Quick Scan 1.1.99 |
+| Question | Set-up | QUICKSURFACE | Quick Scan 1.2.0 |
 | --- | --- | --- | --- |
 | Don't move neighbours with Snap Mode on (Closest Point, Control Net off) | A 5 × 5 sheet of 2.4 mm quads 0.5 mm above a flat scan; one inside point dragged; the saved cage read back | Nine control points change: the picked one by (1.199, 2.690, −1.244) mm, the four beside it by (−0.237, −0.480, +0.217), the four diagonal by (0.019, 0.014, −0.003). The picked surface point ends 0.043 mm above the scan | The same rule, 0.016 mm worst difference over the 36 control points. The earlier rule was 0.077 mm from it |
 | Where a one-quad corner is drawn | Two separate 4 mm quads 2 mm apart | At its control point | The same |
@@ -43,7 +43,7 @@ This report covers one batch of work on the New Freeform editor (Edit Surface): 
 | Random editing | 60 seeded random actions (pulls, joins, moves, deletes, Add face, Split, Undo, Redo, display changes) | No console error, no non-manifold edge, mixed winding or coincident points at any step; the CAD body builds valid |
 | Finished CAD | A 3 × 3 sheet with a quad joined on by one side; a notched 120-quad sheet | Four patches with three shared seams, under 0.02 mm from the edited surface; 120 quads built in under a second |
 
-Automated checks: the unit suite (4,648 tests), the whole browser suite, and the packaged 1.1.99 build driven through its own interface with no development hooks (rectangle, D pull, two corner joins, every display at two transparencies, Undo to nothing and Redo).
+Automated checks: the unit suite (4,648 tests), the whole browser suite, and the packaged 1.2.0 build driven through its own interface with no development hooks (rectangle, D pull, two corner joins, every display at two transparencies, Undo to nothing and Redo).
 
 ## Known gaps
 
