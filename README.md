@@ -12,6 +12,8 @@
 <p align="center">
   <a href="https://github.com/stuartraymor/quick-scan/releases/latest"><b>Download for Windows</b></a>
   &nbsp;·&nbsp;
+  <a href="https://stuartraymor.github.io/quick-scan/">Website</a>
+  &nbsp;·&nbsp;
   <a href="CHANGELOG.md">Changelog</a>
   &nbsp;·&nbsp;
   <a href="docs/manual.md">Manual</a>
@@ -121,9 +123,9 @@ Plain statements, so you do not discover them the hard way:
 - **Not a QUICKSURFACE clone and not affiliated with it.** Quick Scan is an
   independent implementation whose command placement and terminology take
   inspiration from familiar scan-to-CAD workflows. It does not contain code or
-  assets from any commercial product. Version 0.0.39 verifies selected Objects,
-  History and navigation workflows against observed reference behavior; full
-  feature, algorithm and graphical parity has not been achieved or certified.
+  assets from any commercial product. Selected workflows are compared against
+  observed reference behavior release by release; full feature, algorithm and
+  graphical parity has not been achieved or certified.
 - **Partial model history is read-only.** Back/Forward and dragging the End of
   Model marker change the active core/CAD model. Restore End of Model before
   creating, editing or importing CAD. Editing a rolled-back branch is not
@@ -131,23 +133,25 @@ Plain statements, so you do not discover them the hard way:
   recovered order is approximate.
 - Context menus remain incomplete; the verified Edit, visibility and existing
   CAD sketch deletion workflows do not certify every reference menu command.
-- True quad / SubD freeform and automatic surfacing is **not implemented**.
-  The patch-network and fit-surface tools are different capabilities.
-- Stacked sections are not implemented. Tertiary alignment is point-based, not
-  primitive-based.
+- Freeform surfacing (New Freeform quad cages, Auto Freeform, Edit Surface) is
+  young: joins, refinement and CAD conversion work on the tested cages, but
+  there is no whole-surface self-intersection check yet and some reference
+  behaviors are still being matched.
+- Tertiary alignment is point-based, not primitive-based.
 - Windows 64-bit only. Quick Scan is packaged as an Electron app; there are no
   macOS or Linux builds.
 - Test coverage is focused (unit tests, scripted browser checks, a packaged-app
-  smoke test and installed Windows acceptance), not exhaustive. See
-  [0.0.39 verification](RELEASE-VERIFICATION.md) for the tested scope and counts.
-- Version 0.0.x file and profile formats may change. Keep your source scans.
+  smoke test and installed Windows acceptance), not exhaustive. Each release's
+  notes on GitHub list what was tested.
+- Project and profile formats may still change between 1.x versions. Keep your
+  source scans.
 - Installers are unsigned (see above).
 
 ## Roadmap
 
 Planned work is tracked in the
-[issues](https://github.com/stuartraymor/quick-scan/issues). The honest short list: stacked sections, primitive-based datum alignment,
-independent quad/SubD surfacing, and more review of command sequences against
+[issues](https://github.com/stuartraymor/quick-scan/issues). The honest short list: primitive-based datum alignment, a whole-surface
+self-intersection check for freeform, code-signed installers, and more review of command sequences against
 observed workflows.
 
 ## Attribution and license

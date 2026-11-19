@@ -1,3 +1,12 @@
+## 1.2.3 — Launch polish: startup screen, installer and website
+
+- Startup: Quick Scan opens with a branded loading screen (logo, version, progress bar) while the workspace loads, instead of an empty window. The main window appears once it is ready; on a start-up failure, or after 15 s at most, it appears at once so nothing is hidden.
+- Installer: a dark wizard matching the app, with a welcome page, new artwork drawn at 100–250 % display scaling, and a clearer finish page. Install location, per-user default, shortcuts, file association, in-app update and uninstall are unchanged.
+- Website: a new project page (GitHub Pages) whose Download button links straight to the latest installer and shows its version, size and SHA-256, with install steps, the SmartScreen explanation, system requirements and an FAQ.
+- Build: the 1.2.1 lockfile listed meshoptimizer as 1.2.1 (the version bump had replaced it too), so `npm ci`, CI and the licence check failed on that release; it is 1.2.0 again.
+- 1.2.2 was a local build only and was not published; its splash minimum counted from window creation, so under heavy load it could flash. It now counts from when the splash is visible.
+- README: limitation notes brought up to date (freeform surfacing and stacked sections exist now; early 0.0.x wording removed) and a current screenshot.
+
 ## 1.2.1 — New Freeform: joins on a cage with a crossed quad
 
 - Joining: a point join was refused ("This move would fold a quad") on any cage that already had a quad crossed on itself anywhere, however far from the join. Only a quad the join itself crosses or turns over is refused now. Found on a user's impeller cage, where two tab corners would not join.

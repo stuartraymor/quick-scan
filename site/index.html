@@ -3,70 +3,196 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Quick Scan – scan to measured, editable CAD</title>
-<meta name="description" content="Quick Scan is a free, open-source Windows app that fits geometry to 3D scans, measures them and rebuilds them as editable CAD. Everything runs on your PC.">
+<title>Quick Scan — 3D scan to measured, editable CAD</title>
+<meta name="description" content="Quick Scan is a free, open-source Windows app that fits geometry to 3D scans, measures them, compares them with CAD and rebuilds them as editable STEP models. Everything runs on your PC.">
+<meta name="theme-color" content="#101317">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Quick Scan — 3D scan to measured, editable CAD">
+<meta property="og:description" content="Free, open-source scan-to-CAD for Windows. Fit, measure, compare and rebuild — all locally.">
+<meta property="og:image" content="https://stuartraymor.github.io/quick-scan/img/quick-scan-main.png">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="alternate icon" href="favicon.ico">
+<link rel="preload" href="fonts/barlow-600.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style.css">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Quick Scan","operatingSystem":"Windows 10, Windows 11","applicationCategory":"DesignApplication","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"license":"https://www.gnu.org/licenses/agpl-3.0.html","downloadUrl":"https://github.com/stuartraymor/quick-scan/releases/latest"}
+</script>
 </head>
 <body>
-<header class="top">
-  <a class="brand" href="#top"><img src="img/mark.svg" alt="" width="28" height="28"> Quick Scan</a>
-  <nav>
-    <a href="#features">Features</a>
-    <a href="#download">Download</a>
-    <a href="https://github.com/stuartraymor/quick-scan">GitHub</a>
-  </nav>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top" id="top">
+  <div class="wrap bar">
+    <a class="brand" href="#top" aria-label="Quick Scan home"><img src="img/mark.svg" alt="" width="30" height="30"><span>Quick Scan</span></a>
+    <nav aria-label="Main">
+      <a href="#features">Features</a>
+      <a href="#workflow">Workflow</a>
+      <a href="#install">Install</a>
+      <a href="#faq">FAQ</a>
+      <a class="gh" href="https://github.com/stuartraymor/quick-scan" aria-label="Quick Scan on GitHub"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg><span>GitHub</span></a>
+      <a class="btn small primary" href="https://github.com/stuartraymor/quick-scan/releases/latest" data-download>Download</a>
+    </nav>
+  </div>
 </header>
 
-<main id="top">
+<main id="main">
   <section class="hero">
-    <p class="eyebrow">Free · Open source · Windows</p>
-    <h1>Scan in. Measured, editable CAD out.</h1>
-    <p class="lede">Quick Scan fits planes, cylinders and spheres to your 3D scans, measures between them, compares against CAD, and rebuilds the part as a clean model. It runs entirely on your computer.</p>
-    <div class="cta">
-      <a class="btn primary" id="dl" href="https://github.com/stuartraymor/quick-scan/releases/latest">Download for Windows</a>
-      <a class="btn" href="https://github.com/stuartraymor/quick-scan">View source</a>
+    <div class="glow" aria-hidden="true"></div>
+    <div class="wrap">
+      <p class="eyebrow"><span class="dot"></span> Free · Open source · Windows</p>
+      <h1>Turn 3D scans into <em>measured, editable CAD</em>.</h1>
+      <p class="lede">Fit planes, cylinders and spheres to your scan, measure between them, compare against a CAD reference and rebuild the part as a clean STEP model. Quick Scan runs entirely on your PC — your files never leave it.</p>
+      <div class="cta">
+        <a class="btn primary big" href="https://github.com/stuartraymor/quick-scan/releases/latest" data-download>
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M3 5.5 10.4 4.5v7H3zm0 13 7.4 1v-7H3zm8.3 1.1L21 21v-8.5h-9.7zm0-15.2v7.1H21V3z"/></svg>
+          <span><strong>Download for Windows</strong><small data-dl-meta>Latest release · 64-bit installer</small></span>
+        </a>
+        <a class="btn ghost big" href="https://github.com/stuartraymor/quick-scan">View source on GitHub</a>
+      </div>
+      <p class="fine">Windows 10 / 11, 64-bit · No admin rights needed · <a href="#verify">Verify your download</a></p>
+      <figure class="window">
+        <div class="chrome" aria-hidden="true"><i></i><i></i><i></i><span>Quick Scan</span></div>
+        <img src="img/quick-scan-main.png" width="1600" height="960" alt="Quick Scan main window: a 3D scan of a bracket in the viewport, ribbon of command tabs above, Objects and History explorer on the left">
+      </figure>
     </div>
-    <p class="fine">Windows 10/11, 64-bit · v0.0.3 early release · AGPL-3.0</p>
-    <figure class="shot">
-      <img src="img/quick-scan-main.png" width="1500" height="900" alt="Quick Scan window showing a 3D scan of a bracket with the ribbon, object explorer and measurement panel">
-    </figure>
   </section>
 
-  <section id="features" class="features">
-    <h2>What you can do</h2>
-    <div class="grid">
-      <article><h3>Fit primitives</h3><p>Click a feature to get a best-fit plane, cylinder, cone, sphere, torus or circle with its form error.</p></article>
-      <article><h3>Align and measure</h3><p>Auto-align from the scan's own faces, datum alignment, distance and angle dimensions, GD&amp;T and tolerances.</p></article>
-      <article><h3>Compare to CAD</h3><p>Colour deviation plots, wall thickness maps and cross-sections measured on a 2D sheet.</p></article>
-      <article><h3>Rebuild as CAD</h3><p>Sketch, extrude, revolve, fillet, pattern and more on an exact OpenCASCADE kernel, with a feature history and STEP export.</p></article>
-      <article><h3>Familiar layout</h3><p>Ribbon command tabs, an Objects / History explorer and movable, dockable tool panels that never lose your place.</p></article>
-      <article><h3>Private by design</h3><p>Files are processed locally. An optional AI command interface lets an assistant you connect drive the same session.</p></article>
+  <section class="strip" aria-label="Highlights">
+    <div class="wrap strip-grid">
+      <div><b>100% local</b><span>No account, no upload</span></div>
+      <div><b>OpenCASCADE</b><span>Exact B-rep CAD kernel</span></div>
+      <div><b>STEP export</b><span>Into any CAD system</span></div>
+      <div><b>Verified updates</b><span>SHA-256 checked in-app</span></div>
     </div>
-    <figure class="shot second">
-      <img src="img/quick-scan-cad.png" width="1500" height="900" loading="lazy" alt="Quick Scan CAD tab with the CAD tools panel open">
-    </figure>
   </section>
 
-  <section id="download" class="download">
-    <h2>Get Quick Scan</h2>
-    <p>Download <code>Quick-Scan-Setup-0.0.3.exe</code> from the latest release and run it. The installer needs no administrator rights by default.</p>
-    <p><a class="btn primary" href="https://github.com/stuartraymor/quick-scan/releases/latest">Download for Windows</a></p>
-    <div class="note">
-      <strong>About the Windows warning.</strong> Installers are not code-signed yet, so SmartScreen may say “Windows protected your PC”. That means unrecognised publisher, not malware detected. Compare the SHA-256 in the release notes with your download, or build from source.
+  <section id="features" class="section">
+    <div class="wrap">
+      <p class="kicker">Features</p>
+      <h2>Everything from raw scan to finished model</h2>
+      <p class="sub">A ribbon of familiar command tabs over an Objects / History explorer and dockable tool panels that never lose your place.</p>
+      <div class="cards">
+        <article class="card">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+          <h3>Fit primitives</h3>
+          <p>Click a feature to get a best-fit plane, cylinder, cone, sphere, torus or circle, with its form error.</p>
+        </article>
+        <article class="card">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20 20 4M4 20h6M4 20v-6"/><path d="M14 4h6v6"/></svg>
+          <h3>Align</h3>
+          <p>Auto-align from the scan's own faces, guided datum and symmetry-plane alignment, or move and rotate by numbers.</p>
+        </article>
+        <article class="card">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17h18M6 17V9m6 8V5m6 12v-6"/></svg>
+          <h3>Measure &amp; GD&amp;T</h3>
+          <p>Distance and angle dimensions with tolerances, GD&amp;T checks, surface area, volume and cross-sections on a 2D sheet.</p>
+        </article>
+        <article class="card">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 15c4-1 6-6 9-6s5 4 9 3"/></svg>
+          <h3>Compare to CAD</h3>
+          <p>Colour deviation plots against a reference model, wall-thickness maps and mesh-to-mesh comparison.</p>
+        </article>
+        <article class="card">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 21 8v8l-9 5-9-5V8z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg>
+          <h3>Rebuild as CAD</h3>
+          <p>Sketch, extrude, revolve, fillet, chamfer, shell, loft, sweep, pattern and more, with a feature history and STEP export.</p>
+        </article>
+        <article class="card">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18c3-9 13-9 16 0"/><circle cx="4" cy="18" r="1.6"/><circle cx="12" cy="11.3" r="1.6"/><circle cx="20" cy="18" r="1.6"/></svg>
+          <h3>Freeform surfaces</h3>
+          <p>Draw quad cages over organic shapes, drag and join points, and fit or patch surfaces to the scan.</p>
+        </article>
+        <article class="card">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h10M4 17h7"/><path d="m15 15 2 2 4-4"/></svg>
+          <h3>Scan clean-up</h3>
+          <p>Prepare, repair, reduce and edit meshes before you measure. Imports STL, OBJ, PLY and 3MF.</p>
+        </article>
+        <article class="card">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="8" width="14" height="10" rx="3"/><path d="M12 4v4M9 13h.01M15 13h.01"/></svg>
+          <h3>Optional AI assistant</h3>
+          <p>An opt-in MCP bridge lets an assistant you connect drive the same session you see on screen. Off unless you enable it.</p>
+        </article>
+      </div>
     </div>
-    <h3>Honest limits</h3>
-    <ul>
-      <li>An early 0.0.x release. Expect rough edges; keep your source scans.</li>
-      <li>Independent software. Not affiliated with, and not equivalent to, any commercial scan-to-CAD product.</li>
-      <li>Quad/SubD freeform surfacing and stacked sections are not implemented yet.</li>
-      <li>Windows 64-bit only.</li>
-    </ul>
+  </section>
+
+  <section id="workflow" class="section alt">
+    <div class="wrap split">
+      <div>
+        <p class="kicker">Workflow</p>
+        <h2>From point cloud to part in five steps</h2>
+        <ol class="steps">
+          <li><b>Import</b><span>Open an STL, OBJ, PLY or 3MF scan, or try the bundled sample bracket.</span></li>
+          <li><b>Prepare &amp; align</b><span>Clean the mesh and align it to the part's own datums.</span></li>
+          <li><b>Fit &amp; measure</b><span>Extract primitives and dimension between them, with tolerances.</span></li>
+          <li><b>Rebuild</b><span>Sketch on fitted planes and sections, then extrude, revolve and finish.</span></li>
+          <li><b>Check &amp; export</b><span>Colour-map the model against the scan and export STEP.</span></li>
+        </ol>
+      </div>
+      <figure class="window tilt">
+        <div class="chrome" aria-hidden="true"><i></i><i></i><i></i><span>CAD tools</span></div>
+        <img src="img/quick-scan-cad.png" width="1600" height="960" loading="lazy" alt="Quick Scan CAD tab with the CAD tools panel open: extrude, revolve, fillet, shell, loft, sweep and pattern commands">
+      </figure>
+    </div>
+  </section>
+
+  <section id="install" class="section">
+    <div class="wrap">
+      <p class="kicker">Install</p>
+      <h2>Up and running in a minute</h2>
+      <div class="install">
+        <ol class="howto">
+          <li><span class="n">1</span><div><b>Download the installer</b><p><a href="https://github.com/stuartraymor/quick-scan/releases/latest" data-download data-dl-name>Quick-Scan-Setup.exe</a> <span class="muted" data-dl-size></span></p></div></li>
+          <li><span class="n">2</span><div><b>Run it</b><p>A per-user install needs no administrator rights. Choose shortcuts and the <code>.scanruler</code> file association in the wizard.</p></div></li>
+          <li><span class="n">3</span><div><b>Open Quick Scan</b><p>Start from the sample scan or open your own. Later versions install from the in-app <em>Check for updates</em>.</p></div></li>
+        </ol>
+        <aside class="panel" id="verify">
+          <h3>About the Windows warning</h3>
+          <p>Installers are not code-signed yet, so SmartScreen may say <em>“Windows protected your PC”</em>. That means <em>unrecognised publisher</em>, not malware. Check the file’s fingerprint first, then choose <b>More info → Run anyway</b>.</p>
+          <label for="hash">SHA-256 of <span data-dl-name-plain>the latest installer</span></label>
+          <div class="hash"><code id="hash" data-dl-hash>Listed with each release on GitHub</code><button type="button" class="copy" data-copy="#hash" hidden>Copy</button></div>
+          <label for="cmd">Check it in PowerShell</label>
+          <div class="hash"><code id="cmd" data-dl-cmd>Get-FileHash .\Quick-Scan-Setup-*.exe</code><button type="button" class="copy" data-copy="#cmd">Copy</button></div>
+        </aside>
+      </div>
+      <div class="req">
+        <div><b>System</b><span>Windows 10 or 11, 64-bit</span></div>
+        <div><b>Graphics</b><span>GPU with WebGL 2</span></div>
+        <div><b>Imports</b><span>STL · OBJ · PLY · 3MF</span></div>
+        <div><b>Exports</b><span>STEP · STL · .scanruler projects</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="faq" class="section alt">
+    <div class="wrap narrow">
+      <p class="kicker">FAQ</p>
+      <h2>Questions, answered plainly</h2>
+      <details><summary>Is Quick Scan really free?</summary><p>Yes. It is free software under the GNU AGPL v3. The complete source of every release is on GitHub, and you can build the installer yourself.</p></details>
+      <details><summary>Do my scans get uploaded anywhere?</summary><p>No. All processing happens on your computer. The only network calls are the update check against GitHub's releases and, only if you set one up, an AI assistant you connect yourself.</p></details>
+      <details><summary>How do updates work?</summary><p>Choose <em>Check for updates</em> in the app. Quick Scan downloads the newest installer from GitHub, verifies its SHA-256 against the release, and installs it when you restart — asking first if you have unsaved work.</p></details>
+      <details><summary>Is it a replacement for commercial scan-to-CAD software?</summary><p>Not a drop-in one. Quick Scan is independent and young (1.x). It is useful for real work on the features above, and its <a href="https://github.com/stuartraymor/quick-scan#known-limitations">known limitations</a> are listed openly. It is not affiliated with any commercial product.</p></details>
+      <details><summary>Mac or Linux?</summary><p>Not yet — Quick Scan ships as a 64-bit Windows app only.</p></details>
+      <details><summary>Where do I report a bug or ask for a feature?</summary><p>Open an <a href="https://github.com/stuartraymor/quick-scan/issues/new/choose">issue on GitHub</a>. Security problems: see the <a href="https://github.com/stuartraymor/quick-scan/blob/main/SECURITY.md">security policy</a>.</p></details>
+    </div>
+  </section>
+
+  <section class="final">
+    <div class="wrap">
+      <img src="img/mark.svg" alt="" width="64" height="64">
+      <h2>Ready to measure your first scan?</h2>
+      <a class="btn primary big" href="https://github.com/stuartraymor/quick-scan/releases/latest" data-download><span><strong>Download Quick Scan</strong><small data-dl-meta>Latest release · 64-bit installer</small></span></a>
+    </div>
   </section>
 </main>
 
 <footer>
-  <p>Quick Scan is free software under the <a href="https://www.gnu.org/licenses/agpl-3.0.html">GNU AGPL v3</a>. It is a modified version of <a href="https://github.com/CNCKitchen/ScanRuler">ScanRuler</a> by Stefan Hermann (CNC Kitchen), who is not affiliated with or responsible for this project. <a href="https://github.com/stuartraymor/quick-scan">Complete source</a> · <a href="https://github.com/stuartraymor/quick-scan/blob/main/ATTRIBUTION.md">Attribution</a> · <a href="https://github.com/stuartraymor/quick-scan/blob/main/SECURITY.md">Security</a></p>
+  <div class="wrap foot">
+    <div class="brand"><img src="img/mark.svg" alt="" width="24" height="24"><span>Quick Scan</span></div>
+    <p>Free software under the <a href="https://www.gnu.org/licenses/agpl-3.0.html">GNU AGPL v3</a>. A modified version of <a href="https://github.com/CNCKitchen/ScanRuler">ScanRuler</a> by Stefan Hermann (CNC Kitchen), who is not affiliated with or responsible for this project.</p>
+    <nav aria-label="Project links"><a href="https://github.com/stuartraymor/quick-scan">Source</a><a href="https://github.com/stuartraymor/quick-scan/releases">Releases</a><a href="https://github.com/stuartraymor/quick-scan/blob/main/CHANGELOG.md">Changelog</a><a href="https://github.com/stuartraymor/quick-scan/blob/main/ATTRIBUTION.md">Attribution</a><a href="https://github.com/stuartraymor/quick-scan/blob/main/SECURITY.md">Security</a></nav>
+  </div>
 </footer>
+<script src="site.js" defer></script>
 </body>
 </html>

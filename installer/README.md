@@ -42,3 +42,7 @@ and tell users to verify it.
 - Never change `AppId` in `quick-scan.iss`; it identifies the product for upgrades.
 - Uninstalling keeps user data in `%APPDATA%\QuickScan-v*` on purpose.
 - Publisher is shown as "Quick Scan contributors"; edit `#define Publisher` to change it.
+- The wizard uses Inno Setup's built-in dark style (Inno Setup 6.6 or newer).
+- Wizard artwork in `assets/` is generated from HTML at 100/150/200/250 % display
+  scaling. Edit `art/render.cjs` or `art/mark.svg`, then regenerate with
+  `node_modules/electron/dist/electron.exe installer/art/render.cjs`.

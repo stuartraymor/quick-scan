@@ -40,9 +40,14 @@ DefaultGroupName={#AppName}
 UninstallDisplayName={#AppName}
 UninstallDisplayIcon={app}\{#AppExe}
 SetupIconFile=..\public\favicon.ico
-WizardStyle=modern
-WizardImageFile=assets\wizard-164x314.png,assets\wizard-328x628.png
-WizardSmallImageFile=assets\small-55.png,assets\small-110.png
+; Dark wizard to match the app (Inno Setup 6.6+). Art is rendered by art/render.cjs
+; at 100/150/200/250% DPI so it stays sharp on high-DPI screens.
+WizardStyle=modern dark includetitlebar
+WizardImageFile=assets\wizard-164x314.png,assets\wizard-246x471.png,assets\wizard-328x628.png,assets\wizard-410x785.png
+WizardSmallImageFile=assets\small-55.png,assets\small-83.png,assets\small-110.png,assets\small-138.png
+WizardImageBackColor=#101317
+DisableWelcomePage=no
+DisableReadyPage=no
 LicenseFile=..\LICENSE
 InfoBeforeFile=notice.txt
 OutputDir={#OutputDirectory}
@@ -67,6 +72,14 @@ SignedUninstaller=yes
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
+
+[Messages]
+WelcomeLabel1=Welcome to Quick Scan
+WelcomeLabel2=This will install Quick Scan {#AppVersion} on your computer.%n%nQuick Scan turns 3D scans into measured, editable CAD: fit primitives, align, compare against CAD and rebuild the part as STEP. Everything runs locally on your PC.%n%nIt is recommended that you close other applications before continuing.
+FinishedHeadingLabel=Quick Scan is ready
+FinishedLabelNoIcons=Quick Scan {#AppVersion} has been installed on your computer.
+FinishedLabel=Quick Scan {#AppVersion} has been installed. Open it from the Start menu or the shortcuts you selected.
+ClickFinish=Click Finish to close Setup.
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked

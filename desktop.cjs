@@ -3,6 +3,7 @@ const { spawn } = require('node:child_process');
 const updater = require('./updater.cjs');
 const { createStartupGuard, createUnloadPrompt, createInstallOnQuit, seedProfile } = require('./desktop-startup.cjs');
 const recents = require('./recents.cjs');
+const { openSplash, createReveal } = require('./splash.cjs');
 const agentSetup = require('./agent-setup.cjs');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -13,12 +14,14 @@ app.setPath('userData', path.join(app.getPath('appData'), `QuickScan-v${app.getV
 protocol.registerSchemesAsPrivileged([{ scheme: 'scanruler', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true, codeCache: true } }]);
 const smoke = process.argv.includes('--desktop-smoke');
 if (smoke) app.commandLine.appendSwitch('remote-debugging-port', '9237');
-let win;
+let win, reveal = null, splash = null;
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
-  app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
+  app.on('second-instance', () => { if (reveal && !reveal.done) { splash?.window()?.focus(); return; } if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
   app.whenReady().then(async () => {
     const root = path.join(__dirname, 'dist');
+    // Branded loading screen while the main window starts hidden (not in the verification run).
+    if (!smoke) splash = openSplash({ BrowserWindow, version: app.getVersion(), icon: path.join(root, 'favicon.ico') });
     const libraryFile = path.join(app.getPath('appData'), 'QuickScan-shared', 'example-library.json');
     let library = '';
     try { const p = JSON.parse(fs.readFileSync(libraryFile, 'utf8')); if (typeof p === 'string' && path.isAbsolute(p)) library = p; } catch { /* first launch */ }
@@ -82,8 +85,13 @@ else {
       if (url.host !== 'app' || !file.startsWith(root + path.sep)) return new Response('Forbidden', { status: 403 });
       return net.fetch(pathToFileURL(file).href);
     });
-    win = new BrowserWindow({ width: 1500, height: 960, minWidth: 1000, minHeight: 650, title: `Quick Scan v${app.getVersion()}`, backgroundColor: '#1b1d20', autoHideMenuBar: true, webPreferences: { preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true, backgroundThrottling: !smoke } });
+    win = new BrowserWindow({ width: 1500, height: 960, minWidth: 1000, minHeight: 650, title: `Quick Scan v${app.getVersion()}`, show: smoke, backgroundColor: '#1b1d20', autoHideMenuBar: true, webPreferences: { preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true, backgroundThrottling: !smoke } });
     win.setMenu(null);
+    reveal = smoke ? null : createReveal({
+      show: () => { if (win && !win.isDestroyed()) { win.show(); win.focus(); } },
+      closeSplash: () => splash?.close(),
+      shownAt: () => splash?.shownAt() ?? null,
+    });
     // Only fixed lifecycle codes are persisted: no project paths, text or errors.
     const startupLog = path.join(app.getPath('userData'), 'startup.jsonl');
     const reportStartup = record => {
@@ -97,6 +105,7 @@ else {
       reload: () => win.webContents.reloadIgnoringCache(),
       report: reportStartup,
       failed: () => {
+        reveal?.now();
         if (win.isDestroyed()) return;
         void dialog.showMessageBox(win, { type: 'error', title: 'Quick Scan could not start',
           message: 'Quick Scan could not finish opening.',
@@ -105,12 +114,12 @@ else {
       },
     });
     const fromMainWindow = event => event.sender === win.webContents && event.senderFrame === win.webContents.mainFrame && event.senderFrame.url.startsWith('scanruler://app/');
-    ipcMain.on('startup:ready', event => { if (fromMainWindow(event)) startup.ready(); });
+    ipcMain.on('startup:ready', event => { if (fromMainWindow(event)) { startup.ready(); reveal?.ready(); } });
     ipcMain.on('startup:error', event => { if (fromMainWindow(event)) startup.fail('boot-error'); });
     win.webContents.on('render-process-gone', () => startup.fail('renderer-gone'));
     win.webContents.on('preload-error', () => startup.fail('preload-failed'));
     win.webContents.on('did-fail-load', (_event, code, _description, _url, mainFrame) => { if (mainFrame && code !== -3) startup.fail('load-failed'); });
-    win.on('closed', () => startup.close());
+    win.on('closed', () => { startup.close(); splash?.close(); });
     win.webContents.on('will-prevent-unload', createUnloadPrompt({ automated: smoke, ask: options => win.isDestroyed() ? 0 : dialog.showMessageBoxSync(win, options), onKeep: () => installOnQuit.kept() }));
     wireUpdater();
     wireFiles();
