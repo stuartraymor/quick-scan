@@ -87,7 +87,8 @@ describe('independent sketch edits', () => {
     const before = JSON.stringify(s), r = trimAt(s, line, [5, 0]); expect(r.ok).toBe(true); if (!r.ok) return
     expect(JSON.stringify(s)).toBe(before)
     expect(r.ids.map(id => entityOf(r.sketch, id))).toMatchObject([{ a: [0, 0], b: [3, 0] }, { a: [7, 0], b: [10, 0] }])
-    expect(r.sketch.constraints).toHaveLength(0)
+    // The length is gone; each new end rests on the line that cut it (1.2.18).
+    expect(r.sketch.constraints.map(c => c.kind)).toEqual(['pointOn', 'pointOn'])
   })
   it('does not trim against extended lines outside their actual segment', () => {
     const s = emptySketch(), line = addEntity(s, { kind: 'line', a: [0, 0], b: [10, 0] })

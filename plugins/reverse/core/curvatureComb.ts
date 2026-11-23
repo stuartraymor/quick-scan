@@ -57,7 +57,8 @@ export interface CombOptions {
   scale: number
   /** Teeth along each piece. */
   density: number
-  /** No tooth longer than this (mm). */
+  /** No tooth longer than this (mm) at the default scale; the limit scales
+   *  with `scale`, so it caps the curvature shown, not the slider. */
   maxLength: number
   /** Teeth out of the bend, crossing over at an inflection (signed), or
    *  all on one side, as long as |κ| (unsigned). */
@@ -105,7 +106,11 @@ export function exactComb(e: SketchEntity, options: CombOptions): ExactComb | nu
   const c = curveOf(e)
   if (!c) return null
   const scale = Number.isFinite(options.scale) && options.scale > 0 ? options.scale : 0
-  const maxLength = Number.isFinite(options.maxLength) && options.maxLength > 0 ? options.maxLength : Infinity
+  // The longest tooth is given at the default scale and grows and shrinks
+  // with the scale like every other: held at a fixed length, the teeth of
+  // every tight bend stood still while the slider moved the rest (at 500×
+  // everything under 25 mm of radius was cut to the same 20 mm).
+  const maxLength = Number.isFinite(options.maxLength) && options.maxLength > 0 ? (options.maxLength * scale) / DEFAULT_COMB.scale : Infinity
   const density = Math.max(4, Math.min(2000, Math.round(Number.isFinite(options.density) ? options.density : 64)))
   const smooth = Math.max(0, Math.min(20, Math.round(Number.isFinite(options.smooth) ? options.smooth : 0)))
   const corners = cornersOf(c)

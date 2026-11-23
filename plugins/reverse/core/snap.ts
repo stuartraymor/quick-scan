@@ -15,9 +15,10 @@
 
 import type { Vec2 } from '../../../src/core/flat/types'
 import { len2, sub2 } from '../../../src/core/flat/vec2'
-import { anchorPoint, anchorsOf, axisRelationOf, nearestOnEntity, type Anchor, type Sketch, type SketchLine } from './sketch'
+import { anchorPoint, anchorsOf, axisRelationOf, nearestOnEntity, quadrantsOf, type Anchor, type Sketch, type SketchLine } from './sketch'
 import { lineIntersection } from './corners'
 import { traceFoot, traceNear, traceOffset, type DatumPlane, type DatumTrace } from './datums'
+import type { DimPick } from './draw'
 
 /** What there is to snap to besides the sketch itself. */
 export interface SnapContext {
@@ -30,7 +31,34 @@ export interface SnapContext {
   datums?: readonly DatumTrace[] | null
   /** Snapping switched off for this pick — Ctrl held. */
   off?: boolean
+  /** The kinds of place switched on in the snap bar; all but the quadrants
+   *  when not given. */
+  allow?: SnapAllow
+  /** A pick chosen from "Select other" — one of the things lying on top
+   *  of each other under the cursor (core/pickOther). The arrow, a
+   *  relation and the Dimension tool take it instead of the nearest. */
+  prefer?: DimPick
 }
+
+/** The snap bar's switches as the sketch reads them. */
+export interface SnapAllow {
+  endpoint: boolean
+  midpoint: boolean
+  center: boolean
+  quadrant: boolean
+  curve: boolean
+  scan: boolean
+  /** All — the smart snap: the ends, centres, middles, quadrant points and
+   *  the sheet's zero all reach as far as each other, and the one closest
+   *  to the cursor is taken, instead of ends first, then quadrants, then
+   *  middles at half the reach. */
+  nearest?: boolean
+}
+export const SNAP_ALL: SnapAllow = { endpoint: true, midpoint: true, center: true, quadrant: false, curve: true, scan: true }
+
+/** The share of the hand's reach within which a quadrant point is taken:
+ *  it lies on a rim that is itself a place to land. */
+const QUADRANT_REACH = 0.6
 
 /** The share of the hand's reach within which the middle of a line is taken. */
 const MIDPOINT_REACH = 0.5
@@ -39,7 +67,7 @@ const MIDPOINT_REACH = 0.5
  *  end that was meant. */
 const DATUM_REACH = 0.75
 
-export type SnapKind = 'anchor' | 'origin' | 'midpoint' | 'datum' | 'edge' | 'entity' | 'grid'
+export type SnapKind = 'anchor' | 'origin' | 'midpoint' | 'quadrant' | 'datum' | 'edge' | 'entity' | 'grid'
 
 /** Preview only the axis relation the Line tool actually infers on commit.
  *  Use the snapped destination, as the tool does, rather than the raw cursor.
@@ -117,6 +145,30 @@ export function snapHold(r: SnapResult): SnapHold | null {
   return null
 }
 
+/** The smart snap's point: of every end, centre, quadrant point, line's
+ *  middle and the sheet's zero within reach, the one closest to the spot. */
+function nearestPoint(sketch: Sketch, spot: Vec2, radius: number, ctx: SnapContext, exclude?: ReadonlySet<number>): SnapResult | null {
+  let best: SnapResult | null = null
+  let bestD = radius
+  const take = (r: SnapResult) => {
+    const d = len2(sub2(r.point, spot))
+    if (d <= bestD) {
+      bestD = d
+      best = r
+    }
+  }
+  for (const e of sketch.entities) {
+    if (exclude?.has(e.id)) continue
+    for (const at of anchorsOf(e)) take({ point: anchorPoint(e, at), anchor: { entity: e.id, at }, kind: 'anchor' })
+    if (e.kind === 'arc') take({ point: e.c, anchor: { entity: e.id, at: 'center' }, kind: 'anchor' })
+    for (const q of quadrantsOf(e)) take({ point: q.point, anchor: { entity: e.id, at: q.at }, kind: 'quadrant' })
+    if (e.kind === 'line') take({ point: anchorPoint(e, 'center'), anchor: { entity: e.id, at: 'center' }, kind: 'midpoint' })
+  }
+  const origin = (ctx.datums ?? []).filter((t) => Math.abs(traceOffset(t, [0, 0])) < 1e-6).map((t) => t.plane)
+  take({ point: [0, 0], anchor: null, origin, kind: 'origin' })
+  return best
+}
+
 /**
  * Snap a sheet point. `exclude` names pieces that are not snapped to — the
  * one being dragged, which would otherwise snap to itself.
@@ -129,6 +181,11 @@ export function snapSketchPoint(
   exclude?: ReadonlySet<number>,
 ): SnapResult {
   if (ctx.off) return { point: spot, anchor: null, kind: null }
+  const allow = ctx.allow ?? SNAP_ALL
+  if (allow.nearest) {
+    const near = nearestPoint(sketch, spot, radius, ctx, exclude)
+    if (near) return near
+  }
 
   // The ends and centres of the pieces already there — a circle's centre
   // too: what lands on it is held there, as a hole's centre is held on the
@@ -138,6 +195,8 @@ export function snapSketchPoint(
   for (const e of sketch.entities) {
     if (exclude?.has(e.id)) continue
     for (const at of anchorsOf(e)) {
+      // A round piece's one anchor is its centre; a point piece is an end.
+      if (!(at === 'center' && e.kind !== 'point' ? allow.center : allow.endpoint)) continue
       const p = anchorPoint(e, at)
       const d = len2(sub2(p, spot))
       if (d <= bestD) {
@@ -145,8 +204,34 @@ export function snapSketchPoint(
         best = { point: p, anchor: { entity: e.id, at }, kind: 'anchor' }
       }
     }
+    // An arc's centre is no anchor of its own in the list above, but a
+    // place to land all the same.
+    if (e.kind === 'arc' && allow.center) {
+      const d = len2(sub2(e.c, spot))
+      if (d <= bestD) {
+        bestD = d
+        best = { point: e.c, anchor: { entity: e.id, at: 'center' }, kind: 'anchor' }
+      }
+    }
   }
   if (best) return best
+
+  // A quadrant point of a circle or an arc, when switched on: held there
+  // by a coincidence with the rim's own point.
+  if (allow.quadrant) {
+    let quadD = radius * QUADRANT_REACH
+    for (const e of sketch.entities) {
+      if (exclude?.has(e.id)) continue
+      for (const q of quadrantsOf(e)) {
+        const d = len2(sub2(q.point, spot))
+        if (d <= quadD) {
+          quadD = d
+          best = { point: q.point, anchor: { entity: e.id, at: q.at }, kind: 'quadrant' }
+        }
+      }
+    }
+    if (best) return best
+  }
 
   // The sheet's zero — the part's origin projected onto the plane, as the
   // sketch rule puts it: a point to start a profile on, as every CAD
@@ -165,7 +250,7 @@ export function snapSketchPoint(
   // points all along it, and those are what is wanted beside its middle.
   let midD = radius * MIDPOINT_REACH
   for (const e of sketch.entities) {
-    if (exclude?.has(e.id) || e.kind !== 'line') continue
+    if (!allow.midpoint || exclude?.has(e.id) || e.kind !== 'line') continue
     const p = anchorPoint(e, 'center')
     const d = len2(sub2(p, spot))
     if (d <= midD) {
@@ -201,11 +286,11 @@ export function snapSketchPoint(
     }
     return found
   }
-  best = onBody((e) => !fitted(e))
+  best = allow.curve ? onBody((e) => !fitted(e)) : null
   if (best) return best
 
   // A point of the slice: what a free piece is usually drawn along.
-  if (ctx.chains) {
+  if (ctx.chains && allow.scan) {
     for (const chain of ctx.chains) {
       for (const p of chain) {
         const d = len2(sub2(p, spot))
@@ -218,7 +303,7 @@ export function snapSketchPoint(
     if (best) return best
   }
 
-  best = onBody(fitted)
+  best = allow.curve ? onBody(fitted) : null
   if (best) return best
 
   // The grid, last: it is there to steady a hand, not to fight the scan.

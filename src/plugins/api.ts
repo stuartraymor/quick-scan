@@ -12,6 +12,7 @@
 
 import type { ComponentType, ReactNode, RefObject } from 'react'
 import type { ReferenceOptions } from '../app/deviationWorkspace'
+import type { MeasurePreview } from '../state/measureToolStore'
 import type { ImportQueue } from '../app/importQueue'
 import type { SourceFiles } from '../app/project'
 import type { ScanSource } from '../app/scanSwap'
@@ -149,6 +150,23 @@ export interface StartPaneContent {
  * returns. The parts that belong to a workspace are read only while the
  * plugin's workspace is the one on screen; the rest always.
  */
+/** One recipe in the document browser's History. `parents` are the
+ *  document-order keys it is built on; the browser derives dependents,
+ *  the dependency card and the Delete cascade from them. `remove` deletes
+ *  this recipe alone (the browser removes dependents first, in reverse
+ *  order, inside one undo step); `setVisible` shows or hides its output
+ *  for "Hide All But This". */
+export interface ExplorerCoreItem { label: string; testId?: string; title?: string; disabled?: boolean; onSelect: () => void }
+
+export interface ExplorerHistoryEntry {
+  key: string
+  node: ReactNode
+  label?: string
+  parents?: readonly string[]
+  remove?: () => void
+  setVisible?: (on: boolean) => void
+}
+
 export interface PluginRuntime {
   /** The current modeless tool window; changing its key reveals the controls. */
   toolContext?: { title: string; key: string; active: boolean }
@@ -163,12 +181,32 @@ export interface PluginRuntime {
   explorerObjects?: ReactNode
   explorerHistory?: ReactNode
   /** Flat model-history rows keyed in the common document-order namespace. */
-  explorerHistoryEntries?: readonly { key: string; node: ReactNode; label?: string; parents?: readonly string[] }[]
+  explorerHistoryEntries?: readonly ExplorerHistoryEntry[]
+  /** Commands a plugin adds to a core row's right-click menu, by its
+   *  document-order key (core:element:3): "2D Sketch" on a datum plane.
+   *  Empty for a row it has nothing for. */
+  explorerCoreItems?: (key: string) => readonly ExplorerCoreItem[]
   /** Plugin-owned object visibility; used by the document browser's ALL
    *  checkbox without reaching into plugin stores. Never suppression. */
   explorerVisibility?: { values: readonly boolean[]; disabled: boolean; setVisible(on: boolean): void }
   /** Explicit view mask for core measured datums in the active workspace. */
   explorerCoreVisibility?: { on: boolean; set(on: boolean): void }
+  /** Ways of measuring the plugin adds to Analysis → Measure, a button for
+   *  each after the dialog's own (`plugin:<id>` modes). While one is chosen
+   *  a click on the view is offered to `pick` and nothing else; a click it
+   *  takes adds readouts to the Measure store (state/measureToolStore
+   *  `add`), drawn over the view and listed in the dialog. */
+  measure?: {
+    /** `choose` runs when the way's button is pressed — to bring the
+     *  plugin's workspace forward, say, where what it measures is shown.
+     *  `snap`: the snap bar's set of switches the way picks by, shown and
+     *  pressed on the bar while it is chosen (the mesh's own otherwise). */
+    modes: readonly { id: `plugin:${string}`; label: string; title: string; disabled?: boolean; choose?: () => void; snap?: 'pick' | 'draw' }[]
+    pick(mode: string, clientX: number, clientY: number, mods: { ctrl: boolean; shift: boolean }): boolean
+    /** What a click at this point would take, drawn before it: null for
+     *  nothing. Asked at most once a frame as the cursor moves. */
+    hover?(mode: string, clientX: number, clientY: number): MeasurePreview | null
+  }
   /** The workspace's panel. */
   panel?: ReactNode
   /** Drawn on the stage just above the viewport — a sheet of the plugin's
@@ -241,8 +279,8 @@ export interface PluginRuntime {
   /** Always read. Whether the plugin holds work worth saving as a project. */
   canSave?: boolean
   /** Always read. A grip dragged in the viewport; true when it was one of
-   *  the plugin's. */
-  gripDrag?(side: GripSide, delta: number, phase: 'start' | 'move' | 'end'): boolean
+   *  the plugin's. `pointer`: the cursor, client pixels, on an arrow's move. */
+  gripDrag?(side: GripSide, delta: number, phase: 'start' | 'move' | 'end', pointer?: { x: number; y: number }): boolean
 }
 
 /** What a plugin's workspace does with the keyboard and the middle button —

@@ -2,7 +2,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { useShell } from '../state/shellStore'
 import { useStore } from '../state/store'
-import { useDocumentOrder } from '../state/documentOrderStore'
+import { documentHistoryToEnd, useDocumentOrder } from '../state/documentOrderStore'
 import {useInteractiveAlign} from '../state/interactiveAlignStore'
 import type { PluginRuntime } from '../plugins/api'
 import { Icon } from './icons'
@@ -83,7 +83,7 @@ export function ToolInspector({ context, children }: { context?: PluginRuntime['
         }}>×</button>
       </div>
       <div id="inspector-command-slot" className="inspector-command-slot" data-test="inspector-command-slot" hidden={!docked} />
-      <div className="inspector-body" hidden={docked}>{modelRolled && <p className="empty" data-test="model-history-edit-lock">Restore End of Model in History before creating or editing geometry.</p>}<div className="inspector-model-controls" style={{ display: 'contents' }} inert={modelRolled || undefined} aria-disabled={modelRolled || undefined}>{children}</div></div>
+      <div className="inspector-body" hidden={docked}>{modelRolled && <p className="empty" data-test="model-history-edit-lock">Restore End of Model in History before creating or editing geometry. <button type="button" data-test="model-history-to-end" onClick={() => documentHistoryToEnd()}>To End of Model</button></p>}<div className="inspector-model-controls" style={{ display: 'contents' }} inert={modelRolled || undefined} aria-disabled={modelRolled || undefined}>{children}</div></div>
     </section>
   </>
 }

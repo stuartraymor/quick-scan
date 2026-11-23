@@ -93,12 +93,18 @@ export function dimStrokes(shape: DimShape, px: number, textPx: number): DimStro
 
   if (shape.kind === 'linear') {
     const { p, q, d, n, off, along } = shape
-    const L = len2(sub2(q, p))
+    // The stretch drawn runs along `d` from p's level; q may stand off that
+    // level (a horizontal or vertical distance between two points), and its
+    // extension line is then as much longer or shorter.
+    const pq = sub2(q, p)
+    const skew = pq[0] * n[0] + pq[1] * n[1]
+    const L = Math.abs(skew) > 1e-12 ? Math.abs(pq[0] * d[0] + pq[1] * d[1]) : len2(pq)
     const p1 = add2(p, scale2(n, off))
-    const mid = add2(scale2(add2(p, q), 0.5), scale2(n, off))
-    if (Math.abs(off) > (EXT_GAP_PX + 1) * px) {
-      const s = Math.sign(off)
-      for (const from of [p, q]) lines.push([add2(from, scale2(n, s * EXT_GAP_PX * px)), add2(from, scale2(n, off + s * EXT_OVER_PX * px))])
+    const mid = add2(add2(p, scale2(d, L / 2)), scale2(n, off))
+    for (const [from, reach] of [[p, off], [q, off - skew]] as [Vec2, number][]) {
+      if (Math.abs(reach) <= (EXT_GAP_PX + 1) * px) continue
+      const s = Math.sign(reach)
+      lines.push([add2(from, scale2(n, s * EXT_GAP_PX * px)), add2(from, scale2(n, reach + s * EXT_OVER_PX * px))])
     }
     // The arrows stand inside the stretch while they and the number fit
     // there; on a short one they point in at it from outside.

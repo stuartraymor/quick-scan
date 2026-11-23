@@ -18,6 +18,7 @@ const SKETCH_DIMENSIONS_KEY = 'scanruler.sketchdimensions'
 const SKETCH_CONTROL_POINTS_KEY = 'scanruler.sketchcontrolpoints'
 const FIT_OPTIONS_KEY = 'scanruler.fitoptions'
 const LIVE_MAP_KEY = 'scanruler.livemap'
+const EXTRUDE_SNAP_KEY = 'scanruler.extrudesnap'
 const LIVE_MAP_RANGE_KEY = 'scanruler.livemaprange'
 const DRAW_MODES_KEY = 'scanruler.drawmodes'
 const POLYGON_SIDES_KEY = 'scanruler.polygonsides'
@@ -112,6 +113,10 @@ interface RePrefsState {
    *  scan. */
   liveMap: boolean
   liveMapRange: number
+  /** Snapping on an extrude (QUICKSURFACE's checkbox, off by default): an
+   *  arrow dragged over the scan puts its end through the scan point under
+   *  the cursor. */
+  extrudeSnap: boolean
   /** How the rectangle, the circle and the arc are drawn — two corners or
    *  centre and corner, and so on; each tool keeps the way last chosen. */
   drawModes: DrawModes
@@ -131,6 +136,7 @@ interface RePrefsState {
   setSketchControlPoints: (on: boolean) => void
   setFitOptions: (options: FitOptions) => void
   setLiveMap: (on: boolean) => void
+  setExtrudeSnap: (on: boolean) => void
   setLiveMapRange: (mm: number) => void
   setDrawMode: <K extends keyof DrawModes>(tool: K, mode: DrawModes[K]) => void
   setPolygonSides: (sides: number) => void
@@ -150,6 +156,7 @@ export const useRePrefs = create<RePrefsState>()((set) => ({
   // Off until asked for, as QUICKSURFACE's Analysis box starts unticked;
   // an operator who turned it on keeps it on.
   liveMap: read(LIVE_MAP_KEY) === '1',
+  extrudeSnap: read(EXTRUDE_SNAP_KEY) === '1',
   liveMapRange: clampLiveMapRange(Number(read(LIVE_MAP_RANGE_KEY))),
   drawModes: storedDrawModes(),
   polygonSides: clampSides(Number(read(POLYGON_SIDES_KEY) ?? 6)),
@@ -185,6 +192,10 @@ export const useRePrefs = create<RePrefsState>()((set) => ({
   setLiveMap: (liveMap) => {
     write(LIVE_MAP_KEY, liveMap ? '1' : '0')
     set({ liveMap })
+  },
+  setExtrudeSnap: (extrudeSnap) => {
+    write(EXTRUDE_SNAP_KEY, extrudeSnap ? '1' : '0')
+    set({ extrudeSnap })
   },
   setLiveMapRange: (mm) => {
     const liveMapRange = clampLiveMapRange(mm)

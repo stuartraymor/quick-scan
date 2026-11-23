@@ -113,7 +113,7 @@ const label = await page.$eval(`[data-test=flat-dimension-${circle.id}]`, (el) =
 check(/^Ø\s*6$/.test(label ?? ''), `the sheet writes it Ø 6 (${label})`)
 await page.screenshot({ path: shotPath('sketch-diameter.png') })
 // Typed with its letter, R4 over the Ø: the circle by its radius, 4 mm.
-await page.click(`[data-test=flat-dimension-${circle.id}]`)
+await page.click(`[data-test=flat-dimension-${circle.id}]`, { count: 2 })
 await sleep(150)
 await page.keyboard.down('Control')
 await page.keyboard.press('KeyA')

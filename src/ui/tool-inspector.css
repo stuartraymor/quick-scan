@@ -15,3 +15,7 @@
 .desktop-mid .stagecorner { top: auto; bottom: 12px; left: auto; right: 12px; align-items: flex-end; }
 @media (max-width: 1200px) { .tool-inspector { width: 280px; min-width: 250px; } .tool-inspector[data-mode='floating'] { left: 200px; } }
 @media (max-width: 900px) { .tool-inspector[data-mode='floating'] { left: 175px; } }
+
+/* Rolled back, the panel is inert: the line saying so, and its To End of
+   Model, stay in sight however far the panel was scrolled. */
+.tool-inspector .inspector-body > [data-test="model-history-edit-lock"] { position: sticky; top: 0; z-index: 2; margin: 0; padding: 6px 8px; background: var(--panel); border-bottom: 1px solid var(--line); }

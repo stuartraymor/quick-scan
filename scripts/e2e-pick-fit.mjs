@@ -88,9 +88,16 @@ async function partShare(selector) {
     const { data, width, height } = ctx.getImageData(0, 0, c.width, c.height)
     let part = 0
     let marked = 0
+    // The stage is a vertical gradient (the dark theme; it was a flat
+    // #dedcd6 when this was written, and every pixel then counted as part).
+    // A pixel is part when it differs from its own row's background, read at
+    // the row's two ends.
+    const at = (x, y) => (y * width + x) * 4
     for (let i = 0; i < data.length; i += 4) {
       const r = data[i], g = data[i + 1], b = data[i + 2]
-      if (Math.abs(r - 0xde) + Math.abs(g - 0xdc) + Math.abs(b - 0xd6) > 40) part++
+      const y = Math.floor(i / 4 / width), L = at(1, y), R = at(width - 2, y)
+      const off = (k) => Math.abs(r - data[k]) + Math.abs(g - data[k + 1]) + Math.abs(b - data[k + 2])
+      if (Math.min(off(L), off(R)) > 40) part++
       // The marking's magenta (#b5179e) is the one strongly red-and-blue thing
       // that can be on a bare part.
       if (r > 100 && b > 80 && g < r - 60 && b > g + 40) marked++
@@ -150,7 +157,13 @@ check(
   lost.share < framed.share / 2,
   `zooming out shrinks the models (${framed.share} → ${lost.share})`,
 )
-await page.click('[aria-label="View navigation menu"]')
+// The corner's menu opens when the pointer rests on the view cube, as a hand
+// does it. (Its ▾ toggle sits under the floating "Compare" tools button here,
+// so a click on the toggle lands on that button instead.)
+const cube = await page.$eval('.viewport', (el) => parseFloat(getComputedStyle(el).getPropertyValue('--gizmo-size')))
+console.log('cube', cube, 'hover at', viewport.x + viewport.w - cube / 2, viewport.y + cube / 2, 'hit:', await page.evaluate((x, y) => { const h = document.elementFromPoint(x, y); return h && (h.tagName + '.' + h.className) }, viewport.x + viewport.w - cube / 2, viewport.y + cube / 2))
+await page.mouse.move(viewport.x + viewport.w - cube / 2, viewport.y + cube / 2)
+await page.waitForSelector('[data-test=corner-fit]', { visible: true })
 await page.click('[data-test=corner-fit]')
 await sleep(500)
 const refitted = await partShare('.viewport')
@@ -160,6 +173,9 @@ check(
 )
 
 // ---- stopping a fit that is running ----------------------------------------
+// The tools panel folds into its floating button (Compare) once a step ends;
+// open it again, as a hand would, before using its keys.
+if (await page.$('[data-test=show-tool-inspector]')) { await page.click('[data-test=show-tool-inspector]'); await page.waitForSelector('[data-test=align-auto]', { visible: true }) }
 await page.click('[data-test=align-auto]')
 const stopShown = await page
   .waitForSelector('[data-test=align-stop]', { timeout: 20_000 })

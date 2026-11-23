@@ -154,6 +154,10 @@ export class NominalSurface {
    *  (~11M+ triangles) has more edges than that. */
   private edgeOffsets: Uint32Array
   private edgeOther: Uint32Array
+  /** With seams joined: the vertex standing for each, the first at its
+   *  place — what the pseudonormals are kept by. Null: every vertex its
+   *  own. */
+  private seam: Uint32Array | null = null
   private probe = new THREE.Vector3()
   private target = { point: new THREE.Vector3(), distance: 0, faceIndex: 0 }
   private projectionRay = new THREE.Ray()
@@ -175,7 +179,16 @@ export class NominalSurface {
     return hit ? [hit.point.x, hit.point.y, hit.point.z] : null
   }
 
-  constructor(positions: Float32Array, indices: Uint32Array) {
+  /**
+   * `joinSeams`: a mesh tessellated face by face — a CAD kernel's, where a
+   * vertex on an edge is there once for each face that meets there — has
+   * no edge two faces share, so a point whose nearest lands on a seam
+   * would be signed by one face's normal alone: beside a wall, under the
+   * rim of the face above it, that reads as inside. Joined, the vertices
+   * at one place keep one pseudonormal and the seams their edges', as a
+   * welded mesh's do. The triangles and the vertices are as given.
+   */
+  constructor(positions: Float32Array, indices: Uint32Array, { joinSeams = false }: { joinSeams?: boolean } = {}) {
     this.positions = positions
     this.vertexCount = positions.length / 3
 
@@ -198,6 +211,7 @@ export class NominalSurface {
     this.bboxMax = [box.max.x, box.max.y, box.max.z]
     this.bboxDiagonal = box.min.distanceTo(box.max)
 
+    if (joinSeams) this.seam = seamVertices(positions, this.bboxDiagonal)
     this.faceNormal = new Float32Array(this.triangleCount * 3)
     this.vertexNormal = new Float32Array(this.vertexCount * 3)
     this.buildFaceAndVertexNormals()
@@ -211,6 +225,11 @@ export class NominalSurface {
 
   /** Id of the undirected edge (a, b), or -1 if no face uses it. */
   private edgeIndex(a: number, b: number): number {
+    const seam = this.seam
+    if (seam) {
+      a = seam[a]
+      b = seam[b]
+    }
     const m = a < b ? a : b
     const other = a < b ? b : a
     const end = this.edgeOffsets[m + 1]
@@ -264,6 +283,7 @@ export class NominalSurface {
     if (!(l1 > 1e-20 && l2 > 1e-20)) return
     const cos = Math.min(1, Math.max(-1, (e1x * e2x + e1y * e2y + e1z * e2z) / (l1 * l2)))
     const w = Math.acos(cos)
+    if (this.seam) vi = this.seam[vi]
     this.vertexNormal[vi * 3] += nx * w
     this.vertexNormal[vi * 3 + 1] += ny * w
     this.vertexNormal[vi * 3 + 2] += nz * w
@@ -281,8 +301,10 @@ export class NominalSurface {
     // bounds. Each bucket is sized for its incidences (3 per face), an upper
     // bound on its unique edges.
     const dupOffsets = new Uint32Array(vcount + 1)
+    const seam = this.seam
+    const at = (v: number) => (seam ? seam[v] : v)
     for (let f = 0; f < this.triangleCount; f++) {
-      const ia = idx[f * 3], ib = idx[f * 3 + 1], ic = idx[f * 3 + 2]
+      const ia = at(idx[f * 3]), ib = at(idx[f * 3 + 1]), ic = at(idx[f * 3 + 2])
       dupOffsets[(ia < ib ? ia : ib) + 1]++
       dupOffsets[(ia < ic ? ia : ic) + 1]++
       dupOffsets[(ib < ic ? ib : ic) + 1]++
@@ -293,7 +315,7 @@ export class NominalSurface {
     const dupOther = new Uint32Array(dupOffsets[vcount])
     const cursor = dupOffsets.slice(0, vcount)
     for (let f = 0; f < this.triangleCount; f++) {
-      const ia = idx[f * 3], ib = idx[f * 3 + 1], ic = idx[f * 3 + 2]
+      const ia = at(idx[f * 3]), ib = at(idx[f * 3 + 1]), ic = at(idx[f * 3 + 2])
       insertEdge(dupOffsets, dupOther, cursor, ia, ib)
       insertEdge(dupOffsets, dupOther, cursor, ia, ic)
       insertEdge(dupOffsets, dupOther, cursor, ib, ic)
@@ -414,7 +436,8 @@ export class NominalSurface {
       case Feature.VertexA:
       case Feature.VertexB:
       case Feature.VertexC: {
-        const vi = idx[f * 3 + (s[3] as number)]
+        const corner = idx[f * 3 + (s[3] as number)]
+        const vi = this.seam ? this.seam[corner] : corner
         nx = this.vertexNormal[vi * 3]
         ny = this.vertexNormal[vi * 3 + 1]
         nz = this.vertexNormal[vi * 3 + 2]
@@ -455,6 +478,46 @@ export class NominalSurface {
     out.nx = nx; out.ny = ny; out.nz = nz
     out.faceIndex = f
   }
+}
+
+/** For each vertex, the first vertex at the same place — within a
+ *  millionth of the mesh's size, found on a grid of that pitch and its
+ *  neighbours — or itself. */
+export function seamVertices(positions: Float32Array, diagonal: number): Uint32Array {
+  const n = positions.length / 3
+  const out = new Uint32Array(n)
+  const tol = Math.max(diagonal * 1e-6, 1e-9)
+  // Cells two tolerances wide, by a hash of their place: a vertex's match
+  // lies in its own cell or, along each axis, the one on the side of the
+  // cell's middle it is on — eight cells. The coordinates settle a
+  // collision.
+  const size = 2 * tol
+  const cells = new Map<number, number[]>()
+  const hash = (i: number, j: number, k: number) => (Math.imul(i, 73856093) ^ Math.imul(j, 19349663) ^ Math.imul(k, 83492791)) | 0
+  for (let v = 0; v < n; v++) {
+    const x = positions[v * 3], y = positions[v * 3 + 1], z = positions[v * 3 + 2]
+    const fx = x / size, fy = y / size, fz = z / size
+    const i = Math.floor(fx), j = Math.floor(fy), k = Math.floor(fz)
+    const si = fx - i < 0.5 ? -1 : 1, sj = fy - j < 0.5 ? -1 : 1, sk = fz - k < 0.5 ? -1 : 1
+    let found = -1
+    for (let c = 0; c < 8 && found < 0; c++) {
+      const list = cells.get(hash(i + (c & 1 ? si : 0), j + (c & 2 ? sj : 0), k + (c & 4 ? sk : 0)))
+      if (!list) continue
+      for (const u of list) {
+        if (Math.abs(positions[u * 3] - x) <= tol && Math.abs(positions[u * 3 + 1] - y) <= tol && Math.abs(positions[u * 3 + 2] - z) <= tol) {
+          found = u
+          break
+        }
+      }
+    }
+    out[v] = found >= 0 ? found : v
+    if (found >= 0) continue
+    const key = hash(i, j, k)
+    const list = cells.get(key)
+    if (list) list.push(v)
+    else cells.set(key, [v])
+  }
+  return out
 }
 
 /** Append edge (a, b) to the smaller endpoint's bucket unless already there. */

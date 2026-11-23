@@ -151,6 +151,11 @@ export interface ScanPart {
   /** Absent in projects saved before the switch existed; those load with the
    *  tint on, same as a fresh session. */
   showBackfaces?: boolean
+  /** The scan's eye and the elements' master eye, present (true) only when
+   *  shut. Absent in projects saved before 1.2.15: those open with both
+   *  shown, as then. */
+  scanHidden?: boolean
+  elementsHidden?: boolean
   /** The scan cut with planes, for the 2D workspace. Absent in projects
    *  saved before sections existed. */
   sections?: SectionJson[]

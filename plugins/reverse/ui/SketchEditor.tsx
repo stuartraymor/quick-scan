@@ -18,7 +18,7 @@ import { planeOffset, planeTakesOffset } from '../core/features'
 import { SHARE_MM } from '../core/shareFit'
 import { describePlaneRef } from '../core/resolve'
 import { nominalOf, nominalText, type NominalKind } from '../core/nominal'
-import { fixedPieces, fixId, isDimension, POLYGON_MAX_SIDES, sketchBounds, type Constraint, type Sketch, type SketchPatternSpec } from '../core/sketch'
+import { constraintEntities, entityOf, fixedPieces, fixId, isDimension, POLYGON_MAX_SIDES, rimRadius, sketchBounds, type Constraint, type Sketch, type SketchPatternSpec } from '../core/sketch'
 import { useRePrefs } from '../state/rePrefs'
 import { useReverse, type ImagePickMode, type SketchDraft, type SketchTool } from '../state/reStore'
 import { IMAGE_MAX_PX, placedImage } from '../core/sketchImage'
@@ -37,9 +37,11 @@ import { useLength } from '../../../src/app/useUnits'
 import type { LengthPresets } from '../../../src/core/units'
 import { CORNER_GAP_MM } from '../core/corners'
 import { SketchControls } from './SketchControls'
+import { useSketchPresentation } from '../state/sketchPresentation'
 import { SketchExtractPanel } from './SketchExtractPanel'
 import { useSketchBrush } from '../state/sketchBrushStore'
 import { useSketchCornerTrim } from '../state/sketchCornerTrimStore'
+import { useHeldDimension } from '../state/heldDimensionStore'
 import { useSketchProject } from '../state/sketchProjectStore'
 import { SketchCornerTrimPanel } from './SketchCornerTrimPanel'
 import { SketchProjectPanel } from './SketchProjectPanel'
@@ -76,6 +78,13 @@ const DRAW_MODES: { [K in keyof DrawModes]: (DrawMode & { id: DrawModes[K] })[] 
 
 const isShapeTool = (tool: SketchTool): tool is keyof DrawModes => tool === 'rectangle' || tool === 'polygon' || tool === 'circle' || tool === 'arc'
 
+/** Whether a distance has an arc's or a circle's centre at an end, which can
+ *  be taken on the rim instead. */
+function roundEnd(c: Extract<Constraint, { kind: 'distance' }>, sketch: Sketch): boolean {
+  const round = (a: { entity: number; at: Parameters<typeof rimRadius>[1] }) => rimRadius(entityOf(sketch, a.entity), a.at, 'near') > 0
+  return round(c.p) || ('entity' in c.q && round(c.q))
+}
+
 function constraintLabel(c: Constraint, sketch: Sketch): string {
   const name = (id: number) => {
     const e = sketch.entities.find((x) => x.id === id)
@@ -99,9 +108,10 @@ function constraintLabel(c: Constraint, sketch: Sketch): string {
     case 'length':
     case 'radius':
     case 'diameter':
-      return `${c.kind === 'length' ? 'L' : c.kind === 'radius' ? 'R' : 'Ø'} ${name(c.entity)}`
+    case 'arcLength':
+      return `${c.kind === 'length' ? 'L' : c.kind === 'radius' ? 'R' : c.kind === 'diameter' ? 'Ø' : '⌒'} ${name(c.entity)}`
     case 'distance':
-      return `d ${name(c.p.entity)} · ${'datum' in c.q ? datumName(c.q.datum) : 'line' in c.q ? name(c.q.line) : name(c.q.entity)}`
+      return `${c.axis === 'x' ? 'dx' : c.axis === 'y' ? 'dy' : c.edge === 'near' ? 'Gap' : c.edge === 'far' ? 'Span' : 'd'} ${name(c.p.entity)} · ${'datum' in c.q ? datumName(c.q.datum) : 'line' in c.q ? name(c.q.line) : name(c.q.entity)}`
     case 'pointOn':
       return `On ${name(c.p.entity)} · ${'datum' in c.on ? datumName(c.on.datum) : 'line' in c.on ? name(c.on.line) : name(c.on.curve)}`
     case 'collinear':
@@ -325,6 +335,8 @@ export function SketchEditor({ chainsOf }: { chainsOf: () => SketchChains | null
   const dimensionKey = dimensionIds.join(',')
   const selectedConstraint = draft?.selectedConstraint ?? null
   const inHand = draft?.dimMade ?? null
+  // An angle in hand reads the cursor's sector, as the sheet draws it.
+  const heldAngle = useHeldDimension((s) => s.held)
   useEffect(() => {
     const fresh = selectedConstraint !== null && selectedConstraint !== inHand && dimensionIds.includes(selectedConstraint) && !knownDimensions.current.has(selectedConstraint)
     knownDimensions.current = new Set(dimensionIds)
@@ -340,6 +352,7 @@ export function SketchEditor({ chainsOf }: { chainsOf: () => SketchChains | null
   const projecting = useSketchProject((s) => s.open)
   const mirroring = useSketchMirror((s) => s.open)
   const patterning = useSketchPattern((s) => s.open)
+  const onlySelected = useSketchPresentation((s) => s.relationsOfSelection)
 
   if (!draft) return null
   if (extracting) return <SketchExtractPanel chainsOf={chainsOf} />
@@ -349,11 +362,16 @@ export function SketchEditor({ chainsOf }: { chainsOf: () => SketchChains | null
   if (patterning) return <div className="sketch-editor-parity"><SketchPatternPanel /></div>
 
   const sketch = draft.sketch
-  const relations = sketch.constraints.filter((c) => !isDimension(c) && !c.inferred)
-  const inferred = sketch.constraints.filter((c) => !isDimension(c) && c.inferred)
-  const dimensions = sketch.constraints.filter(isDimension)
+  // "Selected only": the relations and dimensions that hang on a piece
+  // selected — none while nothing is.
+  const ofSelection = (ids: readonly number[]) => !onlySelected || ids.some((id) => draft.selection.includes(id))
+  const allConstraints = sketch.constraints.length + fixedPieces(sketch).length
+  const listed = sketch.constraints.filter((c) => ofSelection(constraintEntities(c)))
+  const relations = listed.filter((c) => !isDimension(c) && !c.inferred)
+  const inferred = listed.filter((c) => !isDimension(c) && c.inferred)
+  const dimensions = listed.filter(isDimension)
   // Every Fix is a relation of the list too, removed as one is.
-  const fixes = fixedPieces(sketch)
+  const fixes = fixedPieces(sketch).filter((e) => ofSelection([e.id]))
   const fittedCount = Object.keys(draft.fitted).length
   const unfitted = chainCount - fittedCount
   const found = draft.found.length
@@ -388,9 +406,12 @@ export function SketchEditor({ chainsOf }: { chainsOf: () => SketchChains | null
   const shapeMode = shape ? shapeModes.find((m) => m.id === drawModes[shape]) ?? shapeModes[0] : null
   // One line, and only when there is something to say: what went wrong,
   // what is being waited for, or what the tool in hand wants clicked next.
+  const overdefined = status === 'failed' && !draft.error
   const hint =
     draft.error ??
-    (draft.imagePick
+    (overdefined
+      ? 'The sketch is overdefined. Change or delete a dimension or relation, or make a dimension driven — Select overdefining constraints finds them.'
+      : draft.imagePick
       ? imagePickHint(draft.imagePick)
       : chainsStatus === 'cutting'
       ? 'Cutting the scan on the sketch plane…'
@@ -592,12 +613,6 @@ export function SketchEditor({ chainsOf }: { chainsOf: () => SketchChains | null
           Fit spline to slice
         </button>
       )}
-      {hint && (
-        <p className="hint" data-test="sketch-hint">
-          {hint}
-        </p>
-      )}
-
       <div className="toolrow">
         <button data-test="sketch-delete" disabled={!hasSelection} onClick={()=>re.getState().deleteSelected()}>Delete selected</button>
         <button data-test="sketch-tool-chamfer" onClick={()=>re.getState().setSketchTool('chamfer')}>Chamfer</button>
@@ -607,13 +622,23 @@ export function SketchEditor({ chainsOf }: { chainsOf: () => SketchChains | null
       <div className="toolrow">
         <label><input data-test="sketch-show-grid" type="checkbox" checked={showGrid} onChange={e=>useRePrefs.getState().setSketchGrid(e.target.checked)}/> Show grid</label>
         <label><input data-test="sketch-grid-snap" type="checkbox" checked={gridSnap} onChange={e=>useRePrefs.getState().setGridSnap(e.target.checked)}/> Snap to grid</label>
-        <button data-test="sketch-rel-coincident" onClick={()=>hasSelection?re.getState().addRelation('coincident'):re.getState().armRelation('coincident')}>Coincident</button>
-        <button data-test="sketch-rel-concentric" onClick={()=>hasSelection?re.getState().addRelation('concentric'):re.getState().armRelation('concentric')}>Concentric</button>
       </div>
 
       {draft.pattern && <PatternBox spec={draft.pattern} selected={draft.selection.length} />}
 
       </details>
+      {allConstraints > 0 && (
+        <div className="toolrow relations-filter">
+          <label title="List only the relations and dimensions of the pieces selected">
+            <input data-test="sketch-relations-selected-only" type="checkbox" checked={onlySelected} onChange={(e) => useSketchPresentation.getState().setRelationsOfSelection(e.target.checked)} /> Selected only
+          </label>
+          {onlySelected && relations.length + inferred.length + dimensions.length + fixes.length === 0 && (
+            <span className="hint" data-test="sketch-relations-none">
+              {draft.selection.length === 0 ? 'Select pieces to see their relations.' : 'The selected pieces have no relations or dimensions.'}
+            </span>
+          )}
+        </div>
+      )}
       {inferred.length > 0 && (
         <div className="chiprow" data-test="sketch-inferred">
           {inferred.map((c) => (
@@ -630,11 +655,25 @@ export function SketchEditor({ chainsOf }: { chainsOf: () => SketchChains | null
       {(relations.length > 0 || dimensions.length > 0 || fixes.length > 0) && (
         <div className="relations" data-test="sketch-constraints">
           {dimensions.map((c) => (
-            <div key={c.id} className={'kv' + (draft.selectedConstraint === c.id ? ' sel' : '')} data-test="sketch-dimension-row">
-              <span className="name" onClick={() => re.getState().selectConstraint(c.id)}>
+            <div key={c.id} className={'kv' + (draft.selectedConstraint === c.id ? ' sel' : '')} data-test="sketch-dimension-row" data-constraint={c.id}>
+              <span className="name" title={constraintLabel(c, sketch)} onClick={() => re.getState().selectConstraint(c.id)}>
                 {constraintLabel(c, sketch)}
               </span>
-              {(c.kind === 'radius' || c.kind === 'diameter') && (
+              {(c.kind === 'radius' || c.kind === 'diameter' || c.kind === 'arcLength') && entityOf(sketch, c.entity)?.kind === 'arc' && (
+                <select
+                  className="chip"
+                  data-test="sketch-dimension-arc-form"
+                  tabIndex={-1}
+                  value={c.kind}
+                  title="How the arc is given: by its radius, its diameter, or its length round the rim from end to end"
+                  onChange={(e) => re.getState().setDimensionForm(c.id, e.target.value as 'radius' | 'diameter' | 'arcLength')}
+                >
+                  <option value="radius">Radius</option>
+                  <option value="diameter">Diameter</option>
+                  <option value="arcLength">Arc length</option>
+                </select>
+              )}
+              {(c.kind === 'radius' || c.kind === 'diameter') && entityOf(sketch, c.entity)?.kind !== 'arc' && (
                 <button
                   className="chip"
                   data-test="sketch-dimension-form"
@@ -645,14 +684,59 @@ export function SketchEditor({ chainsOf }: { chainsOf: () => SketchChains | null
                   {c.kind === 'radius' ? '→ Ø' : '→ R'}
                 </button>
               )}
-              {!c.expr && <NominalChip value={c.value} kind={nominalKindOf(c.kind)} testId="sketch-nominal" onTake={(v) => re.getState().setDimensionValue(c.id, v)} />}
+              {c.kind === 'distance' && roundEnd(c, sketch) && (
+                <select
+                  className="chip"
+                  data-test="sketch-dimension-edge"
+                  tabIndex={-1}
+                  value={c.edge ?? 'centre'}
+                  title="Where the arc or circle is measured from: its centre, or its rim nearest to or farthest from the other end"
+                  onChange={(e) => re.getState().setDimensionForm(c.id, e.target.value as 'centre' | 'near' | 'far')}
+                >
+                  <option value="centre">Centre</option>
+                  <option value="near">Nearest edge</option>
+                  <option value="far">Farthest edge</option>
+                </select>
+              )}
+              {c.kind === 'distance' && 'entity' in c.q && !c.edge && !roundEnd(c, sketch) && (
+                <select
+                  className="chip"
+                  data-test="sketch-dimension-axis"
+                  tabIndex={-1}
+                  value={c.axis ?? 'aligned'}
+                  title="How the distance between the two points is taken: straight between them, or along the sheet's horizontal or vertical alone"
+                  onChange={(e) => re.getState().setDimensionForm(c.id, e.target.value as 'aligned' | 'x' | 'y')}
+                >
+                  <option value="aligned">Aligned</option>
+                  <option value="x">Horizontal</option>
+                  <option value="y">Vertical</option>
+                </select>
+              )}
+              {/* Driving holds the pieces at the number; driven only reads
+                  them — a reference dimension, in brackets. */}
+              <button
+                className={'chip' + (c.driven ? ' on' : '')}
+                data-test="sketch-dimension-driven"
+                tabIndex={-1}
+                aria-pressed={c.driven === true}
+                title={c.driven ? 'Driven: a reference dimension, in brackets. It reads the sketch and holds nothing. Press to make it driving.' : 'Driving: the pieces are held at this number. Press to make it driven, a reference dimension that only reads the sketch.'}
+                onClick={() => re.getState().setDimensionDriven(c.id, !c.driven)}
+              >
+                {c.driven ? 'Driven' : 'Driving'}
+              </button>
+              {!c.expr && !c.driven && <NominalChip value={c.value} kind={nominalKindOf(c.kind)} testId="sketch-nominal" onTake={(v) => re.getState().setDimensionValue(c.id, v)} />}
               {/* A number, or an expression over the parameters kept beside
                   it. Escape is the field's own: it leaves the number, and goes
                   no further to put the tool or the selection down. Enter takes
                   the number — typed, or as it stands — and with it the
                   Dimension tool's pick is done. */}
+              {c.driven ? (
+                <span className="driven-value" data-test="sketch-dimension-read" title="Read off the sketch">
+                  ({c.kind === 'angle' ? `${Number(c.value.toFixed(2))}°` : len.fmt(c.value)})
+                </span>
+              ) : (
               <ExprInput
-                value={c.value}
+                value={heldAngle && heldAngle.id === c.id && draft.dimMade === c.id ? heldAngle.value : c.value}
                 expr={c.expr}
                 kind={dimensionKind(c.kind)}
                 unit={c.kind === 'angle' ? '°' : len.word()}
@@ -661,7 +745,15 @@ export function SketchEditor({ chainsOf }: { chainsOf: () => SketchChains | null
                 onCommit={(v, expr) => re.getState().setDimensionValue(c.id, v, expr)}
                 onEnter={() => re.getState().finishDimension(c.id)}
               />
+              )}
               {unmet.some((u) => u.id === c.id) && <b className="warn">⚠</b>}
+              {/* One that overdefines the sketch may be kept as a reference:
+                  it stays, reading what the others make. */}
+              {unmet.some((u) => u.id === c.id) && !c.driven && (
+                <button className="chip" data-test="sketch-dimension-make-driven" tabIndex={-1} title="Keep this dimension as a reference: driven, in brackets, reading what the rest of the sketch makes" onClick={() => re.getState().setDimensionDriven(c.id, true)}>
+                  Make driven
+                </button>
+              )}
               <button className="x" tabIndex={-1} title="Remove the dimension" onClick={() => { re.getState().selectConstraint(c.id); re.getState().removeSelectedConstraint() }}>
                 ×
               </button>
@@ -691,6 +783,16 @@ export function SketchEditor({ chainsOf }: { chainsOf: () => SketchChains | null
         </div>
       )}
 
+      {/* What went wrong, or what the tool in hand wants next — above the
+          sketch's status, where it is read. It sat inside the closed
+          "Sketch settings and additional tools", so a refused edit's reason
+          and the relation tools' prompts were never seen. */}
+      {hint && (
+        <p className={'hint sketch-hint' + (draft.error || overdefined ? ' refused' : '')} data-test="sketch-hint" role="status" aria-live="polite">
+          {hint}
+        </p>
+      )}
+
       <div className="dro">
         <div className="dro-label">
           <span>Sketch</span>
@@ -707,7 +809,7 @@ export function SketchEditor({ chainsOf }: { chainsOf: () => SketchChains | null
           {status === 'empty' && <b style={{ fontSize: 12, fontWeight: 400, color: 'var(--dim)' }}>Needs input</b>}
           {status === 'failed' && (
             <b>
-              ⚠ {unmet.length} relation{unmet.length === 1 ? '' : 's'} not met
+              ⚠ The sketch is overdefined
             </b>
           )}
           {status === 'ready' && <b style={{ fontSize: 13 }}>Solved{found > 0 ? ` · ${found} closed region${found === 1 ? '' : 's'}` : ' · no closed region yet'}</b>}
@@ -717,7 +819,7 @@ export function SketchEditor({ chainsOf }: { chainsOf: () => SketchChains | null
           sketch closes a region. */}
       {(
         <div className="toolrow" data-test="sketch-feature-keys">
-          <button className="primary withicon" data-test="sketch-extrude" disabled={found === 0} title={found === 0 ? 'Close a region first — a rectangle, or lines and arcs end to end' : 'Finish the sketch and extrude every region of it — the body shows as a ghost with arrows to drag; a click on a region lets it go'} onClick={() => re.getState().finishAndExtrude()}>
+          <button className="primary withicon" data-test="sketch-extrude" disabled={found === 0 && !sketch.entities.some((e) => !e.construction && e.kind !== 'point')} title={found === 0 ? 'Finish the sketch and extrude its lines and curves as a surface — it closes no region yet; close one (a rectangle, or lines and arcs end to end) for a solid' : 'Finish the sketch and extrude every region of it — the body shows as a ghost with arrows to drag; a click on a region lets it go'} onClick={() => re.getState().finishAndExtrude()}>
             <Icon name="extrude" size={18} />
             Extrude
           </button>

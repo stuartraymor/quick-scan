@@ -509,7 +509,7 @@ export function sketchOf(input: Json, frame: SketchFeature['frame'], stored?: Sk
     if (ids.has(c.id)) invalid(`${where}: the id ${c.id} is a piece’s — pieces and constraints share one run of ids. Ids from ${free()} up are free.`)
     ids.add(c.id)
     const k = c.kind as ConstraintKind
-    if (['horizontal', 'vertical', 'parallel', 'perpendicular', 'tangent', 'concentric', 'equal', 'length', 'radius', 'diameter', 'angle'].includes(k)) {
+    if (['horizontal', 'vertical', 'parallel', 'perpendicular', 'tangent', 'concentric', 'equal', 'length', 'radius', 'diameter', 'arcLength', 'angle'].includes(k)) {
       const named = constraintEntities(c).map((id) => piece(id, where))
       // Two lines are tangent only where they run on in line: what was
       // meant is a relation of lines, or a round between them.
@@ -531,13 +531,18 @@ export function sketchOf(input: Json, frame: SketchFeature['frame'], stored?: Sk
     }
     if (c.kind === 'symmetric' && typeof c.about === 'object' && 'line' in c.about) piece(c.about.line, where, ['line'])
     if (c.kind === 'distance') {
+      if (c.edge !== undefined && c.edge !== 'near' && c.edge !== 'far') invalid(`${where}: edge is "near" or "far" — where a round end is taken on its rim.`)
+      if (c.axis !== undefined && c.axis !== 'x' && c.axis !== 'y') invalid(`${where}: axis is "x" (the horizontal distance) or "y" (the vertical one).`)
+      if (c.axis !== undefined && (!('entity' in c.q) || c.edge !== undefined)) invalid(`${where}: axis is for a plain distance between two points.`)
       anchor(c.p, where)
       if ('entity' in c.q) anchor(c.q, where)
       else if ('line' in c.q) piece(c.q.line, where, ['line'])
     }
     // A dimension by its kind: one handed in with only an expression has
     // no value yet.
-    if (DIMENSION_KINDS.includes(c.kind) && (c.kind === 'length' || c.kind === 'radius' || c.kind === 'diameter' || c.kind === 'angle' || c.kind === 'distance')) {
+    if (c.driven !== undefined && (typeof c.driven !== 'boolean' || !DIMENSION_KINDS.includes(c.kind))) invalid(`${where}: driven is true or false, on a dimension only.`)
+    if (c.driven && c.expr) invalid(`${where}: a driven dimension reads the pieces — give it no expression.`)
+    if (DIMENSION_KINDS.includes(c.kind) && (c.kind === 'length' || c.kind === 'radius' || c.kind === 'diameter' || c.kind === 'arcLength' || c.kind === 'angle' || c.kind === 'distance')) {
       if (c.expr) {
         const r = evaluateFor(c.expr, dimensionKind(c.kind), scope)
         if (!r.ok) invalid(`${where}: “${c.expr}” — ${r.error}`)
@@ -545,11 +550,11 @@ export function sketchOf(input: Json, frame: SketchFeature['frame'], stored?: Sk
       } else if (typeof c.value !== 'number') {
         const e = (id: number) => piece(id, where)
         const measured =
-          c.kind === 'length' || c.kind === 'radius' || c.kind === 'diameter'
+          c.kind === 'length' || c.kind === 'radius' || c.kind === 'diameter' || c.kind === 'arcLength'
             ? measureDimension(sketch, c.kind, e(c.entity))
             : c.kind === 'angle'
               ? measureDimension(sketch, 'angle', e(c.a), e(c.b))
-              : measureDimension(sketch, 'distance', c.p, c.q, datums)
+              : measureDimension(sketch, 'distance', c.p, c.q, datums, c.edge, c.axis)
         if (measured === null) invalid(`${where}: give it a value — the pieces do not measure one.`)
         c.value = measured!
       }
@@ -621,8 +626,8 @@ export function putLanded(sketch: Sketch, fit: FitDraftOut | undefined, pull?: r
 
 /** The sketch being drawn given `sketch`, solved — or refused, the box
  *  shut, when it does not solve. Returns what the solve said. */
-export function putSketch(sketch: Sketch, pull?: readonly Pull[]) {
-  re().setSketch(sketch, pull)
+export function putSketch(sketch: Sketch, pull?: readonly Pull[], preserveSatisfied = false) {
+  re().setSketch(sketch, pull, preserveSatisfied)
   const d = re().sketchDraft!
   if (d.error) throw new CommandError('failed', `The sketch does not solve: ${d.error}`)
   const r = d.report

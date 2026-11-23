@@ -80,7 +80,7 @@ import type {
   SigmaPreset,
   Vec3,
 } from '../core/types'
-import { blockedRefs, defaultMethod, dependentsOf, type DimensionDraft, type Draft, draftFromElement, type Element, elementColor, evalConstructDraft, freshCounters, freshDraft, keptOf, nextPointPick, reevaluateConstructions, type SelectMode, transformSource, withoutRegion } from './elementModel'
+import { blockedRefs, defaultMethod, dependentsOf, type DimensionDraft, type Draft, draftFromElement, type Element, elementColor, evalConstructDraft, freshCounters, freshDraft, keptOf, nextPointPick, reevaluateConstructions, type SelectMode, transformSource, withFlips, withoutRegion } from './elementModel'
 import { alignmentReferences, alignmentSlotAccepts, flippedAlignmentAxis, type AlignDraft, type AlignmentProposal, alignSlotPicks, withPrimaryTile, withSlotElement, withSlotPicks, withSlotRef } from './alignModel'
 import { centreShadowDraft, dimensionRefsOf, type Section, sectionMeasureRefs, type SectionDraft, sectionDraftReady, sectionKeyOf, type SectionKind, specFields, settleSectionDraft } from './sectionModel'
 export { type Section, type SectionDraft, sectionDraftColorOf, sectionDraftReady } from './sectionModel'
@@ -226,6 +226,10 @@ interface AppState {
   resolveFit: (id: number, r: FitOutput) => void
   failFit: (id: number, message: string) => void
   removeElement: (id: number) => void
+  /** Turn a plane over (QUICKSURFACE Flip): what is built on it follows. */
+  flipElement: (id: number) => void
+  /** Lock or unlock an element against being moved (Edit). */
+  setElementLocked: (id: number, locked: boolean) => void
   toggleElementVisible: (id: number) => void
   /** Show or hide every element at once. */
   setAllElementsVisible: (visible: boolean) => void
@@ -500,7 +504,9 @@ function freshScanState() {
 /** The constructions and alignments worked out again over `elements`, the
  *  sections standing in as the planes they were cut on. */
 function rebuilt(elements: Element[], s: Pick<AppState, 'modelSize' | 'sections'>): Element[] {
-  return reevaluateConstructions(elements, s.modelSize, sectionMeasureRefs(s.sections))
+  // Flips go on before (constructions read a flipped plane the way it now
+  // faces) and after (a construction worked out again comes unflipped).
+  return withFlips(reevaluateConstructions(withFlips(elements), s.modelSize, sectionMeasureRefs(s.sections)))
 }
 
 /** What deleting `doomed` — elements, and a section if one is among them —
@@ -653,6 +659,10 @@ export const useStore = create<AppState>()((set, get) => ({
   // Deleting an element takes every construction built on it along, and every
   // dimension that references anything removed.
   removeElement: (id) => set((s) => withoutRefs(s, dependentsOf(id, s.elements))),
+  flipElement: (id) =>
+    set((s) => (s.elements.some((e) => e.id === id && e.kind === 'plane') ? { elements: rebuilt(s.elements.map((e) => (e.id === id ? { ...e, flipped: e.flipped ? undefined : true } : e)), s) } : {})),
+  setElementLocked: (id, locked) =>
+    set((s) => ({ elements: s.elements.map((e) => (e.id === id && Boolean(e.locked) !== locked ? { ...e, locked: locked || undefined } : e)) })),
 
   toggleElementVisible: (id) =>
     set((s) => ({

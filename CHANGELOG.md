@@ -1,3 +1,363 @@
+## 1.2.26 — Sketch right-click menu: circle and arc commands, Select other where things overlap, and relations of the selected only
+
+Three items the brief left open in its Part 8 (constraint interface) and test C16, all following the user's first report about concentric circles.
+
+- **A right-click menu on circles and arcs.** With the arrow, a relation or the Dimension tool in hand, a right click on a circle's or an arc's rim opens its menu:
+  - **Select centrepoint:** picks the centre for Coincident (or for the Dimension tool, when that is in hand). Then click what it meets.
+  - **Concentric with…** and **Equal radius with…:** the relation is armed with this circle already picked. Click the other circle.
+  - **Fix / Unfix.**
+  - **Dimension diameter** and **Dimension radius:** the dimension is in hand, to put down with a click. Greyed when the circle already has a size dimension; the tooltip says so.
+  - **View relations:** selects the circle and lists only its relations and dimensions.
+  - Each command is enabled only when it can act. Concentric and Equal are greyed when there is no other circle or arc.
+- **Select other.** Where several things lie on top of each other under the cursor, the right-click menu lists them all, for example the two circles of a concentric pair at their one centre, or both centres with Coincident in hand. The one a plain click takes is listed first, marked "(nearest)". Choosing another is that click, taking the chosen thing. This is the brief's selection cycling for overlapping centres (test C16).
+- **Selected only.** A tick box above the sketch's relations and dimensions lists only those of the selected pieces. With nothing selected it says so.
+- The menu opens only over the sketch and only with a tool that picks. With a drawing tool in hand, or away from the sketch, the view's own menu opens as before. A right-drag still pans. A spline keeps its own menu.
+- Core, plugin-owned: the click takes an optional `prefer` pick (`SnapContext.prefer`). The arrow, the relations and the Dimension tool take it instead of the nearest. The list comes from the new `core/pickOther.ts`.
+- Tests:
+  - new unit file rePickOther, 16 cases: what is offered at a shared centre for the arrow, Coincident and the Dimension tool; the nearest first; a lone piece; the labels; the click taking the chosen piece or centre; which tools open the menu; the circle menu's order, greying, Concentric with…, Equal radius with…, Select centrepoint, Dimension radius, Fix and View relations;
+  - new GUI script e2e-sketch-piece-menu, 26 checks by mouse and keyboard.
+- Not done:
+  - right-click menus on lines and on relation rows (Part 8.8's constraint menu);
+  - a separate Constraint Manager with filters and search (Part 8.9);
+  - checks in the installed app.
+
+## 1.2.25 — Sketch dimensions: driven (reference) dimensions, and an arc given by its length
+
+Two items the brief left open in its Parts 6–7 (Smart Dimension), and a small fix found while testing them.
+
+- **Driven dimensions.** Each dimension row in the sketch panel has a **Driving / Driven** key.
+  - A driven dimension is a reference: it holds nothing and reads what the rest of the sketch makes. It is updated after every solve.
+  - It is written in brackets on the sheet and in its row: (25), (R 5), (⌒ 20), (30°). Its number is drawn lighter and in italics.
+  - Its row has no field to type in. Typing a value into a driven dimension by other means is refused with a message.
+  - Pressed again, the dimension drives once more, at the value it last read, so nothing moves.
+  - Making a dimension driven lets go of its expression. Ctrl+Z puts it back as it was.
+- **"Make driven" for a dimension that fights the others.** A dimension that overdefines the sketch stays and turns yellow, as in QUICKSURFACE. Its row now also offers **Make driven**, which keeps it as a reference and lets the sketch solve. The overdefined hint mentions this.
+- **Arc length.** An arc's radius or diameter row has a form list: **Radius, Diameter, Arc length**.
+  - Arc length is the length round the rim from end to end (radius × sweep). It is written with ⌒ and drawn as an arc outside the arc, about its centre.
+  - Changing the form keeps the arc as it is. The new dimension takes the value the arc has.
+  - Typed, it sets the arc's length. It may also be driven.
+  - A circle keeps its R/Ø key: it has no ends, so no arc length.
+- A dimension row keeps its name whole. With an arc's form list beside it, the row wraps instead of cutting the name to its symbol.
+- MCP and agent input: a dimension may carry `driven: true` (not with an expression), and `arcLength` is a new dimension kind on one arc.
+- Tests:
+  - new unit file reDrivenDimension, 13 cases: the solver holds nothing for a driven dimension, a fighting dimension made driven, no redundancy added; arc length read, driven and driving; its text and its drawing; reading every kind; the store's form change, refusal on a circle, driven with undo, and driving again;
+  - new GUI script e2e-sketch-driven, 29 checks by mouse and keyboard.
+- Not done:
+  - placing an arc length directly with the Dimension tool's clicks (it is chosen in the row);
+  - an arc-length letter while typing on the sheet (R and Ø only);
+  - if the solver swaps an arc's ends, a driven dimension on those ends is not swapped with them;
+  - checks in the installed app.
+
+## 1.2.24 — Measure on sketches: Smart Dimension's pick switches, no scan needed, a preview before the click
+
+Three items 1.2.23 left open in the brief's Part 14, and one found while testing them.
+
+- **The snap bar shows the Pick switches during the Sketch way.** While Analysis > Measure > Sketch is chosen, the bar at the bottom of the view shows the same switches as Smart Dimension (End, Mid, Centre, Quad, Curve, All) instead of the mesh's Vertex and Surface. Measure picks by them: with Quad off, a click on a quadrant square takes the circle, as Smart Dimension would. The quadrant and middle squares are drawn on the sketch while the Sketch way is chosen. The mesh's ways keep their own switches.
+- **Measure works without a scan.** With a sketch shown and no scan open, Analysis > Measure can be pressed. The dialog opens on the Sketch way, and the three mesh ways are greyed with a tooltip saying a scan is needed. With neither a scan nor a sketch, Measure stays greyed.
+- **A preview before the click.** In the Sketch way, the piece or closed loop under the cursor is outlined in light blue, and its main figure is boxed beside it (R 3.0000 on a circle's rim, say). With a first pick waiting, the pair's figure is shown before the second click: the chord between two quadrant points, or the distance between two centres. Nothing is listed until the click. The preview goes when the cursor leaves the view, when the way changes and when the dialog closes.
+- **A second click on the thing already picked starts over.** It reads the thing by itself again. Before, with Quad off, two clicks on one circle measured the circle against itself (a distance of 0).
+- Core, generic: a plugin's Measure way may name the snap bar's set it picks by (`snap`) and offer a `hover` preview; the store keeps one `preview`. No core-to-plugin import.
+- The closed loops of a sketch are found once for each state of its pieces while the cursor moves, not once a frame.
+- Tests:
+  - new unit files reMeasurePreview (7 cases: Quad, Curve and Centre switches; outlines of a circle, a quadrant square, a centre and a plate with a hole; loops found again after an in-place edit) and measurePreview (3 cases);
+  - new GUI script e2e-sketch-measure-preview, 24 checks: no scan; the bar's Pick switches; the preview on a rim, on a pair, off the view; Quad off; a second click on the same circle.
+- Not done:
+  - measuring CAD body edges and faces;
+  - unit and precision options in the dialog;
+  - checks in the installed app.
+
+## 1.2.23 — Measure on sketches: circles, centres, quadrant points and closed loops, read only
+
+This is the brief's Part 14, the next step after 1.2.22. Analysis > Measure could only measure the scan. It can now read sketch geometry, both inside an open sketch and on the part once the sketch is finished. It uses the same pick rules as Smart Dimension and never changes the sketch.
+
+- **New: Analysis > Measure > Sketch.** The Analysis tab opens the Compare workspace, where sketches are not shown. Pressing **Sketch** brings the CAD workspace back, the ribbon staying on Analysis (as Zebra Stripes does), with an open sketch still open. The CAD tab keeps QUICKSURFACE's groups: no Measure group was added there.
+- **One click reads the thing itself:**
+  - a circle: radius, diameter, circumference, the area of the disk it bounds, and its centre;
+  - an arc: radius, sweep angle, chord, arc length and its ends;
+  - a line: length, ΔX, ΔY and its angle;
+  - a point: its position.
+- **Two clicks read the pair:**
+  - two quadrant points of one circle: the chord, the central angle, and the arc length the short way and the long way round, each named;
+  - centre to centre: the distance with ΔX and ΔY, and "concentric" when it is zero;
+  - a point to a line: the distance to the segment and to the line extended;
+  - two lines: the angle and its supplement;
+  - two circles: the closest and farthest distances between them, and the difference of their diameters;
+  - the sketch origin counts as a point, so centre to origin works.
+- **A click inside a closed loop** reads the outer perimeter, each hole's perimeter, and the area less the holes. These are calculated from the true lines and arcs, not from sampled points.
+- **What a click picks** is what the Dimension tool would pick from the same click:
+  - ends, centres, middles and quadrant squares;
+  - a whole piece, which on its own reads as the piece and, when paired, reads as the square's point.
+- **On the part**, every shown sketch is measured in its own plane, tilted ones included. Two points from different sketches give their 3D distance with ΔX, ΔY and ΔZ.
+- **Results** are listed in the dialog with a Copy button, which copies every value at full precision. The first result is boxed over the view, with a line between its points. Estimated values (a spline's length) are marked "≈", and pieces fitted to scan points say how many points they were fitted to. Delete Last and Delete All work as before.
+- **Measuring never changes the sketch.** While the Sketch way is chosen, the left mouse button on the view belongs to Measure: a click does not select a piece, and dragging across a piece does not move it. The other buttons still turn and pan the view.
+- Tests:
+  - new unit files reMeasureEval (11 cases) and reMeasurePick (9 cases), covering the brief's M01–M11 and M21 values: radius 20 gives circumference 125.663706, a quadrant chord of 28.284271, a 90° central angle and a short arc of 31.415927; centres at (0, 0) and (3, 4) give 5, with ΔX 3 and ΔY 4; a 40 × 20 plate with a 5 mm hole gives a perimeter of 120 and an area of 800 − 25π;
+  - new GUI script e2e-sketch-measure (20 checks, by mouse from Analysis > Measure, on the sheet and on the part).
+- Not done:
+  - measuring CAD body edges and faces;
+  - live hover previews before a click;
+  - unit and decimal options in the dialog (values follow the app's display units, to four decimals);
+  - the snap bar still shows the mesh switches while the Sketch way is on;
+  - Analysis > Measure still needs a scan loaded to open, so a project with only CAD and sketches cannot use it yet.
+- Reference CAD programs were not run here.
+- Evidence: analysis/quick-scan-v1.2.23.
+
+## 1.2.22 — Two circles about one centre: Concentric, Coincident centres, centre to origin, and both keys on the Constraints row
+
+The user's report: two circles could not easily be given the same centre, whether by picking the two centres and Coincident, dragging one centre onto the other, or selecting the two circles and Concentric. Each way was run through the sketcher on two circles before any change; this release fixes what was found.
+
+- **Fixed: Concentric and Coincident moved both circles halfway.** Two circles at (20, 30) and (80, 70) both ended at (50, 50). The first circle picked now keeps its centre and the second comes to it, radii unchanged, as SOLIDWORKS and Inventor do it. If the second is held (fixed, dimensioned or tied to something else), the first goes to it instead.
+- **Fixed: two circles selected with Coincident put one centre on the other's rim and grew its radius** (5 mm to 21.46 mm in the test). Their centres now meet, which is the same as Concentric.
+- **Fixed: a centre clicked onto the origin with Coincident was held on one axis only.** It is now held at the origin itself (both coordinates).
+- **A relation that cannot be met is refused.** Two fixed circles made Concentric used to get the relation added and left unmet without a word. Now nothing changes and the panel says why ("both fixed where they are. Unfix one of them first"). A second relation saying the same thing (Coincident centres on circles already Concentric, or Concentric twice) is refused too.
+- **Coincident and Concentric are on the Constraints row.** They were text buttons in a closed section of the panel. Both are now icon keys at the start of the row, with tooltips. Keys that do not apply to what is selected are greyed, and their tooltip says so: two circles selected offers Concentric and Equal, not Parallel or Horizontal. With one piece selected, a two-piece relation key takes the relation in hand with that piece as the first pick.
+- **Concentric takes a circle clicked at its centre**, as well as on its rim.
+- **The first point picked for Coincident stays marked** on the sheet while the second is awaited.
+- Unchanged, now tested: dragging one circle's centre onto another's snaps onto it and holds it there; with Ctrl it is placed only.
+- Tests: new unit file reCentreRelations (15 cases, from the brief's C01–C15, reading the stored geometry); new GUI script e2e-sketch-concentric (21 checks, by mouse). See the release record for the full suite and regression runs.
+- Not done: Analysis > Measure still measures the scan only; it cannot yet pick sketch circles, centres, quadrants or perimeters (next). No driven (reference) dimensions, arc-length dimension, Constraint Manager, or selection cycling between overlapping centres. Reference CAD programs were not run here.
+- Evidence: analysis/quick-scan-v1.2.22.
+
+## 1.2.21 — Snap bar in the bottom left corner, All (smart snap), and squares on every snap point
+
+Asked for by the user after trying 1.2.20: the snap bar moved to the very bottom left, an All button first in it, and handle squares on quadrants and midpoints so there is something to click when drawing from them or dimensioning to them.
+
+- **The snap bar stands in the bottom left-hand corner of the graphics window.** The view keys keep the bottom right; where the window is too narrow for both on one line, the view keys step up above the bar.
+- **All, the first switch: the smart snap.** Every kind is in play at once and whichever point is closest to the cursor is taken, instead of ends first, then quadrants, then middles at half the reach. It is on for drawing tools from the start. Pressing one of the single switches takes over from All and gives back the switches as they were left. For Analysis > Measure, All takes the mesh vertex when the click is within 10 pixels of one and the surface otherwise.
+- **A square on every point that can be snapped to.** Quadrant points of circles and arcs, the middle of each line and the centre of each arc wear a light-blue square whenever their kind is switched on, beside the black squares the ends and circle centres always had. They show for the drawing tools and for Dimension and Coincident.
+- **Quadrants and midpoints are on from the start**, for drawing and for dimensioning. (In 1.2.20 Quad was off, and Mid was off for the Dimension tool.) A switch someone already changed in 1.2.20 keeps its setting.
+- **The Dimension tool on a square.** Clicking a line or a circle still gives its length or diameter, even when the click lands on a square. Clicking a second thing then makes the dimension run from that square's point: a circle clicked on its left square and then a wall is the distance from the circle's edge to the wall, where a circle clicked anywhere else gives the distance from its centre, as before. Two squares of one circle measure across it. Two lines are always the angle between them (or the distance between parallels), wherever on them they were clicked. With Curve switched off the squares are points and nothing else.
+- Tests: full unit suite 4,958 passed, 42 skipped, none failed (reQuadrantPicks grown to 23 cases; eight older Dimension and Coincident cases that clicked exactly on a midpoint or quadrant now click beside it). GUI: e2e-sketch-snap-select 27 checks and e2e-measure-snap 10 pass; regression 52 of 53 (e2e-closed-panel: agent bridge port, as before; three scripts that started before the dev server was up passed on rerun). Randomised sketch workflows on real scans: 60 of 60.
+- Not done: QUICKSURFACE has no snap bar that was seen, so there is nothing of its to compare this with; intersection and tangent snaps are not there yet; the bar still does not reach the 2D Measure sheet or picks on CAD bodies.
+- Evidence: analysis/quick-scan-v1.2.21.
+
+## 1.2.20 — 2D Sketch: steady constraint icons and dimensions, dragging dimensioned pieces, a snap bar with quadrants, dimensions selected and deleted
+
+The user's reports from using the sketcher by hand: constraint icons and dimensions flickering as the mouse moved or the view zoomed, a dimensioned line that would not drag properly, a dimension that could not be selected and deleted, a Dimension tool that could not be pointed at a quadrant, and a curvature slider some combs ignored.
+
+- **Fixed: constraint icons and dimension numbers jumped about and flickered.** Three causes. (1) A pass that lifts overlapping labels clear of each other ran over the sketch's icons and numbers after every redraw, so they hopped up and down as the mouse and the zoom changed what overlapped what; they now stand where their geometry puts them. (2) Every icon and number was taken off the page and made anew on every change to the sketch, so they blinked while a piece was dragged; they are now kept and moved. (3) Icons that marked the same spot were stacked on top of each other and which one was on top changed as the view moved; they now stand side by side in a row, in a fixed order.
+- **Fixed: a piece that carries a dimension could not be dragged properly.** A line with a length, dragged by an end, changed length by up to 0.2 mm from frame to frame, fell behind the hand and could be left unsolved. The solver's step scaling favoured moving whichever coordinate a relation was least sensitive to (a 1 mm length error "corrected" by moving the end 19 mm sideways), a step it then refused over and over. The scaling is now levelled within each piece, and a drag follows the hand first and then closes the relations exactly at every step. A dimensioned line now keeps its length exactly while it is dragged and its end stays under the hand.
+- **A dimension is selected by a click** with the arrow (its number is outlined),**Delete removes it**, a drag moves its number, and a **double-click opens it for typing**, as in SolidWorks. With the Dimension tool a click on a number still opens it at once. Tests and habits that clicked a number once to type must now double-click.
+- **Snap bar at the bottom of the graphics window.** A row of switches for what a click may land on, shown for the tool in hand: for drawing tools End, Mid, Centre, Quad, Curve, Scan (where a drawn or dragged point snaps); for Dimension and Coincident End, Mid, Centre, Quad, Curve (what is picked); for Analysis → Measure Vertex and Surface. Remembered on this computer. Quadrants are off until switched on, and Mid is off for picking, so a line clicked at its middle is still the line and a circle clicked at its top is still the circle.
+- **The Dimension tool takes quadrant points, centres and midpoints.** With Quad on, the 0°, 90°, 180° and 270° points of a circle or an arc are points to dimension from and to: the edge of a hole to a wall, across a round end. The dimension drives the geometry by that point. A circle's or an arc's centre is now a point of its own to click. Quadrant points are new anchors in the sketch (`q0`…`q3`); a project that uses one opens in an older Quick Scan with that end read as the centre.
+- **Drawing tools snap to an arc's centre**, as they did to a circle's, and to quadrant points when Quad is on.
+- **Fixed: the curvature slider left some combs unchanged.** The longest tooth was a fixed 20 mm, so at higher scales every bend tighter than a few millimetres of radius stood at the limit while the slider moved the rest. The limit now scales with the slider.
+- **Explained, not changed: purple and black lines.** Black is a line or circle still fitted to the scan's points; purple is a piece drawn or moved by hand that is still free to move; white is one fully held by relations and dimensions. A fitted line dragged by hand lets go of its scan points and turns purple.
+- Tests: full unit suite 4,945 passed, 42 skipped, none failed (new: reDragDimensioned 3, reQuadrantPicks 10, one more in reExactComb). New GUI scripts e2e-sketch-snap-select (22 checks) and e2e-measure-snap (8). GUI regression 52 of 53 (e2e-closed-panel: agent bridge port, as before). Randomised sketch workflows on real scans (Corner Trim, fillets, trims by mouse): 60 of 60. The solver fuzz harness counts 542 defect hits against 636 in 1.2.19.
+- Not done: QUICKSURFACE was not read for these behaviours this round (the dimension click follows SolidWorks, as asked); the snap bar does not yet reach the 2D Measure sheet's own Snap to edge switch or picks on CAD bodies; no reference or arc-length dimension.
+- Evidence: analysis/quick-scan-v1.2.20.
+
+## 1.2.19 — Extrude beside QUICKSURFACE's Extruded dialog: exact typed depths, Cut into the solid, Set sketch on Top/Bottom plane, and its words
+
+QUICKSURFACE 8.0.128's Extruded dialog was read on this PC (its result, extent and direction lists, and "Set sketch on"), and Quick Scan's extrude was driven end to end against existing solids: a block, a hole cut through it, a boss joined on, a separate body, the hole's sketch edited, save and reopen.
+
+- **Fixed: a number typed over the same rounded figures was ignored.** A box shows a rounded number. An extrude opened at 5.9999997 mm showed "6", and typing 6 was taken as no change, so the block ended 0.3 µm short and a boss sketched at 6 mm did not touch it: Combine (Join) left two bodies. The same happened to a dimension typed on the sheet (20 over a measured 19.9999993). A box that was typed in now takes exactly what was typed; a box only looked at still changes nothing. This applies to every number box in the CAD tools and to the shared number field.
+- **Fixed: Cut opened pointing away from the solid.** Choosing Cut turned the extrude over, which is right for a sketch on a body's top face but wrong for a sketch on the plane the body was built up from: the cut pointed into empty space. Cut now points into the solid, and Join or New Solid away from it, whenever the solids all stand on one side of the sketch's plane. Where they stand on both sides it turns over as before.
+- **Set sketch on: Top plane / Bottom plane,** as in QUICKSURFACE's Extruded dialog. It moves the sketch along its normal onto that end of the body and re-reads the depths, so the body stays where it is (Depth 1 6 / Depth 2 0 becomes 0 / 6). One undo step. It is refused, with the reason, when another feature also uses the sketch.
+- **QUICKSURFACE's words in the extrude box.** Result reads New Solid, Combine (Join), Cut, in that order (was Join, Cut, New body). The extent Symmetric is now Mirrored. Direction's first choice reads From sketch. What they do is unchanged, and saved projects and the AI's commands use the same values as before.
+- Tests: new unit tests reExtrudeSketchOn (7) and reBossOnFace (2, through the CAD kernel). New GUI script e2e-extrude-boolean (22 checks: the lists' words, an exact typed depth, Set sketch on both ways, Cut opening into the block and previewing, Combine (Join) of a boss on a face, New Solid, the hole's sketch edited from Ø6 to Ø8 with everything after it rebuilt, save and reopen, the cut reopened from History).
+- Still different from QUICKSURFACE: its Extruded dialog extrudes a sketch's open and closed pieces together in one feature, has an "Up to" tick on each depth, a Draft slider with Inverse, and X/Y/Z Axis and From object directions by name; Quick Scan extrudes picked regions as a solid or the whole sketch as a surface, and offers its own direction and up-to choices.
+- Evidence: analysis/quick-scan-v1.2.19.
+
+## 1.2.18 — 2D Sketch: a surface extrude with its wall and arrows, Trim that keeps things joined, and clicks that reach the drawing tool
+
+The second pass over the 2D Sketch audit begun in 1.2.17.
+
+- **A surface extrude shows its wall and its two end arrows,** as QUICKSURFACE's Extruded dialog does on an open sketch. With Solid unticked (or a sketch that closes no region), the view previews the swept surface, see-through, with "Top plane / Depth 1" and "Bottom plane / Depth 2" arrows through the middle of the profile. Drag either arrow to set that end, or type the depths. In 1.2.17 a surface extrude had typed ends only and nothing in the view.
+- **Trim keeps what it leaves joined.** A trimmed piece used to lose every relation: a rectangle's side trimmed back lost its corner and its Horizontal, and the outline came apart at the next drag. Now the kept pieces keep their untouched ends' joins and the relations that still describe them (Horizontal, Vertical, Parallel, Perpendicular, Colinear, Concentric, an arc's radius or diameter, Fix), and each new end is held on the piece that cut it, so moving the cutter carries the trimmed end along. A cut made exactly at the cutter's own end is joined to that end. A length, distance or angle given to the whole piece is still dropped, since it no longer describes it. One undo step, as before.
+- **Fixed: a relation glyph could swallow a drawing tool's click.** With Line, Arc, Circle or any other tool in hand, a click that landed on a constraint glyph selected the glyph, and the tool lost that point (an arc begun beside a rectangle's side was not drawn). Glyphs now take clicks only with the Modify tool; with another tool in hand they are shown and the click goes to the tool.
+- Tests: new unit tests reTrimKeeps (4). New GUI script e2e-sketch-trim-keeps (13 checks: the glyph click, the trim, its relations, the cutter dragged with the trimmed end following, Undo). e2e-extrude-surface now also checks the kernel preview, both arrows and their words, and an arrow dragged by the mouse (20 checks). The seeded mouse-and-keyboard workflow harness e2e-sketch-gui-workflows found the glyph defect; it passes its drawing and corner workflows after the fix.
+- Evidence: analysis/quick-scan-v1.2.18.
+
+## 1.2.17 — 2D Sketch beside QUICKSURFACE: horizontal and vertical dimensions, the overdefined sketch, and Extrude's Solid box
+
+Quick Scan's 2D Sketch, its dimensions and its extrude were audited against a written analysis of QUICKSURFACE's 2D Sketch, and the Dimension tool was read live in QUICKSURFACE 8.0.128 on this PC. Three differences were closed.
+
+- **A dimension between two points is horizontal, vertical or straight by where you put it down,** as in QUICKSURFACE. With the Dimension tool, click two points. While the number is in hand, move the cursor above or below the pair for the horizontal distance, beside the pair for the vertical one, and anywhere else (between the points included) for the straight one. The click puts that one down, drawn level or upright with an extension line from each point. Before, only the straight distance could be given. The dimension's row has an Aligned / Horizontal / Vertical switch that re-reads the same points without moving them. Saved with the project; older projects open unchanged.
+- **An overdefined sketch says so, as QUICKSURFACE's does.** A dimension or relation that contradicts the others is still kept, as before. Now its number turns yellow on the sheet, the line above the Sketch status reads "The sketch is overdefined", and **Select overdefining constraints** asks "N constraints overdefine the sketch. Do you want to delete them?". Yes deletes them in one undo step; No leaves everything. Before, the key only selected the first relation that was off, and several numbers could be off for one contradiction. The key now finds the newest constraints whose removal lets the rest be met.
+- **Extrude's Solid box works.** Ticked, the closed regions are extruded as a solid, as before. Unticked, the sketch's lines and curves are extruded as a surface. A sketch that closes no region now opens Extrude with Solid unticked, so an open profile extrudes straight into a surface (QUICKSURFACE's "Wall (Surface)"); before, the sketch's Extrude key was greyed until a region closed, and a surface needed the separate Sheet tool. The surface is the same Sheet feature in History, edited there. A surface extrude is straight and by a distance or symmetric; taper, a set direction and up-to ends are for solids.
+- Tests: new unit tests reDistanceAxis (10). New GUI scripts, all by mouse and keyboard on the rendered controls: e2e-sketch-dim-axis (18 checks), e2e-sketch-overdefined (18), e2e-extrude-surface (15) and e2e-sketch-rebuild-reopen (10: circle Ø20 → extrude with both ends set → save → reopen → diameter to 30 → the solid rebuilds with its ends kept → Undo and Redo).
+- Still different from QUICKSURFACE, found in the same audit and not changed here: no reference (driven) dimension or arc-length dimension; a surface extrude has no end arrows in the view; Extrude has Join, Cut and New body but no Intersect; no Ctrl snap of an extrude end to a plane while dragging; Trim leaves the kept spans unjoined; mirrored and patterned copies do not stay linked.
+- Evidence: analysis/quick-scan-v1.2.17 (the audit, the QUICKSURFACE readings in native/NOTES.md, and the test logs).
+
+## 1.2.16 — Zoom to Fit frames the CAD bodies, and a locked plane reads "Locked"
+
+The installed 1.2.15 was put beside QUICKSURFACE 8.0.128 again. Two differences were found and fixed.
+
+- **Zoom to Fit frames everything shown,** as QUICKSURFACE's does. The CAD bodies and sketches now count with the scan. Before, with a scan loaded, Zoom to Fit framed the scan alone, so a body modelled away from it (for example on a world plane at the origin) stayed off screen. A hidden body is still left out, so the scan fills the view.
+- **Fixed: a locked datum plane's row did not show "Locked".** The label was there, but the panels' rule that hides a row's small tags hid it too. It now reads "Locked" beside the name in Objects and History, as in QUICKSURFACE.
+- Tests: the new GUI script plugins/reverse/scripts/e2e-zoom-fit-locked.mjs opens the project used side by side. It shows the body at the origin, runs Zoom to Fit, then hides the body and fits again, then locks and unlocks the plane. It passes 9 of 9. Against the 1.2.15 code it fails both defects. The 1.2.15 script e2e-explorer-parity-3 now checks the "Locked" label is really on screen, not only in the page.
+- Evidence: analysis/quick-scan-v1.2.16.
+
+## 1.2.15 — Objects and History beside QUICKSURFACE: Parent/Child view, plane Flip and Lock, sketch Duplicate, one body Transparent, eyes saved
+
+The finished 1.2.14 panels were compared with QUICKSURFACE 8.0.128 side by side on this PC, menu by menu and workflow by workflow. These are the differences that were found and closed.
+
+- **Parent/Child view now nests the way QUICKSURFACE's does.** Each feature is at the top with what it was built from inside it (Wall ▸ Profile ▸ Plane(1)), and the rows open closed. Before, it was the other way round (Profile ▾ Wall) and opened expanded. An input used by several features sits under the first of them, and its tooltip names them all. Expand all, Collapse all and each row's arrow open and close it.
+- **New on a datum plane's menu (QUICKSURFACE's plane menu):**
+  - **2D Sketch** opens a CAD sketch on the plane.
+  - **Flip** turns the plane over: its normal points the other way, and what is built on it follows. It is one undo step and saved. A plane fitted again later stays flipped.
+  - **Lock / Unlock.** A locked plane cannot be moved: Edit is greyed, and a double-click or the Elements panel's Edit is refused with a message. Rename, colour, show/hide, Flip and Delete still work, as in QUICKSURFACE. Its row reads "Locked". One undo step, and saved.
+- **Duplicate on a sketch.** It adds "Sketch(1) - Copy" on the same plane, shown, at the end of History, as QUICKSURFACE does. One undo step. A duplicated element is now named "<name> - Copy" too (it was "<name> copy").
+- **Transparent on one body.** A body's Transparent applies to that body alone, or to the bodies selected, and is saved with the project. The Solids and Surfaces group menus still switch every body.
+- **Clicking a body in the view selects its rows,** as in QUICKSURFACE: the body's row in Objects, the feature that made it in History, and the dependency card.
+- **Every delete warns about dependents.** The Elements panel's delete key now opens the same confirmation as the Objects panel, listing everything built on the object, including CAD sketches on a datum plane and what was made from them. The AI's `element.remove` now refuses an element that CAD work is built on, naming that work, until it is called again with `alsoDependents: true`; it then deletes it all as one step and reports what went (`dependentsRemoved`). The new input is optional, and every other call answers as before.
+- **Fixed: the scan's eye and the master eyes were not saved.** The scan hidden in Objects (or by the CAD workspace's Scan key), the elements' master eye and the all-bodies eye now open as they were saved. Older projects open with them shown, as before.
+- Under the hood, `PluginRuntime.explorerCoreItems(key)` lets a plugin add commands to a core row's menu (the CAD workspace adds 2D Sketch). The browser publishes its History entries (`explorerEntries()` in src/state/explorerStore.ts), so deletes made elsewhere find the dependents it lists. `historyTree` in src/core/explorerDependencies.ts builds the Parent/Child view. Elements gain optional `flipped` and `locked` fields, and a body style gains `transparent`. The scan part and the CAD part gain optional `scanHidden`, `elementsHidden` and `bodiesHidden`. All of them are additive: older files and readers are unaffected.
+- Tests: new unit tests explorerParity1215 (10: the Parent/Child nesting, Flip, Lock, flips kept across refits and saves, eyes saved) and reExplorer1215 (5: CAD eyes saved, sketch Duplicate, one-body Transparent), plus a commandsMeasure case for the AI delete. The GUI scripts e2e-history-tree (the new nesting; a used sketch deleted with its extrusion and brought back by one Undo), e2e-explorer-parity (sketch Duplicate) and e2e-explorer-access (menus found the 1.2.14 way) are brought up to date. New GUI script plugins/reverse/scripts/e2e-explorer-parity-3.mjs: the Parent/Child view, the plane's 2D Sketch, Flip and Lock, sketch Duplicate, one-body Transparent, the Elements panel's delete confirmation and a body clicked in the view, then save, reopen in a fresh page and the same again.
+- Evidence: analysis/quick-scan-v1.2.15 (the side-by-side notes are native/SIDE-BY-SIDE.md).
+
+## 1.2.14 — Objects and History: QUICKSURFACE's object menus, rename, delete with dependents, Disable All Next
+
+- Right-click menus now depend on what was clicked, as in QUICKSURFACE 8 (each kind's menu was read from QUICKSURFACE 8.0.128 on this PC). A command a kind cannot do is left out rather than shown greyed.
+  - Sketches: Edit, Hide All But This, Hide/Show, Extrude, Revolve, Rename (F2), Delete, Properties.
+  - Features: Edit, Edit Sketch, Hide All But This, Hide/Show (their bodies), Rename, Delete, Properties.
+  - Bodies: Edit, Edit Sketch, Hide All But This, Hide/Show, Color, Set Default Color, Transparent, Rename, Merge (two or more Freeforms), Delete, Properties.
+  - Datums and other fitted elements: Edit, Hide All But This, Hide/Show, Color, Rename, Duplicate, Delete, Properties. Sections have the same, without Duplicate.
+  - Scan: Edit, Hide All But This, Hide/Show, Color, Set Default Color, Wireframe, Transparent, Export, Properties.
+  - Group rows (Planes, Surfaces, Solids, Sketches…): Show All, Hide All, Color, Delete. Bodies' groups add Set Default Color and Transparent.
+  - Several rows selected: Hide All But This, Hide, Show, Color, Delete. Before, measured elements had Edit only, and sketches and features Edit and Delete only.
+- History rows have the same menu as their Objects row, plus "-> Disable All Next", which puts End of Model just after that row. A row below End of Model has "<- Enable To Here" in its place, which brings the model forward to that row. End of Model's own menu has Place at Start and Place at End. Each is one undo step.
+- Rename in place: F2, or Rename in the menu, edits the name in the row, in Objects or History. Enter keeps it and Escape cancels. Both panels show the new name, it is one undo step, and it is saved. A name another feature or body already has is refused with a message, because names are how the panels and the AI tell objects apart.
+- Delete asks first and lists what goes with it: "This action will also delete the following entities, since they depend on the above ones", in QUICKSURFACE's words. Yes deletes the object and everything built on it, directly or through others, as one undo step. Before, a sketch with an extrude on it could not be deleted at all, and a datum plane, section or element deleted from the panel took no notice of the CAD features built on it, which then failed on a missing plane. Those features are now listed and go with it. The Delete key does the same for the selected rows. While the model is rolled back, Delete explains why it cannot go ahead.
+- A dependency card at the top left of the view shows the selected row's parents (<--) and what is built on it (-->), as QUICKSURFACE's does. A reference that no longer exists reads "Unavailable reference".
+- Properties for every kind:
+  - scan: points, triangles, size, surface area, and volume if closed;
+  - elements: type, what made them, what they are built on, their fit and size;
+  - features: type, what they are built on and used by, and the build status, with the failure message if the build failed;
+  - bodies: solid or surface, made by, component, colour, faces, triangles, volume (open shells are said to have none), size.
+  A feature that failed to build is marked ⚠ in the panels, with the reason in its tooltip.
+- Hide All But This hides the scan, every element and every CAD object but the one(s) picked, as one undo step. Undo shows them all again, the scan included.
+- Fixed: hiding or showing a CAD body did not mark the project as changed and was not saved, so a body hidden by hand came back on reopen. Body eyes, the scan's eye and the eye for all CAD bodies are now undo steps, and a body's eye is saved with the project.
+- Fixed: a body's name or colour changed in the panel was not an undo step.
+- Fixed: a project saved before the common End of Model (1.2.x), with only the CAD features rolled back, opened with End of Model at the end while features were still held back, and End of Model could not bring them forward. It now opens with End of Model where the CAD rollback stood. If measured elements come after it, End of Model stays at the end, and placing it at the end now builds the held-back features.
+- Rows below End of Model can be selected and renamed, and their menus opened, as in QUICKSURFACE. Before, they were greyed. Editing and modelling are still refused there.
+- Under the hood, core and plugin rows share one menu, rename, delete confirmation, isolate and dependency system (src/state/explorerStore.ts, src/ui/ExplorerMenu.tsx, src/core/explorerDependencies.ts). Plugins add History entries with `parents`, `remove` and `setVisible` through PluginRuntime.explorerHistoryEntries. The AI's commands are unchanged and act on the same stores.
+- Tests: new unit tests explorerDependencies (4), reExplorerBoundary (4: Disable All Next, Enable To Here, Place at Start, older rolled-back files) and reExplorerEdits (5: rename, body-eye undo and saving, colour undo). New GUI scripts plugins/reverse/scripts/e2e-explorer-parity.mjs (44 checks: menus per kind, F2, the dependency card, Properties, colour, Hide All But This, Disable All Next / Enable To Here, delete with dependents, undo; then save, reopen and the same again) and e2e-explorer-parity-2.mjs (28 checks: group rows, several rows selected, body rename and default colour, Transparent, the scan's Properties and eye, End of Model's menu, Delete refused while rolled back, a datum plane deleted with the sketch on it). e2e-explorer-core (22 checks) and e2e-explorer-delete updated for the new menus and delete behaviour.
+- Evidence: analysis/quick-scan-v1.2.14.
+
+## 1.2.13 — Extrude: the tolerance map while you drag, snapping in every view, arrows in reach when zoomed in
+
+- The tolerance map (Analysis) now follows an end arrow while it is held. Every move recolours the scan without letting go: 24 of 24 moves in the test, a median of 47–83 ms after each move across runs. Before, nothing changed until the arrow was let go, and then it took about a quarter of a second. For a straight extrude (from a sketch, along its normal, untapered, to a distance or two-sided), the map is worked out directly from the profile and the two depths, as fast as the mouse moves. The kernel's reading of the built ghost still replaces it once the arrow is let go, and the two agree to within a micron. Other extrudes keep the old behaviour.
+- Smoother map. The colours are blended across each triangle from the readings instead of from colours at the corners, and the scanner's noise on a flat face is averaged out between neighbouring points that read alike (within half the range). A real step, such as a face at the wrong height or an edge the ghost misses, stays as sharp as it was read. The box's figures (within / points) are the readings' own and unchanged.
+- Fixed: scan points just outside a wall, at the height of the face above it, could read inside by their distance to the wall (blue instead of red). The kernel meshes each face of a body on its own, so at the seam between two faces the sign came from one face only. The live map and Compare to bodies now join the seams when they sign a distance. This was already in 1.2.12 as faint dark dots along a rim; the smoother map turned them into dark rectangles.
+- Snapping: the end goes through the scan point under the cursor in any view, including looking straight down the arrow (the Top view of a top-face extrude), where 1.2.12 read nothing. Sliding off the scan, the end carries on from the snapped depth instead of jumping back to where the drag would have put it. Zooming while the arrow is held reads the point under the cursor again. The snap point is a yellow dot with a dark ring, so it shows on light and dark surfaces alike.
+- Arrows stay in reach when zoomed in. Zoomed in so far that an arrow's own place (the profile's middle) is off screen, the arrow slides along its end face into view, its label with it. The drag is unchanged (the same depth for the same mouse movement), and nothing about the geometry moves.
+- Fixed: an arrow that had slid onto the profile lit up under the cursor but did not show the grab cursor, because the profile's own highlight going out reset it. A grip under the cursor now always shows grab.
+- The number by the arrow follows a depth set anywhere else (the box, Reverse direction, undo, the AI), unless you are typing in it. Before, it kept the old number after a drag, while it still had the keyboard focus.
+- A new extrude on a 24 mm profile opens at 7.2, not 7.199999999999999, and the Full depth box shows no floating-point noise.
+- Tests: new reExtrudeLiveMap (12), comparing the direct map with the kernel's on a prism meshed face by face, plus the seam join, the facing rule, shared profile sides, smoothing that keeps steps, and the arrows' end faces. reStore's "extrude Snapping" now expects the carry-on behaviour. New GUI scripts in the evidence folder drive the extrude by mouse on a 230,400-triangle scan: extrude-check (live map, snapping, zoomed-in arrow, the number by the arrow) and workflow-check (typed depth, Reverse direction, Create, undo/redo, edit from History, save and reopen).
+- Evidence: analysis/quick-scan-v1.2.13.
+
+## 1.2.12 — CAD: the selection card with the panel shut, and a way back from a rollback
+
+- Fixed: with the CAD tools panel shut, a face, edge or corner clicked on the part said nothing. Its card (Flat face, area, normal, distances, the angle between two faces) and its keys (Fillet, Shell, Move face…) were drawn inside the shut panel, which hides everything in it. They now stand by the cursor whether the panel is open or shut, in the same dark panel colours.
+- Fixed: the same for the agent's note box (AI): Note on the selection's card opened a box that could not be seen with the panel shut. It now opens by the cursor.
+- Fixed: a model rolled back could leave you with a greyed ribbon and no visible reason. Rolled back, the ribbon's modelling tabs and the CAD tools panel are off by design (only looked at until End of Model is at the end), but the ribbon's explanation was a tooltip on an element that can no longer be hovered, and the panel's own To end and rollback bar were off with the rest. Now a strip under the ribbon says the model is rolled back, with To End of Model; the panel's lock line has the same key and stays at the top of the panel however far it was scrolled. The panel's To end, which could not be pressed while rolled back, is no longer shown.
+- Fixed: the rollback bar's tooltip and the feature list's help said a feature made with the bar up goes in at the bar. Since History's common End of Model, it is refused ("The model is rolled back. Move End of Model to the end…"). They now say what happens.
+- History: End of Model dropped on a row goes before it on the row's upper half and after it on the lower half, as the CAD panel's bar lands in the gap nearest the cursor. Dropped on the lower half of the last row it goes to the end and the whole model is built again; before, only a 10 px strip under the last row did that, often scrolled out of sight in the short History panel. That strip is now at least 24 px.
+- Tests: new qsModelRolledBack (4); new GUI script plugins/reverse/scripts/e2e-closed-panel.mjs (the card, its keys and the note box with the panel shut, the strip and To End of Model, theme and AI tab kept); e2e-reverse-select and e2e-reverse-history brought up to date (the block is made 10 mm high, as they assume — the default depth is measured from the profile; the rollback bar scrolled into sight before it is dragged; an edit refused while rolled back) and added to plugins/reverse/ci.json; e2e-history-tree checks the lower-half drop.
+- Evidence: analysis/quick-scan-v1.2.12.
+
+## 1.2.11 — 2D Sketch: "Solved" means solved, refusals you can see
+
+- Fixed: a distance typed to an arc's end could leave the sketch reading "Solved" while the distance was far off: 0.001 typed came out 62.8 mm apart, and 535 typed read 497. On the way to the answer the solver can turn an arc's radius negative. Writing the arc back flipped the radius positive without turning the arc, so both ends landed on the far side of the centre. The arc is now turned half a turn with the sign, so its ends, its grip and its run are where the solve put them.
+- Fixed: the same with an arc's sweep walked negative, which came back as the arc run from its other end: its two ends traded names, so a dimension or a join on one end then measured the other (151.912 typed read 154.101 and "Solved"), and one arc collapsed to no sweep at the next edit. The relations that name the arc's ends are now renamed with it, and its grip keeps its place.
+- Fixed: Symmetric picked in hand, with a coordinate plane's line as the mirror, could shrink both lines of a polyline to a point and still read "Solved". That pick skipped the check that Symmetric from the panel already had. It is now refused with the reason, and nothing changes.
+- Fixed: two lines that meet at an end (a V drawn as a polyline) were sometimes paired end to end the wrong way round for Symmetric, which the solver could only meet by collapsing them. The joint now pairs with itself: it goes onto the mirror line and the far ends mirror each other.
+- Edits that would lay one piece exactly on top of another are refused with the reason, as edits that shrink a piece to a point already were: "it would lay line 1 on top of line 2. Nothing was changed."
+- An angle dimension outside its range is refused with a sentence and nothing changes. Between two lines that is 0° to 180°; for an angle put down in a corner, 0° up to (not including) 360°. Before, 360°, 400° or −30° was taken silently, wrapped to another angle and left the sketch unsolved. The store's addDimension, which takes a value directly (only tests and the dev hook call it with one), checks it the same way.
+- The sketch window's hint line is now on screen, just above the Sketch status box. It was inside the closed "Sketch settings and additional tools" section, so the reason an edit was refused, and the relation tools' step-by-step prompts, could not be seen without opening that section. A refusal is shown in amber. Where a long list of relations makes the panel scroll, the line stays pinned to the panel's bottom edge, so it is on screen without scrolling.
+- Constrain fuzz (1500 random workflows of relations, dimensions and drags): workflows with solver findings 282 → 239. Out-of-range angles taken silently: 29 → 0.
+- Tests: new reSketchSolveHonest (9), built from the constrain fuzz's shortest reproductions, and a GUI script, plugins/reverse/scripts/e2e-sketch-solve-honest.mjs, that drives the same cases by mouse and checks the hint line is visible.
+- Evidence: analysis/quick-scan-v1.2.11.
+
+## 1.2.10 — 2D Sketch: corner tools working again, edits that refuse to wreck the sketch, gap dimensions between arcs
+
+- Fixed: Corner Trim and Auto Fillet refused any corner whose far end had been snapped onto a coordinate plane or another piece while drawing ("would move a far end"). A far end held on a line, a curve or a plane is not moved by a corner, so the tools now go ahead.
+- Fixed: a short stub running past the corner was trimmed on the wrong side, deleting the long side instead. The end nearer the swept area is now the one that moves.
+- Fixed: Ctrl+Z and Ctrl+Y did nothing after Tab had moved the focus to a tick box in the Corner Trim panel. A tick box, a slider or a button has no text to undo, so the keys now go to the drawing.
+- Fixed: Corner Trim swept over a polyline corner that was already joined added an undo step that changed nothing you could see. Its two ends differed in the 14th decimal, and the trim made them identical. Ends within a millionth of a micron now count as already joined, and the panel says "These pieces already meet at this corner."
+- Fixed: a sweep that starts on a relation glyph or a dimension number now still sweeps.
+- Edits that would wreck the sketch are refused with the reason, and nothing changes, as Corner Trim already did. The solver used to report these as solved:
+  - a relation or dimension that contradicts the others: Horizontal on a vertical side, Collinear on two sides of a rectangle, an angle a rectangle cannot take. These shrank a piece to a point.
+  - a Coincident that moved a Fixed piece;
+  - a fillet, chamfer or sharp corner that pulled the lines off where they were drawn.
+- Horizontal and Vertical say what is in the way: "Line N is held vertical. Remove Vertical first". Lines that already have the relation are skipped, and a relation already on a pair is not added twice. A short stub is swung level about its far end, not collapsed. Collinear (and Coincident on two lines) lays the freer line along the other at its own length.
+- Auto Join explains itself: select the two pieces; the ends are already joined; or they already meet through arc N (use Make sharp).
+- Undo, Redo and reopening a sketch now give back exactly the sketch you had. Before, each was solved again and could move pieces by up to 0.16 mm.
+- Dimensions between arcs: clicking two arcs on their rims (or an arc and a circle) now gives the gap between their edges. Two full circles still give the distance between centres, as holes are pitched, and a line to an arc or circle is still from the centre. Every distance to an arc or circle has a new switch in its row: Centre, Nearest edge or Farthest edge. Switching reads the number again and moves nothing, and Ctrl+Z steps it back. Typing a new gap moves the arcs and keeps their radii. Where the edges overlap there is no gap, and the switch says so. Stored as an optional `edge` on the distance dimension. Older projects open unchanged, and agent sketches may pass `edge: "near" | "far"`.
+- Fixed: a double click to end a polyline drew a short extra line when the last segment had been made level or upright while drawing. The end was compared where the solver had moved it, not where you clicked. A second click within a third of the pick reach of that spot now ends the chain, as it already did for Spline.
+- Fixed: Pattern (circular or angular) of a level or upright line crushed the turned copies to almost nothing and bent the arcs joined to them. The copies kept the original's Horizontal or Vertical, so the solver forced them back level or upright. As with Mirror, a copy turned 90° now swaps Horizontal and Vertical, and a copy turned any other way drops them.
+- Fixed: each sketch window opened and closed left about 400 page elements and 90 event listeners behind, so a long session slowed down. The view's camera controls kept a keyboard listener on the page after the sketch closed. They now let it go, and the counts stay flat however many sketches are opened.
+- Tests: new reDimensionEdge (9) and the random-workflow suites reSketchFuzzDraw, reSketchFuzzModify and reSketchFuzzConstrain, which drive the stores through thousands of seeded workflows. Lower the counts with FUZZ_WORKFLOWS (draw), FUZZ_N (modify) and RE_FUZZ_CONSTRAIN_N (constrain); the constrain suite reports its findings and fails only with RE_FUZZ_CONSTRAIN_STRICT=1. A new GUI harness (plugins/reverse/scripts/e2e-sketch-gui-workflows.mjs) draws and sweeps corners by mouse in the running app.
+- Evidence: analysis/quick-scan-v1.2.10.
+
+## 1.2.9 — Bigger constraint glyphs, selection under Analysis, extrude Snapping, faster tolerance colouring, extrude kept off the CAD tab
+
+- Constraint glyphs in the sketch window are larger: 22 px boxes with 19 px icons and heavier lines (were 16 px and 14 px). The tangent glyph is now a circle resting on a line, on the sheet and on the ribbon button. Before, a long diagonal grazing a small circle read like a looped "d".
+- Selected pieces stay highlighted with Analysis on. The green and red tolerance colours were drawn over the selection and the hover, so pieces picked with the Select tool (click, Ctrl+click, box) looked unselected. The selected or hovered piece now shows its selection colour, and every other piece keeps its tolerance colours.
+- Extrude Snapping, as in QUICKSURFACE: a new Snapping box in the Extrude panel, off by default and remembered. With it ticked, an end arrow dragged over the scan puts that end through the scan point under the cursor, marked with a yellow dot while held. Off the scan the arrow drags freely. It works for both the start and end arrows.
+- Faster tolerance colouring while extruding: the Analysis map no longer recomputes at every step of an arrow drag. It holds while the arrow is held, as QUICKSURFACE's does, and is read once on release. Its nearest-point search also stops at the map's reach.
+- Fixed: after OK on an extrude, leaving the CAD tools (Main, Construct, Scan Data) removed the solid from the view and left the scan opaque, and the solid did not come back. Bodies now stay shown on every tab, drawn solid off CAD as in QUICKSURFACE. On the CAD tab the scan is still shown as a ghost, as before.
+- Tests: Snapping through both arrows and the free drag off the scan; the held-grip state reset when the editor closes; deviation runs naming their piece. A dev GUI probe (analysis/quick-scan-v1.2.9/probe-129.mjs) covers the glyph size, two Ctrl+clicked lines with Analysis on, a real arrow drag onto the scan (end at the scan height, dot shown, map held, then read 280 ms after release) and the solid shown on every workspace.
+- Evidence: analysis/quick-scan-v1.2.9, analysis/native-2026-11-20.
+
+## 1.2.8 — 2D Sketch: fillet radius you can change, a fit check on every Auto Fillet, live angle in the panel
+
+- Fillet radius after the fact: in Corner Trim, the fillet you just made keeps an editable radius. Type it in the panel's new Fillet radius field, or drag the square handle at the middle of the arc. While you drag, the fillet is previewed dashed at the new radius, with its value next to the handle. On release it is rebuilt exactly at that radius, tangent to both pieces, with the far ends unchanged. Dragged radii land on 0.01 mm (0.001 in). Esc during the drag changes nothing. Each change is one undo step, and Undo or Redo onto one of the fillet's earlier radii shows that radius in the field and the fit text, ready to change again. The fillet is rebuilt from the joined corner, never pulled through the solver, so lines and arcs brushed with Fit Line and Fit Arc stay where they were fitted. Any other edit ends radius editing for that fillet, until Undo goes back to it.
+- Auto Fillet now says when its arc misses the scan. As in QUICKSURFACE, the fillet is always a circular arc. The panel now shows how far the scan points the round was read from lie off the finished corner: largest distance and RMS, against the sketch tolerance (Display › Analysis). When the scan round is not circular and the best arc is off by more than the tolerance, it says so ("the scan round is not circular…") and points to Fit Curve. While you sweep, scan points beyond the tolerance are drawn red in the preview. On the 3 × 9 elliptical test corner, 59 of 71 points are outside ±0.1 mm. On an R5 round, all are within (largest 0.0007 mm).
+- Angle dimension in hand: the panel's number field now reads the same sector as the sheet while the dimension follows the cursor (60°, 120°, reflex 300°). It used to show the folded value until the dimension was put down.
+- New agent command reverse.sketch.corner: Corner Trim, Auto Fillet or Fixed Size Fillet on two pieces, through the brush's own geometry. It returns the radius, the arc and the scan-fit check. One undo step ("Agent: corner trim").
+- Tests: new reFilletRadiusEdit (6 tests: helpers; R5 plate corner fitted, then 3 and 7.5 typed, undone and redone, the field following; refusals, and Undo of another edit giving the fillet back; the elliptical corner; 150 built line–arc and arc–arc corners brushed, filleted and given a new radius, all tangent with far ends held and one undo step each). 4 new agent tests for reverse.sketch.corner. New GUI test e2e-sketch-fillet-radius (in plugins/reverse/ci.json): Fit Line by mouse on a scanned R5 plate, Auto Fillet, the typed radius, Esc mid-drag, the handle drag, Undo, then the elliptical corner. e2e-sketch-angle-sector now also checks the panel field.
+- Desktop check through the UI only (analysis/quick-scan-v1.2.8/ui-fillet-check.mjs): on the packaged app, a polyline corner, Fixed Size Fillet R2 swept by mouse, 3.5 typed, the handle found on the canvas, Esc mid-drag, the drag, then Ctrl+Z and Ctrl+Y through the radii and past the fillet.
+- Evidence: analysis/quick-scan-v1.2.8.
+
+## 1.2.7 — 2D Sketch: corner tools work on brushed lines and arcs
+
+- Fixed: Corner Trim, Auto Fillet and Fixed Size Fillet refused the corner between a line and an arc made with Fit Line and Fit Arc ("This operation would move a far end. Nothing was changed."). A brushed piece keeps the section points it was fitted to, and the sketch solver holds it to them. The solve the corner tools ran refitted the arc to those points and moved it, and the tools then refused their own result. They now put the corner in exactly as built, on the carriers the pieces already have, as Fit Line and Fit Arc do when they add a piece. 1.2.6's tests placed their arcs by script, without section points, and missed this.
+- Fit Arc and Fit Circle now give the least-squares circle. The fit stopped after 100 slow steps, short of it by millimetres on a short arc when the brush took in stray points; the arc then jumped to it at the next edit. A brushed arc now stays where it was fitted.
+- A short piece swept whole (both ends in the swept area) now moves the end towards the other piece. Between a line and an arc it always moved its first end, and could run off to the far side of the arc.
+- Test: every case now goes through the app's own actions, with pieces brushed and corners swept, never placed by script. 2250 cases: 1350 on QUICKSURFACE's example scan basic_part as aligned by the user (9 sections across the cylinder, both corners, 5 stretches of line and 5 of arc, tidy and sloppy brushes, each of the three tools, three kinds of sweep) and 900 on corners built from their answer (line to arc, arc to line, arc to arc). Each checks that the tool does not refuse, both pieces stay where they were fitted, the join or the tangent fillet is exact, Undo restores the sketch, and the next edit moves nothing. 1.2.6 fails 1947 of them, all 1350 on the scan; 1.2.7 fails none.
+- A new GUI test brushes Fit Line and Fit Arc on that scan with the mouse and sweeps the corner with each tool.
+- Evidence: analysis/quick-scan-v1.2.7, analysis/autofillet.
+
+## 1.2.6 — 2D Sketch: Auto Fillet on real scans, and between lines and arcs
+
+- Real scans: Auto Fillet now finds the round on real scanned corners with lines of any length, short of the corner or far from it, and on flats that are not perfectly straight. The lines are extended to the corner and filleted. 1.2.5 joined many of these sharp, gave them a tiny radius, or refused them ("The scan section does not run continuously…").
+- Tested on QUICKSURFACE's example scan basic_part: 9 section planes, 44 corners, 5 line stretches per side (whole flat, near half, far half, a short piece far from the corner, a line brushed into the round) and 3 sweeps (box over both ends and the corner point, a stroke through the corner point, ends only). 1047 cases: 1.2.5 failed 368, 1.2.6 fails none. Each fillet is checked against the best tangent arc any radius could give on those lines: the median is that arc exactly, the worst 17 % from it.
+- Line–arc and arc–arc: Auto Fillet and Fixed Size Fillet now round a line and an arc (inside or outside the arc) and two arcs, with the same rules as two lines: paint over both ends and the corner point; Auto reads the radius from the scan section; two undo steps (join, then fillet); corner point left unpainted joins sharp. Where a line meets an arc's circle twice, the crossing painted over is used. A randomised test of 300 corners (1454 cases) of every kind passes.
+- Unchanged: QUICKSURFACE's reference radii, R 5.0040614 (R5 round) and R 4.5652523 (3 × 9 elliptical corner).
+- Evidence: analysis/quick-scan-v1.2.6, analysis/autofillet.
+
+## 1.2.5 — 2D Sketch: Auto Fillet mirrors QUICKSURFACE exactly
+
+Measured in QUICKSURFACE 8.0.128 on the same mesh (analysis/corner-sweep-2026-11-19) and copied:
+
+- Corner point decides: Auto Fillet and Fixed Size Fillet round a corner only when the painted area contains the corner point (where the two lines cross). Otherwise they join the lines sharp, however much of the scan round was painted. 1.2.4 used its own 25 % round-coverage threshold instead.
+- Radius: the least-squares tangent arc over the section points that lie on the arc, between its tangent points. The whole section round is used, painted or not. The results match QUICKSURFACE:
+
+  | Corner | Quick Scan | QUICKSURFACE |
+  |---|---|---|
+  | R5 round | R 5.0040614 | R 5.004061 |
+  | 3 × 9 elliptical | R 4.5652523 | R 4.565252 |
+
+- Always an arc: a corner that is not circular gets its best tangent arc, as in QUICKSURFACE. 1.2.4's tangent blend curve and chamfer line are removed.
+- Undo: a fillet between two separate lines is two undo steps, the join and then the fillet, as in QUICKSURFACE. A fillet between lines already joined, a Corner Trim and a sharp join are one step each.
+- Preview: the held sweep's preview now updates the moment the area reaches the corner point. Before, it could show a sharp join that release then replaced with a fillet.
+- Kept as before: a sweep over the line ends alone joins sharp. A sharp scan corner is joined sharp; QUICKSURFACE leaves a 0.000134 mm fillet there. Stray scan spikes are set aside; when they are a large share of the round, the result waits for Accept or Discard.
+- Hints: Auto Fillet reads "Hold left mouse down and paint over the corner point to get an automatic fillet…", as natively; Fixed Size Fillet says the same.
+- Evidence: analysis/corner-sweep-2026-11-19, analysis/quick-scan-v1.2.5. A new GUI test fits the lines by Fit Line brushing (Instant Fit), sweeps both corners and matches the two native radii to within 5e-7 mm.
+
+## 1.2.4 — 2D Sketch: Corner Trim swept selection and Auto Fillet from the scan
+
+- Selection: Corner Trim, Auto Fillet and Fixed Size Fillet select by sweeping. Hold the left button where you press, move up and across: the whole area fanned from the press point fills at once (not only the cursor's track), in any direction, and the lines, arcs and open curves it crosses are found exactly. With more than two pieces in the area, the pair that makes the closest corner is taken; the rest are left alone. A corner already made is passed over.
+- Corner Trim: joins two lines that stop short, overshoot or cross, and a line with an arc, at their exact crossing, with no gap or duplicate; one undo step.
+- Auto Fillet reads the corner from the scan section between the two lines, as QUICKSURFACE does. The round's radius is the tangent least-squares fit to the section's own points (mesh vertices and edge crossings). On the same test mesh Quick Scan reads R 5.0040614 mm and QUICKSURFACE 8.0.128 reads R 5.004061 mm. A sweep over the line ends alone, leaving the scan round unpainted, joins the lines sharp, as in QUICKSURFACE; sweep over the round as well to fillet it.
+- Beyond QUICKSURFACE: a non-circular corner becomes a tangent blend curve fitted to the scan, and a straight one a chamfer line (QUICKSURFACE's Auto Fillet says it does not work on freeform curves). Scan noise and stray spikes are set aside; when the scan only weakly supports the shape, the result is shown with Accept and Discard instead of being applied.
+- Preview: the selected pair, the ends that will move, the dashed result and the scan points it was read from are drawn while the button is held.
+- Evidence: analysis/corner-sweep-2026-11-19 (QUICKSURFACE captures), analysis/quick-scan-v1.2.4.
+
 ## 1.2.3 — Launch polish: startup screen, installer and website
 
 - Startup: Quick Scan opens with a branded loading screen (logo, version, progress bar) while the workspace loads, instead of an empty window. The main window appears once it is ready; on a start-up failure, or after 15 s at most, it appears at once so nothing is hidden.

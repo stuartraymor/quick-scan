@@ -7,15 +7,18 @@
 // The cursor stays out of the store: a drawing tool rubber-bands to it many
 // times a second, and only the sheet needs to know where it is.
 
+import { snapFlags, useSnapFilter } from '../../../src/state/snapFilterStore'
+import { useMeasureTool } from '../../../src/state/measureToolStore'
 import { sketchIconPaths, type SketchCommandIconName } from '../ui/SketchCommandIcon'
 import { sketchGrips } from '../core/drag'
 import { useEffect, useRef, type MutableRefObject } from 'react'
 import type { FlatFit, Vec2 } from '../../../src/core/flat/types'
 import { len2, normalize2, sub2 } from '../../../src/core/flat/vec2'
-import { anchorPoint, constraintEntities, entityOf, fixedEntityOf, fixedPieces, fixId, isDimension, lineDir, type Anchor, type AnchorAt, type Constraint, type Sketch, type SketchEntity } from '../core/sketch'
+import { anchorPoint, constraintEntities, entityOf, fixedEntityOf, fixedPieces, fixId, isDimension, lineDir, type Anchor, type AnchorAt, type Constraint, type Sketch, type SketchEntity, quadrantsOf } from '../core/sketch'
 import { datumName, datumTraces, traceSegment, type DatumPlane } from '../core/datums'
 import { piecesInBox } from '../core/boxSelect'
-import { dimPlaceAt, dimShape } from '../core/dimLayout'
+import { overdefiningConstraints } from '../core/overdefined'
+import { dimPlaceAt, dimShape, distanceAxisAt, withDistanceAxis } from '../core/dimLayout'
 import { angleForSector } from '../core/angleSector'
 import { FAIL_COLOR, gradientPieces, PASS_COLOR, sketchDeviation } from '../core/sketchDeviation'
 import { useSketchAnalysis } from '../state/sketchAnalysisStore'
@@ -25,6 +28,7 @@ import { patternPieces, polygonCorners, sketchBounds, type SketchPatternSpec } f
 import { projectableAt, type Projectable } from '../core/project'
 import { lineIntent, snapSketchPoint, type SnapContext, type SnapKind } from '../core/snap'
 import { usePrefs } from '../../../src/state/prefsStore'
+import { useHeldDimension } from '../state/heldDimensionStore'
 import { fmtLen } from '../../../src/core/units'
 import { useRePrefs } from '../state/rePrefs'
 import { arcThrough, chainArcStart, dragHandleAt, sketchHoverAt, splineClosesAt, useReverse, type SketchHover } from '../state/reStore'
@@ -40,6 +44,10 @@ import type { SketchChains } from './useReverseWorkspace'
 /** How the pieces are coloured — fitted to the slice, drawn free, brought
  *  in, for construction only, selected — on the instrument as it is lit. */
 const colors = () => sketchPalette(usePrefs.getState().dark)
+
+/** The squares on the snap points that are no grips: quadrants, middles,
+ *  an arc's centre. */
+const SNAP_POINT_COLOR = '#62aae4'
 
 /** A piece as the sheet draws it. */
 function entityFit(e: SketchEntity): FlatFit {
@@ -57,6 +65,19 @@ function entityFit(e: SketchEntity): FlatFit {
     case 'point':
       return { kind: 'point', at: e.p, sigma: 0, usedPoints: 0 }
   }
+}
+
+/** The constraints that overdefine the sketch as it was last solved — worked
+ *  out once per solve: the labels are pushed on every cursor move. */
+const overdefiningSeen = new WeakMap<object, Set<number>>()
+function overdefiningOf(report: { ok: boolean } | null, sketch: Sketch, datums: ReturnType<typeof datumTraces>): Set<number> {
+  if (!report || report.ok) return new Set()
+  let ids = overdefiningSeen.get(report)
+  if (!ids) {
+    ids = new Set(overdefiningConstraints(sketch, { datums }))
+    overdefiningSeen.set(report, ids)
+  }
+  return ids
 }
 
 /** The ends a relation or a dimension holds — what is lit as points while
@@ -183,6 +204,8 @@ export function snapMark(kind: SnapKind, at: Vec2, s: number): FlatFit[] {
         ? [seg([x - s * 1.4, y], [x + s * 1.4, y]), seg([x, y - s * 1.4], [x, y + s * 1.4])]
       : kind === 'midpoint'
         ? [seg([x - s, y - s * 0.7], [x + s, y - s * 0.7]), seg([x + s, y - s * 0.7], [x, y + s]), seg([x, y + s], [x - s, y - s * 0.7])]
+      : kind === 'quadrant'
+        ? [seg([x - s * 1.2, y], [x, y + s * 1.2]), seg([x, y + s * 1.2], [x + s * 1.2, y]), seg([x + s * 1.2, y], [x, y - s * 1.2]), seg([x, y - s * 1.2], [x - s * 1.2, y]), seg([x - s * 0.4, y], [x + s * 0.4, y]), seg([x, y - s * 0.4], [x, y + s * 0.4])]
       : kind === 'edge'
         ? [seg([x - s, y], [x, y + s]), seg([x, y + s], [x + s, y]), seg([x + s, y], [x, y - s]), seg([x, y - s], [x - s, y])]
         : kind === 'entity'
@@ -405,6 +428,7 @@ export function useSketchSceneSync({
       grid: useRePrefs.getState().gridSnap ? (scene()?.gridStep() ?? null) : null,
       datums: frame ? datumTraces(frame) : null,
       off: raw,
+      allow: snapFlags('draw'),
     }
   }
 
@@ -588,6 +612,15 @@ export function useSketchSceneSync({
     const picked = picks[0] ?? null
     const selected = new Set(draft.selection)
     for (const p of picks) if (p.kind === 'piece') selected.add(p.id)
+    // A point picked first — a centre, an end, the origin — stays marked
+    // while the tool waits for the second, as a selected point does.
+    for (const p of picks) {
+      if (p.kind === 'origin') litPoints.push([0, 0])
+      else if (p.kind === 'point') {
+        const e = entityOf(sketch, p.anchor.entity)
+        if (e) litPoints.push(anchorPoint(e, p.anchor.at))
+      }
+    }
     // A free piece is loose until relations and dimensions pin it down,
     // then drawn in the constrained colour; with no solve yet, loose.
     const loose = new Set(draft.report ? draft.report.underConstrained : sketch.entities.map((e) => e.id))
@@ -680,6 +713,9 @@ export function useSketchSceneSync({
       const deviation = sketchDeviation(sketch, chainsOf()?.chains ?? [], analysis.toleranceMm)
       for (const run of deviation?.runs ?? []) {
         if (run.cls === 'none' || run.pts.length < 2) continue
+        // A selected piece, or one the cursor would take, shows that instead:
+        // the colours would otherwise hide which pieces are selected.
+        if (run.entity !== undefined && (selected.has(run.entity) || lit.has(run.entity))) continue
         const pieces = analysis.mode === 'gradient' ? gradientPieces(run, analysis.toleranceMm) : [{ pts: run.pts, color: run.cls === 'pass' ? PASS_COLOR : FAIL_COLOR }]
         for (const piece of pieces) {
           // The fit only carries the item; the polyline is what is drawn.
@@ -711,6 +747,19 @@ export function useSketchSceneSync({
       for (const {at, point} of sketchGrips(e)) {
         if (!sketchGripShown(e.kind, at, inHand)) continue
         dots.push({ at: point, color: '#111111', size: SKETCH_DOT.end, shape: 'square' })
+      }
+    }
+    // A square on every point the snap bar has switched on that has none of
+    // its own: the quadrant points of circles and arcs, the middle of a
+    // line, an arc's centre — something to aim a drawn end or a dimension
+    // at. Lighter than the grips: they are places to land, not handles.
+    const bar = useSnapFilter.getState().context
+    const shown = bar === 'draw' || bar === 'pick' ? snapFlags(bar) : null
+    if (shown) {
+      for (const e of sketch.entities) {
+        if (shown.quadrant) for (const q of quadrantsOf(e)) dots.push({ at: q.point, color: SNAP_POINT_COLOR, size: SKETCH_DOT.end, shape: 'square' })
+        if (shown.midpoint && e.kind === 'line') dots.push({ at: anchorPoint(e, 'center'), color: SNAP_POINT_COLOR, size: SKETCH_DOT.end, shape: 'square' })
+        if (shown.center && e.kind === 'arc') dots.push({ at: e.c, color: SNAP_POINT_COLOR, size: SKETCH_DOT.end, shape: 'square' })
       }
     }
     for (const p of picks) {
@@ -765,18 +814,35 @@ export function useSketchSceneSync({
     // The display preference controls glyphs independently of dimensions.
     // A relation selected in the panel remains visible for editing.
     const showGlyphs = useRePrefs.getState().sketchRelations
-    const notes: { id: number; text: string; at: Vec2; editing: boolean; className?: string; tip?: string; iconPath?: string }[] = []
+    const notes: { id: number; text: string; at: Vec2; editing: boolean; className?: string; tip?: string; iconPath?: string; slot?: number }[] = []
+    // With a tool in hand a click belongs to the tool: a glyph in the way
+    // of a line's end or an arc's point must not take it (it took the first
+    // click of an arc begun beside a rectangle's side). Glyphs are picked
+    // with the Modify tool.
+    const glyphClass = draft.tool === 'select' ? 'glyph unspread' : 'glyph unspread passive'
     for (const c of sketch.constraints) {
       if (isDimension(c)) continue
       if (!showGlyphs && draft.selectedConstraint !== c.id) continue
       const glyph = GLYPHS[c.kind]
       const at = glyphSpot(c, sketch)
-      if (glyph && at) notes.push({ id: c.id, text: glyph, at, editing: draft.selectedConstraint === c.id, className: 'glyph', tip: relationName(c.kind), iconPath: sketchIconPaths[c.kind as SketchCommandIconName] })
+      if (glyph && at) notes.push({ id: c.id, text: glyph, at, editing: draft.selectedConstraint === c.id, className: glyphClass, tip: relationName(c.kind), iconPath: sketchIconPaths[c.kind as SketchCommandIconName] })
     }
     for (const e of fixedPieces(sketch)) {
       const id = fixId(e.id)
       if (!showGlyphs && draft.selectedConstraint !== id) continue
-      notes.push({ id, text: FIX_GLYPH, at: fixSpot(e), editing: draft.selectedConstraint === id, className: 'glyph', tip: 'Fix', iconPath: sketchIconPaths.fix })
+      notes.push({ id, text: FIX_GLYPH, at: fixSpot(e), editing: draft.selectedConstraint === id, className: glyphClass, tip: 'Fix', iconPath: sketchIconPaths.fix })
+    }
+    // Glyphs that mark the same spot — a line's Horizontal and its Equal, a
+    // corner's Coincident and its Tangent — stand side by side in a row, as
+    // QUICKSURFACE and every CAD sketcher lay them out: stacked on one spot
+    // only the top one could be seen or clicked, and which one was on top
+    // changed as the view moved.
+    const rows = new Map<string, number>()
+    for (const n of notes) {
+      const spot = `${n.at[0].toFixed(4)},${n.at[1].toFixed(4)}`
+      const slot = rows.get(spot) ?? 0
+      rows.set(spot, slot + 1)
+      if (slot > 0) n.slot = slot
     }
     view.setNotes(notes)
     pushDimensions()
@@ -805,19 +871,29 @@ export function useSketchSceneSync({
     // is typed is read back into millimetres by the label's handler.
     const units = usePrefs.getState().units
     const dims: SketchDimensionItem[] = []
+    let heldValue: { id: number; value: number } | null = null
+    // A dimension the solve could not meet is marked, as QUICKSURFACE turns
+    // an overdefining dimension yellow.
+    const unmetIds = overdefiningOf(draft.report, sketch, traces)
     for (const c of sketch.constraints) {
       if (!isDimension(c)) continue
       if (!useRePrefs.getState().sketchDimensions && c.id !== draft.dimMade && c.id !== draft.selectedConstraint) continue
       // An angle in hand follows the cursor's sector, its arc and number live.
       const sector = held?.id === c.id && c.kind === 'angle' ? angleForSector(sketch, c.a, c.b, held.at) : null
-      const live = sector && c.kind === 'angle' ? { ...c, sector: sector.sector, value: sector.value } : c
+      // A distance between two points in hand is level, plumb or straight by
+      // where the cursor stands.
+      const axis = held?.id === c.id ? distanceAxisAt(c, sketch, held.at) : null
+      const live = sector && c.kind === 'angle' ? { ...c, sector: sector.sector, value: sector.value } : axis ? withDistanceAxis(c, axis) : c
+      if (sector) heldValue = { id: c.id, value: sector.value }
+      else if (axis) heldValue = { id: c.id, value: axis.value }
       const place = held?.id === c.id ? dimPlaceAt(live, sketch, held.at, traces) : null
       const shape = dimShape(place ? { ...live, place } : live, sketch, traces, lift)
       if (!shape) continue
       const text = dimensionFieldText(live, units)
-      dims.push({ shape, value: dimensionText(live, units), ...(draft.dimMade == null ? { edit: { id: c.id, value: c.value, ...(text !== undefined ? { text } : {}) } } : {}) })
+      dims.push({ shape, value: dimensionText(live, units), ...(unmetIds.has(c.id) ? { className: 'overdefined' } : c.driven ? { className: 'driven' } : {}), selected: draft.selectedConstraint === c.id && draft.dimMade == null && draft.tool === 'select', ...(draft.dimMade == null ? { edit: { id: c.id, value: c.value, ...(text !== undefined ? { text } : {}) } } : {}) })
     }
-    view.setSketchDimensions(dims, { color: colors().dimension, className: 'sketch-dim' })
+    view.setSketchDimensions(dims, { color: colors().dimension, className: 'sketch-dim unspread' })
+    useHeldDimension.getState().setHeld(heldValue)
   }
 
   const showGrid = useRePrefs((s) => s.sketchGrid)
@@ -830,6 +906,27 @@ export function useSketchSceneSync({
   }, [chainsVersion, draftOpen, showGrid])
 
   const draft = useReverse((s) => s.sketchDraft)
+  // The snap bar shows the switches of the tool in hand: what a drawn point
+  // lands on, or what Dimension and Coincident take.
+  const snapTool = useReverse((s) => (s.sketchDraft && !s.sketchDraft.placing ? s.sketchDraft.tool : null))
+  const snapRelation = useReverse((s) => s.sketchDraft?.armedRelation ?? null)
+  const pickFlags = useSnapFilter((s) => s.flags.pick)
+  const pickAll = useSnapFilter((s) => s.all.pick)
+  const drawFlags = useSnapFilter((s) => s.flags.draw)
+  const drawAll = useSnapFilter((s) => s.all.draw)
+  const barContext = useSnapFilter((s) => s.context)
+  useEffect(() => {
+    const bar = useSnapFilter.getState()
+    // While Measure is open the bar is the Measure's: the mesh's switches,
+    // or a sketch's Pick switches for its Sketch way.
+    if (useMeasureTool.getState().open) return
+    const picks = snapTool === 'dimension' || (snapTool === 'relation' && snapRelation === 'coincident')
+    const none = snapTool === null || snapTool === 'relation' || snapTool === 'fillet' || snapTool === 'chamfer' || snapTool === 'project'
+    bar.setContext(picks ? 'pick' : none ? null : 'draw')
+    return () => {
+      if (!useMeasureTool.getState().open) useSnapFilter.getState().setContext(null)
+    }
+  }, [snapTool, snapRelation])
   const showRelations = useRePrefs((s) => s.sketchRelations)
   const showDimensions = useRePrefs((s) => s.sketchDimensions)
   const showControlPoints = useRePrefs((s) => s.sketchControlPoints)
@@ -842,7 +939,7 @@ export function useSketchSceneSync({
   const analysisMode = useSketchAnalysis((s) => s.mode)
   const dark = usePrefs((s) => s.dark)
   const units = usePrefs((s) => s.units)
-  useEffect(pushSketch, [draft, showRelations, showDimensions, showControlPoints, combOn, combState, brushPreview, brushOpen, dark, units, analysisOn, analysisTolerance, analysisMode, chainsVersion])
+  useEffect(pushSketch, [draft, pickFlags, pickAll, drawFlags, drawAll, barContext, showRelations, showDimensions, showControlPoints, combOn, combState, brushPreview, brushOpen, dark, units, analysisOn, analysisTolerance, analysisMode, chainsVersion])
   useEffect(() => {
     scene()?.setEdgeColor(colors().slice, colors().sliceOpacity)
     // Runs on the listed dependencies only, not on everything it reads.

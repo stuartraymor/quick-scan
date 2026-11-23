@@ -26,7 +26,7 @@ try{
   const after=await read();assert.ok(equalLines(after.sketch.entities,data[choice==='near'?'native-corner-joined':'native-corner-far-joined']));assert.equal(after.history,1);await page.screenshot({path:out+'/quick-'+choice+'-release.png'});
   await click('[data-test=undo]');assert.deepEqual((await read()).sketch,before.sketch);await click('[data-test=redo]');assert.deepEqual((await read()).sketch,after.sketch);results[choice]=after;
  }
- await seed(data['native-cross-before']);await click('[data-test=sketch-join]');const joined=await read();assert.ok(equalLines(joined.sketch.entities,data['native-corner-joined']));await click('[data-test=sketch-join]');assert.deepEqual(await read(),joined);results.autoJoin=joined;
+ await seed(data['native-cross-before']);await click('[data-test=sketch-join]');const joined=await read();assert.ok(equalLines(joined.sketch.entities,data['native-corner-joined']));await click('[data-test=sketch-join]');{const again=await read();assert.deepEqual(again.sketch,joined.sketch);assert.equal(again.history,joined.history)};results.autoJoin=joined;
  await seed(data['native-angle60'].slice(-2));
  const original=await read();await click('[data-test=sketch-dimension]');
  const mids=original.sketch.entities.map(e=>[(e.a[0]+e.b[0])/2,(e.a[1]+e.b[1])/2]);

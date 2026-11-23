@@ -67,7 +67,7 @@ export function DirectionField({ direction, normal, onChange }: { direction: Vec
             }
           }}
         >
-          <option value="normal">The sketch plane's normal</option>
+          <option value="normal">From sketch</option>
           {offers.map((o) => (
             <option key={o.key} value={o.key} disabled={!along(o.dir)}>
               {o.label}

@@ -56,7 +56,9 @@ export function openingDepth(sketch: Pick<Sketch, 'entities'>, regionKeys: reado
   if (!bounds) return null
   const side = Math.max(bounds.max[0] - bounds.min[0], bounds.max[1] - bounds.min[1])
   if (!Number.isFinite(side) || side <= 0) return null
-  return OPENING_DEPTH_RATIO * side
+  // To twelve figures: 0.3 of a 24 mm side opens at 7.2, not at the
+  // 7.199999999999999 the multiplication leaves in the box.
+  return Number((OPENING_DEPTH_RATIO * side).toPrecision(12))
 }
 
 export function spansSketch({ from, to }: DistanceExtent): boolean {

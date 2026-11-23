@@ -33,7 +33,7 @@ export function Viewer({
   /** One of the grips on the element being made — or of the gizmo on a
    *  section plane — was dragged this far: millimetres, or degrees for a
    *  ring. */
-  onExtendDrag?: (side: GripSide, delta: number, phase: 'start' | 'move' | 'end') => void
+  onExtendDrag?: (side: GripSide, delta: number, phase: 'start' | 'move' | 'end', pointer?: { x: number; y: number }) => void
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const sceneRef = useRef<SceneManager | null>(null)
@@ -77,7 +77,7 @@ export function Viewer({
     scene.onElementPick = (id, x, y) => elementPickRef.current?.(id, x, y)
     scene.onWorldPlanePick = (axis) => worldPlaneRef.current?.(axis)
     scene.onPaintChange = (count) => paintRef.current?.(count)
-    scene.onExtendDrag = (side, delta, phase) => extendRef.current?.(side, delta, phase)
+    scene.onExtendDrag = (side, delta, phase, pointer) => extendRef.current?.(side, delta, phase, pointer)
     sceneRef.current = scene
     const aids = useNavigationView.getState()
     scene.setNavigationCoordinates(aids.coordinates)

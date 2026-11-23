@@ -17,6 +17,8 @@ import { NavigationGuides } from './navigationGuides'
 import { WandCursorOwner } from './cursorOwner'
 import { DatumStage } from './datumStage'
 import { RegionColors } from './regionColors'
+import { fieldRampUniforms, setFieldRamp } from './fieldRamp'
+import { paintField, type Colormap, type FieldScale } from '../core/field/colormap'
 import { SurfaceMarking, colorToRgb, type PaintBrush } from './marking'
 import { ExtendGrips, isPluginSide, isSectionSide, type GripSide, type PluginGrip } from './extendGrips'
 import { liftPoint } from '../core/section/lift'
@@ -408,6 +410,11 @@ export class SceneManager {
   private deflectStart = 0
   private uDeflect: DeflectionUniform = { value: 0 }
   private scanDepthOffset = { value: 0 }
+  /** The live map's ramp, read per fragment — see fieldRamp.ts. */
+  private uField = fieldRampUniforms()
+  /** The reading on show per fragment, kept to lay again on a relaid scan. */
+  private sparseValues: { subset: Uint32Array; values: Float32Array } | null = null
+  private fieldWritten: Uint32Array | null = null
   /** See-through surfaces, so what is inside the part — the reference, the
    *  fitted elements, the pinned readings — shows: the scan's and the
    *  reference's, each from its own key. Held here as well as on the
@@ -447,7 +454,7 @@ export class SceneManager {
   /** A grip being dragged: which side, and how many millimetres it has been
    *  pulled out (negative in) since the drag began — or, for a section plane's
    *  grip, how far along its normal it has been moved. */
-  onExtendDrag: ((side: GripSide, delta: number, phase: 'start' | 'move' | 'end') => void) | null =
+  onExtendDrag: ((side: GripSide, delta: number, phase: 'start' | 'move' | 'end', pointer?: { x: number; y: number }) => void) | null =
     null
   /** The text typed into the field on a plugin's grip and entered, or the
    *  field closed with Escape — see setGripField. */
@@ -595,7 +602,7 @@ export class SceneManager {
       requestHover: () => {
         this.hoverDirty = true
       },
-      onExtendDrag: (side, delta, phase) => this.onExtendDrag?.(side, delta, phase),
+      onExtendDrag: (side, delta, phase, pointer) => this.onExtendDrag?.(side, delta, phase, pointer),
       // Only an element's ghost has ends to mark; a section plane's gizmo
       // stands on a sheet that is its own mark, and a plugin's grips are on
       // something of its own.
@@ -918,6 +925,10 @@ export class SceneManager {
       if (step.layer) this.hoverCovered.set(step.layer, under)
       if (step.hover(at, under) && step.covers) covered = true
     }
+    // A layer behind a lit grip that let go of what it lit has just cleared
+    // the pointer the grip set: the grip's stands.
+    const gripCursor = this.grips.cursor()
+    if (gripCursor !== null) this.viewport.renderer.domElement.style.cursor = gripCursor
     if (!this.hoverEnabled) return
     const hit = at ? this.pick(at.x, at.y) : null
     // Silence is worth reporting once, not every frame the cursor spends off
@@ -986,7 +997,7 @@ export class SceneManager {
       side: THREE.DoubleSide,
     })
     this.applyScanFinish(material)
-    patchScanShader(material, { backface: this.backface, paintColor: this.uPaintColor, surfaceColor: this.uSurfaceColor, surfaceOwn: this.uSurfaceOwn, deflect: this.uDeflect, wire: this.wire, depthOffset: this.scanDepthOffset })
+    patchScanShader(material, { backface: this.backface, paintColor: this.uPaintColor, surfaceColor: this.uSurfaceColor, surfaceOwn: this.uSurfaceOwn, deflect: this.uDeflect, wire: this.wire, depthOffset: this.scanDepthOffset, field: this.uField })
     setSurfaceOpacity(material, this.scanOpacity())
     const mesh = new THREE.Mesh(geometry, material)
     // The geometry under the mesh changes hands (an edited copy, a resplit),
@@ -1171,6 +1182,8 @@ export class SceneManager {
     this.regions.rebind(colors, paint, tint, this.scanVertices)
     // The offsets are the scan's own, laid out again over the new copies.
     this.layOutDeflection()
+    this.fieldWritten = null
+    this.writeFieldAttrs()
     geometry.computeBoundsTree()
     // A cap over the closed shells alone is cut from the old triangles.
     this.applySlice()
@@ -1385,14 +1398,15 @@ export class SceneManager {
       const e = this.stage.extent()
       box.union(new THREE.Box3(new THREE.Vector3(-e, -e, -e), new THREE.Vector3(e, e, e)))
     }
-    // No scan: what a layer stands in its place is the part, as frameAll
-    // has it.
-    if (!this.mesh) {
-      this.partGroup.updateMatrixWorld(true)
-      for (const layer of this.layers) {
-        const b = layer.frameBox?.()
-        if (b) box.union(b.clone().applyMatrix4(this.partGroup.matrixWorld))
-      }
+    // What the layers show counts too — the CAD bodies and sketches — with
+    // a scan or without one (1.2.16, as QUICKSURFACE's Zoom to Fit frames
+    // every object shown). A body modelled away from the scan was left off
+    // screen before, with no way to bring it back but orbiting to it. A
+    // layer reports only what it is showing, so a hidden body is not framed.
+    this.partGroup.updateMatrixWorld(true)
+    for (const layer of this.layers) {
+      const b = layer.frameBox?.()
+      if (b) box.union(b.clone().applyMatrix4(this.partGroup.matrixWorld))
     }
     // Nothing visible to fit — a hidden scan with no reference beside it. The
     // part is still loaded, so fit that rather than doing nothing at all.
@@ -2278,6 +2292,13 @@ export class SceneManager {
    *  PluginGrip. Empty takes them away. */
   setFeatureGrips(grips: readonly PluginGrip[], color: string): void {
     this.grips.setFeatureGrips(grips, color)
+  }
+
+  /** Where a grip's arrow is drawn, in the part's coordinates — off its own
+   *  place when it slid along its face to stay in view — or null. */
+  gripShownAt(side: GripSide): [number, number, number] | null {
+    const p = this.grips.shownAt(side)
+    return p ? [p.x, p.y, p.z] : null
   }
 
   setAlignmentGrips(grips: readonly PluginGrip[]): void {
@@ -3298,8 +3319,90 @@ export class SceneManager {
   /** Paint a reading on some of the scan's vertices, leaving the rest as
    *  they are, or pass null to lift it. See regionColors.setSparseField. */
   setSparseField(subset: Uint32Array | null, rgb: Uint8Array | null): void {
+    if (this.sparseValues) {
+      this.sparseValues = null
+      this.writeFieldAttrs()
+    }
+    this.paintSparse(subset, rgb)
+  }
+
+  private paintSparse(subset: Uint32Array | null, rgb: Uint8Array | null): void {
     if (!this.scanRegions().setSparseField(subset, rgb)) return
     this.scanRepainted()
+    this.invalidate()
+  }
+
+  /**
+   * A reading on some of the scan's vertices — `values` signed per entry of
+   * `subset`, read on `scale` in `map` — coloured per fragment from the
+   * reading itself (see fieldRamp.ts): smooth across large triangles, a
+   * soft edge where the reading ends, a step where it runs off the scale.
+   * The colour buffer gets the same colours per vertex, for everything that
+   * reads a vertex's colour. Null lifts it.
+   */
+  setSparseValues(subset: Uint32Array | null, values: Float32Array | null, scale?: FieldScale, map?: Colormap): void {
+    if (!subset || !values || !scale || !map || subset.length !== values.length) {
+      this.setSparseField(null, null)
+      return
+    }
+    const rgb = new Uint8Array(values.length * 3)
+    paintField(values, scale, map, rgb)
+    setFieldRamp(this.uField, scale, map)
+    this.sparseValues = { subset, values }
+    this.writeFieldAttrs()
+    this.paintSparse(subset, rgb)
+  }
+
+  /** Lay the reading on show into the scan's fieldW / fieldV attributes —
+   *  zero off it — the shading copies taking their vertex's; or, with none,
+   *  take the attributes off the geometry. */
+  private writeFieldAttrs(): void {
+    const geometry = this.mesh?.geometry as THREE.BufferGeometry | undefined
+    if (!geometry) return
+    const f = this.sparseValues
+    if (!f) {
+      if (geometry.getAttribute('fieldW')) {
+        geometry.deleteAttribute('fieldW')
+        geometry.deleteAttribute('fieldV')
+        this.invalidate()
+      }
+      this.fieldWritten = null
+      return
+    }
+    const count = geometry.getAttribute('position').count
+    let w = geometry.getAttribute('fieldW') as THREE.BufferAttribute | undefined
+    let v = geometry.getAttribute('fieldV') as THREE.BufferAttribute | undefined
+    if (!w || !v || w.count !== count) {
+      w = new THREE.BufferAttribute(new Float32Array(count), 1)
+      v = new THREE.BufferAttribute(new Float32Array(count), 1)
+      geometry.setAttribute('fieldW', w)
+      geometry.setAttribute('fieldV', v)
+      this.fieldWritten = null
+    }
+    const wa = w.array as Float32Array
+    const va = v.array as Float32Array
+    // Only what the last reading touched goes back to nothing — a drag lays
+    // a reading a frame, and the scan can be millions of vertices.
+    const last = this.fieldWritten
+    if (last) for (let i = 0; i < last.length; i++) { wa[last[i]] = 0; va[last[i]] = 0 }
+    else { wa.fill(0); va.fill(0) }
+    const { subset, values } = f
+    for (let i = 0; i < subset.length; i++) {
+      const k = subset[i]
+      if (k >= count) continue
+      wa[k] = 1
+      va[k] = values[i]
+    }
+    const own = count - this.copyOf.length
+    if (own >= 0 && own === this.scanVertexCount()) {
+      for (let c = 0; c < this.copyOf.length; c++) {
+        wa[own + c] = wa[this.copyOf[c]]
+        va[own + c] = va[this.copyOf[c]]
+      }
+    }
+    this.fieldWritten = subset
+    w.needsUpdate = true
+    v.needsUpdate = true
     this.invalidate()
   }
 
@@ -3358,6 +3461,8 @@ export class SceneManager {
   }
 
   private disposeMesh(): void {
+    this.sparseValues = null
+    this.fieldWritten = null
     this.setAlignMirror(null)
     this.fullIndex = null
     this.setEditedMesh(null)

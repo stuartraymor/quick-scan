@@ -81,6 +81,8 @@ export class ReScene {
   private planePick = false
   /** The bodies dimmed while a pick is on for the others. */
   private dimmedBodies = new Set<number>()
+  /** Bodies drawn see-through on their own (Transparent on one body). */
+  private seeThroughBodies = new Set<number>()
   /** Bodies a feature's preview stands in for — see setBodyPreview. */
   private replacedBodies = new Set<number>()
   /** What two solid bodies share where they run into each other — see
@@ -480,8 +482,66 @@ export class ReScene {
     return this.stackHandles.positions()
   }
 
+  /** The pick ray through a client point, in the part's coordinates (the
+   *  frame sketches are lifted into): Measure meets each shown sketch's
+   *  plane with it. */
+  partRayAt(clientX: number, clientY: number): { origin: Vec3; dir: Vec3 } | null {
+    this.host.setPickRay(clientX, clientY)
+    const ray = this.host.raycaster.ray
+    this.host.partGroup.updateWorldMatrix(true, false)
+    const o = this.host.partGroup.worldToLocal(ray.origin.clone())
+    const t = this.host.partGroup.worldToLocal(ray.origin.clone().add(ray.direction))
+    const d = t.sub(o)
+    if (!(d.length() > 0) || ![o.x, o.y, o.z].every(Number.isFinite)) return null
+    d.normalize()
+    return { origin: [o.x, o.y, o.z], dir: [d.x, d.y, d.z] }
+  }
+
+  /** The scan point under a client point, or null off the scan — what an
+   *  extrude arrow snaps to. */
+  scanPointAt(clientX: number, clientY: number): Vec3 | null {
+    return this.host.pickScan(clientX, clientY)?.point ?? null
+  }
+
+  private snapDot: THREE.Group | null = null
+  /** The yellow dot on the scan point a snapped extrude end goes through,
+   *  as QUICKSURFACE marks it — ringed in dark so it reads over the map's
+   *  green and yellow as well as over bare scan; null takes it away. */
+  setSnapDot(point: Vec3 | null): void {
+    if (!point) {
+      if (this.snapDot) {
+        this.host.partGroup.remove(this.snapDot)
+        for (const c of this.snapDot.children as THREE.Points[]) {
+          c.geometry.dispose()
+          ;(c.material as THREE.Material).dispose()
+        }
+        this.snapDot = null
+        this.host.invalidate()
+      }
+      return
+    }
+    if (!this.snapDot) {
+      const group = new THREE.Group()
+      group.name = 'extrude-snap-dot'
+      for (const [color, size, order] of [[0x1a1a1a, 15, 998], [0xffe100, 10, 999]] as const) {
+        const geometry = new THREE.BufferGeometry()
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0], 3))
+        const material = new THREE.PointsMaterial({ color, size, sizeAttenuation: false, depthTest: false, depthWrite: false, transparent: true })
+        const dot = new THREE.Points(geometry, material)
+        dot.renderOrder = order
+        dot.frustumCulled = false
+        group.add(dot)
+      }
+      this.snapDot = group
+      this.host.partGroup.add(group)
+    }
+    this.snapDot.position.set(point[0], point[1], point[2])
+    this.host.invalidate()
+  }
+
   /** Take the layers out of the viewport. */
   dispose(): void {
+    this.setSnapDot(null)
     this.sliceArrow.dispose()
     this.stackArrow.dispose()
     this.stackSlab.dispose()
@@ -952,7 +1012,7 @@ export class ReScene {
       material.transparent = true
       material.opacity = 0.18
       material.depthWrite = false
-    } else if (this.bodiesSolid) {
+    } else if (this.bodiesSolid && !this.seeThroughBodies.has(id)) {
       material.transparent = false
       material.opacity = 1
       material.depthWrite = true
@@ -1050,6 +1110,17 @@ export class ReScene {
     this.bodiesFaint = faint
     for (const [id, mesh] of this.bodyMeshes) this.dressBody(mesh.material as THREE.MeshStandardMaterial, id)
     this.showOverlaps()
+    this.recap()
+    this.host.invalidate()
+  }
+
+  /** The bodies drawn see-through on their own, whatever setBodiesSolid
+   *  says for the rest. */
+  setSeeThroughBodies(ids: readonly number[]): void {
+    const next = new Set(ids)
+    if (next.size === this.seeThroughBodies.size && ids.every((id) => this.seeThroughBodies.has(id))) return
+    this.seeThroughBodies = next
+    for (const [id, mesh] of this.bodyMeshes) this.dressBody(mesh.material as THREE.MeshStandardMaterial, id)
     this.recap()
     this.host.invalidate()
   }

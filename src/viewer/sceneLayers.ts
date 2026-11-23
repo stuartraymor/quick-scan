@@ -132,7 +132,8 @@ export interface SceneLayer {
   scanReplaced?(): void
   /** What an orbit may pivot on, while shown. */
   navTargets?(): THREE.Object3D[]
-  /** What the camera frames when there is no scan to frame. */
+  /** What the layer is showing, for Zoom to Fit (beside the scan, since
+   *  1.2.16) and for framing a part modelled with no scan. */
   frameBox?(): THREE.Box3 | null
   dispose(): void
 }

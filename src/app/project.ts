@@ -234,6 +234,8 @@ function coreProject(
       // a saved project is concerned.
       showOverlays: s.showLabels,
       showBackfaces: s.showBackfaces,
+      ...(s.scanHidden ? { scanHidden: true } : {}),
+      ...(s.elementsHidden ? { elementsHidden: true } : {}),
       sections: s.sections.map(sectionToJson),
       nextSectionNumber: s.nextSectionNumber,
     }
@@ -365,6 +367,8 @@ function scanPartState(p: ScanPart): Partial<ReturnType<typeof useStore.getState
     selectMode: p.selectMode,
     showLabels: p.showOverlays,
     showBackfaces: p.showBackfaces ?? true,
+    scanHidden: p.scanHidden === true,
+    elementsHidden: p.elementsHidden === true,
     // Planes only: the cuts are taken again once the scan is in the worker —
     // see sectionCuts.
     sections: (p.sections ?? []).map(sectionFromJson),

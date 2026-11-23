@@ -5,8 +5,8 @@
 import type { StoreApi } from 'zustand'
 import type { Vec3 } from '../../../src/core/types'
 import { extentEndsOnPart, type ExtrudeExtent, revolveMaxDeg } from '../core/features'
-import { dragExtrudeExtent, dragLength, dragRevolveAngle, dragTaper, isMoveGripSide, MAX_TAPER_DEG, moveGripSlot, taperSpan } from '../core/preview'
-import { moveSlotPath, revolveAngle } from './reDrafts'
+import { dragExtrudeExtent, dragLength, extentThroughPoint, dragRevolveAngle, dragTaper, isMoveGripSide, MAX_TAPER_DEG, moveGripSlot, taperSpan } from '../core/preview'
+import { extrudeHeightAt, moveSlotPath, revolveAngle } from './reDrafts'
 import { gripSlotPaths, unlinkSlots } from './reFeatureHelpers'
 import { faceExtrudeOp } from './reSketchDraft'
 import type { ReState } from './reStore'
@@ -15,12 +15,15 @@ type StoreSet = StoreApi<ReState>['setState']
 type StoreGet = StoreApi<ReState>['getState']
 
 /** Where a feature grip's drag started from, for the duration of it. */
-let gripStart: { extent: ExtrudeExtent } | { angleDeg: number } | { length: number } | { taperDeg: number; run: number } | null = null
+let gripStart: { extent: ExtrudeExtent; base: number; snapped: boolean } | { angleDeg: number } | { length: number } | { taperDeg: number; run: number } | null = null
 
-export const gripSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'preview' | 'setPreview' | 'gripDrag' | 'gripField' | 'setGripField' | 'setGripValue'> => ({
+export const gripSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'preview' | 'setPreview' | 'gripDrag' | 'gripHeld' | 'gripField' | 'setGripField' | 'setGripValue'> => ({
   preview: { status: 'idle' },
   setPreview: (preview) => set({ preview }),
-  gripDrag: (side, delta, phase) => {
+  gripHeld: false,
+  gripDrag: (side, delta, phase, snap) => {
+    if (phase === 'start' && !get().gripHeld) set({ gripHeld: true })
+    else if (phase === 'end' && get().gripHeld) set({ gripHeld: false })
     const s = get()
     const md = s.featureDraft
     if (md?.kind === 'moveBody' && isMoveGripSide(side)) {
@@ -53,12 +56,23 @@ export const gripSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'preview'
     }
     if (s.extrudeDraft) {
       if (phase === 'start') {
-        gripStart = { extent: s.extrudeDraft.extent }
+        gripStart = { extent: s.extrudeDraft.extent, base: 0, snapped: false }
         set({ gripField: side })
       } else if (phase === 'move' && gripStart && 'extent' in gripStart) {
         // Whole hundredths: a dragged number is read off the panel, and a
         // dozen decimals there read as noise.
-        const next = dragExtrudeExtent(gripStart.extent, side, delta)
+        // Snapping (QUICKSURFACE's extrude checkbox): over the scan, the
+        // dragged end goes through the scan point under the cursor; off
+        // it, the drag runs free.
+        const end = side === 'extrudeFrom' ? 'from' : side === 'extrudeTo' ? 'to' : null
+        const height = snap && end ? extrudeHeightAt(s.extrudeDraft, s.features, snap) : null
+        const snapped = height !== null && end ? extentThroughPoint(gripStart.extent, end, height) : null
+        // Off the scan after a snap, the free drag goes on from where the
+        // snap left the end, not from where the drag began: the end does not
+        // jump back as the cursor slips off an edge of the part.
+        if (!snapped && gripStart.snapped) gripStart = { extent: s.extrudeDraft.extent, base: delta, snapped: false }
+        else if (snapped) gripStart = { ...gripStart, snapped: true }
+        const next = snapped ?? dragExtrudeExtent(gripStart.extent, side, delta - gripStart.base)
         const tidy = (v: number) => Math.round(v * 100) / 100
         const extent: ExtrudeExtent =
           next.kind === 'distance'

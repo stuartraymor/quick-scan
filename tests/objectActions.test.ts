@@ -42,7 +42,7 @@ describe('core object actions',()=>{
  it('duplicates with distinct IDs, independent nested data and undo/redo',async()=>{
   expect(duplicateCoreElement(1)).toBe(2)
   expect(duplicateCoreElement(1)).toBe(3)
-  expect(m().elements.map(e=>e.name)).toEqual(['Plane 1','Plane 1 copy','Plane 1 copy 2'])
+  expect(m().elements.map(e=>e.name)).toEqual(['Plane 1','Plane 1 - Copy','Plane 1 - Copy (2)'])
   expect(m().elements[0].fit).not.toBe(m().elements[1].fit)
   expect(m().elements[0].source).not.toBe(m().elements[1].source)
   await undo();expect(m().elements.map(e=>e.id)).toEqual([1,2])

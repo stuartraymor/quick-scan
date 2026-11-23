@@ -23,7 +23,10 @@ import type { Vec3 } from '../../../src/core/types'
 import { rigidApply, rigidCompose, rigidInvert, type Rigid } from '../../../src/core/deviation/rigid'
 import type { KernelMesh } from '../core/kernel'
 import type { EdgeInfo, FaceInfo, PreviewStep } from '../core/build'
-import { liveMapScale, paintedSparse, sparseSummary } from '../core/liveMap'
+import { liveMapScale, paintedSparse, sparseSummary, type SparseField } from '../core/liveMap'
+import { displayValues, vertexNeighbours, type Neighbours } from '../core/mapDisplay'
+import { extrudeField, prepareExtrudeMap, prismEnds, prismReadable, type ExtrudeMapPrep } from '../core/prismMap'
+import { computeVertexNormals } from '../../../src/core/geometry/normals'
 import { curvatureRange } from '../../../src/core/geometry/curvature'
 import { cornerUnreadable, readCornerCut } from '../core/filletEstimate'
 import { FACE_SLICE_INSET_MM, liftPoint, planeOffset, planeTakesOffset, type Feature, type PlaneRef, type SketchFeature } from '../core/features'
@@ -40,7 +43,7 @@ import { PreviewFailure } from '../core/reClient'
 import { symmetryPlaneRef } from '../core/symmetryPlane'
 import type { SymmetryPlane } from '../../../src/core/symmetry'
 import { COMPARE_CHORD_MM, COMPARE_REFERENCE_NAME, compareReferenceStl, mergeMeshes as mergeCompared } from '../core/compare'
-import { entityPolyline, type EntityInput, type Sketch } from '../core/sketch'
+import { entityPolyline, sketchBounds, type EntityInput, type Sketch } from '../core/sketch'
 import { threadFaceReading } from '../core/thread'
 import { frameKey, transformFrame, WORLD_AXES, type SectionFrame } from '../../../src/core/section/frame'
 import { normalize } from '../../../src/core/vec'
@@ -385,15 +388,17 @@ export function useReverseWorkspace({
   // and in the map, which is the point — the map on the scan alone.
   const bodiesHidden = useReverse((s) => s.bodiesHidden)
   const onReverse = workspace === 'reverse'
+  // The bodies are the part: drawn on every tab, as QUICKSURFACE keeps its
+  // CAD on screen from Main to Analysis (read live, 2026-11-20). Leaving
+  // the CAD tabs used to take them off the scene while the Objects list
+  // still showed them ticked.
   useEffect(() => {
     const scene = sceneRef.current
     if (!scene) return
     reSceneOf(scene).setBodies(
-      onReverse
-        ? bodies
-            .map((b) => ({ id: b.id, mesh: meshes.get(b.id), visible: b.visible && !bodiesHidden, color: b.color ?? bodyColor(b.id), topology: topologies.get(b.id) }))
-            .filter((b): b is { id: number; mesh: KernelMesh; visible: boolean; color: string; topology: BodyTopology | undefined } => b.mesh !== undefined)
-        : [],
+      bodies
+        .map((b) => ({ id: b.id, mesh: meshes.get(b.id), visible: b.visible && !bodiesHidden, color: b.color ?? bodyColor(b.id), topology: topologies.get(b.id) }))
+        .filter((b): b is { id: number; mesh: KernelMesh; visible: boolean; color: string; topology: BodyTopology | undefined } => b.mesh !== undefined),
     )
     // With no scan the bodies are the part, and the size everything else
     // goes by — a pick's reach, a plane's extent — follows them.
@@ -499,7 +504,12 @@ export function useReverseWorkspace({
   const zebra = useZebra((s) => s.mode)
   useEffect(() => { reScene()?.setZebra(zebra) }, [zebra, bodies])
   useEffect(() => {
-    if (!onReverse) return
+    // Off the CAD tabs the scan is the app's to show (its own Translucent
+    // switch) and the bodies stand solid on it, as QUICKSURFACE draws both.
+    if (!onReverse) {
+      reScene()?.setBodiesSolid(!bodiesSeeThrough)
+      return () => { reScene()?.setBodiesSolid(false) }
+    }
     sceneRef.current?.setScanVisible(!scanHidden)
     reScene()?.setBodiesSolid(!bodiesSeeThrough)
     reScene()?.setBodiesFaint(snapping && !scanHidden)
@@ -511,6 +521,13 @@ export function useReverseWorkspace({
       sceneRef.current?.setScanGhost(false)
     }
   }, [scanHidden, scanSeeThrough, bodiesSeeThrough, anyBodyShown, snapping, onReverse, sceneRef])
+
+  // Transparent on one body (its style), over whatever the Bodies key says.
+  const bodyStylesNow = useReverse((s) => s.bodyStyles)
+  const seeThroughKey = Object.entries(bodyStylesNow).filter(([, st]) => st.transparent).map(([id]) => id).join(',')
+  useEffect(() => {
+    reScene()?.setSeeThroughBodies(seeThroughKey ? seeThroughKey.split(',').map(Number) : [])
+  }, [seeThroughKey, bodies, sceneRef])
 
   // The tangent edges drawn, dimmed or left out, as the view bar sets.
   const tangentEdges = useReverse((s) => s.tangentEdges)
@@ -860,6 +877,13 @@ export function useReverseWorkspace({
   const draftFeature = (): Feature | null => {
     if (featureDraft) return featureOfDraft(featureDraft, featureDraft.featureId ?? PREVIEW_ID, 'Preview')
     if (!draft) return null
+    // Solid unticked: the sketch's pieces swept as a surface — the Sheet
+    // feature Create makes, previewed as it will be built.
+    if (extrudeDraft?.surface && extrudeDraft.sketchId !== null) {
+      const e = extrudeDraft.extent
+      const [from, to] = e.kind === 'symmetric' ? [-e.total / 2, e.total / 2] : e.kind === 'distance' ? [e.from, e.to] : [0, 0]
+      return Math.abs(to - from) > 1e-9 ? { id: PREVIEW_ID, kind: 'sheet', name: 'Preview', sketchId: extrudeDraft.sketchId, from, to, visible: true } : null
+    }
     if (!extrudeDraft?.face && (draft.sketchId === null || draft.regions.length === 0)) return null
     if (extrudeDraft) {
       const e = extrudeDraft.extent
@@ -1329,7 +1353,67 @@ export function useReverseWorkspace({
   const bodyMap = useReverse((s) => s.bodyMap)
   const building = useReverse((s) => s.building)
   const previewStatus = useReverse((s) => s.preview.status)
+  const gripHeld = useReverse((s) => s.gripHeld)
   const visibleBodyIds = bodies.filter((b) => b.visible).map((b) => b.id).join(',')
+  // What the drawn map is read over: the scan's own vertex neighbours and
+  // normals, once per scan geometry, and the scratch the drawing uses.
+  const mapScan = useRef<{ tick: number; positions: Float32Array; length: number; adj: Neighbours; normals: Float32Array; slot: Int32Array } | null>(null)
+  const mapScanOf = (scene: SceneManager) => {
+    const positions = scene.scanPositions()
+    if (!positions) return null
+    const now = mapScan.current
+    if (now && now.tick === scanTick && now.positions.buffer === positions.buffer && now.length === positions.length) return now
+    const indices = scene.scanIndices()
+    if (!indices) return null
+    const count = positions.length / 3
+    const next = { tick: scanTick, positions, length: positions.length, adj: vertexNeighbours(indices, count), normals: computeVertexNormals(positions, indices), slot: new Int32Array(count).fill(-1) }
+    mapScan.current = next
+    return next
+  }
+  /** Lay a reading on the scan: per fragment from the readings, drawn with
+   *  the noise averaged out between like neighbours (core/mapDisplay) — the
+   *  figures stay the readings' own. A reading of the bodies that names
+   *  vertices deep inside them keeps its violet, vertex by vertex. */
+  const paintMap = (field: SparseField, source: 'ghost' | 'bodies') => {
+    const scene = sceneRef.current
+    if (!scene) return
+    const scale = liveMapScale(liveMapRange)
+    const map = colormapById(colormap)
+    const scan = mapScanOf(scene)
+    if ((field.farInside && field.farInside.length > 0) || !scan) {
+      const painted = paintedSparse(field, scale, map)
+      scene.setSparseField(painted.subset, painted.rgb)
+    } else scene.setSparseValues(field.subset, displayValues(field, scan.adj, liveMapRange, scan.slot), scale, map)
+    useReverse.getState().setMapReport({ source, ...sparseSummary(field, liveMapRange), range: liveMapRange, tick: ++mapTick.current })
+  }
+  // A straight extrude's map while it is set up: read in closed form
+  // against the profiles (core/prismMap) on every change of its ends — every
+  // frame of a drag, the hand still on the arrow — the part across the
+  // plane read once per profile. The kernel's map of the built ghost takes
+  // over once the ghost lands with the hand off it.
+  const prismPrep = useRef<{ key: string; sketch: SketchFeature; positions: Float32Array; prep: ExtrudeMapPrep } | null>(null)
+  useEffect(() => {
+    const scene = sceneRef.current
+    const d = extrudeDraft
+    if (!onReverse || !scene || !featureOpen || !liveMapOn || !d || d.sketchId === null || d.regions.length === 0 || !prismReadable(d)) return
+    if (d.extent.kind !== 'distance' && d.extent.kind !== 'symmetric') return
+    const sketch = features.find((f): f is SketchFeature => f.kind === 'sketch' && f.id === d.sketchId)
+    if (!sketch) return
+    const scan = mapScanOf(scene)
+    if (!scan) return
+    const key = `${scan.length}|${sketch.id}|${frameKey(sketch.frame)}|${d.regions.join(',')}|${liveMapRange}|${scanTick}`
+    const kept = prismPrep.current
+    let prep = kept && kept.key === key && kept.sketch === sketch && kept.positions === scan.positions ? kept.prep : null
+    if (!prep) {
+      const regions = regionsOf(sketch).filter((r) => d.regions.includes(r.key))
+      if (regions.length === 0) return
+      prep = prepareExtrudeMap(scan.positions, scan.normals, sketch.frame, regions.map((r) => ({ outer: r.outer.polygon, holes: r.holes.map((h) => h.polygon) })), liveMapRange)
+      prismPrep.current = { key, sketch, positions: scan.positions, prep }
+    }
+    const [from, to] = prismEnds(d.extent)
+    paintMap(extrudeField(prep, from, to), 'ghost')
+    // Runs on the listed dependencies only, not on everything it reads.
+  }, [onReverse, featureOpen, liveMapOn, liveMapRange, colormap, extrudeDraft, features, scanTick, sceneRef])
   useEffect(() => {
     const scene = sceneRef.current
     const client = session.client()
@@ -1347,6 +1431,12 @@ export function useReverseWorkspace({
     // on the scan until the new ghost lands, rather than lifting it and
     // laying it again, which would flicker under the hand.
     if (featureOpen && previewStatus === 'building' && liveMapOn) return
+    // An arrow or ring in the hand on a straight extrude: the map above
+    // follows the hand, and the kernel's reads the ghost on release. Any
+    // other feature's map is read from its ghost whenever one lands, hand
+    // on the grip or not — a pause in the drag shows where it stands.
+    const prismLive = featureOpen && liveMapOn && extrudeDraft !== null && prismReadable(extrudeDraft) && extrudeDraft.sketchId !== null
+    if (prismLive && gripHeld) return
     const ghostShown = featureOpen && previewStatus === 'ok'
     const source: 'preview' | 'bodies' | null = ghostShown ? (liveMapOn ? 'preview' : null) : bodyMap && visibleBodyIds !== '' && !building ? 'bodies' : null
     if (!source) {
@@ -1360,10 +1450,10 @@ export function useReverseWorkspace({
           .map(source, visibleBodyIds.split(',').map(Number), liveMapRange)
           .then((field) => {
             if (stale || !field) return
-            const painted = paintedSparse(field, liveMapScale(liveMapRange), colormapById(colormap))
-            sceneRef.current?.setSparseField(painted.subset, painted.rgb)
-            const re = useReverse.getState()
-            re.setMapReport({ source: source === 'preview' ? 'ghost' : 'bodies', ...sparseSummary(field, liveMapRange), range: liveMapRange, tick: ++mapTick.current })
+            // A drag begun since the request was sent: the hand's map is
+            // newer than the ghost this read.
+            if (source === 'preview' && useReverse.getState().gripHeld && prismLive) return
+            paintMap(field, source === 'preview' ? 'ghost' : 'bodies')
           })
           .catch(() => {})
       },
@@ -1374,7 +1464,7 @@ export function useReverseWorkspace({
       window.clearTimeout(timer)
     }
     // Runs on the listed dependencies only, not on everything it reads.
-  }, [onReverse, kernelStatus, featureOpen, previewStatus, ghostTick, scanTick, liveMapOn, liveMapRange, colormap, bodyMap, visibleBodyIds, bodiesVersion, building, sceneRef])
+  }, [onReverse, kernelStatus, featureOpen, previewStatus, ghostTick, scanTick, liveMapOn, liveMapRange, colormap, bodyMap, visibleBodyIds, bodiesVersion, building, gripHeld, sceneRef])
 
   // Measure's elements, where the Reverse store can read them.
   const measured = useStore((s) => s.elements)
@@ -1448,7 +1538,13 @@ export function useReverseWorkspace({
       const sketch = features.find((f): f is SketchFeature => f.kind === 'sketch' && f.id === draft.sketchId)
       if (sketch) {
         const regions = regionsOf(sketch).filter((r) => draft.regions.includes(r.key))
-        if (extrudeDraft) {
+        if (extrudeDraft?.surface) {
+          // A surface has no region to stand the arrows on: they go through
+          // the middle of the sketch's own pieces, as QUICKSURFACE puts them
+          // on an open profile's wall.
+          const b = sketchBounds({ entities: sketch.sketch.entities.filter((e) => !e.construction && e.kind !== 'point') })
+          if (b) grips = extrudeGripsAt(liftPoint(sketch.frame, [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2]), sketch.frame.normal, extrudeDraft.extent)
+        } else if (extrudeDraft) {
           // Swept askew, the arrows go the way it is swept; the taper's grip
           // stands on a side square to the plane, so it stays away.
           const taper = extrudeDraft.direction ? null : taperGrip(sketch.frame, regions, extrudeDraft.extent, -extrudeDraft.draftDeg)
@@ -1463,7 +1559,7 @@ export function useReverseWorkspace({
     }
     scene.setFeatureGrips(grips, ghostColor())
     // An extrude's grips carry QUICKSURFACE's words by them in the view.
-    useGripLabels.getState().setLabels(extrudeDraft && featureOpen ? grips.flatMap((g) => { const text = gripLabelText(g.side); return text ? [{ text, at: g.position }] : [] }) : [])
+    useGripLabels.getState().setLabels(extrudeDraft && featureOpen ? grips.flatMap((g) => { const text = gripLabelText(g.side); return text ? [{ text, at: g.position, side: g.side }] : [] }) : [])
     // Runs on the listed dependencies only, not on everything it reads.
   }, [featureOpen, extrudeDraft, revolveDraft, featureDraft, features, sceneRef])
 

@@ -6,7 +6,7 @@
 import { create } from 'zustand'
 import type { Vec3 } from '../../../src/core/types'
 
-export interface GripLabel { text: string; at: Vec3 }
+export interface GripLabel { text: string; at: Vec3; side?: string }
 
 export const useGripLabels = create<{
   labels: GripLabel[]

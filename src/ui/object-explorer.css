@@ -139,6 +139,41 @@
 .explorer-core-menu button:hover { background: var(--well); color: var(--accent-d); }
 .explorer-core-menu button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .explorer-core-menu button:disabled { opacity: .45; cursor: default; }
+/* Shared menu rows: a tick or ✕ column, the label, then the shortcut. */
+.explorer-core-menu button { display: flex; align-items: center; gap: 6px; padding: 4px 12px 4px 6px; }
+.explorer-core-menu-check { flex: 0 0 14px; width: 14px; text-align: center; color: var(--accent-d); font-size: 12px; }
+.explorer-core-menu button.danger .explorer-core-menu-check { color: #d24b3e; }
+.explorer-core-menu-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.explorer-core-menu kbd { font: 11px var(--ui); color: var(--dim); background: none; border: 0; padding: 0; }
+.explorer-core-menu-sep { height: 1px; margin: 4px 8px; background: var(--line-strong); }
+.explorer-confirm { max-width: 460px; }
+.explorer-confirm-list { font-weight: 600; overflow-wrap: anywhere; }
+.explorer-confirm-blocked { color: #c0392b; }
+.explorer-properties { min-width: 300px; }
+.explorer-properties dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0 0 10px; font-size: 13px; }
+.explorer-properties dl > div { display: contents; }
+.explorer-properties dt { color: var(--dim); }
+.explorer-properties dd { margin: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.explorer-properties-title { display: none; }
+/* In-place rename (F2) inside a tree row. */
+.object-explorer .explorer-rename-inline { flex: 1; min-width: 0; height: 21px; padding: 1px 4px; font: inherit; font-size: 12px; border: 1px solid var(--accent); border-radius: 2px; background: var(--panel); color: var(--ink); }
+/* Parents and dependents of the row in focus, at the view's top left. */
+.explorer-dependency-card {
+  position: fixed;
+  z-index: 40;
+  max-width: 280px;
+  padding: 5px 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r);
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 3px 12px #0002;
+  font: 12px var(--ui);
+  pointer-events: none;
+}
+.explorer-dependency-card > div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.explorer-dependency-card .dep-title { font-weight: 600; }
+.explorer-dependency-card .dep-dim { color: var(--dim); }
 
 .explorer-object-toolbar button[aria-pressed="true"] { background: var(--well); color: var(--accent-d); }
 .explorer-dependency-row { display: flex; align-items: center; min-width: 0; }
@@ -149,4 +184,10 @@
 
 .explorer-end-model[draggable="true"] { cursor: grab; }
 .explorer-end-model:focus-visible { outline: 1px solid var(--accent); }
-.explorer-history-end-drop { height: 10px; }
+.explorer-history-end-drop { min-height: 24px; }
+.object-explorer .explorer-row.is-failed .explorer-item > span:nth-child(2) { color: var(--warn, #e0a040); }
+.object-explorer .explorer-failed { color: var(--warn, #e0a040); margin-left: 4px; font-size: 11px; }
+/* 1.2.16: a locked primitive reads "Locked" beside its name in both panels,
+   as QUICKSURFACE's tree does. The compact panels hide a row's other small
+   tags, so this one is shown by name. */
+.object-explorer .explorer-row .explorer-item > small.explorer-locked { display: inline; flex: none; margin-left: 6px; font-size: 10px; color: var(--dim); }

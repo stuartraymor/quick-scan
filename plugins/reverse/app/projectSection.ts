@@ -84,6 +84,11 @@ export interface ReversePart {
   /** Where the bodies run into each other left undrawn — present, false,
    *  only then. */
   overlapsShown?: boolean
+  /** The workspace's scan eye and its all-bodies eye, present (true) only
+   *  when shut; absent in projects saved before 1.2.15, which open with
+   *  both shown. */
+  scanHidden?: boolean
+  bodiesHidden?: boolean
   elementsShown: boolean
   /** The archive member the imported STEP files are in, as JSON of their
    *  texts by key; absent with no Import. */
@@ -276,7 +281,7 @@ export function validateReversePart(raw: unknown): ReversePart {
   }
   if (r.stepFiles !== undefined && typeof r.stepFiles !== 'string') invalid('reverse.stepFiles')
   if (r.hiddenBodies !== undefined) for (const n of array(r.hiddenBodies, 'reverse.hiddenBodies')) if (typeof n !== 'number' || !Number.isFinite(n)) invalid('reverse.hiddenBodies')
-  for (const k of ['scanSeeThrough', 'bodiesSeeThrough', 'bodyOpaque', 'overlapsShown'] as const) {
+  for (const k of ['scanSeeThrough', 'bodiesSeeThrough', 'bodyOpaque', 'overlapsShown', 'scanHidden', 'bodiesHidden'] as const) {
     if (r[k] !== undefined && typeof r[k] !== 'boolean') invalid(`reverse.${k}`)
   }
   if (r.bodyStyles !== undefined) {
@@ -284,7 +289,7 @@ export function validateReversePart(raw: unknown): ReversePart {
     for (const [id, style] of Object.entries(styles)) {
       if (!Number.isFinite(Number(id))) invalid('reverse.bodyStyles')
       const st = object(style, 'reverse.bodyStyles')
-      if ((st.name !== undefined && typeof st.name !== 'string') || (st.color !== undefined && typeof st.color !== 'string')) invalid('reverse.bodyStyles')
+      if ((st.name !== undefined && typeof st.name !== 'string') || (st.color !== undefined && typeof st.color !== 'string') || (st.transparent !== undefined && typeof st.transparent !== 'boolean')) invalid('reverse.bodyStyles')
     }
   }
   if (r.bodyFolders !== undefined) {
@@ -330,6 +335,8 @@ export function collectReversePart(ctx?: Pick<CollectContext, 'addMember'>): Rev
     ...(re.scanSeeThrough !== null ? { scanSeeThrough: re.scanSeeThrough } : {}),
     bodiesSeeThrough: re.bodiesSeeThrough,
     ...(re.overlapsShown ? {} : { overlapsShown: false }),
+    ...(re.scanHidden ? { scanHidden: true } : {}),
+    ...(re.bodiesHidden ? { bodiesHidden: true } : {}),
     elementsShown: re.elementsShown,
     ...(steps ? { stepFiles: STEP_MEMBER } : {}),
   }
@@ -429,6 +436,8 @@ function reversePartState(p: ReversePart | undefined, ctx?: RestoreContext) {
     bodyFolders: p.bodyFolders ?? [],
     ...seeThroughOf(p),
     overlapsShown: p.overlapsShown ?? true,
+    scanHidden: p.scanHidden === true,
+    bodiesHidden: p.bodiesHidden === true,
     elementsShown: p.elementsShown,
     stepFiles: stepFilesOf(p, ctx),
   }
@@ -443,7 +452,9 @@ export function applyReversePart(p: ReversePart | undefined, ctx?: RestoreContex
   if (prepared) useReverse.setState((s) => ({ ...prepared, buildVersion: s.buildVersion + 1 }))
 }
 
-const PERSISTED = ['features', 'rolledBack', 'nextFeatureId', 'nextOfKind', 'parameters', 'nextParameterId', 'bodyStyles', 'bodyFolders', 'scanSeeThrough', 'bodiesSeeThrough', 'overlapsShown', 'elementsShown', 'stepFiles'] as const
+// hiddenBodies is saved (collect) and so watched: a body hidden or shown is
+// an unsaved change and a recovery checkpoint, as a sketch's eye is.
+const PERSISTED = ['features', 'rolledBack', 'nextFeatureId', 'nextOfKind', 'parameters', 'nextParameterId', 'bodyStyles', 'bodyFolders', 'scanSeeThrough', 'bodiesSeeThrough', 'overlapsShown', 'elementsShown', 'stepFiles', 'hiddenBodies', 'scanHidden', 'bodiesHidden'] as const
 const DRAFTS = ['sketchDraft', 'extrudeDraft', 'revolveDraft', 'featureDraft'] as const
 
 export const reverseSection: ProjectSection<ReversePart> = {

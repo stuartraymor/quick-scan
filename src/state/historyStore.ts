@@ -21,7 +21,7 @@ export const pick = <T, K extends keyof T>(state: T, keys: readonly K[]): Pick<T
 
 function captureCore() {
   return {
-    measure: pick(useStore.getState(), ['elements', 'dimensions', 'sections', 'nextId', 'nextNumber', 'nextOfKind', 'nextDimensionId', 'nextOfDimGroup', 'nextSectionNumber', 'appliedAlignment', 'modelCenter']),
+    measure: pick(useStore.getState(), ['elements', 'dimensions', 'sections', 'nextId', 'nextNumber', 'nextOfKind', 'nextDimensionId', 'nextOfDimGroup', 'nextSectionNumber', 'appliedAlignment', 'modelCenter', 'scanHidden', 'elementsHidden']),
     flat: pick(useFlat.getState(), ['subject', 'sheets', 'pxPerMm', 'calSource', 'elements', 'nextId', 'nameCounts', 'dimensions', 'nextDimId', 'dimCounts', 'datum', 'counts', 'nextCountId', 'notes', 'nextNoteId', 'turns', 'mirror', 'splitAxes', 'edgeSensitivity', 'showEdges', 'snapToEdge', 'showGrid']),
     deviation: pick(useDeviation.getState(), ['source', 'align', 'globalAlign', 'pairs', 'localMaxDistance', 'targetId', 'targetSide', 'targetFacingDeg', 'mapFacingDeg', 'targetScope', 'scopeCount', 'showElement', 'range', 'rangeAuto', 'maxDistance', 'maxDistanceAuto', 'bands', 'tolerance', 'showHistogram', 'showNominal', 'showScan', 'showMap', 'mapOn', 'split', 'probes', 'nextProbeId']),
     thickness: pick(useThickness.getState(), ['method', 'maxThickness', 'maxThicknessAuto', 'coneRays', 'coneAngleDeg', 'normalDeviationDeg', 'low', 'high', 'scaleAuto', 'bands', 'limit', 'showHistogram', 'probes', 'nextProbeId']),

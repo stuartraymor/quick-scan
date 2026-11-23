@@ -96,3 +96,14 @@ describe('sketch tolerance analysis', () => {
     expect(sketchDeviation(s, [], 0.1)).toBeNull()
   })
 })
+
+describe('deviation runs name their piece', () => {
+  it('each run carries the id of the sketch piece it lies on, so a selected piece can show through', () => {
+    const s = emptySketch()
+    const a = addEntity(s, { kind: 'line', a: [0, 0], b: [40, 0] })
+    const b = addEntity(s, { kind: 'line', a: [60, 0], b: [100, 0.4] })
+    const r = sketchDeviation(s, flat(), 0.1)!
+    const ids = new Set(r.runs.map((x) => x.entity))
+    expect(ids).toEqual(new Set([a, b]))
+  })
+})

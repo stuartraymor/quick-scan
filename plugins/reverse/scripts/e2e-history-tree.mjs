@@ -33,12 +33,16 @@ try{
  record(await page.$('[data-test=explorer-end-model]'),'real End of Model marker is present')
  await page.click('[aria-label="Parent/Child View"]')
  record(await page.$('[data-test=explorer-end-model]')===null&&await page.$('[aria-label="Previous model step"]')===null,'Parent/Child mode removes model boundary and navigation')
- record(await page.$eval(`[data-test=explorer-history-feature-${extrude}]`,(row,sketch)=>row.closest('.explorer-dependency-children')?.parentElement?.dataset.orderKey===`reverse:feature:${sketch}`,sketch),'Parent/Child nests extrusion under its actual sketch dependency')
+ // 1.2.15: as in QUICKSURFACE, the feature is on top with its inputs inside
+ // it (Extruded(1) ▸ Sketch(1)), closed until opened.
+ record(await page.$(`[data-test=explorer-history-feature-${sketch}]`)===null&&await page.$(`[data-test=explorer-history-feature-${extrude}]`),'Parent/Child opens closed: the extrusion shows, its sketch is inside it')
+ await page.click('[aria-label="Expand History"]')
+ record(await page.$eval(`[data-test=explorer-history-feature-${sketch}]`,(row,extrude)=>row.closest('.explorer-dependency-children')?.parentElement?.dataset.orderKey===`reverse:feature:${extrude}`,extrude),'Parent/Child nests the sketch under the extrusion built from it')
  record(await page.$eval(`[data-order-key="core:element:${p1}"]`,row=>!row.parentElement.closest('.explorer-dependency-children')),'independent coordinate plane remains a root in Parent/Child mode')
  await page.click('[aria-label="Collapse History"]')
- record(await page.$(`[data-test=explorer-history-feature-${extrude}]`)===null,'Collapse hides actual dependency children')
- await page.click('[aria-label="Expand History"]')
- record(await page.$(`[data-test=explorer-history-feature-${extrude}]`),'Expand restores actual dependency children')
+ record(await page.$(`[data-test=explorer-history-feature-${sketch}]`)===null,'Collapse hides the inputs again')
+ await page.click(`[data-test="explorer-tree-toggle-reverse:feature:${extrude}"]`)
+ record(await page.$(`[data-test=explorer-history-feature-${sketch}]`),'The row arrow opens one feature')
  await page.click('[aria-label="History View"]')
  record(JSON.stringify(await keys())===JSON.stringify(expected),'History View restores flat creation order')
 
@@ -91,7 +95,11 @@ try{
  await page.click(`[data-test=explorer-history-feature-${sketch}]`,{button:'right'});await page.click('[data-test=explorer-delete]');await page.click('[data-test=explorer-delete-no]')
  record(await page.evaluate(id=>window.__re.store.getState().features.some(f=>f.id===id),sketch),'History Delete cancellation preserves the existing sketch')
  await page.click(`[data-test=explorer-history-feature-${sketch}]`,{button:'right'});await page.click('[data-test=explorer-delete]');await page.click('[data-test=explorer-delete-yes]')
- record(await page.evaluate(id=>window.__re.store.getState().features.some(f=>f.id===id),sketch),'History Delete refuses a sketch used by extrusion without partial deletion')
+ // 1.2.14: Yes deletes the sketch with what is built on it, as one undo step.
+await page.waitForFunction(id=>!window.__re.store.getState().features.some(f=>f.id===id||f.sketchId===id),{timeout:15000},sketch).catch(()=>{})
+record(await page.evaluate(id=>!window.__re.store.getState().features.some(f=>f.id===id||f.sketchId===id),sketch),'History Delete with Yes removes the sketch and the extrusion built on it')
+await page.click('[data-test=undo]');await page.waitForFunction(id=>window.__re.store.getState().features.some(f=>f.id===id),{timeout:15000},sketch).catch(()=>{});await settle()
+record(await page.evaluate(id=>window.__re.store.getState().features.some(f=>f.id===id)&&window.__re.store.getState().features.some(f=>f.sketchId===id),sketch),'one Undo brings the sketch and its extrusion back')
  await page.click('[aria-label="Previous model step"]')
  const out=resolve(process.env.SHOT_DIR??'e2e-out');mkdirSync(out,{recursive:true});const downloads=mkdtempSync(join(out,'saved-'))
  await(await page.createCDPSession()).send('Browser.setDownloadBehavior',{behavior:'allow',downloadPath:downloads})
@@ -106,11 +114,24 @@ try{
  await page.focus('[data-test=explorer-end-model]');await page.keyboard.press('End');await settle()
  record(await page.evaluate(()=>window.__scanruler.measure.getState().elements.length===2),'End restores archived plane after project reopen')
  await page.setDragInterception(true)
- await(await page.$('[data-test=explorer-end-model]')).dragAndDrop(await page.$(`[data-order-key="core:element:${p2}"]`))
+ {const [from,at]=await page.evaluate(key=>{const m=document.querySelector('[data-test=explorer-end-model]'),row=document.querySelector(`[data-order-key="${key}"]`);m.scrollIntoView({block:'nearest'});row.scrollIntoView({block:'nearest'});const a=m.getBoundingClientRect(),b=row.getBoundingClientRect();return[{x:a.left+a.width/2,y:a.top+a.height/2},{x:b.left+b.width/2,y:b.top+b.height*0.2}]},`core:element:${p2}`);await page.mouse.dragAndDrop(from,at)}
+ await settle()
  record(await page.evaluate(id=>!window.__scanruler.measure.getState().elements.some(e=>e.id===id),p2),'dragging End marker before the last plane actually rolls it back')
+ // The History list is short and scrolls: the strip under its last row is
+ // brought into sight first, as a hand would scroll to it.
+ await page.$eval('[data-test=explorer-history-end-drop]',el=>el.scrollIntoView({block:'end'}));await new Promise(done=>setTimeout(done,200))
  await(await page.$('[data-test=explorer-end-model]')).dragAndDrop(await page.$('[data-test=explorer-history-end-drop]'))
  await settle()
  record(await page.evaluate(()=>window.__scanruler.measure.getState().elements.length===2),'dragging End marker below the last row restores the actual model')
+ // 1.2.12: let go on the lower half of the last row, the marker goes after
+ // it — the whole model — not before it, still rolled back.
+ {const [from,at]=await page.evaluate(key=>{const m=document.querySelector('[data-test=explorer-end-model]'),row=document.querySelector(`[data-order-key="${key}"]`);m.scrollIntoView({block:'nearest'});row.scrollIntoView({block:'nearest'});const a=m.getBoundingClientRect(),b=row.getBoundingClientRect();return[{x:a.left+a.width/2,y:a.top+a.height/2},{x:b.left+b.width/2,y:b.top+b.height*0.2}]},`core:element:${p2}`);await page.mouse.dragAndDrop(from,at)}
+ await settle()
+ const rolledAgain=await page.evaluate(id=>!window.__scanruler.measure.getState().elements.some(e=>e.id===id),p2)
+ const [marker,lastRow]=await page.evaluate(key=>{const m=document.querySelector('[data-test=explorer-end-model]'),row=document.querySelector(`[data-order-key="${key}"]`);m.scrollIntoView({block:'nearest'});row.scrollIntoView({block:'nearest'});const a=m.getBoundingClientRect(),b=row.getBoundingClientRect();return[{x:a.left+a.width/2,y:a.top+a.height/2},{x:b.left+b.width/2,y:b.top+b.height*0.8}]},`core:element:${p2}`)
+ await page.mouse.dragAndDrop(marker,lastRow)
+ await settle()
+ record(rolledAgain&&await page.evaluate(async()=>window.__scanruler.measure.getState().elements.length===2&&(await import('/src/state/documentOrderStore.ts')).useDocumentOrder.getState().rollbackAt===null),'End marker let go on the lower half of the last row restores the whole model')
 
  await page.$eval('#explorer-history',el=>{el.scrollTop=0})
  await page.screenshot({path:shotPath('history-tree.png')})
