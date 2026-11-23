@@ -67,6 +67,11 @@ export interface FeatureGrip {
   standoff?: number
   /** Its own colour, where it is not the feature's — a gizmo's axes. */
   color?: string
+  /** The face an arrow stands on, as loops in the part's coordinates: the
+   *  viewer slides the arrow within it to keep it in view when zoomed in
+   *  past `position` (PluginGrip.face). The drag is the same wherever it is
+   *  drawn. */
+  face?: Vec3[][]
 }
 
 /** How long a feature's arrow is on the screen, in pixels, at any zoom:
@@ -105,7 +110,18 @@ export function regionsCentroid(regions: readonly Region[]): [number, number] {
  */
 export function extrudeGrips(frame: SectionFrame, regions: readonly Region[], extent: ExtrudeExtent, along: Vec3 = frame.normal): FeatureGrip[] {
   if (regions.length === 0) return []
-  return extrudeGripsAt(liftPoint(frame, regionsCentroid(regions)), along, extent)
+  const grips = extrudeGripsAt(liftPoint(frame, regionsCentroid(regions)), along, extent)
+  // Square to the sketch, an end face is the profiles lifted to the end's
+  // height: what an arrow on it slides within to stay in view. Swept askew,
+  // the ends lean off the arrow's square and the arrows stay put.
+  const n = frame.normal
+  const unit = normalize(along)
+  if (!unit || Math.abs(dot(unit, n) - 1) > 1e-9) return grips
+  const loops = regions.flatMap((r) => [r.outer.polygon, ...r.holes.map((h) => h.polygon)]).filter((l) => l.length >= 3)
+  return grips.map((g) => {
+    const height = dot(sub(g.position, frame.origin), n)
+    return { ...g, face: loops.map((l) => l.map((p) => addScaled(liftPoint(frame, p), n, height))) }
+  })
 }
 
 /** The grips of an extrude through a given centre along a given normal —

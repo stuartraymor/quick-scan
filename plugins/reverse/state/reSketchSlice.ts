@@ -4,6 +4,8 @@
 // and redone within itself, and finished — or finished straight into an
 // extrude or a revolve.
 
+import { snapFlags } from '../../../src/state/snapFilterStore'
+import { overdefiningConstraints } from '../core/overdefined'
 import type { StoreApi } from 'zustand'
 import type { Vec2 } from '../../../src/core/flat/types'
 import { dot2, len2, perp2, scale2, sub2 } from '../../../src/core/flat/vec2'
@@ -18,7 +20,8 @@ import { alreadyJoined, autoJoinPair, autoJoinLinePairs, closeChain, CORNER_GAP_
 import { datumTraces, traceNear } from '../core/datums'
 import { dimPlaceAt } from '../core/dimLayout'
 import { detached, moveAnchor, reshapeArc, rigidCluster, rotateSketch, translateEntity } from '../core/drag'
-import { arcAbout, circleFrom, coincidentFor, dimensionFor, dimensionIsImmediate, dimPickAt, drawClicks, rectangleCorners, relPickAt, tangentArc } from '../core/draw'
+import { arcAbout, circleFrom, coincidentFor, dimensionFor, dimensionIsImmediate, dimPickAt, drawClicks, originHold, rectangleCorners, relPickAt, tangentArc, type DimPick } from '../core/draw'
+import { centresCoincident, referencePull, roundByCentre, sharesCentre, whyUnmet } from '../core/centreRelations'
 import { planeOffset, type PlaneRef, planeTakesOffset, type SketchFeature, withPlaneOffset } from '../core/features'
 import { cornerLinesAt } from '../core/filletCorner'
 import { DEFAULT_FIT_OPTIONS } from '../core/fitOptions'
@@ -26,17 +29,18 @@ import { nominalOf } from '../core/nominal'
 import { replaceSketch } from '../core/parameters'
 import { resolvePlaneFrame } from '../core/resolve'
 import { shadowPieceCount, shadowSketch } from '../core/shadowPieces'
-import { addConstraint, addEntity, addPolygon, addRectangle, addRectangleCentre, addTurnedRectangle, type Anchor, type AnchorAt, anchorPoint, anchorsOf, arcThrough, axisRelationOf, cloneSketch, type ConstraintInput, entityOf, fixedEntityOf, isDimension, lineDir, patternPieces, relationTakes, removeConstraint, removeEntities, type Sketch, sketchBounds, type SketchEntity, type SketchLine, splineJoint, type SketchSpline } from '../core/sketch'
+import { addConstraint, addEntity, addPolygon, addRectangle, addRectangleCentre, addTurnedRectangle, type Anchor, type AnchorAt, anchorPoint, anchorsOf, endsOf, arcThrough, axisRelationOf, cloneSketch, type ConstraintInput, entityOf, fixedEntityOf, isDimension, lineDir, patternPieces, relationTakes, removeConstraint, rimRadius, removeEntities, type Sketch, sketchBounds, type SketchEntity, type SketchLine, splineJoint, type SketchSpline } from '../core/sketch'
 import { placeForRelation } from '../core/relationPlacement'
 import { fitSplineToPoints, splineScatter } from '../core/sketchSpline'
 import { levelImage, moveImage, scaleImage } from '../core/sketchImage'
 import { lineDragCrossings, snapHold, type SnapHold, type SnapKind, snapLineDrag, snapSketchPoint } from '../core/snap'
-import { measureDimension, type Pull } from '../core/solver'
+import { measureDimension, readDimension, type Pull } from '../core/solver'
 import { everyRegion, nameFor, remember } from './reFeatureHelpers'
 import { useRePrefs } from './rePrefs'
-import { anchorNear, chainArcStart, chamferDraft, dimensionDone, dimensionPair, dragHandleAt, dropDimension, filletDraft, fitChain, fitChainShared, holdAt, holdDimension, holdSymmetric, isAnchor, MAX_HISTORY, nearestEnds, pieceNear, putDownDimension, seededSketch, settle, splineClosesAt, splineDraft, toolIdle } from './reSketchDraft'
+import { anchorNear, chainArcStart, chamferDraft, dimensionDone, dimensionPair, dragHandleAt, dropDimension, filletDraft, fitChain, fitChainShared, holdAt, holdDimension, holdSymmetric, isAnchor, MAX_HISTORY, nearestEnds, pieceNear, putDownDimension, restoreSettled, seededSketch, settle, splineClosesAt, splineDraft, toolIdle } from './reSketchDraft'
 import type { ReState } from './reStore'
 import type { SketchDraft } from './reTypes'
+import { editDamage } from './sketchEditGuard'
 
 type StoreSet = StoreApi<ReState>['setState']
 type StoreGet = StoreApi<ReState>['getState']
@@ -115,10 +119,116 @@ function rememberFitted(snapshot: Sketch, fitted: SketchDraft['fitted']): Sketch
   return snapshot
 }
 
+/** An edit of the sketch, kept only if it leaves what was drawn whole:
+ *  no piece shrunk to a point, no Fixed piece moved, and with `carriers`
+ *  no piece pulled off its line or circle. Otherwise the sketch stays as it
+ *  was and the panel says why (state/sketchEditGuard.ts). */
+function guardEdit(s: ReState, fn: (s: ReState) => Partial<ReState>, what: string, carriers = false): Partial<ReState> {
+  const d = s.sketchDraft
+  if (!d) return fn(s)
+  const kept = cloneSketch(d.sketch)
+  const out = fn(s)
+  const next = out.sketchDraft
+  if (!next || next.history.length === d.history.length) return out
+  const problem = editDamage(kept, next.sketch, carriers)
+  if (!problem) return out
+  return { sketchDraft: { ...d, sketch: kept, relPicks: [], error: `${what} was not applied: ${problem} Nothing was changed.` } }
+}
+
+/** A relation just added that the solver could not meet — two fixed
+ *  centres made concentric, a point pinned away from where it is to go —
+ *  is refused rather than left unmet: the sketch goes back to `before`,
+ *  untouched, and the panel says what holds the pieces apart. Null when
+ *  every relation in `ids` is met. */
+function refuseUnmet(d: SketchDraft, next: SketchDraft, before: Sketch, ids: readonly number[], pieces: readonly number[], what: string): SketchDraft | null {
+  if (!next.report?.unmet.some((u) => ids.includes(u.id))) return null
+  return { ...d, sketch: before, relPicks: [], selection: [], selectedConstraint: null, error: whyUnmet(before, pieces, what) }
+}
+
+/** The draft solved after a relation was added with its first pick kept
+ *  exactly where it stands: the reference piece held still for that solve
+ *  (a hand's pull is soft, and left it a few hundredths of a micron off),
+ *  then let go again and the sketch settled as it is. When the relation
+ *  cannot be met with the reference held — a Fix, a dimension or another
+ *  relation holds the second pick — it is solved with only the soft pull,
+ *  so the second pick's hold wins and the first goes to it. */
+function settleHeld(d: SketchDraft, before: Sketch, ref: Anchor, ids: readonly number[]): SketchDraft {
+  const was = entityOf(d.sketch, ref.entity)
+  if (was && !was.fixed && !was.projected) {
+    const trial = cloneSketch(d.sketch)
+    trial.entities = trial.entities.map((e) => (e.id === ref.entity ? { ...e, fixed: true } : e))
+    const held = settle({ ...d, sketch: trial }, before)
+    if (held.report && !held.report.unmet.some((u) => ids.includes(u.id))) {
+      held.sketch.entities = held.sketch.entities.map((e) => {
+        if (e.id !== ref.entity) return e
+        const { fixed: _fixed, ...rest } = e
+        void _fixed
+        return rest as SketchEntity
+      })
+      // Read once more without the hold, for which pieces are loose — on a
+      // copy, so the reference is left exactly where it stood.
+      const read = settle({ ...held, sketch: cloneSketch(held.sketch) }, undefined, undefined, false, true)
+      return { ...read, sketch: held.sketch }
+    }
+  }
+  return settle({ ...d }, before, referencePull(d.sketch, ref))
+}
+
+/** Two picks' pieces, for a refusal's sentence. */
+const pickPieces = (made: ConstraintInput): number[] =>
+  made.kind === 'coincident' ? [made.p.entity, made.q.entity] : made.kind === 'pointOn' ? [made.p.entity, ...('line' in made.on ? [made.on.line] : 'curve' in made.on ? [made.on.curve] : [])] : made.kind === 'collinear' ? [made.line, ...('line' in made.on ? [made.on.line] : [])] : []
+
+/** Lay one of two lines along the other before Collinear is solved: the
+ *  freer one (no level, upright, Fix or dimension of its own) is turned and
+ *  moved onto the other's line, keeping its length and its middle's place
+ *  along it. Solved from where it was drawn, the solver met Collinear by
+ *  shrinking a line held level to a point and called it solved. Returns the
+ *  line laid, or null. */
+function layAlong(sketch: Sketch, first: number, second: number): number | null {
+  const held = (id: number) => entityOf(sketch, id)?.fixed || sketch.constraints.some((c) => (c.kind === 'horizontal' || c.kind === 'vertical' || c.kind === 'length') && 'entity' in c && c.entity === id)
+  const [moving, onto] = held(first) && !held(second) ? [second, first] : [first, second]
+  const m = entityOf(sketch, moving), o = entityOf(sketch, onto)
+  if (m?.kind !== 'line' || o?.kind !== 'line' || m.fixed) return null
+  const ol = Math.hypot(o.b[0] - o.a[0], o.b[1] - o.a[1]), ml = Math.hypot(m.b[0] - m.a[0], m.b[1] - m.a[1])
+  if (!(ol > 1e-9) || !(ml > 1e-9)) return null
+  let u: Vec2 = [(o.b[0] - o.a[0]) / ol, (o.b[1] - o.a[1]) / ol]
+  if (u[0] * (m.b[0] - m.a[0]) + u[1] * (m.b[1] - m.a[1]) < 0) u = [-u[0], -u[1]]
+  const mid: Vec2 = [(m.a[0] + m.b[0]) / 2, (m.a[1] + m.b[1]) / 2]
+  const t = (mid[0] - o.a[0]) * u[0] + (mid[1] - o.a[1]) * u[1]
+  const foot: Vec2 = [o.a[0] + u[0] * t, o.a[1] + u[1] * t]
+  sketch.entities = sketch.entities.map((e) => (e.id === moving && e.kind === 'line' ? { ...e, a: [foot[0] - u[0] * ml / 2, foot[1] - u[1] * ml / 2], b: [foot[0] + u[0] * ml / 2, foot[1] + u[1] * ml / 2] } : e))
+  return moving
+}
+
+const titled = (kind: string) => `${kind[0].toUpperCase()}${kind.slice(1)}`
+
+/** The piece a "Select other" choice names (core/pickOther): the piece
+ *  itself, or the piece a chosen point is of. */
+function preferredPiece(sketch: Sketch, prefer: DimPick | undefined): SketchEntity | null {
+  if (!prefer) return null
+  const id = prefer.kind === 'piece' ? prefer.id : prefer.kind === 'point' ? prefer.anchor.entity : null
+  return id === null ? null : (entityOf(sketch, id) ?? null)
+}
+
+/** Why a typed dimension cannot be taken, or null. */
+function badDimensionValue(kind: string, value: number, sector = false): string | null {
+  if (!Number.isFinite(value)) return 'Type a number.'
+  if ((kind === 'length' || kind === 'radius' || kind === 'diameter') && !(value > 0)) return `A ${kind} must be above zero.`
+  if (kind === 'arcLength' && !(value > 0)) return 'An arc length must be above zero.'
+  if (kind === 'distance' && value < 0) return 'A distance cannot be negative.'
+  // An angle between two lines reads 0–180°; one put down in a sector (the
+  // side of the corner it was placed in) reads that sector's sweep, under a
+  // whole turn. Outside that, the solve wrapped it to some other angle and
+  // left the sketch unsolved with no word.
+  if (kind === 'angle' && sector && !(value >= 0 && value < 360)) return 'An angle in a corner is from 0° up to, not including, 360°.'
+  if (kind === 'angle' && !sector && !(value >= 0 && value <= 180)) return 'The angle between two lines is from 0° to 180°.'
+  return null
+}
+
 /** The angle a plane through an axis is turned to; 0 for any other. */
 const planeAngle = (p: PlaneRef): number => (p.kind === 'radial' ? p.angleDeg : 0)
 
-export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startSketchOn' | 'startSketch' | 'editSketch' | 'projectInto' | 'setSketch' | 'discardSketch' | 'setSketchTool' | 'armRelation' | 'setSketchName' | 'setSketchImage' | 'startImagePick' | 'scaleSketchImage' | 'setSketchOffset' | 'flipSketchOrientation' | 'setSketchLevel' | 'setSketchAngle' | 'setSketchTolerance' | 'sketchClick' | 'sketchTangentArc' | 'finishSpline' | 'moveSplinePoint' | 'fitSplinesToSlice' | 'sketchBoxSelect' | 'sketchDragStart' | 'sketchDrag' | 'sketchDragEnd' | 'alignToSelected' | 'autoFit' | 'refitChains' | 'inferAllCorners' | 'closeAll' | 'joinSelected' | 'addRelation' | 'addDimension' | 'dimensionSelection' | 'setDimensionValue' | 'setDimensionForm' | 'finishDimension' | 'removeSelectedConstraint' | 'selectConstraint' | 'deleteSelected' | 'sharpenSelected' | 'filletSelected' | 'chamferSelected' | 'moveDimension' | 'toggleFixedSelected' | 'toggleConstructionSelected' | 'clearSelection' | 'openSketchPattern' | 'setSketchPattern' | 'applySketchPattern' | 'cancelSketchPattern' | 'putDownDimension' | 'undoSketch' | 'redoSketch' | 'solveNow' | 'commitSketch' | 'finishAndExtrude' | 'finishAndRevolve'> => ({
+export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startSketchOn' | 'startSketch' | 'editSketch' | 'projectInto' | 'setSketch' | 'discardSketch' | 'setSketchTool' | 'armRelation' | 'setSketchName' | 'setSketchImage' | 'startImagePick' | 'scaleSketchImage' | 'setSketchOffset' | 'flipSketchOrientation' | 'setSketchLevel' | 'setSketchAngle' | 'setSketchTolerance' | 'sketchClick' | 'sketchTangentArc' | 'finishSpline' | 'moveSplinePoint' | 'fitSplinesToSlice' | 'sketchBoxSelect' | 'sketchDragStart' | 'sketchDrag' | 'sketchDragEnd' | 'alignToSelected' | 'autoFit' | 'refitChains' | 'inferAllCorners' | 'closeAll' | 'joinSelected' | 'addRelation' | 'addDimension' | 'dimensionSelection' | 'setDimensionValue' | 'setDimensionForm' | 'setDimensionDriven' | 'finishDimension' | 'removeSelectedConstraint' | 'overdefining' | 'removeConstraints' | 'selectConstraint' | 'deleteSelected' | 'sharpenSelected' | 'filletSelected' | 'chamferSelected' | 'moveDimension' | 'toggleFixedSelected' | 'toggleConstructionSelected' | 'clearSelection' | 'openSketchPattern' | 'setSketchPattern' | 'applySketchPattern' | 'cancelSketchPattern' | 'putDownDimension' | 'undoSketch' | 'redoSketch' | 'solveNow' | 'commitSketch' | 'finishAndExtrude' | 'finishAndRevolve'> => ({
 
   startSketchOn: (plane) => {
     const store = useStore.getState()
@@ -179,7 +289,9 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
         // The part is built again as it stood before the sketch (see
         // featuresToBuild).
         buildVersion: s.buildVersion + 1,
-        sketchDraft: settle({
+        // Reopened exactly as it was finished: solving it again moved pieces
+        // that were left with a small residual.
+        sketchDraft: restoreSettled({
           featureId: f.id,
           name: f.name,
           plane: f.plane,
@@ -197,7 +309,7 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
           found: [],
           history: [],
           error: null,
-        }, undefined, undefined, false, true),
+        }),
       }
     }),
 
@@ -323,7 +435,7 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
       // coordinate plane's line, then a second — two points meet, a point
       // lies on a piece or a plane's line, a line lies along a line or a
       // plane's line (core/re/draw's coincidentFor). It stays in hand.
-      const pick = relPickAt(armed.sketch, spot, radius, datumTraces(armed.frame))
+      const pick = snapCtx.prefer ?? relPickAt(armed.sketch, spot, radius, datumTraces(armed.frame), snapFlags('pick'))
       const picks = armed.relPicks ?? []
       if (!pick) {
         set({ sketchDraft: { ...armed, relPicks: [], selection: [], error: null } })
@@ -333,19 +445,52 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
         set({ sketchDraft: { ...armed, relPicks: [pick], selection: [], selectedConstraint: null, error: null } })
         return
       }
+      // A point and the sheet's zero: held on each coordinate plane's line
+      // that crosses there — the sketch origin.
+      const atOrigin = originHold(armed.sketch, picks[0], pick)
+      if (typeof atOrigin === 'string') {
+        set({ sketchDraft: { ...armed, relPicks: [], error: atOrigin } })
+        return
+      }
+      if (atOrigin) {
+        set((s) => guardEdit(s, () => {
+          const before = cloneSketch(armed.sketch)
+          const had = new Set(armed.sketch.constraints.map((c) => c.id))
+          holdAt(armed.sketch, atOrigin.anchor, { origin: atOrigin.planes })
+          const ids = armed.sketch.constraints.filter((c) => !had.has(c.id)).map((c) => c.id)
+          if (ids.length === 0) return { sketchDraft: { ...armed, sketch: before, relPicks: [], error: 'That point is already held at the origin.' } }
+          const next = settle({ ...armed, relPicks: [], selection: [] }, before)
+          return { sketchDraft: refuseUnmet(armed, next, before, ids, [atOrigin.anchor.entity], 'Coincident with the origin') ?? { ...next, selectedConstraint: ids[0] } }
+        }, 'Coincident'))
+        return
+      }
       const made = coincidentFor(armed.sketch, picks[0], pick)
       if (typeof made === 'string') {
         set({ sketchDraft: { ...armed, relPicks: [], error: made } })
         return
       }
-      const before = cloneSketch(armed.sketch)
-      const id = addConstraint(armed.sketch, made)
-      set({ sketchDraft: { ...settle({ ...armed, relPicks: [], selection: [] }, before), selectedConstraint: id } })
+      // Two centres that already share one — Concentric, or a coincidence
+      // of the centres — take no second relation saying so again.
+      if (made.kind === 'coincident' && made.p.at === 'center' && made.q.at === 'center' && sharesCentre(armed.sketch, made.p.entity, made.q.entity)) {
+        set({ sketchDraft: { ...armed, relPicks: [], error: `These centres already coincide (${armed.sketch.constraints.some((c) => c.kind === 'concentric') ? 'Concentric or Coincident' : 'Coincident'}) — nothing added.` } })
+        return
+      }
+      set((s) => guardEdit(s, () => {
+        const before = cloneSketch(armed.sketch)
+        const id = addConstraint(armed.sketch, made)
+        // The first pick stays where it is and the second comes to it,
+        // unless a Fix or another relation holds the second.
+        const next = made.kind === 'coincident' ? settleHeld({ ...armed, relPicks: [], selection: [] }, before, made.p, [id]) : settle({ ...armed, relPicks: [], selection: [] }, before)
+        return { sketchDraft: refuseUnmet(armed, next, before, [id], pickPieces(made), 'Coincident') ?? { ...next, selectedConstraint: id } }
+      }, 'Coincident'))
       return
     }
     if (armed?.tool === 'relation' && armed.armedRelation) {
       const kind = armed.armedRelation
-      const hit = pieceNear(armed.sketch, spot, radius)
+      // Concentric, Equal and Tangent take a round piece by its rim, or —
+      // for Concentric, which is about the centre — by a click on its
+      // centre, where there is no rim to click.
+      const hit = preferredPiece(armed.sketch, snapCtx.prefer) ?? pieceNear(armed.sketch, spot, radius) ?? (kind === 'concentric' ? roundByCentre(armed.sketch, spot, radius) : null)
       if (!hit) {
         // Symmetric's mirror line may be one of the part's coordinate
         // planes, clicked on the line it cuts the sheet in — where no piece
@@ -354,7 +499,9 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
         const a = trace ? entityOf(armed.sketch, armed.selection[0]) : undefined
         const b = trace ? entityOf(armed.sketch, armed.selection[1]) : undefined
         if (trace && a && b) {
-          set({ sketchDraft: { ...holdSymmetric({ ...armed, selectedConstraint: null }, a, b, trace), selection: [] } })
+          // Guarded as Symmetric from the panel is: a mirror the sketch can
+          // only meet by shrinking a piece is refused, not called solved.
+          set((s) => guardEdit(s, () => ({ sketchDraft: { ...holdSymmetric({ ...armed, selectedConstraint: null }, a, b, trace), selection: [] } }), 'Symmetric'))
           return
         }
         set({ sketchDraft: { ...armed, selection: [], error: null } })
@@ -383,7 +530,7 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
         // turn. An end or a plane waits for its second click the same way.
         // Put down, the number opens for typing.
         const traces = datumTraces(d.frame)
-        const pick = dimPickAt(d.sketch, spot, radius, traces)
+        const pick = snapCtx.prefer ?? dimPickAt(d.sketch, spot, radius, traces, snapFlags('pick'))
         const first = d.dimPick ?? null
         const made = d.dimMade ?? null
         if (made !== null) {
@@ -430,7 +577,7 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
         return { sketchDraft: make(d, first, hit.id) }
       }
       if (d.tool === 'select') {
-        const hit = pieceNear(d.sketch, spot, radius)
+        const hit = preferredPiece(d.sketch, snapCtx.prefer) ?? pieceNear(d.sketch, spot, radius)
         if (!hit) return additive ? {} : { sketchDraft: { ...d, selection: [], selectedConstraint: null, error: null } }
         // As QUICKSURFACE (read live, 2026-11-10): a plain click takes that
         // piece alone, a click with Ctrl adds it or takes it back out, and a
@@ -469,8 +616,12 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
       const sketch = d.sketch
       const [p, q, r] = pending
       // A second click where the first landed makes nothing and puts the
-      // points down: it is how a chain of lines is ended on the sheet.
-      if (len2(sub2(p, q)) < 1e-6) return { sketchDraft: { ...d, ...toolIdle(), error: null } }
+      // points down: it is how a chain of lines is ended on the sheet. In a
+      // chain the first point is where the solver left the last line's end,
+      // which a relation inferred while drawing may have moved off the spot
+      // the hand clicked; a click back on that spot ends the chain too.
+      const again = d.chain && d.chainClick && d.pending.length === 1 && len2(sub2(spot, d.chainClick)) <= radius / 3
+      if (len2(sub2(p, q)) < 1e-6 || again) return { sketchDraft: { ...d, ...toolIdle(), error: null } }
       /** The end the next line carries on from. */
       let carry: Anchor | null = null
       if (d.tool === 'line') {
@@ -556,7 +707,7 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
       // From where the solver left the end, not from where it was clicked:
       // a line made level has moved under the hand.
       const end = carry ? entityOf(next.sketch, carry.entity) : null
-      return { sketchDraft: carry && end ? { ...next, pending: [anchorPoint(end, carry.at)], snaps: [carry], chain: carry } : next }
+      return { sketchDraft: carry && end ? { ...next, pending: [anchorPoint(end, carry.at)], snaps: [carry], chain: carry, chainClick: spot } : next }
     })
   },
 
@@ -584,7 +735,7 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
       // piece's end and has arrived.
       const end = snap.anchor ? null : entityOf(next.sketch, id)
       const carry: Anchor = { entity: id, at: far }
-      return { sketchDraft: end ? { ...next, pending: [anchorPoint(end, far)], snaps: [carry], chain: carry } : next }
+      return { sketchDraft: end ? { ...next, pending: [anchorPoint(end, far)], snaps: [carry], chain: carry, chainClick: spot } : next }
     }),
 
   finishSpline: (closed = false) => set((s) => (s.sketchDraft?.tool === 'spline' ? { sketchDraft: splineDraft(s.sketchDraft, closed) } : {})),
@@ -901,13 +1052,13 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
     }),
 
   joinSelected: () =>
-    set((s) => {
+    set((s0) => guardEdit(s0, (s) => {
       const d = s.sketchDraft
       if (!d) return {}
       const pair = autoJoinPair(d.sketch, d.selection)
       if (!pair) {
         const pairs = autoJoinLinePairs(d.sketch, d.selection)
-        if (!pairs.length) return {}
+        if (!pairs.length) return { sketchDraft: { ...d, error: d.selection.length < 2 ? 'Select the two pieces whose ends are to meet.' : 'The selected pieces have no pair of ends to join.' } }
         const before = cloneSketch(d.sketch)
         for (const [p,q] of pairs) joinEnds(d.sketch, p, q, Infinity, true)
         return { sketchDraft: settle({ ...d }, before, undefined, false, true) }
@@ -917,14 +1068,21 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
       if (!ends) return { sketchDraft: { ...d, error: 'A circle has no end to join.' } }
       // A repeated command is a no-op: do not add a redundant equation,
       // rerun a fitted solve, or consume another undo entry.
-      if (alreadyJoined(d.sketch, ends[0], ends[1])) return {}
+      if (alreadyJoined(d.sketch, ends[0], ends[1])) return { sketchDraft: { ...d, error: 'These ends are already joined.' } }
+      // Ends that already meet through a fillet or a chamfer between them
+      // are not pulled together across it: the solver did so by shrinking
+      // the fillet to nothing and turning both lines.
+      const pa = anchorPoint(a, ends[0].at), pb = anchorPoint(b, ends[1].at)
+      const near = (e: SketchEntity, p: Vec2) => endsOf(e).some((at) => { const x = anchorPoint(e, at); return Math.hypot(x[0] - p[0], x[1] - p[1]) < 1e-6 })
+      const bridge = d.sketch.entities.find((e) => e.id !== a.id && e.id !== b.id && endsOf(e).length === 2 && near(e, pa) && near(e, pb))
+      if (bridge) return { sketchDraft: { ...d, error: `These ends already meet through ${bridge.kind} ${bridge.id}. Select it and use Make sharp to join the lines directly.` } }
       const before = cloneSketch(d.sketch)
       joinEnds(d.sketch, ends[0], ends[1], Infinity)
       return { sketchDraft: settle({ ...d }, before, undefined, false, true) }
-    }),
+    }, 'Auto Join')),
 
   addRelation: (kind) =>
-    set((s) => {
+    set((s0) => guardEdit(s0, (s) => {
       const d = s.sketchDraft
       if (!d) return {}
       const picked = d.selection.map((id) => entityOf(d.sketch, id)).filter((e): e is SketchEntity => Boolean(e))
@@ -948,7 +1106,7 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
         if (picked.length < 2) return { sketchDraft: { ...d, ...toolIdle(), tool: 'relation', armedRelation: 'collinear', selection: picked.map(e => e.id), selectedConstraint: null, error: null } }
         const sketch = cloneSketch(d.sketch)
         let id = 0
-        for (const e of picked.slice(1)) id = addConstraint(sketch, { kind: 'collinear', line: e.id, on: { line: picked[0].id } })
+        for (const e of picked.slice(1)) { layAlong(sketch, e.id, picked[0].id); id = addConstraint(sketch, { kind: 'collinear', line: e.id, on: { line: picked[0].id } }) }
         return { sketchDraft: { ...settle({ ...d, sketch }, before), selectedConstraint: id } }
       }
       if (kind === 'coincident') {
@@ -957,7 +1115,18 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
         // ends. With fewer, the key takes the relation in hand to click
         // its two picks on the sheet.
         if (picked.length !== 2) return { sketchDraft: { ...d, ...toolIdle(), tool: 'relation', armedRelation: 'coincident', selection: [], selectedConstraint: null, error: null } }
+        // Two round pieces, a circle among them (a circle has no ends to
+        // meet): their centres meet — what Concentric does, the first
+        // selected staying where it is.
+        const centres = picked.some((e) => e.kind === 'circle') ? centresCoincident(d.sketch, picked[0].id, picked[1].id) : null
+        if (centres && centres.kind === 'coincident') {
+          if (sharesCentre(d.sketch, picked[0].id, picked[1].id)) return { sketchDraft: { ...d, error: 'These pieces already share a centre — nothing added.' } }
+          const id = addConstraint(d.sketch, centres)
+          const next = settleHeld({ ...d }, before, centres.p, [id])
+          return { sketchDraft: refuseUnmet(d, next, before, [id], [picked[0].id, picked[1].id], 'Coincident') ?? { ...next, selectedConstraint: id } }
+        }
         if (picked[0].kind === 'line' && picked[1].kind === 'line') {
+          layAlong(d.sketch, picked[0].id, picked[1].id)
           const id = addConstraint(d.sketch, { kind: 'collinear', line: picked[0].id, on: { line: picked[1].id } })
           return { sketchDraft: { ...settle({ ...d }, before), selectedConstraint: id } }
         }
@@ -991,10 +1160,43 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
         const other = picked.find((e) => e !== spline)
         if (spline && other && !splineJoint(d.sketch, spline.id, other.id)) return { sketchDraft: { ...d, error: 'Join an end of the spline to the other piece first — a spline is held tangent where it ends.' } }
       }
+      // A relation already held is not added twice, and a line held level
+      // is not also made upright: the solver met that by shrinking it.
+      if (kind === 'horizontal' || kind === 'vertical') {
+        const other = kind === 'horizontal' ? 'vertical' : 'horizontal'
+        const heldAs = (e: SketchEntity): string | undefined => d.sketch.constraints.find((c) => (c.kind === kind || c.kind === other) && 'entity' in c && c.entity === e.id)?.kind
+        const crossed = picked.find((e) => heldAs(e) === other)
+        if (crossed) return { sketchDraft: { ...d, error: `Line ${crossed.id} is held ${other}. Remove ${titled(other)} first to make it ${kind}.` } }
+        const fresh = picked.filter((e) => heldAs(e) !== kind)
+        if (!fresh.length) return { sketchDraft: { ...d, error: picked.length === 1 ? `Line ${picked[0].id} is already ${kind}.` : `The selected lines are already ${kind}.` } }
+        picked.splice(0, picked.length, ...fresh)
+      } else if (kind === 'concentric' && picked.length === 2 && sharesCentre(d.sketch, picked[0].id, picked[1].id)) {
+        return { sketchDraft: { ...d, error: 'These pieces already share a centre — nothing added.' } }
+      } else if (picked.length === 2 && d.sketch.constraints.some((c) => c.kind === kind && 'a' in c && 'b' in c && ((c.a === picked[0].id && c.b === picked[1].id) || (c.a === picked[1].id && c.b === picked[0].id)))) {
+        return { sketchDraft: { ...d, error: `These pieces are already ${kind === 'equal' ? 'equal' : kind}.` } }
+      }
+      const had = new Set(d.sketch.constraints.map((c) => c.id))
       switch (kind) {
         case 'horizontal':
         case 'vertical':
-          for (const e of picked) addConstraint(d.sketch, { kind, entity: e.id })
+          // QUICKSURFACE keeps the second end and brings the first onto its
+          // height (placeLines), even when that leaves it much shorter, as native
+          // does. Where it would leave next to nothing (under 5 %) — a
+          // steep line made level, a level one upright — the first end swings
+          // round the second instead, keeping the length: brought straight
+          // across, the solver met the relation by shrinking the line to a
+          // point.
+          for (const e of picked) {
+            if (e.kind === 'line' && !e.fixed) {
+              const len = Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1])
+              const along = kind === 'horizontal' ? e.b[0] - e.a[0] : e.b[1] - e.a[1]
+              if (len > 1e-9 && Math.abs(along) < 0.05 * len) {
+                const u: Vec2 = kind === 'horizontal' ? [along < 0 ? -1 : 1, 0] : [0, along < 0 ? -1 : 1]
+                d.sketch.entities = d.sketch.entities.map((x) => (x.id === e.id && x.kind === 'line' ? { ...x, a: [x.b[0] - u[0] * len, x.b[1] - u[1] * len] } : x))
+              }
+            }
+            addConstraint(d.sketch, { kind, entity: e.id })
+          }
           break
         case 'parallel':
         case 'perpendicular':
@@ -1006,11 +1208,15 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
         default:
           return {}
       }
-      return { sketchDraft: settle({ ...d }, before, placeLines(d.sketch, kind, picked.map((e) => e.id), before)) }
-    }),
+      // Concentric: the first selected keeps its centre and the second
+      // comes to it (SolidWorks' rule), unless the second is held.
+      const ids = d.sketch.constraints.filter((c) => !had.has(c.id)).map((c) => c.id)
+      const next = kind === 'concentric' ? settleHeld({ ...d }, before, { entity: picked[0].id, at: 'center' }, ids) : settle({ ...d }, before, placeLines(d.sketch, kind, picked.map((e) => e.id), before))
+      return { sketchDraft: refuseUnmet(d, next, before, ids, picked.map((e) => e.id), titled(kind)) ?? next }
+    }, titled(kind))),
 
   addDimension: (kind, value) =>
-    set((s) => {
+    set((s0) => guardEdit(s0, (s) => {
       const d = s.sketchDraft
       if (!d) return {}
       const picked = d.selection.map((id) => entityOf(d.sketch, id)).filter((e): e is SketchEntity => Boolean(e))
@@ -1051,9 +1257,12 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
         }
       }
       if (!constraint) return { sketchDraft: { ...d, error: 'That dimension does not apply to what is selected.' } }
+      // A value given with the dimension is checked as one typed into it.
+      const bad = value === undefined ? null : badDimensionValue(constraint.kind, value)
+      if (bad) return { sketchDraft: { ...d, error: bad } }
       const id = addConstraint(d.sketch, constraint)
       return { sketchDraft: { ...settle({ ...d }, before), selectedConstraint: id } }
-    }),
+    }, 'The dimension')),
 
   dimensionSelection: () =>
     set((s) => {
@@ -1072,13 +1281,17 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
     }),
 
   setDimensionValue: (id, value, expr = null) =>
-    set((s) => {
+    set((s0) => guardEdit(s0, (s) => {
       const d = s.sketchDraft
       if (!d) return {}
       // A field left as it was — the blur of one that was only looked at —
       // changes nothing and is no step to undo.
       const held = d.sketch.constraints.find((c) => c.id === id)
       if (!held || !('value' in held) || (Math.abs(held.value - value) < 1e-12 && (held.expr ?? null) === expr)) return {}
+      // A driven dimension reads the pieces; it is set by making it driving.
+      if (held.driven) return { sketchDraft: { ...d, error: 'A driven dimension only reads the sketch. Make it driving to set it.' } }
+      const bad = badDimensionValue(held.kind, value, held.kind === 'angle' && !!held.sector)
+      if (bad) return { sketchDraft: { ...d, error: bad } }
       const before = cloneSketch(d.sketch)
       d.sketch.constraints = d.sketch.constraints.map((c) => {
         if (c.id !== id || !('value' in c)) return c
@@ -1087,17 +1300,70 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
         return expr ? { ...rest, value, expr } : { ...rest, value }
       })
       return { sketchDraft: settle({ ...d, ...dimensionDone(d, id) }, before) }
-    }),
+    }, 'The dimension')),
 
   setDimensionForm: (id, form, typed, typedExpr = null) =>
-    set((s) => {
+    set((s0) => guardEdit(s0, (s) => {
       const d = s.sketchDraft
       if (!d) return {}
       const held = d.sketch.constraints.find((c) => c.id === id)
-      if (!held || (held.kind !== 'radius' && held.kind !== 'diameter') || held.kind === form) return {}
+      if (held?.kind === 'distance' && (form === 'aligned' || form === 'x' || form === 'y')) {
+        // How a distance between two points is taken: straight, or along the
+        // sheet's horizontal or vertical. The pieces stay where they are; the
+        // number becomes what they measure that way.
+        if (!('entity' in held.q) || held.edge) return { sketchDraft: { ...d, error: 'Only a distance between two points is taken horizontally or vertically.' } }
+        const axis = form === 'aligned' ? undefined : form
+        if (held.axis === axis) return {}
+        const before = cloneSketch(d.sketch)
+        const value = typed ?? measureDimension(d.sketch, 'distance', held.p, held.q, datumTraces(d.frame), undefined, axis)
+        if (value === null) return {}
+        d.sketch.constraints = d.sketch.constraints.map((c) => {
+          if (c !== held) return c
+          const { expr: _expr, axis: _axis, ...rest } = held
+          void _expr
+          void _axis
+          return { ...rest, value, ...(axis ? { axis } : {}), ...(typed !== undefined && typedExpr ? { expr: typedExpr } : {}) }
+        })
+        return { sketchDraft: settle({ ...d, ...(typed === undefined ? {} : dimensionDone(d, id)) }, before) }
+      }
+      if (held?.kind === 'distance') {
+        // Where a round end is taken: its centre, or its rim nearest or
+        // farthest from the other end. The pieces stay where they are; the
+        // number becomes what they measure that way.
+        if (form !== 'centre' && form !== 'near' && form !== 'far') return {}
+        const edge = form === 'centre' ? undefined : form
+        if ((held.edge ?? 'centre') === form) return {}
+        const round = (a: Anchor) => rimRadius(entityOf(d.sketch, a.entity), a.at, 'near') > 0
+        if (!round(held.p) && !('entity' in held.q && round(held.q))) return { sketchDraft: { ...d, error: 'Only a distance to an arc or a circle is taken from its centre or its rim.' } }
+        const before = cloneSketch(d.sketch)
+        const value = typed ?? measureDimension(d.sketch, 'distance', held.p, held.q, datumTraces(d.frame), edge)
+        if (value === null) return {}
+        if (!(value > 1e-6)) return { sketchDraft: { ...d, error: 'The edges touch or overlap there, so there is no gap to give. Use Centre or Farthest.' } }
+        const bad = badDimensionValue('distance', value)
+        if (bad) return { sketchDraft: { ...d, error: bad } }
+        d.sketch.constraints = d.sketch.constraints.map((c) => {
+          if (c !== held) return c
+          const { expr: _expr, edge: _edge, ...rest } = held
+          void _expr
+          void _edge
+          return { ...rest, value, ...(edge ? { edge } : {}), ...(typed !== undefined && typedExpr ? { expr: typedExpr } : {}) }
+        })
+        return { sketchDraft: settle({ ...d, ...(typed === undefined ? {} : dimensionDone(d, id)) }, before) }
+      }
+      if (form !== 'radius' && form !== 'diameter' && form !== 'arcLength') return {}
+      if (!held || (held.kind !== 'radius' && held.kind !== 'diameter' && held.kind !== 'arcLength') || held.kind === form) return {}
+      // An arc may be given by its length round the rim as well: the pieces
+      // stay where they are and the number becomes what they measure.
+      const piece = entityOf(d.sketch, held.entity)
+      if (form === 'arcLength' && piece?.kind !== 'arc') return { sketchDraft: { ...d, error: 'Only an arc is given by its length.' } }
+      const swap = held.kind !== 'arcLength' && form !== 'arcLength'
       const before = cloneSketch(d.sketch)
-      const kept = held.expr ? (form === 'diameter' ? `2 * (${held.expr})` : `(${held.expr}) / 2`) : null
-      const value = typed ?? (form === 'diameter' ? 2 * held.value : held.value / 2)
+      const kept = held.expr && swap ? (form === 'diameter' ? `2 * (${held.expr})` : `(${held.expr}) / 2`) : null
+      const measured = piece ? measureDimension(d.sketch, form, piece) : null
+      const value = typed ?? (swap ? (form === 'diameter' ? 2 * held.value : held.value / 2) : measured)
+      if (value === null) return {}
+      const bad = badDimensionValue(form, value)
+      if (bad) return { sketchDraft: { ...d, error: bad } }
       const expr = typed === undefined ? kept : typedExpr
       d.sketch.constraints = d.sketch.constraints.map((c) => {
         if (c !== held) return c
@@ -1106,7 +1372,28 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
         return { ...rest, kind: form, value, ...(expr ? { expr } : {}) }
       })
       return { sketchDraft: settle({ ...d, ...(typed === undefined ? {} : dimensionDone(d, id)) }, before) }
-    }),
+    }, 'The dimension')),
+
+  setDimensionDriven: (id, driven) =>
+    set((s0) => guardEdit(s0, (s) => {
+      const d = s.sketchDraft
+      if (!d) return {}
+      const held = d.sketch.constraints.find((c) => c.id === id)
+      if (!held || !isDimension(held) || (held.driven === true) === driven) return {}
+      // Either way the pieces stay where they are: the number is what they
+      // read now. A driven dimension holds no expression — it is read, not
+      // worked out — so one it had is let go.
+      const before = cloneSketch(d.sketch)
+      const value = readDimension(d.sketch, held, datumTraces(d.frame)) ?? held.value
+      d.sketch.constraints = d.sketch.constraints.map((c) => {
+        if (c !== held) return c
+        const { expr: _expr, driven: _driven, ...rest } = held
+        void _expr
+        void _driven
+        return driven ? { ...rest, value, driven: true } : { ...rest, value }
+      })
+      return { sketchDraft: settle({ ...d, ...dimensionDone(d, id), selectedConstraint: id }, before) }
+    }, 'The dimension')),
 
   finishDimension: (id) =>
     set((s) => {
@@ -1132,6 +1419,22 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
       return { sketchDraft: settle({ ...d, ...dimensionDone(d, d.selectedConstraint), selectedConstraint: null }, before) }
     }),
 
+  overdefining: () => {
+    const d = get().sketchDraft
+    return d && d.report && !d.report.ok ? overdefiningConstraints(d.sketch, { datums: datumTraces(d.frame) }) : []
+  },
+
+  removeConstraints: (ids) =>
+    set((s) => {
+      const d = s.sketchDraft
+      const mine = d ? ids.filter((id) => d.sketch.constraints.some((c) => c.id === id)) : []
+      if (!d || mine.length === 0) return {}
+      const before = cloneSketch(d.sketch)
+      for (const id of mine) removeConstraint(d.sketch, id)
+      const held = d.dimMade != null && mine.includes(d.dimMade)
+      return { sketchDraft: settle({ ...d, ...(held ? { dimPick: null, dimMade: null, dimFrom: null } : {}), selectedConstraint: null }, before) }
+    }),
+
   selectConstraint: (id) =>
     set((s) => (s.sketchDraft ? { sketchDraft: { ...s.sketchDraft, selectedConstraint: id } } : {})),
 
@@ -1145,7 +1448,7 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
     }),
 
   sharpenSelected: () =>
-    set((s) => {
+    set((s0) => guardEdit(s0, (s) => {
       const d = s.sketchDraft
       if (!d) return {}
       const arcs = d.selection.filter((id) => ['arc', 'line'].includes(entityOf(d.sketch, id)?.kind ?? ''))
@@ -1155,23 +1458,23 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
       for (const id of arcs) if (sharpenCorner(d.sketch, id)) done++
       if (done === 0) return { sketchDraft: { ...d, error: 'The piece is not a fillet or a chamfer between two lines.' } }
       return { sketchDraft: settle({ ...d, selection: [] }, before) }
-    }),
+    }, 'Make sharp', true)),
 
   filletSelected: () =>
-    set((s) => {
+    set((s0) => guardEdit(s0, (s) => {
       const d = s.sketchDraft
       if (!d) return {}
       if (d.selection.length !== 2) return { sketchDraft: { ...d, error: 'Select the two lines of the corner to round.' } }
       return { sketchDraft: filletDraft(d, d.selection[0], d.selection[1]) }
-    }),
+    }, 'The fillet', true)),
 
   chamferSelected: () =>
-    set((s) => {
+    set((s0) => guardEdit(s0, (s) => {
       const d = s.sketchDraft
       if (!d) return {}
       if (d.selection.length !== 2) return { sketchDraft: { ...d, error: 'Select the two lines of the corner to chamfer.' } }
       return { sketchDraft: chamferDraft(d, d.selection[0], d.selection[1]) }
-    }),
+    }, 'The chamfer', true)),
 
   moveDimension: (id, p, begin) =>
     set((s) => {
@@ -1257,7 +1560,7 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
           if (f.order.every((p) => sketch.entities.some((e) => e.id === p.id))) fitted[Number(k)] = f
         }
       }
-      return { sketchDraft: settle({ ...d, ...toolIdle(), sketch, history, future, fitted, selection: [], selectedConstraint: null }, undefined, undefined, false, true) }
+      return { sketchDraft: restoreSettled({ ...d, ...toolIdle(), sketch, history, future, fitted, selection: [], selectedConstraint: null }) }
     }),
 
   redoSketch: () => set((s) => {
@@ -1266,9 +1569,9 @@ export const sketchSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'startS
     if (!d || !sketch) return {}
     const current = cloneSketch(d.sketch)
     fittedBefore.set(current, d.fitted)
-    return { sketchDraft: settle({ ...d, ...toolIdle(), sketch,
+    return { sketchDraft: restoreSettled({ ...d, ...toolIdle(), sketch,
       history: [...d.history.slice(-(MAX_HISTORY - 1)), current], future: d.future!.slice(0, -1),
-      fitted: fittedBefore.get(sketch) ?? {}, selection: [], selectedConstraint: null }, undefined, undefined, false, true) }
+      fitted: fittedBefore.get(sketch) ?? {}, selection: [], selectedConstraint: null }) }
   }),
 
   solveNow: () => set((s) => (s.sketchDraft ? { sketchDraft: settle({ ...s.sketchDraft }) } : {})),

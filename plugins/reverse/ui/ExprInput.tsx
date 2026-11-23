@@ -12,7 +12,7 @@
 // writing their word itself; how typed text in inches is kept is said in
 // reLength.ts.
 
-import { useState, type KeyboardEvent } from 'react'
+import { useRef, useState, type KeyboardEvent } from 'react'
 import { useUnits } from '../../../src/app/useUnits'
 import { unitWord } from '../../../src/core/units'
 import { formatValue, type ParameterKind } from '../core/expression'
@@ -66,9 +66,16 @@ export function ExprInput({
   const shown = expr ?? fieldText(value, kind, places, units)
   const word = unit === '' ? '' : kind === 'length' ? unitWord(units) : (unit ?? '')
   const result = formatValue(value, kind, units)
+  // Whether the box was typed in since it last showed its value. The box
+  // shows a rounded number: one typed over with the same figures is meant
+  // exactly — "6" over a stored 5.9999997 makes it 6 — while a box only
+  // looked at changes nothing.
+  const typedIn = useRef(false)
   const take = (input: HTMLInputElement): boolean => {
     const t = input.value.trim()
-    if (t === '' || t === shown) {
+    const retyped = typedIn.current && !expr && t === shown
+    typedIn.current = false
+    if (t === '' || (t === shown && !retyped)) {
       setError(null)
       return true
     }
@@ -125,6 +132,7 @@ export function ExprInput({
           key={shown}
           defaultValue={shown}
           title={expr ? `${expr} = ${result}` : undefined}
+          onInput={() => { typedIn.current = true }}
           onBlur={(e) => take(e.currentTarget)}
           onKeyDown={keys}
         />

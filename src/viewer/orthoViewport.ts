@@ -169,6 +169,9 @@ export class OrthoViewport {
    *  user's zoom survives. */
   private fitExtent = { halfW: 1, halfH: 1 }
   private resizeObserver: ResizeObserver
+  /** The document the controls hung their key listener on when they
+   *  connected — see dispose. */
+  private controlsRoot: Node
   private rafId = 0
   private pointerDown: { x: number; y: number } | null = null
   /** Fingers down on the canvas, and whether this touch has been more than one
@@ -239,6 +242,7 @@ export class OrthoViewport {
     // either — the free orbit rotates about the camera's own axes and carries
     // `up` with it, so it never lands on a pole.
     this.controls = new OrbitControls(this.camera, this.renderer.domElement)
+    this.controlsRoot = this.renderer.domElement.getRootNode()
     this.controls.enableRotate = false
     this.controls.enableZoom = false
     this.controls.enablePan = false
@@ -882,7 +886,20 @@ export class OrthoViewport {
     // The navigator listens on the document so drags can leave the canvas;
     // nothing else takes those down with the container.
     this.nav.dispose()
-    this.controls.dispose()
+    // OrbitControls takes its document key listener down from wherever the
+    // canvas is rooted when it is disposed. A React effect is cleaned up
+    // after its container has left the page, so that was the detached
+    // canvas itself: the listener stayed on the document, and with it every
+    // viewport closed — about 400 nodes and 90 listeners for each sketch
+    // opened and closed. The canvas goes back into its document for the
+    // moment the controls take their listener down; nothing is drawn.
+    const canvas = this.renderer.domElement
+    const root = this.controlsRoot
+    if (canvas.getRootNode() !== root && root instanceof Document && root.body) {
+      root.body.appendChild(canvas)
+      this.controls.dispose()
+      canvas.remove()
+    } else this.controls.dispose()
     this.renderer.dispose()
     // Only what this viewport put there. Emptying the container instead would
     // also take out whatever React had rendered into it — the fit-to-view

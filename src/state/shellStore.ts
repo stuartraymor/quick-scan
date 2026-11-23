@@ -41,6 +41,9 @@ interface ShellState {
   /** Where a point of the part is drawn on screen (client px), or null off
    *  the view — for labels laid over the viewport. */
   screenPointOf: ((p: readonly [number, number, number]) => { x: number; y: number } | null) | null
+  /** Where a feature grip's arrow is drawn, in the part's coordinates — it
+   *  slides along its face to stay in view — for words laid beside it. */
+  gripPointOf: ((side: string) => [number, number, number] | null) | null
   setSelection: (keys: string[]) => void
   /** Triangles of the scan hidden by Hide Selected / Isolate (a view state). */
   hiddenTriangles: number
@@ -70,6 +73,7 @@ export const useShell = create<ShellState>()((set) => ({
   setMultipleSectionsOpen: (multipleSectionsOpen) => set({ multipleSectionsOpen }),
   scanPointAt: null,
   screenPointOf: null,
+  gripPointOf: null,
   setSelection: (selection) => set({ selection }),
   prepareStep: null,
   setPrepareStep: (prepareStep) => set({ prepareStep }),

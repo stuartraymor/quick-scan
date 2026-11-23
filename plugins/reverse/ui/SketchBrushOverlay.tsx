@@ -9,6 +9,7 @@ import { useSketchBrush } from '../state/sketchBrushStore'
 import { useReverse } from '../state/reStore'
 import { SKETCH_LINE } from '../viewer/sketchPalette'
 import { SketchCommandIcon } from './SketchCommandIcon'
+import { useBrushingPage } from './useBrushingPage'
 
 /** A plugin-owned canvas over the real sheet. Input is captured only for
  *  left-button paint; middle/right navigation still reaches FlatScene. */
@@ -18,6 +19,7 @@ const SELECTION_FITS = ['line', 'arc', 'circle', 'rectangle', 'slot', 'hexagon']
 
 export function SketchBrushOverlay({ scene, chainsOf }: { scene: FlatScene | null; chainsOf: () => SketchChains | null }) {
   const open = useSketchBrush((s) => s.open)
+  useBrushingPage(open)
   const selectedCount = useSketchBrush((s) => s.selected.length)
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   const canvas = useRef<HTMLCanvasElement>(null)

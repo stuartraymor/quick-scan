@@ -3,7 +3,7 @@
 import type { Vec2 } from '../../../src/core/flat/types'
 import { tangentArc } from './draw'
 import { mirrorPoint } from './mirrorRelation'
-import { addConstraint, addEntity, arcPoint, cloneSketch, damagedPiece, entityOf, patternPieces, removeEntities, type EntityInput, type Sketch, type SketchEntity, type SketchLine } from './sketch'
+import { addConstraint, addEntity, anchorPoint, arcPoint, cloneSketch, damagedPiece, entityOf, patternPieces, removeEntities, type Anchor, type Constraint, type ConstraintInput, type EntityInput, type Sketch, type SketchEntity, type SketchLine } from './sketch'
 
 export type SketchEditResult = { ok: true; sketch: Sketch; ids: number[] } | { ok: false; error: string }
 const fail = (error: string): SketchEditResult => ({ ok: false, error })
@@ -207,8 +207,12 @@ function intersections(a: Curve, b: Curve): Vec2[] {
   return points.filter(p => parameter(a, p) !== null && parameter(b, p) !== null)
 }
 
-/** Remove only the clicked span between existing intersections. Target constraints
- * are discarded because they no longer describe its new endpoints/length. */
+/** Remove only the clicked span between existing intersections. What is
+ * kept stays what it was: its untouched ends keep their joins, each kept
+ * piece keeps the relations that still describe it (horizontal, vertical,
+ * parallel, perpendicular, collinear, concentric, an arc's radius, Fix), and
+ * each new end lies on the piece that cut it. A length, a distance or an
+ * angle given to the whole piece is dropped: it no longer describes it. */
 export function trimAt(input: Sketch, entityId: number, point: Vec2): SketchEditResult {
   const e = entityOf(input, entityId)
   if (!e || (e.kind !== 'line' && e.kind !== 'arc' && e.kind !== 'circle')) return fail('Trim supports a line, arc or circle at an intersection.')
@@ -218,10 +222,12 @@ export function trimAt(input: Sketch, entityId: number, point: Vec2): SketchEdit
   if (damaged) return fail(damaged)
   const t = parameter(e, point)
   if (t === null) return fail('Click on the span to trim.')
-  const cuts = input.entities.flatMap(other => other.id !== e.id && (other.kind === 'line' || other.kind === 'arc' || other.kind === 'circle') ? intersections(e, other).map(p => parameter(e, p)!) : [])
+  const crossings = input.entities.flatMap(other => other.id !== e.id && (other.kind === 'line' || other.kind === 'arc' || other.kind === 'circle') ? intersections(e, other).map(p => ({ t: parameter(e, p)!, by: other as Curve, p })) : [])
+  const cuts = crossings.map(c => c.t)
     .filter(x => e.kind === 'circle' || (x > EPS && x < 1 - EPS)).sort((a, b) => a - b).filter((x, i, a) => !i || Math.abs(x - a[i - 1]) > EPS)
   if (!cuts.length || (e.kind === 'circle' && cuts.length < 2)) return fail('The selected span needs intersections with other sketch pieces.')
   const sketch = cloneSketch(input)
+  const held = sketch.constraints.filter(c => constraintTouches(c, e.id))
   removeEntities(sketch, [e.id])
   const spans: [number, number][] = []
   if (e.kind === 'circle') {
@@ -236,9 +242,124 @@ export function trimAt(input: Sketch, entityId: number, point: Vec2): SketchEdit
     if (limits[i + 1] < 1 - EPS) spans.push([limits[i + 1], 1])
   }
   const made = spans.filter(([a, b]) => b - a > EPS).map(([a, b]) => addEntity(sketch, e.kind === 'line'
-    ? { kind: 'line', a: lerp(e.a, e.b, a), b: lerp(e.a, e.b, b), ...(e.construction ? { construction: true } : {}) }
-    : { kind: 'arc', c: [...e.c], r: e.r, start: mod((e.kind === 'arc' ? e.start : 0) + a * (e.kind === 'arc' ? e.sweep : TAU)), sweep: (b - a) * (e.kind === 'arc' ? e.sweep : TAU), ...(e.construction ? { construction: true } : {}) }))
+    ? { kind: 'line', a: lerp(e.a, e.b, a), b: lerp(e.a, e.b, b), ...(e.fixed ? { fixed: true } : {}), ...(e.construction ? { construction: true } : {}) }
+    : { kind: 'arc', c: [...e.c], r: e.r, start: mod((e.kind === 'arc' ? e.start : 0) + a * (e.kind === 'arc' ? e.sweep : TAU)), sweep: (b - a) * (e.kind === 'arc' ? e.sweep : TAU), ...(e.fixed ? { fixed: true } : {}), ...(e.construction ? { construction: true } : {}) }))
+  keepTrimRelations(sketch, e, held, made, spans.filter(([x, y]) => y - x > EPS), crossings)
   return good(sketch, made)
+}
+
+/** Whether a constraint names the piece. */
+function constraintTouches(c: Constraint, id: number): boolean {
+  return trimRefs(c).includes(id)
+}
+function trimRefs(c: Constraint): number[] {
+  switch (c.kind) {
+    case 'coincident': return [c.p.entity, c.q.entity]
+    case 'symmetric': return [c.p.entity, c.q.entity, ...(typeof c.about === 'object' && 'line' in c.about ? [c.about.line] : [])]
+    case 'horizontal': case 'vertical': case 'length': case 'radius': case 'diameter': case 'arcLength': return [c.entity]
+    case 'parallel': case 'perpendicular': case 'tangent': case 'concentric': case 'equal': case 'angle': return [c.a, c.b]
+    case 'distance': return [c.p.entity, ...('entity' in c.q ? [c.q.entity] : 'line' in c.q ? [c.q.line] : [])]
+    case 'pointOn': return [c.p.entity, ...('line' in c.on ? [c.on.line] : 'curve' in c.on ? [c.on.curve] : [])]
+    case 'collinear': return [c.line, ...('line' in c.on ? [c.on.line] : [])]
+  }
+}
+
+/** The relations a trimmed piece's kept spans carry on — see trimAt. */
+function keepTrimRelations(sketch: Sketch, e: Curve, held: readonly Constraint[], made: readonly number[], spans: readonly [number, number][], crossings: readonly { t: number; by: Curve; p: Vec2 }[]): void {
+  if (!made.length) return
+  const first = spans[0][0] < EPS && e.kind !== 'circle' ? made[0] : null
+  const last = spans[spans.length - 1][1] > 1 - EPS && e.kind !== 'circle' ? made[made.length - 1] : null
+  /** The kept end an anchor of the old piece is now, or null if it was cut away. */
+  const moved = (p: Anchor): Anchor | null => {
+    if (p.entity !== e.id) return p
+    if (p.at === 'a') return first === null ? null : { entity: first, at: 'a' }
+    if (p.at === 'b') return last === null ? null : { entity: last, at: 'b' }
+    // A round piece's centre is every kept span's centre; a line's middle is gone.
+    return e.kind === 'line' ? null : { entity: made[0], at: 'center' }
+  }
+  /** The kept span a point of the old piece lies on. */
+  const spanAt = (p: Vec2): number | null => {
+    const t = parameter(e, p)
+    if (t === null) return null
+    const i = spans.findIndex(([a, b]) => (t >= a - EPS && t <= b + EPS) || (e.kind === 'circle' && t + 1 >= a - EPS && t + 1 <= b + EPS))
+    return i < 0 ? null : made[i]
+  }
+  const add = (c: ConstraintInput) => { addConstraint(sketch, c) }
+  const strip = <T extends Constraint>(c: T) => { const { id: _id, place: _place, ...rest } = c; void _id; void _place; return rest as unknown as ConstraintInput }
+  const joinedTo = new Map<number, Set<number>>()
+  for (const c of held) {
+    switch (c.kind) {
+      case 'horizontal': case 'vertical':
+        for (const id of made) add({ ...strip(c), entity: id } as ConstraintInput)
+        break
+      case 'parallel': case 'perpendicular':
+        if (c.a === c.b) break
+        for (const id of made) add({ ...strip(c), a: c.a === e.id ? id : c.a, b: c.b === e.id ? id : c.b } as ConstraintInput)
+        break
+      case 'concentric':
+        for (const id of made) add({ ...strip(c), a: c.a === e.id ? id : c.a, b: c.b === e.id ? id : c.b } as ConstraintInput)
+        break
+      case 'equal':
+        // Radii stay equal; a line's length is no longer what it was.
+        if (e.kind !== 'line') add({ ...strip(c), a: c.a === e.id ? made[0] : c.a, b: c.b === e.id ? made[0] : c.b } as ConstraintInput)
+        break
+      case 'radius': case 'diameter':
+        add({ ...strip(c), entity: made[0] } as ConstraintInput)
+        break
+      case 'collinear':
+        if (c.line === e.id) for (const id of made) add({ ...strip(c), line: id } as ConstraintInput)
+        else if ('line' in c.on && c.on.line === e.id) add({ ...strip(c), on: { line: made[0] } } as ConstraintInput)
+        break
+      case 'coincident': {
+        const p = moved(c.p), q = moved(c.q)
+        if (!p || !q) break
+        add({ ...strip(c), p, q } as ConstraintInput)
+        const mine = c.p.entity === e.id ? p : q, other = c.p.entity === e.id ? c.q.entity : c.p.entity
+        if (!joinedTo.has(mine.entity)) joinedTo.set(mine.entity, new Set())
+        joinedTo.get(mine.entity)!.add(other)
+        break
+      }
+      case 'pointOn': {
+        if (c.p.entity === e.id) {
+          const p = moved(c.p)
+          if (p) add({ ...strip(c), p } as ConstraintInput)
+        } else {
+          // Another piece's point resting on this one: on the span under it.
+          const other = entityOf(sketch, c.p.entity)
+          const id = other ? spanAt(anchorPoint(other, c.p.at)) : null
+          if (id !== null) add({ ...strip(c), on: e.kind === 'line' ? { line: id } : { curve: id } } as ConstraintInput)
+        }
+        break
+      }
+      default:
+        break
+    }
+  }
+  // A tangency is kept where the two still meet at a kept end.
+  for (const c of held) {
+    if (c.kind !== 'tangent') continue
+    const other = c.a === e.id ? c.b : c.a
+    for (const id of made) if (joinedTo.get(id)?.has(other)) add({ ...strip(c), a: c.a === e.id ? id : c.a, b: c.b === e.id ? id : c.b } as ConstraintInput)
+  }
+  // The spans of one round piece stay one circle.
+  if (e.kind !== 'line') for (const id of made.slice(1)) { add({ kind: 'concentric', a: made[0], b: id }); add({ kind: 'equal', a: made[0], b: id }) }
+  // Each new end lies on what cut it: joined to the cutter's end where the
+  // cut is at one, held on the cutter otherwise.
+  const full = e.kind === 'circle'
+  spans.forEach(([a, b], i) => {
+    const ends: [number, 'a' | 'b'][] = []
+    if (full || a > EPS) ends.push([a, 'a'])
+    if (full || b < 1 - EPS) ends.push([b, 'b'])
+    for (const [t, at] of ends) {
+      const cut = crossings.find(c => Math.abs(c.t - t) < 1e-6 || Math.abs(c.t - (t - 1)) < 1e-6 || Math.abs(c.t - (t + 1)) < 1e-6)
+      const by = cut ? entityOf(sketch, cut.by.id) : undefined
+      if (!cut || !by || by.kind === 'spline' || by.kind === 'point') continue
+      const p: Anchor = { entity: made[i], at }
+      const end = by.kind === 'circle' ? null : (['a', 'b'] as const).find(k => near(anchorPoint(by, k), cut.p))
+      if (end) add({ kind: 'coincident', p, q: { entity: by.id, at: end } })
+      else add({ kind: 'pointOn', p, on: by.kind === 'line' ? { line: by.id } : { curve: by.id } })
+    }
+  })
 }
 
 export function slotSketch(input: Sketch, from: Vec2, to: Vec2, width: number): SketchEditResult {

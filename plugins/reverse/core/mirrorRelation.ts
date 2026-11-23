@@ -42,7 +42,15 @@ export function symmetricPairs(a: SketchEntity, b: SketchEntity, axis: SketchEnt
   if (a.kind === 'circle' || a.kind === 'point') return [pair('center', 'center')]
   // A line or an arc: its two ends, paired the way that mirrors them best.
   const miss = (pa: AnchorAt, qa: AnchorAt) => len2(sub2(mirrorPoint(anchorPoint(a, pa), line.a, d), anchorPoint(b, qa)))
-  const straight = miss('a', 'a') + miss('b', 'b') <= miss('a', 'b') + miss('b', 'a')
+  // Two pieces that meet at an end mirror each other about that joint: the
+  // joint lies on the mirror line and pairs with itself. Paired the other
+  // way, a joint's image would have to be the far end, which the solve can
+  // only meet by laying both pieces on one another or shrinking them to the
+  // joint — what a V of two lines drawn as a polyline got.
+  const joined = (pa: AnchorAt, qa: AnchorAt) => len2(sub2(anchorPoint(a, pa), anchorPoint(b, qa))) <= 1e-9 * (1 + len2(anchorPoint(a, pa)))
+  const straightJoint = joined('a', 'a') || joined('b', 'b')
+  const crossJoint = joined('a', 'b') || joined('b', 'a')
+  const straight = straightJoint !== crossJoint ? straightJoint : miss('a', 'a') + miss('b', 'b') <= miss('a', 'b') + miss('b', 'a')
   const ends = straight ? [pair('a', 'a'), pair('b', 'b')] : [pair('a', 'b'), pair('b', 'a')]
   return a.kind === 'arc' ? [...ends, pair('center', 'center')] : ends
 }

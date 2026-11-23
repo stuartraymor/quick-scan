@@ -12,6 +12,8 @@ const nonModelActions = new Set([
   'setOverlapsShown', 'setElementsShown', 'setPlaneShown', 'setSketchModelShown', 'setSketchSliced', 'setFolderOpen',
   'setGripField', 'canUndo', 'canRedo', 'reset', 'discardSketch', 'cancelExtrude', 'cancelRevolve', 'cancelFeature', 'cancelSketchPattern',
   'toggleBodyVisible', 'setAllBodiesVisible', 'setBodiesVisible', 'toggleFeatureVisible',
+  // Names and colours are not geometry: QUICKSURFACE renames a rolled-back row.
+  'renameFeature', 'setBodyStyle',
 ])
 
 export const reverseDocumentOrderProvider: DocumentOrderProvider = {
@@ -23,6 +25,7 @@ export const reverseDocumentOrderProvider: DocumentOrderProvider = {
     return Array.isArray(part?.features) ? part.features.map((feature) => `reverse:feature:${feature.id}`) : []
   },
   rollTo: (activeKeys) => useReverse.getState().rollTo(activeKeys.length),
+  activeKeys: () => useReverse.getState().features.map((feature) => `reverse:feature:${feature.id}`),
   mutationActions: {
     store: useReverse,
     names: Object.entries(useReverse.getState()).filter(([name, value]) => typeof value === 'function' && !nonModelActions.has(name)).map(([name]) => name),

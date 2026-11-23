@@ -227,3 +227,49 @@ describe('reverse.sketch.analyse', () => {
     expect(a.closed).toBe(true)
   })
 })
+
+// 1.2.8: Corner Trim and the fillets for an agent, through the brush's own
+// geometry (buildCornerTrim), put in as the brush puts them.
+interface Cornered { mode: string; shape?: string; radius?: number; arc?: number; scanFit?: { max: number; exceeds: boolean; tolerance: number } }
+describe('reverse.sketch.corner', () => {
+  const walls = () => plate([
+    { id: 1, kind: 'line', a: [-15, -20], b: [12, -20] },
+    { id: 2, kind: 'line', a: [20, -8], b: [20, 15] },
+  ])
+  it('trims two lines that stop short to their exact crossing, one undo step', async () => {
+    await walls()
+    const r = await run<Cornered>('reverse.sketch.corner', { sketch: 'Plate', pieces: [1, 2] })
+    expect(r.mode).toBe('trim')
+    const [l1, l2] = [piece(1), piece(2)]
+    expect(l1.kind === 'line' && near(l1.b, [20, -20]) && near(l1.a, [-15, -20])).toBe(true)
+    expect(l2.kind === 'line' && near(l2.a, [20, -20]) && near(l2.b, [20, 15])).toBe(true)
+    expect(stored().constraints.some((c) => c.kind === 'coincident')).toBe(true)
+    expect(undoLabels().at(-1)).toBe('Agent: corner trim')
+  })
+  it('fillets at a fixed radius, tangent, centre on the bisector', async () => {
+    await walls()
+    const r = await run<Cornered>('reverse.sketch.corner', { sketch: 'Plate', pieces: [1, 2], mode: 'fixedFillet', radius: 3, addDimension: true })
+    expect(r.radius).toBe(3)
+    const arc = piece(r.arc!)
+    expect(arc.kind === 'arc' && near(arc.c, [17, -17], 1e-7) && Math.abs(arc.r - 3) < 1e-9).toBe(true)
+    expect(near(piece(1).kind === 'line' ? (piece(1) as { b: Vec2 }).b : [0, 0], [17, -20], 1e-7)).toBe(true)
+    expect(near((piece(2) as { a: Vec2 }).a, [20, -17], 1e-7)).toBe(true)
+    expect(stored().constraints.some((c) => c.kind === 'radius')).toBe(true)
+  })
+  it('Auto Fillet reads the box’s sharp scan corner and joins it sharp', async () => {
+    await walls()
+    const r = await run<Cornered>('reverse.sketch.corner', { sketch: 'Plate', pieces: [1, 2], mode: 'autoFillet' })
+    expect(r.shape).toBe('sharp')
+    expect(r.arc).toBeUndefined()
+    expect(near((piece(1) as { b: Vec2 }).b, [20, -20], 1e-7)).toBe(true)
+  })
+  it('refuses what cannot be done, changing nothing', async () => {
+    await plate([{ id: 1, kind: 'line', a: [-15, -20], b: [12, -20] }, { id: 2, kind: 'line', a: [-15, -10], b: [12, -10] }, { id: 3, kind: 'circle', c: [0, 0], r: 3 }])
+    const before = JSON.stringify(stored())
+    expect((await refused('reverse.sketch.corner', { sketch: 'Plate', pieces: [1, 2] })).message).toMatch(/parallel/)
+    expect((await refused('reverse.sketch.corner', { sketch: 'Plate', pieces: [1, 3] })).message).toMatch(/Circles|ends/)
+    expect((await refused('reverse.sketch.corner', { sketch: 'Plate', pieces: [1, 9] })).code).toBe('not_found')
+    expect((await refused('reverse.sketch.corner', { sketch: 'Plate', pieces: [1, 2], mode: 'fixedFillet' })).message).toMatch(/radius/)
+    expect(JSON.stringify(stored())).toBe(before)
+  })
+})

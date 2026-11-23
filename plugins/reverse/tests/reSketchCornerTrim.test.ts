@@ -161,6 +161,21 @@ describe('Corner Trim preview/apply/cancel/undo', () => {
     expect(useReverse.getState().sketchDraft!.sketch).toEqual(before)
   })
 
+  it('a fillet between separate lines is two undo steps, as in QUICKSURFACE: the join, then the fillet', () => {
+    const before = cloneSketch(useReverse.getState().sketchDraft!.sketch)
+    const state = useSketchCornerTrim.getState()
+    state.setMode('fixedFillet'); state.previewSelected()
+    expect(useSketchCornerTrim.getState().apply()).toBe(true)
+    expect(useReverse.getState().sketchDraft!.history).toHaveLength(2)
+    expect(useReverse.getState().sketchDraft!.sketch.entities.some((e) => e.kind === 'arc')).toBe(true)
+    useSketchCornerTrim.getState().undo()
+    const joined = useReverse.getState().sketchDraft!.sketch
+    expect(joined.entities.some((e) => e.kind === 'arc')).toBe(false)
+    for (const e of joined.entities) expect(Math.hypot(...(e as { a: Vec2 }).a)).toBeLessThan(1e-7)
+    useSketchCornerTrim.getState().undo()
+    expect(useReverse.getState().sketchDraft!.sketch).toEqual(before)
+  })
+
   it('updates a fixed-size preview dynamically and refuses stale apply', () => {
     const state = useSketchCornerTrim.getState()
     state.setMode('fixedFillet'); state.previewSelected(); state.setRadiusMm(5)

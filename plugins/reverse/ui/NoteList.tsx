@@ -13,6 +13,7 @@ import { useStore } from '../../../src/state/store'
 import type { Note, NoteTarget } from '../core/notes'
 import { useNotes } from '../state/noteStore'
 import { useReverse, type BodyInfo } from '../state/reStore'
+import { Overlay } from './Overlay'
 import { NOTE_PLACING, useNotesOn } from '../app/useNotePins'
 import { KeyIcon } from './reIcons'
 
@@ -48,7 +49,8 @@ function NoteCard() {
   if (!editing || !note) return null
   // A fresh box for each note opened, its draft on the note's text — or,
   // for the agent's question, on the answer given so far.
-  return note.by === 'agent' ? <AnswerBox key={note.id} note={note} at={editing.at} /> : <NoteBox key={note.id} note={note} at={editing.at} />
+  // Over the view, whether or not the CAD tools panel is open.
+  return <Overlay>{note.by === 'agent' ? <AnswerBox key={note.id} note={note} at={editing.at} /> : <NoteBox key={note.id} note={note} at={editing.at} />}</Overlay>
 }
 
 /** Where a box opened at `at` stands: by it, and wholly on the screen, as

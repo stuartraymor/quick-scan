@@ -31,20 +31,33 @@ export function ViewportMenu({ hasScan, onZoomFit, onHideSelected, onIsolate, on
 
   useEffect(() => {
     const onStage = (e: Event) => (e.target as Element | null)?.closest?.('.desktop-mid canvas') != null
-    const pointerDown = (e: PointerEvent) => { if (e.button === 2 && onStage(e)) down.current = { x: e.clientX, y: e.clientY } }
+    // Windows sends the context menu on release, Linux and macOS on press:
+    // then the menu waits for the release, and a drag in between drops it.
+    let held: { x: number; y: number } | null = null
+    const pointerDown = (e: PointerEvent) => { if (e.button === 2 && onStage(e)) { down.current = { x: e.clientX, y: e.clientY }; held = null } }
+    const place = (x: number, y: number) => setAt({ x: Math.min(x, innerWidth - 240), y: Math.min(y, innerHeight - 320) })
+    const pointerUp = (e: PointerEvent) => {
+      if (e.button !== 2 || !held) return
+      const h = held
+      held = null
+      if (Math.hypot(e.clientX - h.x, e.clientY - h.y) <= STILL_PX) place(h.x, h.y)
+    }
     const context = (e: MouseEvent) => {
       if (!onStage(e)) return
       e.preventDefault()
       const d = down.current
       down.current = null
       if (d && Math.hypot(e.clientX - d.x, e.clientY - d.y) > STILL_PX) return
-      setAt({ x: Math.min(e.clientX, innerWidth - 240), y: Math.min(e.clientY, innerHeight - 320) })
+      if (e.buttons & 2) held = { x: e.clientX, y: e.clientY }
+      else place(e.clientX, e.clientY)
     }
     document.addEventListener('pointerdown', pointerDown, true)
     document.addEventListener('contextmenu', context)
+    window.addEventListener('pointerup', pointerUp, true)
     return () => {
       document.removeEventListener('pointerdown', pointerDown, true)
       document.removeEventListener('contextmenu', context)
+      window.removeEventListener('pointerup', pointerUp, true)
     }
   }, [])
 

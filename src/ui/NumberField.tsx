@@ -76,6 +76,9 @@ export function NumberField({
   testId?: string
 }) {
   const ref = useRef<HTMLInputElement>(null)
+  // Typed in since it last showed its value: the same figures typed over a
+  // rounded number are meant exactly; a box only looked at changes nothing.
+  const typedIn = useRef(false)
   const u = useFieldUnits(kind, unit)
   const shown = u.text(value)
   return (
@@ -94,10 +97,13 @@ export function NumberField({
           disabled={disabled}
           defaultValue={shown}
           key={shown}
+          onInput={() => { typedIn.current = true }}
           onBlur={(e) => {
             // Text left as it was shown commits nothing: in inches the shown
             // figure is rounded, and committing it back would move the value.
-            if (e.target.value !== shown) {
+            const retyped = typedIn.current
+            typedIn.current = false
+            if (e.target.value !== shown || (retyped && e.target.value !== '')) {
               const v = u.read(Number(e.target.value))
               if (Number.isFinite(v) && v >= min) onCommit(v)
             }

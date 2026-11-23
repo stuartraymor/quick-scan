@@ -4,14 +4,36 @@
 import type { Vec2 } from '../../../src/core/flat/types'
 import { lineIntersection } from './corners'
 import { filletLines } from './filletCorner'
-import { addConstraint, anchorPoint, cloneSketch, constraintEntities, damagedPiece, endsOf, entityOf, type Anchor, type Constraint, type Sketch, type SketchEntity, type SketchLine } from './sketch'
+import { addConstraint, anchorPoint, cloneSketch, constraintEntities, damagedPiece, endsOf, entityOf, type Anchor, type Constraint, type Sketch, type SketchArc, type SketchEntity, type SketchLine } from './sketch'
+import { analyseCurveCorner, filletCurves, filletSides } from './curveFillet'
 import { joinCurveEnds } from './cornerJoin'
 import { solveSketch } from './solver'
 import { pathDistance } from './cornerGesture'
+import { analyseCornerProfile, type CornerProfile } from './cornerProfile'
+import { piecesInSweep, rankSweptPairs, SweepArea, type Sweep, type SweptPair } from './cornerSweep'
 
 export type CornerTrimMode = 'trim' | 'autoFillet' | 'fixedFillet'
 export interface CornerTrimOptions { mode: CornerTrimMode; radiusMm: number; addDimension: boolean }
-export type CornerTrimResult = { ok: true; sketch: Sketch; changedIds: number[]; farAnchors: { anchor: Anchor; to: Vec2 }[]; radiusMm?: number; rms?: number; usedPoints?: number } | { ok: false; error: string }
+/** `shape` is what Auto Fillet read off the scan; `unswept` says a fillet
+ *  mode joined the lines sharp because the sweep did not cover their corner
+ *  point; `confirm`, when set, says why the result should be shown and
+ *  accepted by hand rather than applied on release; `profile` holds the scan
+ *  points that decided it. `joined`, when set, is the sharp join of two
+ *  separate lines that a fillet is made from: as in QUICKSURFACE, applying it
+ *  takes two undo steps, the join and then the fillet. */
+export type CornerTrimResult = { ok: true; sketch: Sketch; changedIds: number[]; farAnchors: { anchor: Anchor; to: Vec2 }[]; radiusMm?: number; rms?: number; usedPoints?: number; shape?: 'sharp' | 'arc'; unswept?: boolean; confirm?: string; profile?: Vec2[]; joined?: Sketch; exact?: boolean } | { ok: false; error: string }
+/** Nothing to do: the same pieces and relations, with every number within
+ *  1e-9 mm. A polyline corner drawn by mouse can meet to 1e-14 rather than
+ *  exactly; making those ends bit-identical is not a corner, and must not
+ *  leave an undo step that changes nothing visible. */
+const sameGeometry = (a: Sketch, b: Sketch) => JSON.stringify(a.constraints) === JSON.stringify(b.constraints) && closeValues(a.entities, b.entities)
+function closeValues(x: unknown, y: unknown): boolean {
+  if (typeof x === 'number' && typeof y === 'number') return x === y || Math.abs(x - y) <= 1e-9
+  if (x === null || y === null || typeof x !== 'object' || typeof y !== 'object') return x === y
+  if (Array.isArray(x) !== Array.isArray(y)) return false
+  const kx = Object.keys(x), ky = Object.keys(y)
+  return kx.length === ky.length && kx.every((k) => k in y && closeValues((x as Record<string, unknown>)[k], (y as Record<string, unknown>)[k]))
+}
 type Side = { line: SketchLine; near: 'a' | 'b'; far: 'a' | 'b'; direction: Vec2; reach: number }
 const distance = (a: Vec2, b: Vec2) => Math.hypot(a[0] - b[0], a[1] - b[1])
 
@@ -48,15 +70,35 @@ function side(line: SketchLine, corner: Vec2, painted?: 'a' | 'b'): Side | null 
   return reach > 1e-8 ? { line, near, far, reach, direction: [(line[far][0] - corner[0]) / reach, (line[far][1] - corner[1]) / reach] } : null
 }
 
+/** Whether a relation that holds anchors or a carrier of the corner's pieces
+ *  survives the corner: it may hold their far ends, which never move, and
+ *  their carriers, which only slide, but not an end being moved, nor a
+ *  point kept within a piece being shortened. A line drawn with its far end
+ *  snapped onto a coordinate plane's line, an edge or another piece carries
+ *  such a Point On; before 1.2.10 it refused every corner tool on that line
+ *  ("A dimension or another constrained corner prevents trimming"). Null
+ *  where the relation is of another kind. */
+function anchorsSurvive(c: Constraint, moving: (p: Anchor) => boolean, pieces: readonly number[]): boolean | null {
+  const shortened = (on: unknown) => typeof on === 'object' && on !== null && (('line' in on && pieces.includes((on as { line: number }).line)) || ('curve' in on && pieces.includes((on as { curve: number }).curve)))
+  if (c.kind === 'pointOn') return !moving(c.p) && !(c.bounded && shortened(c.on))
+  if (c.kind === 'distance') return !moving(c.p) && !('entity' in c.q && moving(c.q))
+  if (c.kind === 'symmetric') return !moving(c.p) && !moving(c.q)
+  return null
+}
+
 function protectedConstraint(c: Constraint, sides: readonly Side[]): boolean {
   if (!constraintEntities(c).some((id) => sides.some((s) => s.line.id === id))) return false
   // These constrain only the unchanged line carriers/directions.
-  if (['horizontal', 'vertical', 'parallel', 'perpendicular', 'angle', 'collinear'].includes(c.kind)) return false
+  // A tangent to a line holds on its carrier, which only slides here: a
+  // round already made at the far end (a fitted chain) stays tangent.
+  if (['horizontal', 'vertical', 'parallel', 'perpendicular', 'angle', 'collinear', 'tangent'].includes(c.kind)) return false
   if (c.kind === 'coincident') {
     const changing = (p: Anchor) => sides.some((s) => s.line.id === p.entity && s.near === p.at)
     // The mutual near-end join is intentionally replaced; far-end joins stay.
     return (changing(c.p) || changing(c.q)) && !(changing(c.p) && changing(c.q))
   }
+  const survives = anchorsSurvive(c, (p) => sides.some((s) => s.line.id === p.entity && s.near === p.at), sides.map((s) => s.line.id))
+  if (survives !== null) return !survives
   // Lengths, equal lengths, tangent curves and point-on constraints may
   // conflict with a trim. Refuse rather than silently delete or distort them.
   return true
@@ -150,8 +192,23 @@ function nearerEnd(e: SketchEntity, other: SketchEntity): 'a' | 'b' {
   return reach('a') <= reach('b') ? 'a' : 'b'
 }
 
+/** Settles a corner built on exact carriers. The join and the fillet are
+ *  constructed exactly, so every relation already holds and nothing may
+ *  move: a full solve would refit each fitted piece to its own slice points
+ *  (the solver's soft data), and a brushed arc whose points include strays
+ *  then shifts by millimetres, far end and all. As Fit Line and Fit Arc do
+ *  when they add a piece, the solve is asked to leave satisfied geometry as
+ *  it is. Only when a relation is not met does the pulled solve run. Returns
+ *  whether the sketch solved, and whether it was left exactly as built. */
+function settleCorner(sketch: Sketch, far: readonly { anchor: Anchor; to: Vec2 }[]): { ok: boolean; exact: boolean } {
+  const trial = cloneSketch(sketch)
+  const held = solveSketch(trial, { preserveSatisfied: true })
+  if (held.ok && held.iterations === 0) return { ok: true, exact: true }
+  return { ok: solveSketch(sketch, { pull: far }).ok, exact: false }
+}
+
 /** Corner Trim for pairs with an arc or an open curve (see cornerJoin.ts). */
-function curveCornerTrim(source: Sketch, ids: readonly number[], ends?: readonly Anchor[]): CornerTrimResult {
+function curveCornerTrim(source: Sketch, ids: readonly number[], ends?: readonly Anchor[], swept?: (p: Vec2) => boolean): CornerTrimResult {
   const fail = (error: string): CornerTrimResult => ({ ok: false, error })
   const [ea, eb] = ids.map((id) => entityOf(source, id)!) as [SketchEntity, SketchEntity]
   if (ea.fixed || eb.fixed || ea.projected || eb.projected) return fail('Fixed and projected pieces cannot be trimmed. Release the Fix or use editable pieces.')
@@ -170,10 +227,14 @@ function curveCornerTrim(source: Sketch, ids: readonly number[], ends?: readonly
     }
     // An arc keeps its circle: its radius and centre relations still hold.
     if (['radius', 'diameter', 'concentric'].includes(c.kind) && touched.every((id) => entityOf(source, id)?.kind === 'arc')) continue
+    // A tangency holds where it is: a round made at the far end stays
+    // tangent, as the far end and the piece's carrier never move.
+    if (c.kind === 'tangent') continue
     if (['horizontal', 'vertical', 'parallel', 'perpendicular', 'angle', 'collinear'].includes(c.kind) && touched.every((id) => entityOf(source, id)?.kind === 'line')) continue
+    if (anchorsSurvive(c, painted, [ea.id, eb.id])) continue
     return fail('A dimension or relation on these pieces prevents trimming them. Remove it first.')
   }
-  const joined = joinCurveEnds(source, { entity: ea.id, at: pa }, { entity: eb.id, at: pb })
+  const joined = joinCurveEnds(source, { entity: ea.id, at: pa }, { entity: eb.id, at: pb }, swept)
   if (!joined.ok) return fail(joined.error)
   const sketch = cloneSketch(source)
   sketch.entities = sketch.entities.map((e) => e.id === ea.id ? joined.a : e.id === eb.id ? joined.b : e)
@@ -182,14 +243,62 @@ function curveCornerTrim(source: Sketch, ids: readonly number[], ends?: readonly
     const keep = at === 'a' ? 'b' : 'a'
     return { anchor: { entity: e.id, at: keep } as Anchor, to: anchorPoint(e, keep) }
   })
-  const report = solveSketch(sketch, { pull: farAnchors })
-  if (!report.ok) return fail('The corner conflicts with existing sketch constraints. Nothing was changed.')
+  const settled = settleCorner(sketch, farAnchors)
+  if (!settled.ok) return fail('The corner conflicts with existing sketch constraints. Nothing was changed.')
   for (const f of farAnchors) if (distance(anchorPoint(entityOf(sketch, f.anchor.entity)!, f.anchor.at), f.to) > 1e-5) return fail('This operation would move a far end. Nothing was changed.')
-  return { ok: true, sketch, changedIds: [ea.id, eb.id], farAnchors }
+  return { ok: true, sketch, changedIds: [ea.id, eb.id], farAnchors, ...(settled.exact ? { exact: true } : {}) }
 }
 
-/** Produces a solved candidate without ever mutating the source sketch. */
-export function buildCornerTrim(source: Sketch, ids: readonly number[], options: CornerTrimOptions, points: readonly Vec2[] = [], ends?: readonly Anchor[]): CornerTrimResult {
+/** Auto Fillet or Fixed Size Fillet where an arc meets a line or another
+ *  arc. As between two lines, the pieces are first joined at the crossing of
+ *  their carriers (the corner point); the fillet follows only when the
+ *  painted area holds that point, and is a second undo step after the join. */
+function curveCornerFillet(source: Sketch, ids: readonly number[], options: CornerTrimOptions, ends?: readonly Anchor[], chains?: readonly (readonly Vec2[])[], swept?: (p: Vec2) => boolean): CornerTrimResult {
+  const fail = (error: string): CornerTrimResult => ({ ok: false, error })
+  const [ea, eb] = ids.map((id) => entityOf(source, id)!) as [SketchEntity, SketchEntity]
+  const join = curveCornerTrim(source, ids, ends, swept)
+  if (!join.ok) return join
+  if (ea.kind === 'spline' || eb.kind === 'spline') return fail('Fillets are made between lines and arcs. Use Corner Trim to join a free-form curve.')
+  const nearOf = (e: SketchEntity) => join.farAnchors.find((f) => f.anchor.entity === e.id)!.anchor.at === 'a' ? 'b' as const : 'a' as const
+  const pa = nearOf(ea), pb = nearOf(eb)
+  const ja = entityOf(join.sketch, ea.id) as SketchLine | SketchArc, jb = entityOf(join.sketch, eb.id) as SketchLine | SketchArc
+  const corner = anchorPoint(ja, pa)
+  const wasJoined = distance(anchorPoint(ea, pa), anchorPoint(eb, pb)) <= 1e-9 && distance(anchorPoint(ea, pa), corner) <= 1e-9 && source.constraints.some((c) => c.kind === 'coincident' && ((c.p.entity === ea.id && c.p.at === pa && c.q.entity === eb.id && c.q.at === pb) || (c.q.entity === ea.id && c.q.at === pa && c.p.entity === eb.id && c.p.at === pb)))
+  if (swept && !swept(corner)) return { ...join, unswept: true, ...(options.mode === 'autoFillet' ? { shape: 'sharp' as const } : {}) }
+  const sides = filletSides(ja, pa, jb, pb, corner)
+  if (typeof sides === 'string') return fail(sides)
+  let radiusMm = options.radiusMm, rms: number | undefined, usedPoints: number | undefined, confirm: string | undefined, profile: Vec2[] | undefined
+  if (options.mode === 'autoFillet') {
+    if (!chains?.length) return fail('Auto Fillet reads the corner from the scan section, and this sketch has none. Use Fixed Size Fillet.')
+    const read = analyseCurveCorner(sides, corner, chains)
+    if (read.kind === 'none') return fail(read.reason)
+    profile = read.used; usedPoints = read.used.length
+    if (read.kind === 'sharp') return { ...join, shape: 'sharp', profile, usedPoints }
+    radiusMm = read.radius; rms = read.rms
+    if (!read.confident) confirm = `Check the preview: ${read.doubt ?? 'the scan only weakly supports this round'}.`
+  }
+  if (!(radiusMm > 0) || !Number.isFinite(radiusMm)) return fail('Enter a finite radius above zero.')
+  const sketch = cloneSketch(join.sketch)
+  const made = filletCurves(sketch, sides, corner, radiusMm)
+  if (typeof made === 'string') return fail(made)
+  if (!options.addDimension) sketch.constraints = sketch.constraints.filter((c) => c.id !== made.dimension)
+  const arc = entityOf(sketch, made.arc)
+  if (arc?.kind === 'arc' && ea.construction && eb.construction) arc.construction = true
+  const settled = settleCorner(sketch, join.farAnchors)
+  if (!settled.ok) return fail('The corner conflicts with existing sketch constraints. Nothing was changed.')
+  for (const f of join.farAnchors) if (distance(anchorPoint(entityOf(sketch, f.anchor.entity)!, f.anchor.at), f.to) > 1e-5) return fail('This operation would move a far end. Nothing was changed.')
+  return { ok: true, sketch, changedIds: [ea.id, eb.id, made.arc], farAnchors: join.farAnchors, radiusMm, shape: 'arc', ...(rms !== undefined ? { rms, usedPoints } : {}), ...(confirm ? { confirm } : {}), ...(profile ? { profile } : {}), ...(wasJoined ? {} : { joined: join.sketch }), ...(settled.exact && join.exact ? { exact: true } : {}) }
+}
+
+/** Produces a solved candidate without ever mutating the source sketch.
+ *  `chains`, when given, are the scan's slice chains: Auto Fillet then reads
+ *  the round from the section between the lines (see cornerProfile.ts)
+ *  instead of fitting a radius to `points`. `swept`, when given, says whether
+ *  a sheet point lies in the area the user painted: as in QUICKSURFACE
+ *  ("paint over corner point"), Auto Fillet and Fixed Size Fillet round the
+ *  corner only when the painted area contains the lines' crossing, and
+ *  otherwise join the lines sharp, however much of the round was painted. */
+export function buildCornerTrim(source: Sketch, ids: readonly number[], options: CornerTrimOptions, points: readonly Vec2[] = [], ends?: readonly Anchor[], chains?: readonly (readonly Vec2[])[], swept?: (p: Vec2) => boolean): CornerTrimResult {
   const fail = (error: string): CornerTrimResult => ({ ok: false, error })
   if (ids.length !== 2 || new Set(ids).size !== 2) return fail('Paint over one endpoint on each of two lines.')
   const damaged = damagedPiece(source, ids)
@@ -197,8 +306,8 @@ export function buildCornerTrim(source: Sketch, ids: readonly number[], options:
   if (ends && (ends.length !== 2 || ids.some((id) => ends.filter((p) => p.entity === id && (p.at === 'a' || p.at === 'b')).length !== 1))) return fail('Paint exactly two endpoints, one on each line.')
   const chosen = ids.map((id) => entityOf(source, id))
   if (chosen.every((e) => e && (e.kind === 'line' || e.kind === 'arc' || e.kind === 'spline')) && chosen.some((e) => e!.kind !== 'line')) {
-    if (options.mode !== 'trim') return fail('Fillets are made between two straight lines. Use Corner Trim to join this pair.')
-    return curveCornerTrim(source, ids, ends)
+    if (options.mode === 'trim') return curveCornerTrim(source, ids, ends, swept)
+    return curveCornerFillet(source, ids, options, ends, chains, swept)
   }
   if (chosen.some((e) => !e || e.kind !== 'line')) return fail('Corner Trim joins the ends of lines, arcs and open curves. Circles, points and closed curves have no ends to join.')
   const [la, lb] = chosen as SketchLine[]
@@ -213,14 +322,40 @@ export function buildCornerTrim(source: Sketch, ids: readonly number[], options:
   if (source.constraints.some((c) => protectedConstraint(c, sides))) return fail('A dimension or another constrained corner prevents trimming these endpoints. Remove that constraint first.')
   const sketch = cloneSketch(source)
   let radiusMm: number | undefined, rms: number | undefined, usedPoints: number | undefined
+  let unswept = false
+  let shape: 'sharp' | 'arc' | undefined, confirm: string | undefined, profile: Vec2[] | undefined
   const changedIds = [...ids]
-  if (options.mode === 'trim') {
-    for (const s of sides) (entityOf(sketch, s.line.id) as SketchLine)[s.near] = [...corner]
-    const joined = sketch.constraints.some((c) => c.kind === 'coincident' && c.p.entity !== c.q.entity && [c.p, c.q].every((p) => sides.some((s) => s.line.id === p.entity && s.near === p.at)))
-    if (!joined) addConstraint(sketch, { kind: 'coincident', p: { entity: la.id, at: a.near }, q: { entity: lb.id, at: b.near } })
-  } else {
+  let mode = options.mode
+  let read: CornerProfile | null = null
+  if (mode !== 'trim' && swept && !swept(corner)) { mode = 'trim'; unswept = true; if (options.mode === 'autoFillet') shape = 'sharp' }
+  if (mode === 'autoFillet' && chains) {
+    const start = (d: Side) => (d.line[d.near][0] - corner[0]) * d.direction[0] + (d.line[d.near][1] - corner[1]) * d.direction[1]
+    read = analyseCornerProfile({ corner, dirA: a.direction, dirB: b.direction, reachA: a.reach, reachB: b.reach, startA: start(a), startB: start(b) }, chains)
+    if (read.kind === 'none') return fail(read.reason)
+    shape = read.kind; profile = read.used; usedPoints = read.used.length
+    if (!read.confident) confirm = `Check the preview: ${read.doubt ?? 'the scan only weakly supports this round'}.`
+    if (read.kind === 'sharp') mode = 'trim'
+  }
+  const joinNear = (s: Sketch) => {
+    const joined = s.constraints.some((c) => c.kind === 'coincident' && c.p.entity !== c.q.entity && [c.p, c.q].every((p) => sides.some((d) => d.line.id === p.entity && d.near === p.at)))
+    if (!joined) addConstraint(s, { kind: 'coincident', p: { entity: la.id, at: a.near }, q: { entity: lb.id, at: b.near } })
+  }
+  const far = sides.map((s) => ({ anchor: { entity: s.line.id, at: s.far }, to: s.line[s.far] }))
+  const farHeld = (s: Sketch) => sides.every((d) => distance(anchorPoint(entityOf(s, d.line.id)!, d.far), d.line[d.far]) <= 1e-5)
+  // The sharp join first: Corner Trim's result, and the first step of a
+  // fillet between separate lines (lines already joined there take one).
+  const wasJoined = sides.every((d) => distance(d.line[d.near], corner) <= 1e-9) && source.constraints.some((c) => c.kind === 'coincident' && c.p.entity !== c.q.entity && [c.p, c.q].every((p) => sides.some((d) => d.line.id === p.entity && d.near === p.at)))
+  for (const s of sides) (entityOf(sketch, s.line.id) as SketchLine)[s.near] = [...corner]
+  joinNear(sketch)
+  let joined: Sketch | undefined, joinExact = true
+  if (mode !== 'trim') {
+    const first = settleCorner(sketch, far)
+    if (!first.ok || !farHeld(sketch)) return fail('The corner conflicts with existing sketch constraints. Nothing was changed.')
+    joinExact = first.exact
+    if (!wasJoined) joined = cloneSketch(sketch)
     radiusMm = options.radiusMm
-    if (options.mode === 'autoFillet') {
+    if (read?.kind === 'arc') { radiusMm = read.radius; rms = read.rms }
+    else if (mode === 'autoFillet') {
       const fit = autoRadius(a, b, corner, points)
       if (typeof fit === 'string') return fail(fit)
       radiusMm = fit.radius; rms = fit.rms; usedPoints = fit.points.length
@@ -237,12 +372,62 @@ export function buildCornerTrim(source: Sketch, ids: readonly number[], options:
       if (la.construction && lb.construction) arc.construction = true
     }
   }
-  const far = sides.map((s) => ({ anchor: { entity: s.line.id, at: s.far }, to: s.line[s.far] }))
-  const report = solveSketch(sketch, { pull: far })
-  if (!report.ok) return fail('The corner conflicts with existing sketch constraints. Nothing was changed.')
-  for (const s of sides) {
-    const e = entityOf(sketch, s.line.id)!
-    if (distance(anchorPoint(e, s.far), s.line[s.far]) > 1e-5) return fail('This operation would move a far endpoint. Nothing was changed.')
+  const settled = settleCorner(sketch, far)
+  if (!settled.ok) return fail('The corner conflicts with existing sketch constraints. Nothing was changed.')
+  if (!farHeld(sketch)) return fail('This operation would move a far endpoint. Nothing was changed.')
+  return { ok: true, sketch, changedIds, farAnchors: far, ...(radiusMm !== undefined ? { radiusMm } : {}), ...(rms !== undefined ? { rms, usedPoints } : {}), ...(shape ? { shape, usedPoints } : {}), ...(unswept ? { unswept } : {}), ...(confirm ? { confirm } : {}), ...(profile ? { profile } : {}), ...(joined ? { joined } : {}), ...(settled.exact && joinExact ? { exact: true } : {}) }
+}
+
+/** What a swept Corner Trim selection resolves to: every piece the area
+ *  touched, the pair it was read as, and the corner built for that pair. */
+export interface SweptCorner { touched: number[]; pair: SweptPair | null; result: CornerTrimResult; key: string }
+
+
+/** The pairs a sweep could mean, best first, and a key that changes only
+ *  when the reading of the sweep does (for caching the costly build): the
+ *  pairs, their painted ends, and whether the area holds each line pair's
+ *  corner point, which decides between a fillet and a sharp join. */
+export function sweptCandidates(source: Sketch, sweep: Sweep | SweepArea): { area: SweepArea; touched: number[]; pairs: SweptPair[]; key: string } {
+  const area = sweep instanceof SweepArea ? sweep : new SweepArea(sweep)
+  const pieces = piecesInSweep(source, area)
+  const pairs = rankSweptPairs(source, area, pieces).slice(0, 8)
+  const cornerIn = (pair: SweptPair) => {
+    const [a, b] = pair.ids.map((id) => entityOf(source, id))
+    if (!a || !b) return ''
+    let x: Vec2 | null = null
+    if (a.kind === 'line' && b.kind === 'line') x = lineIntersection(a, b)
+    else {
+      const [p, q] = pair.ends
+      const join = p && q ? joinCurveEnds(source, { entity: p.entity, at: p.at as 'a' | 'b' }, { entity: q.entity, at: q.at as 'a' | 'b' }) : null
+      x = join?.ok ? join.corner : null
+    }
+    return x && area.distance(x) <= 0 ? '*' : ''
   }
-  return { ok: true, sketch, changedIds, farAnchors: far, ...(radiusMm !== undefined ? { radiusMm } : {}), ...(rms !== undefined ? { rms, usedPoints } : {}) }
+  return { area, touched: pieces.map((p) => p.id), pairs, key: pairs.map((p) => p.ends.map((e) => `${e.entity}${e.at}`).join('-') + cornerIn(p)).join('|') }
+}
+
+/** Corner Trim, Auto Fillet or Fixed Size Fillet from a swept area. Pairs
+ *  are tried best first; one that would change nothing (a corner already
+ *  made) is passed over, so a sweep over a finished corner and a new one
+ *  takes the new one. Unrelated pieces are never touched. */
+export function sweepCornerTrim(source: Sketch, sweep: Sweep | SweepArea, options: CornerTrimOptions, points: readonly Vec2[] = [], chains?: readonly (readonly Vec2[])[]): SweptCorner {
+  const { area, touched, pairs, key } = sweptCandidates(source, sweep)
+  const fail = (error: string, pair: SweptPair | null = null): SweptCorner => ({ touched, pair, result: { ok: false, error }, key })
+  if (touched.length < 2) return fail(touched.length ? 'Sweep on across the second piece of the corner.' : 'Sweep across the two pieces that meet at the corner.')
+  if (!pairs.length) return fail('The swept pieces are parallel; no corner exists between them.')
+  const inside = chains?.length ? [] : points.filter((p) => area.contains(p))
+  let first: SweptCorner | null = null
+  // A pair refused for a reason (a Fix, a dimension, no room) is the answer
+  // unless another pair was swept as plainly: falling through to any other
+  // pair the area crossed joined pieces the sweep did not mean, silently.
+  let refusedAt = Infinity
+  for (const pair of pairs) {
+    if (pair.cost > refusedAt + 1e-6 + 0.05 * Math.abs(refusedAt)) break
+    const result = buildCornerTrim(source, pair.ids, options, inside, pair.ends, chains, (p) => area.distance(p) <= 0)
+    if (result.ok && sameGeometry(result.sketch, source)) { first ??= fail('These pieces already meet at this corner.', pair); continue }
+    if (result.ok) return { touched, pair, result, key }
+    first ??= { touched, pair, result, key }
+    refusedAt = Math.min(refusedAt, pair.cost)
+  }
+  return first!
 }

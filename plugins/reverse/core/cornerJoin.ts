@@ -181,8 +181,9 @@ function crossings(A: Carrier, B: Carrier): [number, number][] {
 
 export type CurveJoin = { ok: true; a: SketchEntity; b: SketchEntity; corner: Vec2 } | { ok: false; error: string }
 
-/** Joins the painted ends of two open pieces at their nearest true crossing. */
-export function joinCurveEnds(sketch: Sketch, first: { entity: number; at: End }, second: { entity: number; at: End }): CurveJoin {
+/** Joins the painted ends of two open pieces at their nearest true crossing,
+ *  or the crossing inside the painted area when `painted` is given. */
+export function joinCurveEnds(sketch: Sketch, first: { entity: number; at: End }, second: { entity: number; at: End }, painted?: (p: Vec2) => boolean): CurveJoin {
   const ea = entityOf(sketch, first.entity), eb = entityOf(sketch, second.entity)
   if (!ea || !eb) return { ok: false, error: 'Paint over one end of each of two pieces.' }
   const A = carrierOf(ea, first.at), B = carrierOf(eb, second.at)
@@ -193,7 +194,9 @@ export function joinCurveEnds(sketch: Sketch, first: { entity: number; at: End }
   const candidates = crossings(A, B)
     .filter(([s, u]) => s > 1e-9 && u > 1e-9)
     .map(([s, u]) => ({ s, u, x: A.at(s), cost: Math.max(dist(A.at(s), pa), dist(B.at(u), pb)) }))
-    .sort((p, q) => p.cost - q.cost)
+    // A crossing the user painted over is the corner they mean (a line meets
+    // a circle twice); otherwise the one nearest the painted ends.
+    .sort((p, q) => (painted ? Number(!painted(p.x)) - Number(!painted(q.x)) : 0) || p.cost - q.cost)
   if (!candidates.length) return { ok: false, error: 'These pieces do not meet, even extended along their own shapes. Nothing was changed.' }
   for (const c of candidates) {
     const a = A.rebuild(c.s), b = B.rebuild(c.u)

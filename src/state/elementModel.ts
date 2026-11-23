@@ -51,6 +51,12 @@ export interface Element {
   /** Why a constructed element currently has no geometry (a re-evaluated
    *  construction can go degenerate, e.g. planes turning parallel). */
   message?: string
+  /** A plane turned over by Flip (QUICKSURFACE): its normal points the
+   *  other way, whatever fit or construction gives it — see withFlips. */
+  flipped?: boolean
+  /** Locked (QUICKSURFACE "Lock"): it cannot be moved — Edit is refused —
+   *  but can still be renamed, recoloured, shown, flipped or deleted. */
+  locked?: boolean
 }
 
 /** An element in the making. Fit/pick methods collect picked surface points;
@@ -493,3 +499,20 @@ export const freshCounters = (): Record<ElementKind, number> => ({
   circle: 1,
   torus: 1,
 })
+
+/** Each flipped plane's fit turned over, and an unflipped one's turned
+ *  back: normal and basisV negated (basisU × basisV stays the normal), the
+ *  fit marked. Idempotent — a fit already the right way round is left as
+ *  it is — so it can run on every rebuild, after fits are worked out anew. */
+export function withFlips(elements: Element[]): Element[] {
+  let changed = false
+  const out = elements.map((el) => {
+    const fit = el.fit
+    if (!fit || fit.kind !== 'plane' || Boolean(fit.flipped) === Boolean(el.flipped)) return el
+    changed = true
+    const neg = (v: Vec3): Vec3 => [-v[0], -v[1], -v[2]]
+    const { flipped: _was, ...rest } = fit
+    return { ...el, fit: { ...rest, normal: neg(fit.normal), basisV: neg(fit.basisV), ...(el.flipped ? { flipped: true } : {}) } }
+  })
+  return changed ? out : elements
+}

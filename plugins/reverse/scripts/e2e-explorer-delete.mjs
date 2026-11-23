@@ -66,8 +66,8 @@ try {
   await page.waitForFunction(()=>!window.__re.store.getState().building&&window.__re.store.getState().bodies.length>0,{timeout:180000})
   const before=await page.evaluate(()=>window.__re.store.getState().features.length)
   await request('object'); await page.click('[data-test="explorer-delete-yes"]')
-  record(await page.evaluate(n=>window.__re.store.getState().features.length===n,before),'sketch with dependent extrusion is preserved without partial deletion')
-  record(await page.evaluate(()=>document.body.textContent.includes('built on by a later feature')),'dependency refusal explains which feature cannot be removed')
+  record(await page.evaluate(n=>window.__re.store.getState().features.length===n-2,before),'1.2.14: the confirmation lists the dependent extrusion and Yes deletes both, as QUICKSURFACE does')
+  await page.click('[data-test="undo"]');await page.waitForFunction(n=>window.__re.store.getState().features.length===n,{},before);record(true,'one Undo restores the sketch and its extrusion')
   await page.screenshot({path:resolve(out,'dependency-refusal.png')})
 }catch(error){record(false,error.stack)}
 writeFileSync(resolve(out,'results.json'),JSON.stringify(results,null,2))

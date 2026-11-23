@@ -21,6 +21,7 @@ import { useDeviation } from '../../../src/state/deviationStore'
 import { builtAlignment } from '../../../src/core/deviation/align'
 import { curvatureScale } from '../../../src/core/geometry/curvature'
 import type { Vec2 } from '../../../src/core/flat/types'
+import type { Vec3 } from '../../../src/core/types'
 import { MapLegend } from '../../../src/ui/MapLegend'
 import { PipeDialog, usePipeDialog } from '../ui/PipeDialog'
 import { AutoFreeformDialog, useAutoFreeformDialog } from '../ui/AutoFreeformDialog'
@@ -49,7 +50,7 @@ import { liveMapScale } from '../core/liveMap'
 import { snapFitKind, snapReading } from '../core/snapFace'
 import { ReversePanel } from '../ui/ReversePanel'
 import { ReverseRibbon, useReverseRibbonActions } from '../ui/ReverseRibbon'
-import { ReverseObjects, useReverseExplorerHistoryEntries, useReverseExplorerVisibility } from '../ui/ReverseExplorer'
+import { ReverseObjects, reverseCoreItems, useReverseExplorerHistoryEntries, useReverseExplorerVisibility } from '../ui/ReverseExplorer'
 import { PlaybackCaption } from '../ui/Playback'
 import { BuildChip } from '../ui/BuildChip'
 import { stopPlayback } from './playback'
@@ -63,6 +64,7 @@ import { useSketchBrush } from '../state/sketchBrushStore'
 import { useSketchCornerTrim } from '../state/sketchCornerTrimStore'
 import { useSketchProject } from '../state/sketchProjectStore'
 import { useSketchPresentation } from '../state/sketchPresentation'
+import { useSketchMeasure } from './useSketchMeasure'
 
 /** A scale held per millimetre — a deviation in millimetres, a curvature
  *  per millimetre — as the legend shows it, in the units shown: `power` 1
@@ -106,6 +108,8 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
   const sketchSceneRef = useRef<FlatScene | null>(null)
   const reverse = useReverseWorkspace({ sceneRef, clientRef, sheetRef: sketchSceneRef })
   const ribbonActions = useReverseRibbonActions(() => void reverse.exportStep())
+  // Analysis → Measure's Sketch way: clicks on a sketch read it, read only.
+  const sketchMeasure = useSketchMeasure(sceneRef, sketchSceneRef)
   // A drag on the sketch sheet is solved once per frame, at the hand's
   // latest spot: a solve takes tens of milliseconds on a sketch of a real
   // part, and the pointer reports faster than that — solving every report
@@ -329,17 +333,33 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
   // each one is a store change the panel and the ghost follow: only the last
   // of a frame is worth making, and the end of the drag makes it before it
   // ends.
-  const gripMove = useRef<{ side: GripSide; delta: number } | null>(null)
+  const gripMove = useRef<{ side: GripSide; delta: number; pointer?: { x: number; y: number } } | null>(null)
   const gripFrame = useRef(0)
+  // Snapping: an extrude's end arrow dragged over the scan with the box
+  // ticked goes through the scan point under the cursor (a yellow dot marks
+  // it); off the scan the drag runs free.
+  const snapPoint = (side: GripSide, pointer?: { x: number; y: number }): Vec3 | null => {
+    const scene = sceneRef.current
+    if (!scene || !pointer || (side !== 'extrudeTo' && side !== 'extrudeFrom')) return null
+    if (!useReverse.getState().extrudeDraft || !useRePrefs.getState().extrudeSnap) return null
+    return reSceneOf(scene).scanPointAt(pointer.x, pointer.y)
+  }
+  const showSnap = (point: Vec3 | null) => {
+    const scene = sceneRef.current
+    if (scene) reSceneOf(scene).setSnapDot(point)
+  }
   const flushGrip = () => {
     const m = gripMove.current
     gripMove.current = null
-    if (m && isFeatureSide(m.side)) useReverse.getState().gripDrag(m.side, m.delta, 'move')
+    if (!m || !isFeatureSide(m.side)) return
+    const snap = snapPoint(m.side, m.pointer)
+    showSnap(snap)
+    useReverse.getState().gripDrag(m.side, m.delta, 'move', snap)
   }
-  const gripDrag = (side: GripSide, delta: number, phase: 'start' | 'move' | 'end'): boolean => {
+  const gripDrag = (side: GripSide, delta: number, phase: 'start' | 'move' | 'end', pointer?: { x: number; y: number }): boolean => {
     if (!isFeatureSide(side)) return false
     if (phase === 'move') {
-      gripMove.current = { side, delta }
+      gripMove.current = { side, delta, pointer }
       if (!gripFrame.current) {
         gripFrame.current = requestAnimationFrame(() => {
           gripFrame.current = 0
@@ -353,6 +373,7 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
       gripFrame.current = 0
     }
     flushGrip()
+    if (phase === 'end') showSnap(null)
     useReverse.getState().gripDrag(side, delta, phase)
     return true
   }
@@ -679,8 +700,10 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
       })
       return true
     },
+    measure: sketchMeasure,
     explorerObjects: <ReverseObjects />,
     explorerHistoryEntries,
+    explorerCoreItems: reverseCoreItems,
     explorerVisibility,
     explorerCoreVisibility: { on: elementsShown, set: on => useReverse.getState().setElementsShown(on) },
     field: curvature ? { values: curvature.values, rgb: curvatureRgb, scale: curvatureScale(curvature.range) } : null,

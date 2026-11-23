@@ -21,15 +21,16 @@ export function bareLength(mm: number, units: DisplayUnits = 'mm', mmDecimals = 
 }
 
 /** A dimension's number as a drawing writes it: no letter on a length, R on
- *  a radius, Ø on a diameter, the degree sign on an angle, and no zeros
- *  carried behind — and an ƒ before one an expression drives, the
- *  expression itself being the label's tooltip and what its field opens
- *  with. */
+ *  a radius, Ø on a diameter, ⌒ on an arc's length, the degree sign on an
+ *  angle, and no zeros carried behind — and an ƒ before one an expression
+ *  drives, the expression itself being the label's tooltip and what its
+ *  field opens with. A driven (reference) dimension is written in
+ *  brackets, as a drawing writes one. */
 export function dimensionText(c: Dimension, units: DisplayUnits = 'mm'): string {
-  const driven = c.expr ? 'ƒ ' : ''
-  if (c.kind === 'angle') return `${driven}${Number(c.value.toFixed(2))}°`
-  const n = bareLength(c.value, units)
-  return c.kind === 'radius' ? `${driven}R ${n}` : c.kind === 'diameter' ? `${driven}Ø ${n}` : `${driven}${n}`
+  const ruled = c.expr ? 'ƒ ' : ''
+  const n = c.kind === 'angle' ? `${Number(c.value.toFixed(2))}°` : bareLength(c.value, units)
+  const text = c.kind === 'radius' ? `${ruled}R ${n}` : c.kind === 'diameter' ? `${ruled}Ø ${n}` : c.kind === 'arcLength' ? `${ruled}⌒ ${n}` : `${ruled}${n}`
+  return c.driven ? `(${text})` : text
 }
 
 /** The text the label's field opens with: the expression where one drives

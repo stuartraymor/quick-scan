@@ -7,7 +7,7 @@
 import type { WorldAxis } from '../../../src/core/section/frame'
 import type { Vec3 } from '../../../src/core/types'
 import type { DisplayUnits } from '../../../src/core/units'
-import { addScaled, cross, normalize } from '../../../src/core/vec'
+import { addScaled, cross, dot, normalize, sub } from '../../../src/core/vec'
 import { PALETTE } from '../../../src/state/palette'
 import type { FaceInfo, FeatureResult } from '../core/build'
 import { bodyMaker, type DraftFeature, extentEndsOnPart, type Feature, islandOf, pickedProfiles, profileSpan, type ResolveContext, revolveMaxDeg, type SketchFeature, SURFACE_MIN_REGION, type TrimTool } from '../core/features'
@@ -299,6 +299,8 @@ export function filletModeSwitch(d: Extract<FeatureDraft, { kind: 'fillet' }>, m
  *  — the box's Create key and a middle click ask the same question. */
 export function extrudeDraftReady(d: ExtrudeDraft): boolean {
   const e = d.extent
+  // As a surface: a sketch and a length, no regions asked for.
+  if (d.surface) return d.sketchId !== null && d.face === undefined && ((e.kind === 'distance' && Math.abs(e.to - e.from) > 1e-9) || (e.kind === 'symmetric' && e.total > 1e-9))
   return (
     (d.face !== undefined || (d.sketchId !== null && d.regions.length > 0)) &&
     (e.kind !== 'toPlane' || Boolean(e.plane)) &&
@@ -313,6 +315,18 @@ export function extrudeDraftReady(d: ExtrudeDraft): boolean {
  *  from the lowest point clicked to the highest, in whichever order they
  *  are clicked. An extent that ends on the part has only its start to
  *  give. */
+/**
+ * A point's height over the plane an extrude is measured from (the
+ * sketch's, or the pulled face's), counted along the sweep when it is
+ * askew; null with no plane to measure from.
+ */
+export function extrudeHeightAt(d: ExtrudeDraft, features: Feature[], point: Vec3): number | null {
+  const sketch = features.find((f): f is SketchFeature => f.kind === 'sketch' && f.id === d.sketchId)
+  const plane = d.face ? { origin: d.face.face.centroid, normal: d.face.face.dir } : sketch ? { origin: sketch.frame.origin, normal: sketch.frame.normal } : null
+  if (!plane) return null
+  return dot(sub(point, plane.origin), plane.normal) / (d.direction ? dot(d.direction, plane.normal) || 1 : 1)
+}
+
 export function extrudePickEnd(d: Pick<ExtrudeDraft, 'extent'>, height: number): ExtrudeEnd {
   if (extentEndsOnPart(d.extent)) return 'from'
   return height < 0 ? 'from' : 'to'

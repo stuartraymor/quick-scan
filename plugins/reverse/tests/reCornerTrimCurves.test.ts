@@ -85,7 +85,7 @@ describe('Corner Trim joins arcs and curves', () => {
     expect(near((entityOf(r.sketch, 2) as SketchLine).b, end)).toBe(true)
   })
 
-  it('paints arc and curve ends, and refuses circles, fillets of curves and pieces that never meet', () => {
+  it('paints arc and curve ends, and fillets a line and an arc, and refuses circles, fillets of curves and pieces that never meet', () => {
     const s = emptySketch()
     addEntity(s, { kind: 'arc', c: [0, 0], r: 5, start: 0, sweep: 1 })
     expect(cornerEndsNearPath(s, [[5, 0]], 0.1)).toEqual([{ entity: 1, at: 'a' }])
@@ -94,7 +94,12 @@ describe('Corner Trim joins arcs and curves', () => {
     const t = emptySketch()
     addEntity(t, { kind: 'line', a: [-10, 0], b: [2, 0] })
     addEntity(t, { kind: 'arc', c: [10, 3], r: 5, start: 2, sweep: 1 })
-    expect(buildCornerTrim(t, [1, 2], { ...trim, mode: 'fixedFillet', radiusMm: 1 })).toMatchObject({ ok: false, error: expect.stringMatching(/straight lines/) })
+    // Since 1.2.6 a line and an arc are filleted; a free-form curve is not.
+    expect(buildCornerTrim(t, [1, 2], { ...trim, mode: 'fixedFillet', radiusMm: 1 })).toMatchObject({ ok: true, shape: 'arc', radiusMm: 1 })
+    const c = emptySketch()
+    addEntity(c, { kind: 'spline', pts: [[0, 10], [3, 6], [5, 3], [6, 1]] })
+    addEntity(c, { kind: 'line', a: [12, 0], b: [20, 0] })
+    expect(buildCornerTrim(c, [1, 2], { ...trim, mode: 'fixedFillet', radiusMm: 1 }, [], [{ entity: 1, at: 'b' }, { entity: 2, at: 'a' }])).toMatchObject({ ok: false, error: expect.stringMatching(/free-form curve/) })
     const u = emptySketch()
     addEntity(u, { kind: 'line', a: [-10, 20], b: [2, 20] })
     addEntity(u, { kind: 'arc', c: [10, 3], r: 5, start: 2, sweep: 1 })

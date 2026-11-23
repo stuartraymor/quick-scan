@@ -48,7 +48,7 @@ try {
   record(!(await state()).draft, 'single-click selects a measured element without opening a draft')
   await context(sectionRow)
   record(await page.$eval(sectionRow, e => e.getAttribute('aria-pressed') === 'true'), 'right-click selects the clicked section rather than a previously selected plane')
-  record(await page.$$eval('.explorer-core-menu [role=menuitem]', items => items.length === 1 && items[0].textContent === 'Edit ...'), 'context menu exposes real Edit only; unsupported reference actions are not placeholders')
+  record(await page.$$eval('.explorer-core-menu .explorer-core-menu-label', items => ['Edit ...', 'Hide All But This', 'Color ...', 'Rename ...', 'Delete ...', 'Properties ...'].every(label => items.some(item => item.textContent === label)) && !items.some(item => item.textContent === 'Duplicate')), 'section menu offers the QUICKSURFACE object actions it supports (1.2.14), and no Duplicate')
   await page.keyboard.press('Escape')
   record(await page.$('.explorer-core-menu') === null, 'Escape dismisses core tree context menu')
   await context(planeRow)

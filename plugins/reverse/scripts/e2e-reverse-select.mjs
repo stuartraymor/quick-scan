@@ -30,6 +30,8 @@ await re(() => {
   const id = s().commitSketch()
   s().startExtrude(id)
   if (s().extrudeDraft.regions.length === 0) s().pickAllDraftRegions()
+  // 10 mm, said: the default depth is measured from the profile (1.1.x).
+  s().setExtrude({ extent: { kind: 'distance', from: 0, to: 10 } })
   s().commitExtrude()
 })
 await built()

@@ -55,12 +55,14 @@ export const FAR_INSIDE_RGB: readonly [number, number, number] = [186, 50, 196]
 
 /** One surface out of several meshes — the committed bodies read as one
  *  part. Each body is closed on its own, so the pseudonormals that sign the
- *  distance are right wherever the nearest point lands; where two bodies
- *  overlap, the nearer surface wins, as it would on the fused part. */
-export function surfaceOfMeshes(meshes: readonly KernelMesh[]): NominalSurface | null {
+ *  distance are right wherever the nearest point lands — once the seams
+ *  the kernel meshes face by face along are joined (NominalSurface's
+ *  joinSeams; a welded mesh, the scan, has no need of it); where two
+ *  bodies overlap, the nearer surface wins, as it would on the fused part. */
+export function surfaceOfMeshes(meshes: readonly KernelMesh[], { joinSeams = true }: { joinSeams?: boolean } = {}): NominalSurface | null {
   const kept = meshes.filter((m) => m.indices.length >= 3)
   if (kept.length === 0) return null
-  if (kept.length === 1) return new NominalSurface(kept[0].positions, kept[0].indices)
+  if (kept.length === 1) return new NominalSurface(kept[0].positions, kept[0].indices, { joinSeams })
   let nv = 0, ni = 0
   for (const m of kept) {
     nv += m.positions.length
@@ -76,7 +78,7 @@ export function surfaceOfMeshes(meshes: readonly KernelMesh[]): NominalSurface |
     pv += m.positions.length
     pi += m.indices.length
   }
-  return new NominalSurface(positions, indices)
+  return new NominalSurface(positions, indices, { joinSeams })
 }
 
 /** Which of a surface's triangles — in the order its hits name them —
@@ -267,14 +269,16 @@ function sparseDeviation(
   const subset = new Uint32Array(near.length)
   const values = new Float32Array(near.length)
   const deep = farInside ? new Uint32Array(near.length) : null
+  const searchTo = farInside ? Infinity : reach * (1 + 1e-9) + 1e-9
   let w = 0
   let f = 0
   for (let i = 0; i < near.length; i++) {
     const v = near[i]
     rigidApply(m, positions[v * 3], positions[v * 3 + 1], positions[v * 3 + 2], p)
-    // The distance is unbounded: a vertex past the reach is dropped from
-    // the field, not unread — so the ones deep inside come for nothing.
-    if (reader.read(v, p, hit, Infinity, reach) !== 'read') continue
+    // A vertex past the reach is dropped from the field, so the search
+    // stops at the reach — unless the ones deep inside are wanted too, when
+    // it is unbounded and they come for nothing.
+    if (reader.read(v, p, hit, searchTo, reach) !== 'read') continue
     const d = hit.signed
     if (!(Math.abs(d) <= reach)) {
       if (deep && d < -reach) deep[f++] = v

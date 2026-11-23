@@ -25,7 +25,7 @@ await seed()
 const groups={
  'sketch-tools':['sketch-tool-line','sketch-tool-polyline','sketch-tool-circle-three','sketch-tool-circle','sketch-tool-tangent-arc','sketch-tool-arc','sketch-tool-spline','sketch-tool-middle','sketch-tool-rectangle','sketch-tool-slot','sketch-tool-polygon'],
  'sketch-edit':['sketch-tool-select','sketch-join','sketch-sharpen','sketch-trim','sketch-dimension','sketch-mirror','sketch-duplicate','sketch-offset-entities','sketch-tool-fillet','sketch-tool-project'],
- 'sketch-relations':['sketch-construction','sketch-fix','sketch-rel-horizontal','sketch-rel-vertical','sketch-rel-tangent','sketch-rel-collinear','sketch-rel-equal','sketch-rel-parallel','sketch-rel-perpendicular','sketch-rel-symmetric'],
+ 'sketch-relations':['sketch-construction','sketch-fix','sketch-rel-coincident','sketch-rel-concentric','sketch-rel-horizontal','sketch-rel-vertical','sketch-rel-tangent','sketch-rel-collinear','sketch-rel-equal','sketch-rel-parallel','sketch-rel-perpendicular','sketch-rel-symmetric'],
 }
 await test('ordered-command-rows',async()=>{
  for(const [width,height]of [[1500,960],[1000,720]]){

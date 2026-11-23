@@ -46,7 +46,22 @@ export interface PluginGrip {
   /** Its own colour, where it is not the one all the grips wear — the axes
    *  of a gizmo told apart. */
   color?: string
+  /** The face an arrow held on the screen stands on, as closed loops in the
+   *  part's coordinates, in the plane through `position` square to `dir`:
+   *  zoomed in until `position` is off the screen, the arrow slides within
+   *  the face to a spot in view, so it can still be taken hold of. Where it
+   *  is drawn changes; what its drag does does not. */
+  face?: Vec3[][]
 }
+
+/** How far inside the viewport's edges an arrow held on the screen keeps
+ *  its base, in pixels, before it slides along its face: room for the
+ *  arrow and the words beside it. */
+const SLIDE_MARGIN_PX = 70
+/** A slid arrow is drawn this share of the way from the nearest spot in
+ *  view towards the viewport's middle — clear of the edges and of a panel
+ *  floating over one side. */
+const SLIDE_PULL = 0.3
 
 /** How far the number field stands off its arrow's tip, in pixels. */
 const FIELD_GAP_PX = 6
@@ -104,6 +119,10 @@ interface ExtendGrip {
   corner?: { uSide: ExtendSide; vSide: ExtendSide; u: THREE.Vector3; v: THREE.Vector3 }
   anchor?: { position: THREE.Vector3; dir: THREE.Vector3; standoff: number }
   anchors?: { position: THREE.Vector3; dir: THREE.Vector3; standoff: number }[]
+  /** The face an arrow may slide within (PluginGrip.face), and where its
+   *  base is drawn now — `position` unless it slid. */
+  face?: THREE.Vector3[][]
+  shown?: THREE.Vector3
 }
 
 /** Everything the grips are allowed to touch outside themselves. */
@@ -127,8 +146,10 @@ export interface ExtendGripsContext {
   requestHover(): void
   /** A grip being dragged: which side, and how far it has come since the
    *  drag began — millimetres pulled out (negative in) for an arrow or a
-   *  bar, degrees turned for a ring. */
-  onExtendDrag(side: GripSide, delta: number, phase: 'start' | 'move' | 'end'): void
+   *  bar, degrees turned for a ring. `pointer` is where the cursor is, in
+   *  client pixels, on an arrow's move — for a plugin that snaps the end to
+   *  what lies under it. */
+  onExtendDrag(side: GripSide, delta: number, phase: 'start' | 'move' | 'end', pointer?: { x: number; y: number }): void
   /** The grip the user has hold of — lit under the cursor, or held in a drag
    *  after the cursor has wandered off it — or null for none. The ghost marks
    *  that side of itself, so a hand on a grip can see the edge it is moving. */
@@ -162,12 +183,18 @@ export class ExtendGrips {
    *  rebuilt on every change of the number: the field moves with its grip
    *  and keeps what is being typed. */
   private fieldGroup = new THREE.Group()
-  private field: { side: GripSide; label: CSS2DObject; input: HTMLInputElement; unit: HTMLElement; value: number } | null = null
+  private field: { side: GripSide; label: CSS2DObject; input: HTMLInputElement; unit: HTMLElement; value: number; typed: boolean } | null = null
   private hoveredHandle: GripSide | null = null
   /** The view the grips held on the screen were last fitted to: what a
    *  pixel was worth, and which way the camera looked. */
   private pixel = 0
   private viewTurn = new THREE.Quaternion()
+  private viewAt = new THREE.Vector3()
+  private viewSize = new THREE.Vector2()
+  /** How far each side's arrow slid off its `position`, as last placed: a
+   *  drag keeps it, so the arrow does not wander from under the hand while
+   *  its face moves. */
+  private slid = new Map<GripSide, THREE.Vector3>()
   /** What was last reported through onActiveSide, so it is only said when it
    *  changes. */
   private activeSide: GripSide | null = null
@@ -186,6 +213,10 @@ export class ExtendGrips {
      *  back modulo a full circle and are unwrapped step by step, so a hand
      *  that goes round past the seam is not thrown back. */
     ring: { b1: THREE.Vector3; b2: THREE.Vector3; last: number; turned: number } | null
+    /** An arrow's last reading and the cursor it was read at: a view moved
+     *  under a still hand reads again there, and a cursor looking straight
+     *  down the arrow, where the line gives no reading, keeps the last. */
+    last?: { delta: number; x: number; y: number }
     corner?: { plane: THREE.Plane; start: THREE.Vector3; u: THREE.Vector3; v: THREE.Vector3; uSide: ExtendSide; vSide: ExtendSide }
   } | null = null
   /** Grip shapes: an arrow for an end that grows along an axis, a bar for an
@@ -295,7 +326,8 @@ export class ExtendGrips {
    * Enter commits, Escape closes — and is left where it is, since the grip
    * stays where the number put it. A field with a value being typed is
    * not written over by the store's value, or the keystrokes would be
-   * lost to the very number they are changing.
+   * lost to the very number they are changing; one only focused — as it
+   * is after every drag — follows the number set anywhere else.
    */
   setField(field: { side: GripSide; value: number; unit: string; text?: string } | null): void {
     if (!field) {
@@ -322,10 +354,17 @@ export class ExtendGrips {
       div.addEventListener('pointerdown', stop)
       div.addEventListener('pointerup', stop)
       div.addEventListener('wheel', stop)
+      input.addEventListener('input', () => {
+        if (this.field?.input === input) this.field.typed = true
+      })
+      input.addEventListener('focus', () => {
+        if (this.field?.input === input) this.field.typed = false
+      })
       input.addEventListener('keydown', (e) => {
         e.stopPropagation()
         if (e.key === 'Enter') {
           if (input.value.trim() !== '' && this.field) this.ctx.onFieldCommit(this.field.side, input.value.trim())
+          if (this.field?.input === input) this.field.typed = false
           input.blur()
         } else if (e.key === 'Escape') {
           this.ctx.onFieldClose()
@@ -333,7 +372,7 @@ export class ExtendGrips {
       })
       const label = new CSS2DObject(div)
       this.fieldGroup.add(label)
-      this.field = { side: field.side, label, input, unit, value: Number.NaN }
+      this.field = { side: field.side, label, input, unit, value: Number.NaN, typed: false }
     }
     const f = this.field
     f.unit.textContent = field.unit
@@ -345,7 +384,13 @@ export class ExtendGrips {
     const places = field.unit === 'in' ? lengthDecimals(2, 'in') : 2
     const round = (v: number): number => Math.round(v * 10 ** places) / 10 ** places
     const shown = field.text ?? String(round(field.value))
-    if (document.activeElement !== f.input && (f.value !== field.value || f.input.value !== shown)) f.input.value = shown
+    const focused = document.activeElement === f.input
+    if (!(focused && f.typed) && (f.value !== field.value || f.input.value !== shown)) {
+      f.input.value = shown
+      // Still in hand, the new number is selected as the old one was, so
+      // what is typed next replaces it.
+      if (focused) f.input.select()
+    }
     f.input.title = field.text ? `${field.text} = ${round(field.value)} ${field.unit}` : 'The number this grip drags — type a value and press Enter; Escape closes the field'
     f.value = field.value
     this.placeField()
@@ -413,19 +458,115 @@ export class ExtendGrips {
     const pixel = this.ctx.worldPerPixel()
     const zoomed = pixel !== this.pixel
     const turned = !this.viewTurn.equals(this.ctx.camera.quaternion)
-    if (!zoomed && !turned) return
+    const panned = !this.viewAt.equals(this.ctx.camera.position)
+    const resized = this.viewSize.x !== this.ctx.canvas.clientWidth || this.viewSize.y !== this.ctx.canvas.clientHeight
+    if (!zoomed && !turned && !panned && !resized) return
     this.pixel = pixel
     this.viewTurn.copy(this.ctx.camera.quaternion)
-    if (zoomed || turned) {
-      let held = false
-      for (const h of this.handles) {
-        if (!h.screen && !h.bar) continue
-        this.fitToScreen(h)
-        held = true
-      }
-      if (held) this.ctx.invalidate()
+    this.viewAt.copy(this.ctx.camera.position)
+    this.viewSize.set(this.ctx.canvas.clientWidth, this.ctx.canvas.clientHeight)
+    let held = false
+    for (const h of this.handles) {
+      if (!h.screen && !h.bar) continue
+      if (!zoomed && !turned && !h.face) continue
+      this.fitToScreen(h)
+      held = true
     }
+    if (held) this.ctx.invalidate()
     if (this.field) this.placeField()
+    // The view moved under a hand holding an arrow still: what lies under
+    // the cursor now is read again, so a snapped end follows the zoom.
+    const drag = this.handleDrag
+    if (drag && !drag.ring && !drag.corner && drag.last) {
+      const t = this.paramAlong(drag.origin, drag.dir, drag.last.x, drag.last.y)
+      if (t !== null && Number.isNaN(drag.start)) drag.start = t - drag.last.delta
+      const delta = t === null ? drag.last.delta : t - drag.start
+      drag.last.delta = delta
+      this.ctx.onExtendDrag(drag.side, delta, 'move', { x: drag.last.x, y: drag.last.y })
+    }
+  }
+
+  /** Where an arrow's base is drawn in part coordinates — its own place, or
+   *  the spot on its face it slid to; null for no such grip. */
+  shownAt(side: GripSide): THREE.Vector3 | null {
+    const h = this.handles.find((g) => g.side === side && !g.ring)
+    return h ? (h.shown ?? h.position).clone() : null
+  }
+
+  /**
+   * Where an arrow with a face draws its base: its own `position` while the
+   * arrow (base to tip, `reach` long along `dir`) is well inside the view;
+   * otherwise the spot of the face nearest to where the base would show,
+   * pulled into the view and a little towards its middle. While a drag is
+   * on, the arrow keeps the slide it had, so it stays under the hand.
+   */
+  private slideBase(h: ExtendGrip, reach: number): THREE.Vector3 {
+    const kept = this.slid.get(h.side)
+    if (this.handleDrag && kept) return h.position.clone().add(kept)
+    const placed = this.slidePoint(h, reach) ?? h.position.clone()
+    this.slid.set(h.side, placed.clone().sub(h.position))
+    return placed
+  }
+
+  private slidePoint(h: ExtendGrip, reach: number): THREE.Vector3 | null {
+    const face = h.face
+    const rect = this.ctx.canvas.getBoundingClientRect()
+    if (!face || rect.width < 2 * SLIDE_MARGIN_PX + 10 || rect.height < 2 * SLIDE_MARGIN_PX + 10) return null
+    this.ctx.partGroup.updateWorldMatrix(true, false)
+    const world = this.ctx.partGroup.matrixWorld
+    const camera = this.ctx.camera
+    camera.updateMatrixWorld()
+    // Client pixels of a point of the part.
+    const screen = (p: THREE.Vector3) => {
+      const q = p.clone().applyMatrix4(world).project(camera)
+      return new THREE.Vector2(rect.left + ((q.x + 1) / 2) * rect.width, rect.top + ((1 - q.y) / 2) * rect.height)
+    }
+    const x0 = rect.left + SLIDE_MARGIN_PX, x1 = rect.right - SLIDE_MARGIN_PX
+    const y0 = rect.top + SLIDE_MARGIN_PX, y1 = rect.bottom - SLIDE_MARGIN_PX
+    const inView = (p: THREE.Vector2) => p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1
+    const base = screen(h.position)
+    const tip = screen(h.position.clone().addScaledVector(h.dir, reach))
+    if (inView(base) && inView(tip)) return null
+    const target = new THREE.Vector2(Math.min(x1, Math.max(x0, base.x)), Math.min(y1, Math.max(y0, base.y)))
+    target.lerp(new THREE.Vector2((rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2), SLIDE_PULL)
+    // The face on the screen: inside it, the spot under the target on the
+    // face's plane; outside, the nearest point of its outline.
+    const loops = face.map((loop) => loop.map((p) => ({ p, s: screen(p) })))
+    let inside = false
+    for (const loop of loops) {
+      for (let i = 0, j = loop.length - 1; i < loop.length; j = i++) {
+        const a = loop[i].s, b = loop[j].s
+        if ((a.y > target.y) !== (b.y > target.y) && target.x < a.x + ((target.y - a.y) / (b.y - a.y)) * (b.x - a.x)) inside = !inside
+      }
+    }
+    if (inside) {
+      this.ctx.setPickRay(target.x, target.y)
+      const normal = h.dir.clone().transformDirection(world).normalize()
+      const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(normal, h.position.clone().applyMatrix4(world))
+      const ray = this.ctx.raycaster.ray
+      if (Math.abs(ray.direction.dot(normal)) > 0.05) {
+        const hit = ray.intersectPlane(plane, new THREE.Vector3())
+        if (hit) return hit.applyMatrix4(world.clone().invert())
+      }
+    }
+    let best: THREE.Vector3 | null = null
+    let bestD = Infinity
+    for (const loop of loops) {
+      for (let i = 0, j = loop.length - 1; i < loop.length; j = i++) {
+        const a = loop[j], b = loop[i]
+        const ab = b.s.clone().sub(a.s)
+        const l2 = ab.lengthSq()
+        const t = l2 > 0 ? Math.min(1, Math.max(0, target.clone().sub(a.s).dot(ab) / l2)) : 0
+        const d = a.s.clone().addScaledVector(ab, t).distanceTo(target)
+        if (d < bestD) {
+          bestD = d
+          // A parallel view keeps proportions along a line: the point that
+          // far along the side on the part.
+          best = a.p.clone().lerp(b.p, t)
+        }
+      }
+    }
+    return best
   }
 
   /** A grip held on the screen, scaled to what a pixel is worth now — a
@@ -440,7 +581,11 @@ export class ExtendGrips {
     if (!h.screen) return
     const size = Math.max(h.screen.size * this.pixel, 1e-5)
     h.mesh.scale.setScalar(size)
-    if (!h.ring) h.mesh.position.copy(h.position).addScaledVector(h.dir, h.screen.standoff * this.pixel + size / 2)
+    if (!h.ring) {
+      const base = h.face ? this.slideBase(h, h.screen.standoff * this.pixel + size) : h.position
+      h.shown = base.clone()
+      h.mesh.position.copy(base).addScaledVector(h.dir, h.screen.standoff * this.pixel + size / 2)
+    }
     if (h.anchors) {
       // Keep the small turn control on the rightmost edge in the current view,
       // away from the command panel at the left of the viewport.
@@ -483,7 +628,7 @@ export class ExtendGrips {
       // On the part, sized to what the arrow stands on, never smaller than
       // a grip on the part would be — a hairline profile still needs a
       // handle.
-      else this.addGrip(g.side, position, dir, Math.max(g.size, this.ctx.modelRadius() * 0.05, 1e-5), { slim: true, planeArrow: g.shaft, color: g.color, standoff: g.standoff, screen })
+      else this.addGrip(g.side, position, dir, Math.max(g.size, this.ctx.modelRadius() * 0.05, 1e-5), { slim: true, planeArrow: g.shaft, color: g.color, standoff: g.standoff, screen, face: g.face?.map((loop) => loop.map((p) => new THREE.Vector3(...p))) })
     }
 
     if (this.plane) {
@@ -563,6 +708,7 @@ export class ExtendGrips {
       color = this.handleColor,
       standoff = 0,
       screen = null,
+      face,
     }: {
       edge?: { along: THREE.Vector3; span: number }
       slim?: boolean
@@ -570,6 +716,7 @@ export class ExtendGrips {
       color?: string
       standoff?: number
       screen?: { size: number; standoff: number } | null
+      face?: THREE.Vector3[][]
     } = {},
   ): void {
     const material = new THREE.MeshBasicMaterial({
@@ -598,7 +745,7 @@ export class ExtendGrips {
     mesh.renderOrder = 6
     mesh.userData.extendSide = side
     this.handleGroup.add(mesh)
-    const grip: ExtendGrip = { side, position: position.clone(), dir: dir.clone(), mesh, material, ring: false, color, screen: edge ? null : screen, bar: edge ? { span: edge.span } : undefined }
+    const grip: ExtendGrip = { side, position: position.clone(), dir: dir.clone(), mesh, material, ring: false, color, screen: edge ? null : screen, bar: edge ? { span: edge.span } : undefined, ...(face && face.length > 0 && screen && !edge ? { face } : {}) }
     this.fitToScreen(grip)
     this.handles.push(grip)
     this.handleMeshes.push(mesh)
@@ -689,6 +836,14 @@ export class ExtendGrips {
     return this.hoveredHandle !== null || this.handleDrag !== null
   }
 
+  /** The pointer a grip in hand or under the cursor asks for, or null. The
+   *  layers behind it set theirs when what they light changes — a profile
+   *  region going out as an arrow slid onto it comes over it, say — so the
+   *  hover pass gives the grip the last word. */
+  cursor(): string | null {
+    return this.handleDrag !== null ? 'grabbing' : this.hoveredHandle !== null ? 'grab' : null
+  }
+
   /** A grip under the cursor takes the plain left-drag — the navigator has
    *  already stepped aside for it, the same way it does for the brush.
    *  Returns whether the event was taken. */
@@ -728,9 +883,10 @@ export class ExtendGrips {
         ring: { b1, b2, last: a, turned: 0 },
       }
     } else {
-      const t = this.paramAlong(world.origin, world.dir, clientX, clientY)
-      if (t === null) return
-      this.handleDrag = { side: grip.side, origin: world.origin, dir: world.dir, start: t, ring: null }
+      // Looking straight down the arrow the line gives no reading; the drag
+      // starts all the same, so the end can still be snapped to the scan.
+      const t = this.paramAlong(world.origin, world.dir, clientX, clientY) ?? Number.NaN
+      this.handleDrag = { side: grip.side, origin: world.origin, dir: world.dir, start: t, ring: null, last: { delta: 0, x: clientX, y: clientY } }
     }
     this.ctx.canvas.style.cursor = 'grabbing'
     this.syncActiveSide()
@@ -745,7 +901,7 @@ export class ExtendGrips {
    *  and the pointer ray is cast in world coordinates. */
   private gripLine(grip: ExtendGrip): { origin: THREE.Vector3; dir: THREE.Vector3 } {
     this.ctx.partGroup.updateWorldMatrix(true, false)
-    const origin = grip.position.clone().applyMatrix4(this.ctx.partGroup.matrixWorld)
+    const origin = (grip.shown ?? grip.position).clone().applyMatrix4(this.ctx.partGroup.matrixWorld)
     const dir = grip.dir
       .clone()
       .transformDirection(this.ctx.partGroup.matrixWorld)
@@ -829,8 +985,13 @@ export class ExtendGrips {
       return
     }
     const t = this.paramAlong(drag.origin, drag.dir, e.clientX, e.clientY)
-    if (t === null) return
-    this.ctx.onExtendDrag(drag.side, t - drag.start, 'move')
+    // End on, the arrow holds its last length, and the cursor still goes
+    // with it — for an end that snaps to what lies under the cursor.
+    // A drag begun end on takes its start from the first reading.
+    if (t !== null && Number.isNaN(drag.start)) drag.start = t - (drag.last?.delta ?? 0)
+    const delta = t === null ? (drag.last?.delta ?? 0) : t - drag.start
+    drag.last = { delta, x: e.clientX, y: e.clientY }
+    this.ctx.onExtendDrag(drag.side, delta, 'move', { x: e.clientX, y: e.clientY })
   }
 
   private onHandleUp = (): void => {

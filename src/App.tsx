@@ -57,8 +57,10 @@ import { Panel } from './ui/Panel'
 import { TopBar } from './ui/TopBar'
 import { DesktopRibbon } from './ui/DesktopRibbon'
 import { ObjectExplorer } from './ui/ObjectExplorer'
+import { explorerConfirms, useExplorer } from './state/explorerStore'
 import { ToolInspector } from './ui/ToolInspector'
 import { RecoveryBar } from './ui/RecoveryBar'
+import { ModelRolledBar } from './ui/ModelRolledBar'
 import { AgentDataWarning } from './ui/AgentDataWarning'
 import { ConnectorBar } from './ui/ConnectorBar'
 import { StatusStrip } from './ui/StatusStrip'
@@ -66,6 +68,7 @@ import { ViewportMenu } from './ui/ViewportMenu'
 import { BoxSelect } from './ui/BoxSelect'
 import { ALIGN_HINT_LINES, ExtractHints } from './ui/ExtractHints'
 import { MeasureDialog } from './ui/MeasureDialog'
+import { SnapBar } from './ui/SnapBar'
 import { MultipleSections } from './ui/MultipleSections'
 import { BusyOverlay } from './ui/BusyOverlay'
 import { ImprintModal } from './ui/Imprint'
@@ -914,6 +917,9 @@ export default function App() {
     }
     if (store.dimDraft) store.selectDimensionElement(id)
     else if (!useShell.getState().extractOpen && !store.busy) {
+      // The tree follows the view: the clicked element is the selected row.
+      useShell.getState().setSelection([`element:${id}`])
+      useExplorer.getState().setFocus(`core:element:${id}`)
       handleEditElement(id)
       useMark.getState().setGesture(null)
     }
@@ -928,6 +934,8 @@ export default function App() {
     const store = useStore.getState()
     const el = store.elements.find((e) => e.id === id)
     if (!el) return
+    // QUICKSURFACE's Lock: a locked element is not moved until unlocked.
+    if (el.locked) { store.setStatus(`${el.name} is locked. Right-click it in Objects and choose Unlock to edit it.`); return }
     clearPreview()
     clearPaint()
     store.editElement(id)
@@ -1141,6 +1149,8 @@ export default function App() {
   // Scan Data → Colors. One scan per project here, so Auto colorize gives it
   // the first colour of the series; Set Default Color takes it off.
   const [scanTinted, setScanTinted] = useState(false)
+  const translucentOn = useStore((s) => s.translucent)
+  const wireframeOn = useStore((s) => s.wireframe)
   const handleAutoColorize = () => { sceneRef.current?.setScanTint([92, 200, 98]); setScanTinted(true) }
   const handleDefaultColor = () => { sceneRef.current?.setScanTint(null); setScanTinted(false) }
   const handleShowHidden = () => {
@@ -1164,6 +1174,32 @@ export default function App() {
     let v6 = 0
     for (let t = 0; t + 2 < indices.length; t += 3) v6 += tetraVolume6(positions, indices[t] * 3, indices[t + 1] * 3, indices[t + 2] * 3)
     useStore.getState().setStatus(`Volume of the scan: ${len.vol(Math.abs(v6) / 6)} — exact only for a closed (watertight) mesh.`)
+  }
+
+  /** The scan row's Properties: QUICKSURFACE's mesh dialog (name, points,
+   *  triangles, size along X/Y/Z, volume), in the display units. */
+  const scanProperties = (): (readonly [string, string])[] => {
+    const s = useStore.getState()
+    const g = sceneRef.current?.scanGeometry()
+    const pos = g?.getAttribute('position')
+    const len = boundLength(usePrefs.getState().units)
+    const rows: (readonly [string, string])[] = [['Name', (s.fileName ?? 'Scan').replace(/\.[^.]+$/, '')], ['File', s.fileName ?? '—'], ['Points', s.vertexCount.toLocaleString('en-US')], ['Triangles', s.triangleCount.toLocaleString('en-US')]]
+    if (g && pos) {
+      g.computeBoundingBox()
+      const box = g.boundingBox
+      if (box) rows.push(['X', len.fmt(box.max.x - box.min.x, 3)], ['Y', len.fmt(box.max.y - box.min.y, 3)], ['Z', len.fmt(box.max.z - box.min.z, 3)])
+      const positions = pos.array as Float32Array
+      const indices = g.index ? Uint32Array.from(g.index.array) : Uint32Array.from({ length: pos.count }, (_, i) => i)
+      let v6 = 0
+      for (let t = 0; t + 2 < indices.length; t += 3) v6 += tetraVolume6(positions, indices[t] * 3, indices[t + 1] * 3, indices[t + 2] * 3)
+      rows.push(['Surface area', len.area(triangleAreaSum(positions, indices))], ['Volume', `${len.vol(Math.abs(v6) / 6)} (closed mesh only)`])
+    }
+    return rows
+  }
+  const scanColor = (hex: string) => {
+    const rgb = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)) as [number, number, number]
+    sceneRef.current?.setScanTint(rgb)
+    setScanTinted(true)
   }
 
   const handleSnapshot = async () => {
@@ -1409,10 +1445,10 @@ export default function App() {
    *  whole angle so far, so the plane never drifts under a hand that goes
    *  back and forth. */
   const turnStart = useRef<{ axis: CutAxis; about: Vec3; offset: number } | null>(null)
-  const handleExtendDrag =(side: GripSide, delta: number, phase: 'start' | 'move' | 'end') => {
+  const handleExtendDrag =(side: GripSide, delta: number, phase: 'start' | 'move' | 'end', pointer?: { x: number; y: number }) => {
     if (side.startsWith('align-')) { useInteractiveAlign.getState().drag(side, delta, phase); return }
     // A plugin's manipulator — see PluginRuntime.gripDrag.
-    for (const r of runtimesRef.current) if (r.gripDrag?.(side, delta, phase)) return
+    for (const r of runtimesRef.current) if (r.gripDrag?.(side, delta, phase, pointer)) return
     if (side === 'planeRotate') {
       const store = useStore.getState()
       if (store.draft?.fit?.kind !== 'plane') return
@@ -1712,6 +1748,11 @@ export default function App() {
     sceneRef.current?.clearElement(id)
     useStore.getState().removeElement(id)
   }
+  // The Elements panel's own delete asks the way the Objects panel's does,
+  // listing everything built on the object (constructions, sketches on a
+  // plane and what was made from them). With no browser up to ask, as before.
+  const askDeleteElement = (id: number) => { if (explorerConfirms()) useExplorer.getState().requestDelete([`core:element:${id}`]); else handleDelete(id) }
+  const askDeleteSection = (id: number) => { if (explorerConfirms()) useExplorer.getState().requestDelete([`core:section:${id}`]); else handleDeleteSection(id) }
 
   // The instruction of the moment rides above the model (app/stageHints);
   // everything else the tool has to say goes to the status strip.
@@ -1896,6 +1937,7 @@ export default function App() {
         onExportVisible={() => exportVisibleScan(sceneRef)}
         pluginTools={active?.ribbon}
         cadActions={ribbonActions}
+        measureReady={runtimes.some((r) => r.measure?.modes.some((m) => !m.disabled) ?? false)}
         onSave={saveProject}
         onSaveAs={saveProjectAs}
         savable={(fileName !== null && vertexCountLoaded) || flatImageName !== null || runtimes.some((r) => r.canSave)}
@@ -1910,6 +1952,7 @@ export default function App() {
         onAutoColorize={handleAutoColorize}
         onDefaultColor={scanTinted ? handleDefaultColor : undefined}
       />
+      <ModelRolledBar />
       <RecoveryBar recovery={recovery} />
       <ConnectorBar />
       <PrepareScanWizard onStep={handlePrepareStep} />
@@ -1918,6 +1961,7 @@ export default function App() {
         <ObjectExplorer
           pluginObjects={runtimes.map((runtime, index) => <Fragment key={index}>{runtime.explorerObjects}</Fragment>)}
           pluginHistoryEntries={runtimes.flatMap(runtime => [...(runtime.explorerHistoryEntries ?? [])])}
+          pluginCoreItems={key => runtimes.flatMap(runtime => [...(runtime.explorerCoreItems?.(key) ?? [])])}
           pluginVisibility={runtimes.flatMap(runtime => runtime.explorerVisibility ? [runtime.explorerVisibility] : [])}
           coreVisibility={active?.explorerCoreVisibility}
           onDeleteElement={handleDelete}
@@ -1926,6 +1970,16 @@ export default function App() {
           onEditSection={handleEditSection}
           interactionBlocked={picking}
           scanVisibility={active?.scanKey?.shown ? { shown: active.scanKey.shown.on, toggle: () => active.scanKey!.shown!.set(!active.scanKey!.shown!.on), disabled: Boolean(active.scanKey.shown.disabled) } : undefined}
+          scanActions={{
+            edit: () => { const mesh = plugins().find((p) => p.id === 'mesh-tools')?.workspace; if (mesh) useShell.getState().setWorkspace(mesh.id) },
+            tinted: scanTinted,
+            color: scanColor,
+            defaultColor: handleDefaultColor,
+            seeThrough: active?.scanKey?.seeThrough ? { on: active.scanKey.seeThrough.on, set: active.scanKey.seeThrough.set } : { on: translucentOn, set: (on) => useStore.getState().setTranslucent(on) },
+            mesh: { on: wireframeOn, set: (on) => useStore.getState().setWireframe(on) },
+            exportMesh: () => handleExportMesh('stl'),
+            properties: scanProperties,
+          }}
         />
         <ToolInspector context={active?.toolContext}>
         {onDeviation ? (
@@ -1981,11 +2035,11 @@ export default function App() {
             onRestoreDraft={handleRestoreDraft}
             onConfirmDraft={handleConfirmDraft}
             onPickPoint={handleDimensionPick}
-            onDelete={handleDelete}
+            onDelete={askDeleteElement}
             onEditElement={handleEditElement}
             onStartSection={handleStartSection}
             onEditSection={handleEditSection}
-            onDeleteSection={handleDeleteSection}
+            onDeleteSection={askDeleteSection}
             onCancelSection={handleCancelSection}
             onConfirmSection={handleConfirmSection}
             onCopy={handleCopy}
@@ -2023,7 +2077,7 @@ export default function App() {
                   const pos = sceneRef.current?.scanGeometry()?.getAttribute('position')
                   const v = hit.vertices[k]
                   return pos ? [pos.getX(v), pos.getY(v), pos.getZ(v)] : hit.point
-                }, screenPointOf: (p) => sceneRef.current?.screenPointOf(p) ?? null })
+                }, screenPointOf: (p) => sceneRef.current?.screenPointOf(p) ?? null, gripPointOf: (side) => sceneRef.current?.gripShownAt(side) ?? null })
                 attachSurfaceScene(() => sceneRef.current)
                 s.setNavScheme(schemeById(useStore.getState().navScheme))
                 s.setViewTheme(sceneTheme(useStore.getState().viewTheme, usePrefs.getState().dark))
@@ -2118,6 +2172,9 @@ export default function App() {
             />
           )}
           {!picking && active?.overlay}
+          {/* The snap bar, bottom centre of the graphics window: what a
+              click may land on, for whichever tool is in hand. */}
+          {!picking && <SnapBar />}
           {!picking && onThickness && hasThicknessMap && (
             <MapLegend
               id="thickness"
@@ -2244,7 +2301,7 @@ export default function App() {
       </div>
       <BoxSelect scene={() => sceneRef.current} />
       <ExtractHints />
-      <MeasureDialog />
+      <MeasureDialog plugins={runtimes.flatMap((r) => (r.measure ? [r.measure] : []))} />
       {multipleSectionsOpen && <MultipleSections onClose={() => useShell.getState().setMultipleSectionsOpen(false)} />}
       <ViewportMenu
         hasScan={Boolean(fileName)}

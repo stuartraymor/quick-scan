@@ -298,4 +298,4 @@ export function leanAfterSnap(s: Pick<ReState, 'nextFeatureId' | 'nextOfKind'>, 
 }
 
 /** Every editor but the one opening put away, with what goes with them. */
-export const CLOSE_OTHERS = { sketchDraft: null, extrudeDraft: null, revolveDraft: null, featureDraft: null, preview: { status: 'idle' } as PreviewInfo, selection: null, listSelection: NO_PICK, gripField: null, hint: null, bodyPick: null }
+export const CLOSE_OTHERS = { sketchDraft: null, extrudeDraft: null, revolveDraft: null, featureDraft: null, preview: { status: 'idle' } as PreviewInfo, selection: null, listSelection: NO_PICK, gripField: null, gripHeld: false, hint: null, bodyPick: null }

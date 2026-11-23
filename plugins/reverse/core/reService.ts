@@ -200,7 +200,7 @@ export function createReService(loadKernel: () => Promise<ReKernel>, loadManifol
     parallel = null
     lastPreview = null
     const b = await load()
-    b.setScan(scan && scan.indices && !scan.transform ? surfaceOfMeshes([{ positions: scan.positions, normals: new Float32Array(0), indices: scan.indices }]) : null, scan && !scan.transform ? scan.positions : null)
+    b.setScan(scan && scan.indices && !scan.transform ? surfaceOfMeshes([{ positions: scan.positions, normals: new Float32Array(0), indices: scan.indices }], { joinSeams: false }) : null, scan && !scan.transform ? scan.positions : null)
     return b
   }
 
@@ -331,7 +331,7 @@ export function createReService(loadKernel: () => Promise<ReKernel>, loadManifol
         // the moment it is here — a few hundred milliseconds on a big scan,
         // spent in the worker. The scan is not watertight, so only the
         // distance is read, never the sign.
-        b.setScan(scan && scan.indices && !scan.transform ? surfaceOfMeshes([{ positions: scan.positions, normals: new Float32Array(0), indices: scan.indices }]) : null, scan && !scan.transform ? scan.positions : null)
+        b.setScan(scan && scan.indices && !scan.transform ? surfaceOfMeshes([{ positions: scan.positions, normals: new Float32Array(0), indices: scan.indices }], { joinSeams: false }) : null, scan && !scan.transform ? scan.positions : null)
         return answer({ type: 'scan-ok', requestId: msg.requestId })
       }
       if (msg.type === 'preview-deviation') {

@@ -19,9 +19,30 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useShell } from '../../../src/state/shellStore'
 import { useGripLabels } from '../state/gripLabelStore'
+import { useRePrefs } from '../state/rePrefs'
+
+/** QUICKSURFACE's Snapping box on an extrude: with it ticked, an end arrow
+ *  dragged over the scan goes through the scan point under the cursor. The
+ *  choice is kept between sessions; off by default, as there. */
+function SnappingRow() {
+  const on = useRePrefs((s) => s.extrudeSnap)
+  const setOn = useRePrefs((s) => s.setExtrudeSnap)
+  return (
+    <label className="checkrow">
+      <input type="checkbox" data-test="extrude-snapping" checked={on} onChange={(e) => setOn(e.target.checked)} />
+      <span>
+        Snapping
+        <InfoDot title="Snapping">
+          <p>Drag an end arrow over the scan and the end goes through the scan point under the cursor, marked with a yellow dot. Off the scan the arrow drags freely.</p>
+        </InfoDot>
+      </span>
+    </label>
+  )
+}
 
 export function ExtrudeEditor() {
   const labelsShown = useGripLabels((s) => s.shown)
+  const [sketchOnSaid, setSketchOnSaid] = useState<string | null>(null)
   const draft = useReverse((s) => s.extrudeDraft)
   const features = useReverse((s) => s.features)
   const bodies = useReverse((s) => s.bodies)
@@ -90,20 +111,61 @@ export function ExtrudeEditor() {
               ))}
             </select>
           </label>
-          <ProfilesField picked={draft.regions.length} found={found} testPrefix="extrude" />
+          {draft.surface ? (
+            <p className="hint" data-test="extrude-surface-hint">The sketch’s lines and curves are extruded as a surface{found === 0 ? ' — it closes no region' : ''}.</p>
+          ) : (
+            <ProfilesField picked={draft.regions.length} found={found} testPrefix="extrude" />
+          )}
         </>
       )}
-      <PreviewLine preview={preview} testPrefix="extrude" />
+      {!draft.surface && <PreviewLine preview={preview} testPrefix="extrude" />}
       <AnalysisRow testPrefix="extrude" />
-      <label className="checkrow" title="QUICKSURFACE's Solid: Quick Scan always extrudes a solid; a surface extrude is not built in Quick Scan yet">
-        <input type="checkbox" data-test="extrude-solid" checked disabled readOnly />
-        <span>Solid</span>
-      </label>
+      <SnappingRow />
+      {(() => {
+        // QUICKSURFACE's Solid box: ticked, the closed regions as a solid;
+        // unticked, the sketch's pieces — an open chain will do — as a
+        // surface. Offered for a new extrude off a sketch by a length.
+        const canSurface = draft.featureId === undefined && !draft.face && draft.sketchId !== null && (extent.kind === 'distance' || extent.kind === 'symmetric') && draft.draftDeg === 0 && !draft.direction
+        const mustSurface = canSurface && found === 0
+        const why = draft.featureId !== undefined
+          ? 'An extrude already made keeps what it is: a solid here, a surface under Sheet.'
+          : !canSurface
+            ? 'A surface is extruded off a sketch, straight, by a distance or symmetric.'
+            : mustSurface
+              ? 'The sketch closes no region, so it extrudes as a surface.'
+              : 'Ticked: the closed regions as a solid. Unticked: the sketch’s lines and curves as a surface.'
+        return (
+          <label className="checkrow" title={why}>
+            <input type="checkbox" data-test="extrude-solid" checked={!draft.surface} disabled={!canSurface || mustSurface} onChange={(e) => set({ surface: !e.target.checked })} />
+            <span>Solid</span>
+          </label>
+        )
+      })()}
       <label className="checkrow" title="The words by the grips in the view">
         <input type="checkbox" data-test="extrude-labels" checked={labelsShown} onChange={(e) => useGripLabels.getState().setShown(e.target.checked)} />
         <span>Labels</span>
       </label>
       <GripLabels />
+      {!draft.surface && !draft.face && draft.sketchId !== null && extent.kind === 'distance' && !draft.direction && (
+        <div className="field" data-test="extrude-sketch-on">
+          <span title="Move the sketch along its normal onto that end of the body. The body stays where it is; the depths are re-read from the sketch's new place.">Set sketch on</span>
+          <span className="toolrow">
+            {(['top', 'bottom'] as const).map((end) => (
+              <button
+                key={end}
+                data-test={`extrude-sketch-on-${end}`}
+                onClick={() => {
+                  const why = re.getState().setExtrudeSketchOn(end)
+                  setSketchOnSaid(why)
+                }}
+              >
+                {end === 'top' ? 'Top plane' : 'Bottom plane'}
+              </button>
+            ))}
+          </span>
+        </div>
+      )}
+      {sketchOnSaid && <p className="hint refused" data-test="extrude-sketch-on-said">{sketchOnSaid}</p>}
       <label className="field">
         <span>Extent</span>
         <select
@@ -130,13 +192,13 @@ export function ExtrudeEditor() {
           }}
         >
           <option value="distance">Two-sided</option>
-          <option value="toPlane">To a plane</option>
-          <option value="toFace">To a face of a body</option>
-          <option value="toBody">To a body</option>
-          <option value="toNext">To next</option>
-          <option value="toLast">To last / through all</option>
-          <option value="betweenPlanes">Between two planes</option>
-          <option value="symmetric">Symmetric</option>
+          <option value="toPlane" disabled={!!draft.surface}>To a plane</option>
+          <option value="toFace" disabled={!!draft.surface}>To a face of a body</option>
+          <option value="toBody" disabled={!!draft.surface}>To a body</option>
+          <option value="toNext" disabled={!!draft.surface}>To next</option>
+          <option value="toLast" disabled={!!draft.surface}>To last / through all</option>
+          <option value="betweenPlanes" disabled={!!draft.surface}>Between two planes</option>
+          <option value="symmetric">Mirrored</option>
         </select>
       </label>
       <div className="toolrow">
@@ -238,7 +300,10 @@ export function ExtrudeEditor() {
         </>
       )}
       {/* Fusion's taper: positive leans the sides out. The feature keeps a
-          mould's draft, positive leaning in — the same number turned over. */}
+          mould's draft, positive leaning in — the same number turned over.
+          A surface is swept straight and joins nothing: no taper, direction
+          or result to give. */}
+      {!draft.surface && (<>
       <Num
         label="Taper"
         unit="°"
@@ -250,8 +315,9 @@ export function ExtrudeEditor() {
       />
       <DirectionField direction={draft.direction} normal={draft.face ? draft.face.face.dir : (sketch?.frame.normal ?? null)} onChange={(direction) => set({ direction })} />
       <OpFields op={draft.op} canCut={targets.length > 0} testPrefix="extrude" onOp={(op) => re.getState().setExtrudeOp(op)} />
+      </>)}
       <button className="primary block" data-test="extrude-create" disabled={!ready} title="Enter or a middle click does the same" onClick={create}>
-        {draft.featureId !== undefined ? 'Save changes' : 'Create extrude'}
+        {draft.featureId !== undefined ? 'Save changes' : draft.surface ? 'Create surface' : 'Create extrude'}
       </button>
       <div className="toolrow">
         <button data-test="extrude-cancel" onClick={() => { re.getState().setHint(null); re.getState().cancelExtrude() }}>
@@ -283,7 +349,9 @@ function GripLabels() {
         // label steps down clear of the first, as QUICKSURFACE keeps them.
         const placed: { x: number; y: number }[] = []
         return [...labels].sort((a, b) => Number(b.text.startsWith('Top')) - Number(a.text.startsWith('Top'))).map((l) => {
-          const p = at(l.at)
+          // By the arrow as it is drawn — it slides along its face to stay in
+          // view when zoomed in past where it stands.
+          const p = at((l.side ? useShell.getState().gripPointOf?.(l.side) : null) ?? l.at)
           if (!p) return null
           let y = p.y
           while (placed.some((q) => Math.abs(q.x - p.x) < 160 && Math.abs(q.y - y) < 22)) y += 24

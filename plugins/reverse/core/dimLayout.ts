@@ -18,7 +18,7 @@ import { add2, dot2, len2, normalize2, perp2, scale2, sub2 } from '../../../src/
 import type { DimShape } from '../../../src/core/flat/dimStrokes'
 import { traceFoot, traceOf, type DatumTrace } from './datums'
 import { sectorSweep } from './angleSector'
-import { anchorPoint, entityOf, lineDir, sketchBounds, type Constraint, type DimPlace, type Sketch } from './sketch'
+import { anchorPoint, entityOf, lineDir, rimRadius, sketchBounds, type Constraint, type DimPlace, type DistanceAxis, type Sketch } from './sketch'
 
 export type Dimension = Extract<Constraint, { value: number }>
 
@@ -34,18 +34,33 @@ function measuredPoints(c: Dimension, sketch: Sketch, datums: readonly DatumTrac
   const p = entityOf(sketch, c.p.entity)
   if (!p) return null
   const a = anchorPoint(p, c.p.at)
+  // A round end taken on its rim: moved from the centre along the measure,
+  // towards the other end for the nearest rim point, away for the farthest.
+  const s = c.edge === 'far' ? -1 : 1
+  const onRim = (from: Vec2, to: Vec2, r: number, toward: number): Vec2 => {
+    const u = normalize2(sub2(to, from))
+    return u && r > 0 ? add2(from, scale2(u, toward * s * r)) : from
+  }
+  const ra = rimRadius(p, c.p.at, c.edge)
   if ('datum' in c.q) {
     const trace = traceOf(datums, c.q.datum)
-    return trace ? [a, traceFoot(trace, a)] : null
+    if (!trace) return null
+    const foot = traceFoot(trace, a)
+    return [onRim(a, foot, ra, 1), foot]
   }
   if ('line' in c.q) {
     const l = entityOf(sketch, c.q.line)
     if (!l || l.kind !== 'line') return null
     const n = perp2(lineDir(l) ?? [1, 0])
-    return [a, sub2(a, scale2(n, dot2(sub2(a, l.a), n)))]
+    const foot = sub2(a, scale2(n, dot2(sub2(a, l.a), n)))
+    return [onRim(a, foot, ra, 1), foot]
   }
   const q = entityOf(sketch, c.q.entity)
-  return q ? [a, anchorPoint(q, c.q.at)] : null
+  if (!q) return null
+  const b = anchorPoint(q, c.q.at)
+  // Along a sheet axis the two points themselves are measured from.
+  if (c.axis) return [a, b]
+  return [onRim(a, b, ra, 1), onRim(b, a, rimRadius(q, c.q.at, c.edge), 1)]
 }
 
 /** The angle's arc as it stands: from the first line's direction
@@ -105,6 +120,17 @@ export function dimShape(c: Dimension, sketch: Sketch, datums: readonly DatumTra
       span,
     }
   }
+  if (c.kind === 'arcLength') {
+    // Drawn as an angle is: an arc about the arc's centre, outside it, from
+    // end to end, with a line out from each end to it.
+    const e = entityOf(sketch, c.entity)
+    if (!e || e.kind !== 'arc') return null
+    const a0 = e.sweep >= 0 ? e.start : e.start + e.sweep
+    const sweep = Math.abs(e.sweep)
+    const end = (t: number): Vec2 => [e.c[0] + e.r * Math.cos(t), e.c[1] + e.r * Math.sin(t)]
+    const radius = place ? Math.max(place.off, 1e-6) : e.r + 2 * lift
+    return { kind: 'angle', vertex: e.c, a0, sweep, radius, at: place ? place.along : a0 + sweep / 2, lines: [[e.c, end(a0)], [e.c, end(a0 + sweep)]] }
+  }
   if (c.kind === 'angle') {
     const s = angleSector(c, sketch)
     if (!s) return null
@@ -113,7 +139,11 @@ export function dimShape(c: Dimension, sketch: Sketch, datums: readonly DatumTra
   }
   const ends = measuredPoints(c, sketch, datums)
   if (!ends) return null
-  const d = normalize2(sub2(ends[1], ends[0]))
+  // A horizontal or vertical distance is drawn along its axis, an extension
+  // line dropped to it from each point; any other straight between its ends.
+  const axis = c.kind === 'distance' ? c.axis : undefined
+  const span = sub2(ends[1], ends[0])
+  const d: Vec2 | null = axis === 'x' ? [span[0] < 0 ? -1 : 1, 0] : axis === 'y' ? [0, span[1] < 0 ? -1 : 1] : normalize2(span)
   if (!d) return null
   const n = perp2(d)
   // A line's length stands off the line, on the side away from the rest of
@@ -134,9 +164,11 @@ export function dimPlaceAt(c: Dimension, sketch: Sketch, at: Vec2, datums: reado
   const shape = dimShape(c, sketch, datums, 1)
   if (!shape) return null
   if (shape.kind === 'linear') {
-    const mid: Vec2 = [(shape.p[0] + shape.q[0]) / 2, (shape.p[1] + shape.q[1]) / 2]
-    const w = sub2(at, mid)
-    return { off: dot2(w, shape.n), along: dot2(w, shape.d) }
+    // From the first point: off its level, and along from the middle of the
+    // stretch drawn — the same as from the pair's middle when the measure
+    // runs straight between them.
+    const w = sub2(at, shape.p)
+    return { off: dot2(w, shape.n), along: dot2(w, shape.d) - dot2(sub2(shape.q, shape.p), shape.d) / 2 }
   }
   const centre = shape.kind === 'angle' ? shape.vertex : shape.c
   const w = sub2(at, centre)
@@ -144,4 +176,37 @@ export function dimPlaceAt(c: Dimension, sketch: Sketch, at: Vec2, datums: reado
   if (!(reach > 1e-9)) return null
   const angle = Math.atan2(w[1], w[0])
   return shape.kind === 'angle' ? { off: reach, along: angle } : { off: angle, along: reach }
+}
+
+/** How a distance between two points in hand is taken with the cursor at
+ *  `at`, as QUICKSURFACE's Dimension tool decides it: beside the pair —
+ *  within their height, left or right of them — the vertical distance; above
+ *  or below it — within their width — the horizontal one; anywhere else,
+ *  between the points included, straight from one to the other. Null where
+ *  the question does not arise: not a plain point-to-point distance, or the
+ *  points already level or plumb, where the three are the same number. */
+export function distanceAxisAt(c: Dimension, sketch: Sketch, at: Vec2): { axis: DistanceAxis | undefined; value: number } | null {
+  if (c.kind !== 'distance' || !('entity' in c.q) || c.edge) return null
+  const pe = entityOf(sketch, c.p.entity)
+  const qe = entityOf(sketch, c.q.entity)
+  if (!pe || !qe) return null
+  const p = anchorPoint(pe, c.p.at)
+  const q = anchorPoint(qe, c.q.at)
+  const dx = Math.abs(q[0] - p[0])
+  const dy = Math.abs(q[1] - p[1])
+  const straight = Math.hypot(dx, dy)
+  if (!(straight > 1e-9) || dx < 1e-6 * straight || dy < 1e-6 * straight) return null
+  const inX = at[0] >= Math.min(p[0], q[0]) && at[0] <= Math.max(p[0], q[0])
+  const inY = at[1] >= Math.min(p[1], q[1]) && at[1] <= Math.max(p[1], q[1])
+  if (inX && !inY) return { axis: 'x', value: dx }
+  if (inY && !inX) return { axis: 'y', value: dy }
+  return { axis: undefined, value: straight }
+}
+
+/** The distance taken the way distanceAxisAt found. */
+export function withDistanceAxis<T extends Dimension>(c: T, to: { axis: DistanceAxis | undefined; value: number }): T {
+  if (c.kind !== 'distance') return c
+  const { axis: _axis, ...rest } = c
+  void _axis
+  return { ...rest, value: to.value, ...(to.axis ? { axis: to.axis } : {}) } as T
 }

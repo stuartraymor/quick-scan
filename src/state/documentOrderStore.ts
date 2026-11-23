@@ -38,6 +38,9 @@ export interface DocumentOrderProvider {
   projectKeys?(manifest: ProjectManifest): readonly string[]
   /** Apply an actual recipe rollback; keys are this owner's active prefix. */
   rollTo?(activeKeys: readonly string[]): void
+  /** The owner's recipes actually built now (its own rollback included).
+   *  Lets an older file rolled back by the owner alone be read as such. */
+  activeKeys?(): readonly string[]
   mutationActions?: DocumentMutationActions
 }
 export interface DocumentMutationActions {
@@ -245,8 +248,10 @@ function applyDocumentHistoryBoundary(at: number | null, commandNavigation = fal
   const wanted = at === null ? state.keys.length : Math.min(state.keys.length, Math.max(minimum, Math.round(at)))
   if (!Number.isFinite(wanted)) return false
   const boundary = wanted === state.keys.length ? null : wanted
-  if (boundary === state.rollbackAt) return false
   const active = new Set(state.keys.slice(0, wanted))
+  // An owner still rolled back on its own (a file saved before the common
+  // marker) must be brought to the boundary even when the marker is there.
+  if (boundary === state.rollbackAt && !providerBehind(active)) return false
   // Every provider containing future recipes must implement real rollback.
   if ([...providers.values()].some(({ provider }) => !provider.rollTo && provider.keys().some((key) => !active.has(key)))) return false
   historyAction('History: move End of Model', () => {
@@ -266,7 +271,65 @@ function applyDocumentHistoryBoundary(at: number | null, commandNavigation = fal
   return true
 }
 
+function providerBehind(active: ReadonlySet<string>): boolean {
+  for (const { provider } of providers.values()) {
+    if (!provider.activeKeys) continue
+    const built = new Set(provider.activeKeys())
+    if (checkedProviderKeys(provider).some((key) => active.has(key) !== built.has(key))) return true
+  }
+  return false
+}
+
+/** A file saved before the common End of Model kept only the CAD owner's
+ *  rollback. Read it as the marker when everything after the first recipe
+ *  the owner holds back is that owner's too; otherwise leave the marker at
+ *  the end, where End of Model still brings the owner forward. */
+function adoptOwnerRollback(): void {
+  const state = useDocumentOrder.getState()
+  if (state.rollbackAt !== null) return
+  for (const { provider } of providers.values()) {
+    if (!provider.activeKeys) continue
+    const built = new Set(provider.activeKeys())
+    const held = checkedProviderKeys(provider).filter((key) => !built.has(key))
+    if (held.length === 0) continue
+    const first = Math.min(...held.map((key) => state.keys.indexOf(key)).filter((at) => at >= 0))
+    if (!Number.isFinite(first) || first <= (state.keys.includes('scan') ? 0 : -1)) continue
+    const tail = state.keys.slice(first)
+    if (tail.every((key) => namespace(key) === provider.id && !built.has(key))) useDocumentOrder.setState({ rollbackAt: first, coreArchive: null })
+  }
+}
+
 export const setDocumentHistoryBoundary = (at: number | null): boolean => applyDocumentHistoryBoundary(at)
+
+/** Index of a recipe in the History, or -1. */
+export const documentOrderIndex = (key: string): number => useDocumentOrder.getState().keys.indexOf(key)
+
+/** True when the recipe is below End of Model. */
+export function documentKeyRolled(key: string): boolean {
+  const s = useDocumentOrder.getState()
+  const at = s.keys.indexOf(key)
+  return s.rollbackAt !== null && at >= s.rollbackAt
+}
+
+/** "-> Disable All Next" is offered on a built recipe with something after it. */
+export function canDisableAllNext(key: string): boolean {
+  const s = useDocumentOrder.getState()
+  const at = s.keys.indexOf(key)
+  return at >= 0 && at + 1 < (s.rollbackAt ?? s.keys.length)
+}
+
+/** "-> Disable All Next" and "<- Enable To Here": End of Model just after
+ *  this recipe, which rolls the later ones back or brings it and those
+ *  before it forward. One undo step, as a drag of the marker is. */
+export function endOfModelAfter(key: string): boolean {
+  const s = useDocumentOrder.getState()
+  const at = s.keys.indexOf(key)
+  if (at < 0) return false
+  return setDocumentHistoryBoundary(at + 1 >= s.keys.length ? null : at + 1)
+}
+
+/** End of Model's own menu: Place at Start keeps only the scan. */
+export const placeEndOfModelAtStart = (): boolean => setDocumentHistoryBoundary(useDocumentOrder.getState().keys.includes('scan') ? 1 : 0)
 
 export function documentHistoryStep(direction: -1 | 1): boolean {
   const state = useDocumentOrder.getState()
@@ -311,6 +374,7 @@ export function installDocumentOrder(): () => void {
             if (generation !== applyGeneration) return
             applyingProject = 0
             reconcile()
+            if (prepared.rollbackAt === null) adoptOwnerRollback()
           })
         }
       },

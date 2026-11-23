@@ -12,9 +12,9 @@ import { alignToAxes, mergeAlignedLines } from '../core/axisAlign'
 import type { EdgeInfo } from '../core/build'
 import { CORNER_GAP_MM, inferCorners } from '../core/corners'
 import { type DatumPlane, type DatumTrace, datumTraces, traceNear } from '../core/datums'
-import { dimPlaceAt } from '../core/dimLayout'
+import { dimPlaceAt, distanceAxisAt, withDistanceAxis } from '../core/dimLayout'
 import { angleForSector } from '../core/angleSector'
-import { dimensionFor, type DimPick, dimPickAt, outwardTangent, relPickAt } from '../core/draw'
+import { dimensionFor, type DimPick, dimPickAt, outwardTangent, pickAsPoint, relPickAt } from '../core/draw'
 import { chamferLines, cornerLinesAt, filletLines } from '../core/filletCorner'
 import type { FitOptions } from '../core/fitOptions'
 import { symmetricPairs } from '../core/mirrorRelation'
@@ -24,6 +24,7 @@ import { landEnd, type ShareCarrier, shareChain, type ShareReport, takeShared } 
 import { fitPointsAlong } from '../core/sketchSpline'
 import { addConstraint, addEntity, type Anchor, type AnchorAt, anchorPoint, anchorsOf, cloneSketch, endsOf, type ConstraintInput, emptySketch, type EntityInput, entityOf, isDimension, nearestOnEntity, removeConstraint, type Sketch, type SketchEntity, splineAnchor } from '../core/sketch'
 import type { SnapHold } from '../core/snap'
+import { snapFlags } from '../../../src/state/snapFilterStore'
 import { type Pull, type SolveReport, solveSketch } from '../core/solver'
 import type { ExtrudeDraft, SketchDraft } from './reTypes'
 
@@ -40,7 +41,7 @@ export function dimensionDone(d: SketchDraft, id: number): Partial<SketchDraft> 
   return d.dimMade === id || d.selectedConstraint === id ? { dimPick: null, dimMade: null, dimFrom: null } : {}
 }
 
-export const toolIdle = () => ({ pending: [] as Vec2[], snaps: [] as (SnapHold | null)[], chain: null, dimPick: null, dimMade: null, dimFrom: null, relPicks: [] as DimPick[] })
+export const toolIdle = () => ({ pending: [] as Vec2[], snaps: [] as (SnapHold | null)[], chain: null, chainClick: null, dimPick: null, dimMade: null, dimFrom: null, relPicks: [] as DimPick[] })
 
 /** The draft with a new dimension in hand, its number following the cursor
  *  until a click puts it down (see SketchDraft.dimMade). `pick` is the one
@@ -77,9 +78,12 @@ export function putDownDimension(d: SketchDraft, spot: Vec2 | null): SketchDraft
   // An angle takes the sector the click stands in — the angle, its
   // supplement or a corner's reflex — and the value the lines make there.
   const sector = spot && held.kind === 'angle' ? angleForSector(d.sketch, held.a, held.b, spot) : null
-  const placed = sector && held.kind === 'angle' ? { ...held, sector: sector.sector, value: sector.value } : held
+  // A distance between two points is taken level, plumb or straight by
+  // where it is put down, as QUICKSURFACE's is.
+  const axis = spot ? distanceAxisAt(held, d.sketch, spot) : null
+  const placed = sector && held.kind === 'angle' ? { ...held, sector: sector.sector, value: sector.value } : axis ? withDistanceAxis(held, axis) : held
   const place = spot ? dimPlaceAt(placed, d.sketch, spot, datumTraces(d.frame)) : null
-  if (place || sector) d.sketch.constraints = d.sketch.constraints.map((c) => (c.id === id ? { ...placed, ...(place ? { place } : {}) } : c))
+  if (place || sector || axis) d.sketch.constraints = d.sketch.constraints.map((c) => (c.id === id ? { ...placed, ...(place ? { place } : {}) } : c))
   return { ...d, dimPick: null, dimMade: null, dimFrom: null, selectedConstraint: held.id, dimFocus: (d.dimFocus ?? 0) + 1, error: null }
 }
 
@@ -87,8 +91,21 @@ export function putDownDimension(d: SketchDraft, spot: Vec2 | null): SketchDraft
  *  distance or the angle between the two — or null for the same piece
  *  again, or two no dimension runs between. */
 export function dimensionPair(d: SketchDraft, first: DimPick, pick: DimPick | null): ConstraintInput | null {
-  if (!pick || (pick.kind === 'piece' && first.kind === 'piece' && pick.id === first.id)) return null
-  return dimensionFor(d.sketch, first, pick, datumTraces(d.frame))
+  if (!pick) return null
+  // The same piece clicked again along its length pairs with nothing; two
+  // of its squares — a circle's left and right — are two points.
+  if (pick.kind === 'piece' && first.kind === 'piece' && pick.id === first.id && !(pick.via && first.via && pick.via.at !== first.via.at)) return null
+  const traces = datumTraces(d.frame)
+  // A square clicked is its point once there are two picks; where the pair
+  // read that way is no dimension (a line's own middle against the line),
+  // the pieces as they are.
+  // Two lines are an angle or the distance between them even when one was
+  // or both were clicked on their middles' squares: that is by far what
+  // two lines are clicked for. (With Curve switched off the squares are
+  // points alone, and two middles are the distance between them.)
+  const isLine = (q: DimPick) => q.kind === 'piece' && entityOf(d.sketch, q.id)?.kind === 'line'
+  if (isLine(first) && isLine(pick)) return dimensionFor(d.sketch, first, pick, traces)
+  return dimensionFor(d.sketch, pickAsPoint(first), pickAsPoint(pick), traces) ?? (first.kind === 'piece' && pick.kind === 'piece' && (first.via || pick.via) ? dimensionFor(d.sketch, { kind: 'piece', id: first.id }, { kind: 'piece', id: pick.id }, traces) : null)
 }
 
 /** Whether an anchor is already held where a snap would hold it: the
@@ -187,6 +204,17 @@ export function settle(d: SketchDraft, before?: Sketch, pull?: readonly Pull[], 
   // last full solve's answer stands until the hand lets go.
   if (quick && d.report) report = { ...report, underConstrained: d.report.underConstrained }
   return { ...d, history, report, found, error: null }
+}
+
+/** The draft with a sketch taken from Undo or Redo put back exactly as it
+ *  was kept. The kept sketch was already settled when it was the drawing;
+ *  solving it again moved pieces whenever the solve had left a residual
+ *  above its stop (an arc after a chamfer by up to 40 mm, a pattern by
+ *  0.9 mm), so Undo did not give back what was there. The report and the
+ *  regions are worked out on a copy. */
+export function restoreSettled(d: SketchDraft): SketchDraft {
+  const probe = settle({ ...d, sketch: cloneSketch(d.sketch) }, undefined, undefined, false, true)
+  return { ...probe, sketch: d.sketch, found: probe.error ? d.found : findRegions(d.sketch) }
 }
 
 /** Whether a click at `spot` with the Spline tool closes the curve: back on
@@ -417,8 +445,14 @@ export function sketchHoverAt(d: SketchDraft, spot: Vec2, radius: number): Sketc
   const piece = (id: number): SketchHover => ({ pieces: [id], point: null, datum: null })
   const fromPick = (pick: DimPick | null): SketchHover | null => {
     if (!pick) return null
-    if (pick.kind === 'piece') return piece(pick.id)
+    if (pick.kind === 'piece') {
+      const e = pick.via ? entityOf(d.sketch, pick.via.entity) : null
+      // On a middle's or a quadrant point's square both are lit: the piece
+      // it would dimension by itself, and the point a pair would run from.
+      return e && pick.via ? { pieces: [pick.id], point: anchorPoint(e, pick.via.at), datum: null } : piece(pick.id)
+    }
     if (pick.kind === 'datum') return { pieces: [], point: null, datum: pick.plane }
+    if (pick.kind === 'origin') return { pieces: [], point: [0, 0], datum: null }
     const e = entityOf(d.sketch, pick.anchor.entity)
     return e ? { pieces: [], point: anchorPoint(e, pick.anchor.at), datum: null } : null
   }
@@ -429,7 +463,7 @@ export function sketchHoverAt(d: SketchDraft, spot: Vec2, radius: number): Sketc
       return hit ? piece(hit.id) : null
     }
     case 'dimension': {
-      const pick = dimPickAt(d.sketch, spot, radius, traces)
+      const pick = dimPickAt(d.sketch, spot, radius, traces, snapFlags('pick'))
       // With a dimension in hand only what it would pair with is lit; a
       // click anywhere else puts it down.
       if (d.dimMade != null) return d.dimPick && dimensionPair(d, d.dimPick, pick) ? fromPick(pick) : null
@@ -437,7 +471,7 @@ export function sketchHoverAt(d: SketchDraft, spot: Vec2, radius: number): Sketc
     }
     case 'relation': {
       if (!d.armedRelation) return null
-      if (d.armedRelation === 'coincident') return fromPick(relPickAt(d.sketch, spot, radius, traces))
+      if (d.armedRelation === 'coincident') return fromPick(relPickAt(d.sketch, spot, radius, traces, snapFlags('pick')))
       const hit = pieceNear(d.sketch, spot, radius)
       if (hit) return piece(hit.id)
       const trace = d.armedRelation === 'symmetric' && d.selection.length === 2 ? traceNear(traces, spot, radius) : null

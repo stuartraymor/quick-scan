@@ -62,10 +62,17 @@ check(before.features === 6 && before.bodies === 1 && hiddenSketches === 3, `the
 const undoBefore = await undoSteps()
 
 // ---- played back ------------------------------------------------------------------------
+// The CAD tools panel shuts when the last command ends; Play is in it, so
+// it is opened first, by its key, as a hand would.
+if (await page.$('[data-test=show-tool-inspector]')) { const shut = await page.$eval('[data-test=tool-inspector]', (el) => el.hidden).catch(() => false); console.log('panel shut before Play:', shut); if (shut) { await page.click('[data-test=show-tool-inspector]'); await sleep(400) } }
+await page.$eval('[data-test=playback-start]', (el) => el.scrollIntoView({ block: 'center' })).catch(() => {})
+await sleep(200)
 check(await page.$('[data-test=playback-start]') !== null, 'the feature list heading carries a Play key')
 await page.click('[data-test=playback-start]')
 await page.waitForSelector('[data-test=playback-bar]')
-await page.select('[data-test=playback-hold]', '1000')
+// 3 s a step: the checks and the screenshot at step 2 take more than 1 s, and
+// the pause must land while step 2 is still held.
+await page.select('[data-test=playback-hold]', '3000')
 let s = await state()
 check(s.at === 0 && s.playing === true && s.features === 0 && s.rolled === 6, `Play puts the bar over the first feature and plays (${JSON.stringify(s)})`)
 await page.waitForFunction(() => window.__re.store.getState().bodies.length === 0, { timeout: 20_000 })

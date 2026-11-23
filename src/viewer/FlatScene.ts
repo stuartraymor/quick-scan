@@ -56,6 +56,11 @@ export interface SketchDimensionItem {
   /** The number to type over, and the text the field opens with when the
    *  number is written as something other than itself. */
   edit?: { id: number; value: number; text?: string }
+  /** A class of its own beside the style's — a dimension to be told from
+   *  the rest, as one that overdefines the sketch is. */
+  className?: string
+  /** The dimension is the selection: its label wears `selected`. */
+  selected?: boolean
 }
 
 /** A selection box dragged over the sheet — see setBoxSelect. */
@@ -109,7 +114,11 @@ export class FlatScene {
   /** Free text notes: DOM labels that, unlike every other label, take the
    *  pointer — a press on one drags it across the sheet. */
   private noteGroup = new THREE.Group()
-  private noteCleanup: (() => void)[] = []
+  /** The notes on the page by id: a note asked for again unchanged keeps
+   *  its label and is only moved, so a redraw of the sketch does not take
+   *  every glyph off the page and put a new one back (which showed as a
+   *  flicker while a piece was dragged). */
+  private noteParts = new Map<number, { key: string; label: CSS2DObject; at: Vec2; dispose: () => void }>()
   /** The datum-aligned grid: its frame, and the spacing it was last drawn
    *  at — the tick watches the zoom and redraws when the 1-2-5 ladder says a
    *  different rung. */
@@ -139,6 +148,9 @@ export class FlatScene {
   private dimensionCleanup: (() => void)[] = []
   /** What opens each sketch dimension's number for typing, by its id. */
   private dimensionOpeners = new Map<number, { div: HTMLElement; open: () => void }>()
+  /** A sketch's dimension labels by what they show: one asked for again
+   *  unchanged is moved, not made anew — see noteParts. */
+  private dimLabelPool = new Map<string, { label: CSS2DObject; div: HTMLElement; id: number | null; open: (() => void) | null }>()
   /** A sketch's dimensions as they were last set — see setSketchDimensions:
    *  their lines and arrowheads are sized in screen pixels, so they are made
    *  again when the zoom moves off `px`. */
@@ -238,6 +250,11 @@ export class FlatScene {
   onNoteHover: ((id: number | null) => void) | null = null
   /** The same for a dimension's number that can be typed into. */
   onDimensionHover: ((id: number | null) => void) | null = null
+  /** A sketch's number clicked once. Answering true takes the click as a
+   *  selection — the number is then opened by a second click close behind
+   *  it (a double-click); false, or no handler, opens it at once. */
+  onDimensionSelect: ((id: number) => boolean) | null = null
+  private lastDimensionClick: { id: number; at: number } | null = null
   /** The note and the dimension under the cursor — said off again when
    *  their labels are made anew under it, which no pointer event says. */
   private hoveredNote: number | null = null
@@ -439,6 +456,8 @@ export class FlatScene {
     }
     for (const dispose of this.dimensionCleanup) dispose()
     this.dimensionCleanup = []
+    for (const part of this.dimLabelPool.values()) part.div.remove()
+    this.dimLabelPool.clear()
     this.dimensionOpeners.clear()
     this.dimensionGroup.clear()
     this.sketchDims = null
@@ -456,13 +475,43 @@ export class FlatScene {
    *  along it (core/re/dimLayout). A click on a number opens it for typing
    *  (onDimensionEdit); a drag moves it (onDimensionMove). */
   setSketchDimensions(items: readonly SketchDimensionItem[], style: { color?: number; className?: string } = {}): void {
-    this.clearDimensions()
+    // Anything a measured sheet left behind goes; the sketch's own labels
+    // are kept where they still say the same thing.
+    if (this.dimensionCleanup.length > 0) this.clearDimensions()
     const px = this.unitsPerScreenPx()
     this.sketchDims = { items, color: style.color ?? 0x666e79, px }
-    for (const item of items) {
+    const kept = new Map<string, { label: CSS2DObject; div: HTMLElement; id: number | null; open: (() => void) | null }>()
+    this.dimensionOpeners.clear()
+    items.forEach((item, index) => {
       const s = dimStrokes(item.shape, px, dimTextPx(item.value))
-      this.addDimLabel(s.text, '', item.value, style.className, item.edit, s.textAngle)
+      const className = [style.className, item.className].filter(Boolean).join(' ') || undefined
+      // Where it stands, how it is turned and whether it is selected are
+      // put on the label it has: a number riding a dragged line, or clicked,
+      // is the same label throughout.
+      const key = JSON.stringify([item.edit ? item.edit.id : `i${index}`, item.value, className ?? '', item.edit ? [item.edit.value, item.edit.text ?? null] : null])
+      let part = this.dimLabelPool.get(key)
+      if (part) this.dimLabelPool.delete(key)
+      else part = this.addDimLabel(s.text, '', item.value, className, item.edit, s.textAngle, true)
+      part.label.position.set(s.text[0], s.text[1], 0.2)
+      const written = part.div.querySelector<HTMLElement>('.label-value')
+      if (written) written.style.transform = Math.abs(s.textAngle) > 1e-6 ? `rotate(${(-s.textAngle * 180) / Math.PI}deg)` : ''
+      part.div.classList.toggle('selected', Boolean(item.selected))
+      // A fixed order on the page: left to the label renderer the labels
+      // are stacked by their distance to the camera, which between labels
+      // on one plane changes with every pan and zoom.
+      part.label.renderOrder = 1000 + index
+      if (part.id !== null && part.open) this.dimensionOpeners.set(part.id, { div: part.div, open: part.open })
+      kept.set(key, part)
+    })
+    for (const part of this.dimLabelPool.values()) {
+      if (part.id !== null && this.hoveredDimension === part.id && ![...kept.values()].some((k) => k.id === part.id)) {
+        this.hoveredDimension = null
+        this.onDimensionHover?.(null)
+      }
+      this.dimensionGroup.remove(part.label)
+      part.div.remove()
     }
+    this.dimLabelPool = kept
     this.rebuildDimStrokes()
   }
 
@@ -514,7 +563,8 @@ export class FlatScene {
     this.viewport.invalidate()
   }
 
-  private addDimLabel(at: Vec2, title: string, value: string, className?: string, edit?: { id: number; value: number; text?: string }, turn?: number): void {
+  private addDimLabel(at: Vec2, title: string, value: string, className?: string, edit?: { id: number; value: number; text?: string }, turn?: number, pooled = false): { label: CSS2DObject; div: HTMLElement; id: number | null; open: (() => void) | null } {
+    let opener: (() => void) | null = null
     const div = document.createElement('div')
     div.className = 'viewport-label distance-label' + (className ? ` ${className}` : '')
     if (title !== '') {
@@ -562,8 +612,12 @@ export class FlatScene {
           done = true
           const typed = input.value.trim()
           input.replaceWith(v)
-          if (commit && typed !== '' && typed !== shown) this.onDimensionEdit?.(edit.id, typed)
+          // The number shown is rounded: the same figures typed over it are
+          // meant exactly (20 over a measured 19.9999993), so they are sent.
+          if (commit && typed !== '' && (typed !== shown || retyped)) this.onDimensionEdit?.(edit.id, typed)
         }
+        let retyped = false
+        input.addEventListener('input', () => { retyped = true })
         input.addEventListener('keydown', (ev) => {
           // Untouched, Ctrl+Z / Ctrl+Y go on to the drawing's undo (see
           // useGlobalShortcuts): the field closes and the key carries on.
@@ -607,7 +661,12 @@ export class FlatScene {
             document.removeEventListener('pointermove', move)
             document.removeEventListener('pointerup', up)
             document.removeEventListener('pointercancel', up)
-            if (!moved) open()
+            if (moved) return
+            const now = performance.now()
+            const twice = this.lastDimensionClick !== null && this.lastDimensionClick.id === edit.id && now - this.lastDimensionClick.at < 500
+            this.lastDimensionClick = { id: edit.id, at: now }
+            // Selecting it may have made its label anew: opened by id.
+            if (twice || !this.onDimensionSelect?.(edit.id)) this.openDimension(edit.id)
           }
           document.addEventListener('pointermove', move)
           document.addEventListener('pointerup', up)
@@ -615,11 +674,13 @@ export class FlatScene {
         })
         this.dimensionOpeners.set(edit.id, { div, open })
       }
+      opener = open
     }
     const label = new CSS2DObject(div)
     label.position.set(at[0], at[1], 0.2)
     this.dimensionGroup.add(label)
-    this.dimensionCleanup.push(() => div.remove())
+    if (!pooled) this.dimensionCleanup.push(() => div.remove())
+    return { label, div, id: edit ? edit.id : null, open: opener }
   }
 
   /** Show a datum-aligned millimetre grid over the sheet — or none. The
@@ -1578,88 +1639,118 @@ export class FlatScene {
    *  onNoteDrag; a press released in place selects it. The navigator never
    *  sees the press — the label sits above the canvas — so the sheet stays
    *  put under the drag. */
-  setNotes(items: readonly { id: number; text: string; at: Vec2; editing: boolean; className?: string; tip?: string; iconPath?: string }[]): void {
-    if (this.hoveredNote !== null) {
-      this.hoveredNote = null
-      this.onNoteHover?.(null)
-    }
-    for (const dispose of this.noteCleanup) dispose()
-    this.noteCleanup = []
-    this.noteGroup.clear()
-    for (const item of items) {
-      const div = document.createElement('div')
-      div.className = 'viewport-label note-label' + (item.editing ? ' editing' : '') + (item.className ? ` ${item.className}` : '')
-      div.dataset.test = `flat-note-${item.id}`
-      // A word shown beside the note the moment the cursor is over it (the
-      // stylesheet draws `data-tip`): a glyph's name, which a title's delay
-      // would make the hand wait for.
-      if (item.tip) div.dataset.tip = item.tip
-      div.textContent = item.text.trim() === '' ? 'Text' : item.text
-      if (item.iconPath) {
-        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-        svg.setAttribute('viewBox', '0 0 24 24')
-        svg.setAttribute('aria-hidden', 'true')
-        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
-        path.setAttribute('d', item.iconPath)
-        svg.append(path)
-        div.replaceChildren(svg)
-        div.setAttribute('aria-label', item.tip ?? item.text)
-        div.setAttribute('role', 'button')
-      }
-      if (item.text.trim() === '') div.classList.add('empty')
-      const down = (e: PointerEvent) => {
-        if (e.button !== 0) return
-        e.preventDefault()
-        e.stopPropagation()
-        let moved = false
-        const start = { x: e.clientX, y: e.clientY }
-        // The note keeps its place under the hand: the offset between the
-        // grab and its anchor rides along, so it does not jump to the cursor.
-        const grab = this.pick(e.clientX, e.clientY) ?? item.at
-        const offset: Vec2 = [item.at[0] - grab[0], item.at[1] - grab[1]]
-        div.classList.add('dragging')
-        const move = (ev: PointerEvent) => {
-          if (!moved && Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < 3) return
-          moved = true
-          const p = this.pick(ev.clientX, ev.clientY)
-          if (p) this.onNoteDrag?.(item.id, [p[0] + offset[0], p[1] + offset[1]])
+  setNotes(items: readonly { id: number; text: string; at: Vec2; editing: boolean; className?: string; tip?: string; iconPath?: string; slot?: number }[]): void {
+    const seen = new Set<number>()
+    items.forEach((item, index) => {
+      const key = JSON.stringify([item.text, item.editing, item.className ?? '', item.tip ?? '', item.iconPath ?? '', item.slot ?? 0])
+      let part = this.noteParts.get(item.id)
+      if (part && (part.key !== key || seen.has(item.id))) {
+        if (!seen.has(item.id)) {
+          part.dispose()
+          this.noteParts.delete(item.id)
         }
-        const up = () => {
-          document.removeEventListener('pointermove', move)
-          document.removeEventListener('pointerup', up)
-          document.removeEventListener('pointercancel', up)
-          div.classList.remove('dragging')
-          if (!moved) this.onNoteSelect?.(item.id)
-        }
-        document.addEventListener('pointermove', move)
-        document.addEventListener('pointerup', up)
-        document.addEventListener('pointercancel', up)
+        part = undefined
       }
-      div.addEventListener('pointerdown', down)
-      const enter = () => {
-        this.hoveredNote = item.id
-        this.onNoteHover?.(item.id)
+      if (seen.has(item.id)) return
+      seen.add(item.id)
+      if (!part) {
+        part = this.makeNote(item, key)
+        this.noteParts.set(item.id, part)
       }
-      const leave = () => {
-        if (this.hoveredNote !== item.id) return
+      part.at = item.at
+      part.label.position.set(item.at[0], item.at[1], 0.15)
+      // A fixed order on the page — see setSketchDimensions.
+      part.label.renderOrder = 100 + index
+    })
+    for (const [id, part] of this.noteParts) {
+      if (seen.has(id)) continue
+      part.dispose()
+      this.noteParts.delete(id)
+      if (this.hoveredNote === id) {
         this.hoveredNote = null
         this.onNoteHover?.(null)
       }
-      div.addEventListener('pointerenter', enter)
-      div.addEventListener('pointerleave', leave)
-      const label = new CSS2DObject(div)
-      // Anchored at its lower-left: the spot clicked is where the text begins.
-      label.center.set(0, 1)
-      label.position.set(item.at[0], item.at[1], 0.15)
-      this.noteGroup.add(label)
-      this.noteCleanup.push(() => {
-        div.removeEventListener('pointerdown', down)
-        div.removeEventListener('pointerenter', enter)
-        div.removeEventListener('pointerleave', leave)
-        div.remove()
-      })
     }
     this.viewport.invalidate()
+  }
+
+  private makeNote(item: { id: number; text: string; at: Vec2; editing: boolean; className?: string; tip?: string; iconPath?: string; slot?: number }, key: string): { key: string; label: CSS2DObject; at: Vec2; dispose: () => void } {
+    const div = document.createElement('div')
+    div.className = 'viewport-label note-label' + (item.editing ? ' editing' : '') + (item.className ? ` ${item.className}` : '')
+    div.dataset.test = `flat-note-${item.id}`
+    // Notes that share a spot stand side by side: the stylesheet reads the
+    // place in the row from `--slot`.
+    if (item.slot) div.style.setProperty('--slot', String(item.slot))
+    // A word shown beside the note the moment the cursor is over it (the
+    // stylesheet draws `data-tip`): a glyph's name, which a title's delay
+    // would make the hand wait for.
+    if (item.tip) div.dataset.tip = item.tip
+    div.textContent = item.text.trim() === '' ? 'Text' : item.text
+    if (item.iconPath) {
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+      svg.setAttribute('viewBox', '0 0 24 24')
+      svg.setAttribute('aria-hidden', 'true')
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+      path.setAttribute('d', item.iconPath)
+      svg.append(path)
+      div.replaceChildren(svg)
+      div.setAttribute('aria-label', item.tip ?? item.text)
+      div.setAttribute('role', 'button')
+    }
+    if (item.text.trim() === '') div.classList.add('empty')
+    const label = new CSS2DObject(div)
+    const part = { key, label, at: item.at, dispose: () => {} }
+    const down = (e: PointerEvent) => {
+      if (e.button !== 0) return
+      e.preventDefault()
+      e.stopPropagation()
+      let moved = false
+      const start = { x: e.clientX, y: e.clientY }
+      // The note keeps its place under the hand: the offset between the
+      // grab and its anchor rides along, so it does not jump to the cursor.
+      const grab = this.pick(e.clientX, e.clientY) ?? part.at
+      const offset: Vec2 = [part.at[0] - grab[0], part.at[1] - grab[1]]
+      div.classList.add('dragging')
+      const move = (ev: PointerEvent) => {
+        if (!moved && Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < 3) return
+        moved = true
+        const p = this.pick(ev.clientX, ev.clientY)
+        if (p) this.onNoteDrag?.(item.id, [p[0] + offset[0], p[1] + offset[1]])
+      }
+      const up = () => {
+        document.removeEventListener('pointermove', move)
+        document.removeEventListener('pointerup', up)
+        document.removeEventListener('pointercancel', up)
+        div.classList.remove('dragging')
+        if (!moved) this.onNoteSelect?.(item.id)
+      }
+      document.addEventListener('pointermove', move)
+      document.addEventListener('pointerup', up)
+      document.addEventListener('pointercancel', up)
+    }
+    div.addEventListener('pointerdown', down)
+    const enter = () => {
+      this.hoveredNote = item.id
+      this.onNoteHover?.(item.id)
+    }
+    const leave = () => {
+      if (this.hoveredNote !== item.id) return
+      this.hoveredNote = null
+      this.onNoteHover?.(null)
+    }
+    div.addEventListener('pointerenter', enter)
+    div.addEventListener('pointerleave', leave)
+    // Anchored at its lower-left: the spot clicked is where the text begins.
+    label.center.set(0, 1)
+    this.noteGroup.add(label)
+    part.dispose = () => {
+      div.removeEventListener('pointerdown', down)
+      div.removeEventListener('pointerenter', enter)
+      div.removeEventListener('pointerleave', leave)
+      this.noteGroup.remove(label)
+      div.remove()
+    }
+    return part
   }
 
   /** The tallies (document units): each pick wears its running number in the

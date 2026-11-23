@@ -14,7 +14,12 @@
 const SLACK = 1e-6
 
 export function spreadLabels(labelDom: HTMLElement, gap = 2, sharedScreen = false): void {
-  const els = Array.from(labelDom.querySelectorAll<HTMLElement>('.viewport-label')).filter(
+  // A label marked `unspread` stands exactly where its geometry puts it and
+  // takes no part: a sketch's relation glyph beside its line, a dimension's
+  // number in the gap of its dimension line. Lifted clear of whatever they
+  // touched, they jumped up and down as the mouse and the zoom changed what
+  // overlapped what.
+  const els = Array.from(labelDom.querySelectorAll<HTMLElement>('.viewport-label:not(.unspread)')).filter(
     (el) => el.style.display !== 'none' && (!sharedScreen || el.offsetWidth > 0),
   )
   if (els.length < 2) {

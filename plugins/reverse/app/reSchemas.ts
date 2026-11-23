@@ -260,6 +260,7 @@ const constraintCommon = {
   place: anyObject('Where its number is drawn — as reverse.feature.list gives it back.'),
 }
 const dimension = (unit: string) => ({
+  driven: bool('A driven (reference) dimension: it holds nothing, and its value is read off the pieces after every solve — written in brackets, as a drawing writes one. It takes no expression. Left out, the dimension is driving.'),
   value: num(`The dimension, ${unit}. Left out, it is what the expression comes to, or else what the pieces measure now.`),
   expr: str('An expression for it — a number with a unit, arithmetic, the model’s parameters by name (reverse.parameter.add): "l1", "d/2 + 0.5", "1 in". The dimension follows the parameters it reads.', { minLength: 1 }),
 })
@@ -288,12 +289,13 @@ const constraintIn = byKind(
     ),
     obj({ ...constraintCommon, kind: kind('length'), entity: int('A line.'), ...dimension('mm') }, ['kind', 'entity'], 'A line’s length.'),
     obj(
-      { ...constraintCommon, kind: kind('distance'), p: anchor, q: oneOf([anchor, line, toDatum], 'To another point, square to a line, or square to a coordinate plane’s line.'), ...dimension('mm') },
+      { ...constraintCommon, kind: kind('distance'), p: anchor, q: oneOf([anchor, line, toDatum], 'To another point, square to a line, or square to a coordinate plane’s line.'), axis: enumOf(['x', 'y'], 'Between two points only: the horizontal (x) or vertical (y) distance instead of the straight one.'), ...dimension('mm') },
       ['kind', 'p', 'q'],
       'A distance from a point.',
     ),
     obj({ ...constraintCommon, kind: kind('radius'), entity: int('An arc or a circle.'), ...dimension('mm') }, ['kind', 'entity'], 'A radius — what an arc is dimensioned by.'),
     obj({ ...constraintCommon, kind: kind('diameter'), entity: int('A circle or an arc.'), ...dimension('mm') }, ['kind', 'entity'], 'A diameter — what a full circle is dimensioned by, as the panel’s Dimension tool gives it; the radius is held at half of it.'),
+    obj({ ...constraintCommon, kind: kind('arcLength'), entity: int('An arc.'), ...dimension('mm') }, ['kind', 'entity'], 'An arc’s length round its rim from end to end: its radius times its sweep.'),
     obj({ ...constraintCommon, kind: kind('angle'), a: int('A line.'), b: int('A line.'), ...dimension('degrees, 0 to 180 as the lines’ directions read') }, ['kind', 'a', 'b'], 'The angle between two lines.'),
   ],
   'A relation or a dimension.',

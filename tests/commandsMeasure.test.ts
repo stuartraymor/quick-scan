@@ -14,6 +14,7 @@ import { registerStateSection } from '../src/commands/stateSections'
 import { useHistory } from '../src/state/historyStore'
 import { useShell } from '../src/state/shellStore'
 import { useStore } from '../src/state/store'
+import { publishExplorerEntries } from '../src/state/explorerStore'
 import { boxMesh, icosphere } from './helpers'
 import { refused, run, soupOf, startHeadless, stlBytes, undoLabels, type Headless } from './commandKit'
 
@@ -263,6 +264,32 @@ describe('elements', () => {
     await undo()
     await undo()
     expect(elements()[0].name).toBe(top.name)
+  })
+
+  it('element.remove names the CAD work built on it, and deletes it only when told to (1.2.15)', async () => {
+    const top = await fitFace([0, 0, 20])
+    const removedKeys: string[] = []
+    // What the Objects panel lists: a sketch on the plane, an extrude on the sketch.
+    publishExplorerEntries([
+      { key: `core:element:${top.id}`, label: top.name },
+      { key: 'reverse:feature:1', label: 'Profile', parents: [`core:element:${top.id}`], remove: () => removedKeys.push('reverse:feature:1') },
+      { key: 'reverse:feature:2', label: 'Wall', parents: ['reverse:feature:1'], remove: () => removedKeys.push('reverse:feature:2') },
+    ])
+    try {
+      const e = await refused('element.remove', { element: top.id })
+      expect(e.code).toBe('failed')
+      expect(e.message).toContain('Profile, Wall')
+      expect(e.message).toContain('alsoDependents')
+      expect(elements().some((el) => el.id === top.id)).toBe(true)
+      expect(removedKeys).toEqual([])
+      const out = await run<{ removed: { id: number }[]; dependentsRemoved: string[] }>('element.remove', { element: top.id, alsoDependents: true })
+      expect(out.dependentsRemoved).toEqual(['Profile', 'Wall'])
+      // Last built goes first, as the panel's delete does.
+      expect(removedKeys).toEqual(['reverse:feature:2', 'reverse:feature:1'])
+      expect(elements().some((el) => el.id === top.id)).toBe(false)
+    } finally {
+      publishExplorerEntries([])
+    }
   })
 })
 

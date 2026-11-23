@@ -135,7 +135,13 @@ export function useGlobalShortcuts({
       // showed in data-pass-undo; anything typed keeps the keys its own.
       const passUndo = target instanceof HTMLInputElement && target.dataset.passUndo !== undefined && target.value === target.dataset.passUndo
         && (e.ctrlKey || e.metaKey) && !e.altKey && ['z', 'y'].includes(e.key.toLowerCase())
+      // A tick box, a slider or a button-like field has no text to undo, so
+      // Ctrl+Z / Ctrl+Y there are the drawing's too: after typing a radius
+      // and tabbing on to a tick box, Undo must still take back the fillet.
+      const textless = target instanceof HTMLInputElement && ['checkbox', 'radio', 'range', 'button', 'submit', 'reset', 'color', 'file'].includes(target.type)
+        && (e.ctrlKey || e.metaKey) && !e.altKey && ['z', 'y'].includes(e.key.toLowerCase())
       if (passUndo) target.blur()
+      else if (textless) { /* the drawing's undo, below */ }
       else if (target && (['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName) || target.isContentEditable)) {
         // Escape in a field of a box or a tool leaves the field and goes on
         // to close what it is in, as it does with the focus anywhere else —

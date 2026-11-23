@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: AGPL-3.0-only */
 /* A compact desktop dialog face, independently styled from live reference
    observations. Scoped tokens leave viewport, AI and stored theme unchanged. */
-.tool-inspector, .qs-quick, .modalback > .modal, .ribbon-menu, .re-menu, .picklist, .partmenu, .appmenu {
+.tool-inspector, .qs-quick, .qs-overlay, .modalback > .modal, .ribbon-menu, .re-menu, .picklist, .partmenu, .appmenu {
   --chassis: #f0f0f0; --panel: #f0f0f0; --well: #fff; --well-deep: #e5e5e5;
   --ink: #171717; --dim: #666; --faint: #929292;
   --line: #ccc; --line-strong: #a6a6a6;
@@ -29,7 +29,7 @@
 .tool-inspector .inspector-body[hidden], .tool-inspector .inspector-command-slot[hidden] { display: none; }
 .tool-inspector .group { padding: 0 0 9px; margin: 0 0 9px; gap: 5px; }
 .tool-inspector :is(.sec-head,.g-label,.stephead,.dro-label,h3) { font-family: var(--ui); font-size: 11px; text-transform: none; letter-spacing: 0; font-weight: 400; }
-.tool-inspector :is(button,select,input,textarea), .qs-quick :is(button,input), .modalback > .modal :is(button,input,select) { font-family: var(--ui); font-size: 11px; border-radius: 2px; }
+.tool-inspector :is(button,select,input,textarea), .qs-overlay :is(button,select,input,textarea), .qs-quick :is(button,input), .modalback > .modal :is(button,input,select) { font-family: var(--ui); font-size: 11px; border-radius: 2px; }
 .tool-inspector button:not(.infodot):not(.explorer-eye):not(.qs-x) { min-height: 22px; padding: 2px 7px; box-shadow: none; }
 .tool-inspector button:not(.on):not(:disabled):not(.infodot):not(.qs-x) { background: linear-gradient(#fff,#f5f5f5); color: #171717; }
 .tool-inspector button.primary:not(:disabled) { border-color: #8a8a8a; color: #171717; background: linear-gradient(#fff,#f4f4f4); }
@@ -136,7 +136,7 @@
 .interactive-align footer > button { width: 78px; }
 
 /* User's charcoal/black presentation keeps the reference control geometry. */
-:root[data-theme='dark'] :is(.tool-inspector,.qs-quick,.modalback > .modal,.ribbon-menu,.re-menu,.picklist,.partmenu,.appmenu) {
+:root[data-theme='dark'] :is(.tool-inspector,.qs-quick,.qs-overlay,.modalback > .modal,.ribbon-menu,.re-menu,.picklist,.partmenu,.appmenu) {
   --chassis: #1b1d20; --panel: #25282c; --well: #17191c; --well-deep: #121416;
   --ink: #f4f5f6; --dim: #b5bbc2; --faint: #8c949e;
   --line: #414750; --line-strong: #69737f;
@@ -159,7 +159,7 @@
 :root[data-theme='dark'] :is(.ribbon-menu,.re-menu,.picklist,.partmenu,.appmenu) button { color: #f4f5f6; }
 :root[data-theme='dark'] .desktop-ribbon .ribbon-menu button:hover:not(:disabled) { background: #223e58; }
 :root[data-theme='dark'] .desktop-ribbon .ribbon-menu button:disabled { color: #969fa9; }
-:root[data-theme='dark'] :is(.tool-inspector,.qs-quick,.modalback > .modal,.ribbon-menu) :focus-visible { outline: 2px solid #79c5ff; outline-offset: 1px; }
+:root[data-theme='dark'] :is(.tool-inspector,.qs-quick,.qs-overlay,.modalback > .modal,.ribbon-menu) :focus-visible { outline: 2px solid #79c5ff; outline-offset: 1px; }
 
 /* Original extraction glyphs: pale primitive faces and blue selection tools. */
 .extract-dialog, .qs-quick, .edit-scan-selection { --extract-blue: #2388c9; --extract-pale: #e7f3fc; --extract-edge: #2a4354; --extract-well: #183347; --extract-muted: #86929c; }
@@ -218,3 +218,8 @@
 .surface-degree-row .unitfield { flex: 0 0 52px; width: 52px; min-width: 0; }
 .surface-degree-row .unitfield input { box-sizing: border-box; width: 100%; min-width: 0; }
 .surface-degree-row > .checkrow { white-space: nowrap; }
+
+/* Cards drawn by the cursor at the page's top (plugins' Overlay): no box of
+   their own, the panels' colours and type. */
+.qs-overlay { display: contents; font: 11px/1.4 var(--ui); }
+:root[data-theme='dark'] .qs-overlay { background: none; }

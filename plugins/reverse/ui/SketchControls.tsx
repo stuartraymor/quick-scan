@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useState } from 'react'
 import type { SketchChains } from '../app/useReverseWorkspace'
-import { cloneSketch, entityOf, type ConstraintKind } from '../core/sketch'
+import { cloneSketch, entityOf, relationTakes, type ConstraintKind, type SketchEntity } from '../core/sketch'
 import { useReverse } from '../state/reStore'
 import { useRePrefs } from '../state/rePrefs'
 import { useSketchBrush } from '../state/sketchBrushStore'
@@ -29,6 +29,7 @@ export function SketchControls({chainsOf}:{chainsOf:()=>SketchChains|null}) {
  const len=useLength()
  const comb=useSketchCurvature()
  const [assist,setAssist]=useState(false)
+ const [overdefining,setOverdefining]=useState<number[]|null>(null)
  const [exportOptions,setExportOptions]=useState(false)
  const { format:exportFormat, setFormat:setExportFormat }=useSketchExportPrefs()
  const [draftFormat,setDraftFormat]=useState<SketchExportFormat>('iges')
@@ -39,9 +40,45 @@ export function SketchControls({chainsOf}:{chainsOf:()=>SketchChains|null}) {
  const tool=activateSketchTool
  const extra=activateExtraSketchTool
  const key=(icon:SketchCommandIconName,label:string,id:string,action:()=>void,on=false,disabled=false)=><button key={id} type="button" data-test={id} aria-label={label} title={label} aria-pressed={on} className={on?'on':undefined} disabled={disabled} onClick={action}><SketchCommandIcon name={icon}/></button>
+ const picked=d.selection.map(id=>entityOf(d.sketch,id)).filter((e):e is SketchEntity=>Boolean(e))
+ // One piece selected for a relation of two: the relation is taken in
+ // hand with that piece as its first pick (the reference, which stays),
+ // and the next click on the sheet is the second.
+ const PAIRED:ReadonlySet<ConstraintKind>=new Set<ConstraintKind>(['parallel','perpendicular','tangent','equal','concentric','collinear','coincident'])
+ const startsWith=(kind:ConstraintKind,e:SketchEntity)=>{
+   const round=e.kind==='arc'||e.kind==='circle'
+   if(kind==='concentric')return round
+   if(kind==='parallel'||kind==='perpendicular'||kind==='collinear')return e.kind==='line'
+   if(kind==='equal')return e.kind==='line'||round
+   if(kind==='tangent')return e.kind==='line'||round||e.kind==='spline'
+   return true
+ }
+ /** Whether a relation key applies to what is selected — the contextual
+  *  relations: two circles offer Concentric and Equal, not Parallel. With
+  *  nothing selected every key takes its relation in hand. */
+ const applies=(kind:ConstraintKind)=>{
+   if(!has)return true
+   if(picked.length!==d.selection.length)return false
+   if(picked.length===1&&PAIRED.has(kind))return startsWith(kind,picked[0])
+   if(kind==='coincident')return picked.length===2
+   if(kind==='symmetric')return picked.length===2||picked.length===3
+   if(kind==='collinear')return picked.length>=2&&picked.every(e=>e.kind==='line')
+   if(picked.length>2&&(kind==='parallel'||kind==='perpendicular'||kind==='equal'||kind==='concentric'))return picked.slice(1).every(e=>relationTakes(kind,[picked[0],e]))
+   return relationTakes(kind,picked)
+ }
  const relation=(kind:ConstraintKind)=>{
    closeSketchToolOverlays()
+   if(has&&picked.length===1&&PAIRED.has(kind)&&kind!=='collinear'){
+     const first=picked[0]
+     re.armRelation(kind)
+     useReverse.setState(s=>s.sketchDraft?{sketchDraft:{...s.sketchDraft,...(kind==='coincident'?{relPicks:[{kind:'piece' as const,id:first.id}]}:{selection:[first.id]})}}:{})
+     return
+   }
    if(has)re.addRelation(kind);else re.armRelation(kind)
+ }
+ const RELATION_TIPS:Partial<Record<ConstraintKind,string>>={
+   coincident:'Make Coincident — two points meet (ends, centres, the origin), a point lies on a piece, or two circles share their centre',
+   concentric:'Make Concentric — two circles or arcs share one centre; the first picked stays, radii unchanged',
  }
  const active=(t:string)=>!presentation.tool&&d.tool===t
  return <div className="sketch-controls">
@@ -81,7 +118,11 @@ export function SketchControls({chainsOf}:{chainsOf:()=>SketchChains|null}) {
   <div className="sketch-command-row constraints" data-test="sketch-relations">
    {key('construction','For Construction','sketch-construction',()=>re.toggleConstructionSelected(),has&&d.selection.every(id=>entityOf(d.sketch,id)?.construction),!has)}
    {key('fix','Fix Position','sketch-fix',()=>re.toggleFixedSelected(),has&&d.selection.every(id=>entityOf(d.sketch,id)?.fixed),!has)}
-   {(['horizontal','vertical','tangent','collinear','equal','parallel','perpendicular','symmetric'] as const).map(kind=>key(kind,kind==='collinear'?'Make Colinear':`Make ${kind[0].toUpperCase()+kind.slice(1)}`,`sketch-rel-${kind}`,()=>relation(kind),d.tool==='relation'&&d.armedRelation===kind))}
+   {(['coincident','concentric','horizontal','vertical','tangent','collinear','equal','parallel','perpendicular','symmetric'] as const).map(kind=>{
+     const label=RELATION_TIPS[kind]??(kind==='collinear'?'Make Colinear':`Make ${kind[0].toUpperCase()+kind.slice(1)}`)
+     const ok=applies(kind)
+     return key(kind,ok?label:`${label} — does not apply to the selection`,`sketch-rel-${kind}`,()=>relation(kind),d.tool==='relation'&&d.armedRelation===kind,!ok)
+   })}
   </div>
   <div className="sketch-selection-count" data-test="sketch-selection-count">{d.selection.length>0?`${d.selection.length} selected`:''}</div>
   <fieldset className="sketch-display"><legend>Display</legend>
@@ -99,7 +140,7 @@ export function SketchControls({chainsOf}:{chainsOf:()=>SketchChains|null}) {
   {comb.optionsOpen&&<fieldset className="sketch-display" data-test="sketch-curvature-options-panel"><legend>Curvature options</legend>
    <CombField label="Scale" value={comb.scale} kind="plain" testId="sketch-curvature-scale-value" unit="×" onValue={v=>comb.set({scale:v})}/>
    <CombField label="Density" value={comb.density} kind="count" testId="sketch-curvature-density" unit="teeth" onValue={v=>comb.set({density:v})}/>
-   <CombField label="Max length" value={comb.maxLength} kind="length" testId="sketch-curvature-max" onValue={v=>comb.set({maxLength:v})}/>
+   <CombField label="Max length (at 50×)" value={comb.maxLength} kind="length" testId="sketch-curvature-max" onValue={v=>comb.set({maxLength:v})}/>
    <CombField label="Noise filter" value={comb.smooth} kind="count0" testId="sketch-curvature-smooth" unit="± samples" onValue={v=>comb.set({smooth:v})}/>
    <div className="sketch-entry-row">
     <label title="Teeth point out of each bend and cross over at an inflection"><input type="checkbox" data-test="sketch-curvature-signed" checked={comb.signed} onChange={e=>comb.set({signed:e.target.checked})}/>Signed</label>
@@ -131,7 +172,11 @@ export function SketchControls({chainsOf}:{chainsOf:()=>SketchChains|null}) {
     <div data-test="sketch-analysis-pass">{(st.passShare*100).toFixed(1)} % of the length within tolerance{st.failing.length?` · ${st.failing.length} ${st.failing.length===1?'piece':'pieces'} outside`:''}{st.unread?` · ${st.unread} samples with no section within ${len.fmt(result.reach,3)}`:''}</div>
    </div>
   })()}
-  <button className="sketch-overdefined" data-test="sketch-overdefined" disabled={!d.report?.unmet.length} onClick={()=>{const id=d.report?.unmet[0]?.id;if(id!==undefined)re.selectConstraint(id)}}>Select overdefining constraints</button>
+  <button className="sketch-overdefined" data-test="sketch-overdefined" disabled={!d.report?.unmet.length} onClick={()=>{const ids=re.overdefining();if(!ids.length)return;re.selectConstraint(ids[0]);setOverdefining(ids)}}>Select overdefining constraints</button>
+  {overdefining&&d.report&&!d.report.ok&&<div className="sketch-overdefined-ask" data-test="sketch-overdefined-ask" role="alertdialog" aria-label="Sketch">
+   <p>{overdefining.length} constraint{overdefining.length===1?'':'s'} overdefine{overdefining.length===1?'s':''} the sketch. Do you want to delete {overdefining.length===1?'it':'them'}?</p>
+   <div className="sketch-entry-row"><button data-test="sketch-overdefined-yes" onClick={()=>{re.removeConstraints(overdefining);setOverdefining(null)}}>Yes</button><button data-test="sketch-overdefined-no" onClick={()=>setOverdefining(null)}>No</button></div>
+  </div>}
   <div className="sketch-section-label">Sketch Reference points</div>
   <div className="sketch-entry-row"><button data-test="sketch-reference-clear" disabled={!chainsOf()?.chains.length} onClick={()=>{const sketch=cloneSketch(d.sketch);sketch.referenceChains=[];re.setSketch(sketch)}}>Clear</button><button disabled title="Reference-point cleanup behavior is still being compared with QUICKSURFACE">Clean up reference points …</button></div>
   {assist&&<SketchAssistDialog chains={chainsOf()?.chains??[]} onClose={()=>setAssist(false)}/>}
