@@ -19,8 +19,7 @@ import { type DatumTrace, traceLine, traceOf, traceOffset } from './datums'
 import { findRegions } from './regions'
 import { chainStatistics, kindsOfChain, placeSegments } from './segment'
 import { type Anchor, type AnchorAt, anchorPoint, arcAngleOf, arcPoint, type Constraint, constraintEntities, endsOf, entityOf, entityPolyline, isDimension, type Sketch, type SketchArc, type SketchCircle, type SketchEntity, type SketchLine, TOUCH_MM, unwindAngle } from './sketch'
-import { measureDimension } from './solver'
-import { measureAngleDimension } from './angleSector'
+import { readDimension } from './solver'
 
 /** One piece of a station's profile, in the order the profile runs. */
 export interface StationPiece {
@@ -818,13 +817,7 @@ function relationsSettled(out: Sketch, moved: readonly number[], datums: readonl
   out.constraints = out.constraints.filter((c) => {
     if (!constraintEntities(c).some((id) => movedSet.has(id))) return true
     if (isDimension(c)) {
-      const at = (id: number) => entityOf(out, id)!
-      const value =
-        c.kind === 'length' || c.kind === 'radius' || c.kind === 'diameter'
-          ? measureDimension(out, c.kind, at(c.entity))
-          : c.kind === 'angle'
-            ? measureAngleDimension(out, c.a, c.b, c.sector)
-            : measureDimension(out, 'distance', c.p, c.q, datums)
+      const value = readDimension(out, c, datums)
       if (value === null) {
         dropped.push({ id: c.id, kind: c.kind })
         return false

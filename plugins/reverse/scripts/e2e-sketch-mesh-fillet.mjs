@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Batch 1 acceptance (2D Sketch overhaul): a scanned plate with R5 rounded
 // corners. Two lines sit on its straight edges, apart from the round; one
-// Auto Fillet stroke over the round finds the corner, fits the radius from
+// Auto Fillet stroke over the corner point finds the corner, fits the radius from
 // the section points, trims both lines to the tangent points and inserts the
 // tangent arc: no gaps, the radius editable afterwards, units shown.
 import fs from 'node:fs';
@@ -29,8 +29,10 @@ try{
  await page.evaluate(()=>window.__re.sheet().zoomTo?.([10,-15,25,0]));await sleep(300);
  await page.$eval('[data-test=sketch-sharpen]',e=>e.click());await sleep(200);
  await page.$eval('[data-test=corner-mode-autoFillet]',e=>e.click());await page.$eval('[data-test=corner-add-dimension]',e=>{if(!e.checked)e.click()});await sleep(150);
- // Stroke: line end, along the round itself, other line end.
- const stroke=[[W-R-2,-H]];for(let i=0;i<=12;i++){const a=3*Math.PI/2+(Math.PI/2)*i/12;stroke.push([W-R+R*Math.cos(a),-H+R+R*Math.sin(a)])}stroke.push([W,-H+R+2]);
+ // Stroke: line end, over the corner point, other line end. QUICKSURFACE
+ // fillets only when the painted area holds the corner point; a stroke along
+ // the round alone joins the lines sharp (analysis/corner-sweep-2026-11-19).
+ const stroke=[[W-R-2,-H],[W,-H],[W,-H+R+2]];
  const pts=[];for(const p of stroke)pts.push(await screen(p));
  await page.mouse.move(pts[0].x,pts[0].y);await page.mouse.down();for(const p of pts.slice(1))await page.mouse.move(p.x,p.y,{steps:3});
  await page.screenshot({path:out+'/01-held.png'});await page.mouse.up();await sleep(400);

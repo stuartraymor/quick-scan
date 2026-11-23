@@ -121,6 +121,9 @@ export interface BodyStyle {
   name?: string
   /** #rrggbb. */
   color?: string
+  /** Drawn see-through whatever the Bodies key says (QUICKSURFACE's
+   *  Transparent on one body); absent when it follows the key. */
+  transparent?: boolean
 }
 
 export type BodyStyles = Record<number, BodyStyle>
@@ -242,6 +245,11 @@ export interface SketchDraft {
    *  end as the start of the next, and a press held on it and dragged
    *  draws an arc tangent to the piece it ends. */
   chain?: Anchor | null
+  /** Where the hand clicked the end the chain carries on from, before the
+   *  solver moved it (an inferred Horizontal levels the line under the
+   *  hand): a second click there, the rest of a double click, ends the
+   *  chain. */
+  chainClick?: Vec2 | null
   /** The Dimension tool's first click, waiting for its second. */
   dimPick?: DimPick | null
   /** The Coincident relation's first click — an end, a centre, a piece
@@ -313,6 +321,11 @@ export type ImagePickMode = 'scale' | 'move' | 'level'
 export interface ExtrudeDraft {
   featureId?: number
   name?: string
+  /** QUICKSURFACE's Solid box unticked: the sketch's pieces — an open chain
+   *  will do — swept as a surface, not its closed regions as a solid. Made
+   *  as a Sheet feature; only for a new extrude off a sketch, by a distance
+   *  or symmetric. */
+  surface?: boolean
   /** The expressions behind the box's numbers, by slot — see
    *  core/parameters.ts; carried into the feature. */
   exprs?: ExprMap

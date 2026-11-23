@@ -38,9 +38,9 @@ try {
   record(await page.$eval('[data-test="corner-add-dimension"]',e=>e.disabled&&!e.checked), 'dimension checkbox starts unchecked and disabled for sharp trim')
   record(await page.$('[data-test="corner-apply"]') === null, 'native paint workflow needs no Apply button')
   record(await page.$('[data-test="sketch-context-tools"]') === null, 'sheet selection toolbar stands down for Corner Trim')
-  const paint = async (held=false) => {
-    const pts=await page.evaluate(()=>[[2,0],[0,2]].map(p=>window.__re.sheet().sheetScreenPoint(p)))
-    await page.mouse.move(pts[0].x,pts[0].y);await page.mouse.down();await page.mouse.move(pts[1].x,pts[1].y,{steps:8})
+  const paint = async (held=false, path=[[2,0],[0,2]]) => {
+    const pts=await page.evaluate(path=>path.map(p=>window.__re.sheet().sheetScreenPoint(p)),path)
+    await page.mouse.move(pts[0].x,pts[0].y);await page.mouse.down();for(const p of pts.slice(1))await page.mouse.move(p.x,p.y,{steps:8})
     if(!held)await page.mouse.up()
   }
   await paint(true)
@@ -58,12 +58,20 @@ try {
   await page.click('[data-test="corner-mode-fixedFillet"]')
   await page.click('[data-test="corner-radius"]');await page.keyboard.down('Control');await page.keyboard.press('a');await page.keyboard.up('Control');await page.keyboard.type('3');await page.keyboard.press('Tab')
   await page.click('[data-test="corner-add-dimension"]')
+  // As in QUICKSURFACE, a fillet needs the corner point painted; over the
+  // two ends alone the lines are joined sharp.
   await paint();await sleep(100)
-  record((await state()).sketch.entities.some(e=>e.kind==='arc'&&Math.abs(e.r-3)<1e-5),'fixed-size paint creates a radius-three fillet on release')
+  record(!(await state()).sketch.entities.some(e=>e.kind==='arc')&&(await state()).history===before.history+1,'fixed-size paint over the ends alone joins sharp, one step')
+  await page.click('[data-test="undo"]')
+  await paint(false,[[2,0],[0,0],[0,2]]);await sleep(100)
+  record((await state()).sketch.entities.some(e=>e.kind==='arc'&&Math.abs(e.r-3)<1e-5),'fixed-size paint over the corner point creates a radius-three fillet on release')
+  record((await state()).history===before.history+2,'the join and the fillet are two undo steps, as in QUICKSURFACE')
   record((await state()).sketch.constraints.filter(c=>c.kind==='tangent').length===2,'painted fillet is tangent to both lines')
   record((await state()).sketch.constraints.some(c=>c.kind==='radius'&&Math.abs(c.value-3)<1e-5),'enabled dimension creates an actual radius constraint')
   await shot('02-fixed-fillet-release')
-  await page.click('[data-test="undo"]');await page.click('[data-test="corner-cancel"]')
+  await page.click('[data-test="undo"]');await page.click('[data-test="undo"]')
+  record(JSON.stringify((await state()).sketch)===JSON.stringify(before.sketch),'two undos restore the separate lines')
+  await page.click('[data-test="corner-cancel"]')
   record(await page.$('[data-test="sketch-corner-trim-panel"]')===null,'OK returns to sketch controls')
 
   await seed(true)

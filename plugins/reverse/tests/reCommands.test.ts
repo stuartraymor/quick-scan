@@ -416,6 +416,7 @@ describe('the commands hold to the panel’s rules', () => {
       'reverse.section.stack',
       'reverse.sketch.analyse',
       'reverse.sketch.candidates',
+      'reverse.sketch.corner',
       'reverse.sketch.edit',
       'reverse.sketch.mirror',
       'reverse.sketch.pattern',

@@ -246,6 +246,10 @@ export interface PlaneFit extends FitBase {
   basisV: Vec3
   extentU: number
   extentV: number
+  /** Set on a fit whose normal (and basisV) were turned over for an
+   *  element the user flipped — see withFlips. A fit worked out afresh
+   *  comes without it and is turned over again. */
+  flipped?: boolean
 }
 
 /** A circle: a center, the unit normal of the plane it lies in, a radius.

@@ -22,7 +22,7 @@ export function ExtrudeDistanceFields({ extent, exprs, onExtent, onCreate }: {
   return <>
     <div data-test="extrude-full-depth">
       <NumberField label="Full depth" kind="length" min={0} step="any" testId="extrude-full-depth-value"
-        value={Math.abs(extent.to - extent.from)} disabled={driven || !spans}
+        value={Number(Math.abs(extent.to - extent.from).toPrecision(12))} disabled={driven || !spans}
         hint={driven ? 'Edit the endpoint expression to change this thickness.' : !spans ? 'Edit the signed offsets for this interval.' : 'Resize both sides about the sketch in their current proportions.'}
         onCommit={(total) => onExtent(resizeFullDepth(extent, total))} />
     </div>

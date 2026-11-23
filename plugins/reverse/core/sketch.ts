@@ -31,7 +31,17 @@ export type ProjectionSource = { body: number; edge: EdgeFingerprint } | { sketc
  *  point or a circle stands for (its centre), or a spline's fit point by its
  *  place among them (`p1`, `p2`, …) — an open spline's first and last are
  *  its ends, `a` and `b`; a closed one has fit points only, from `p0`. */
-export type AnchorAt = 'a' | 'b' | 'center' | `p${number}`
+export type AnchorAt = 'a' | 'b' | 'center' | `p${number}` | QuadrantAt
+
+/** A quadrant point of a circle or an arc: where it is furthest along +X
+ *  (`q0`), +Y (`q1`), −X (`q2`) and −Y (`q3`) of the sheet — what a
+ *  dimension to the edge of a hole or a round end is taken from. It rides
+ *  on the rim: it moves with the centre and the radius, and does not turn
+ *  with an arc's ends. */
+export type QuadrantAt = 'q0' | 'q1' | 'q2' | 'q3'
+export const QUADRANTS: readonly QuadrantAt[] = ['q0', 'q1', 'q2', 'q3']
+export const isQuadrant = (at: string): at is QuadrantAt => at === 'q0' || at === 'q1' || at === 'q2' || at === 'q3'
+const quadrantOf = (c: Vec2, r: number, at: QuadrantAt): Vec2 => (at === 'q0' ? [c[0] + r, c[1]] : at === 'q1' ? [c[0], c[1] + r] : at === 'q2' ? [c[0] - r, c[1]] : [c[0], c[1] - r])
 
 export interface SketchLine {
   id: number
@@ -158,8 +168,12 @@ export interface DimPlace {
  *  the same hard equation to the solver, shown differently by the panel.
  *  `inferred` marks a relation the sketcher added on its own while a piece
  *  was drawn — a line drawn nearly level made horizontal — the same
- *  equation as one asked for, shown as a chip the operator can take off. */
-export type Constraint = { inferred?: boolean; place?: DimPlace } & (
+ *  equation as one asked for, shown as a chip the operator can take off.
+ *  `driven` marks a dimension that holds nothing: a reference dimension,
+ *  as CAD calls it, written in brackets — the solver leaves it out and its
+ *  value is read off the pieces after every solve (solver.ts). Only a
+ *  dimension is ever driven. */
+export type Constraint = { inferred?: boolean; place?: DimPlace; driven?: boolean } & (
   | { id: number; kind: 'coincident'; p: Anchor; q: Anchor }
   | { id: number; kind: 'horizontal'; entity: number }
   | { id: number; kind: 'vertical'; entity: number }
@@ -191,13 +205,19 @@ export type Constraint = { inferred?: boolean; place?: DimPlace } & (
   | { id: number; kind: 'length'; entity: number; value: number; expr?: string }
   /** Between two anchors, from an anchor to a line (perpendicular), or
    *  from an anchor to one of the part's coordinate planes — to the line
-   *  the plane cuts the sheet in (see datums.ts). */
-  | { id: number; kind: 'distance'; p: Anchor; q: Anchor | { line: number } | { datum: DatumPlane }; value: number; expr?: string }
+   *  the plane cuts the sheet in (see datums.ts). With `edge`, an end that
+   *  is an arc's or a circle's centre is taken on its rim instead: 'near'
+   *  the rim point nearest the other end (the gap between two round edges,
+   *  or between a round edge and a line), 'far' the farthest. */
+  | { id: number; kind: 'distance'; p: Anchor; q: Anchor | { line: number } | { datum: DatumPlane }; value: number; expr?: string; edge?: DistanceEdge; axis?: DistanceAxis }
   | { id: number; kind: 'radius'; entity: number; value: number; expr?: string }
   /** A circle's or an arc's diameter — what a full circle is dimensioned
    *  by, as a drawing gives a hole or a boss; the solver holds the radius at
    *  half of it. */
   | { id: number; kind: 'diameter'; entity: number; value: number; expr?: string }
+  /** An arc's length along it: its radius times its sweep — the distance
+   *  round the rim from one end to the other. */
+  | { id: number; kind: 'arcLength'; entity: number; value: number; expr?: string }
   /** Between two lines, degrees: 0–180 as the lines' directions read, or,
    *  with a sector (picked where the dimension was put down), that sector's
    *  angle — the angle, its supplement, or a corner's reflex, 0–360. */
@@ -205,6 +225,13 @@ export type Constraint = { inferred?: boolean; place?: DimPlace } & (
 )
 
 export type ConstraintKind = Constraint['kind']
+
+/** A distance between two points taken along one of the sheet's axes rather
+ *  than straight between them: 'x' the horizontal distance (the difference
+ *  in X), 'y' the vertical one. QUICKSURFACE's Dimension tool gives the
+ *  three by where the number is put down: beside the pair, above or below
+ *  it, or between the points. Without it, the straight distance. */
+export type DistanceAxis = 'x' | 'y'
 
 /** What a point or a line is held on: a line of the sketch, a round
  *  piece's rim, or a coordinate plane's line in the sheet. */
@@ -235,10 +262,16 @@ export type WithoutId<T> = T extends { id: number } ? Omit<T, 'id'> : never
 export type EntityInput = WithoutId<SketchEntity>
 export type ConstraintInput = WithoutId<Constraint>
 
-export const DIMENSION_KINDS: readonly ConstraintKind[] = ['length', 'distance', 'radius', 'diameter', 'angle']
+export const DIMENSION_KINDS: readonly ConstraintKind[] = ['length', 'distance', 'radius', 'diameter', 'arcLength', 'angle']
 
 export function isDimension(c: Constraint): c is Extract<Constraint, { value: number }> {
   return 'value' in c
+}
+
+/** Whether a constraint is a driven (reference) dimension: shown, read
+ *  off the pieces, holding nothing. */
+export function isDriven(c: Constraint): boolean {
+  return c.driven === true && 'value' in c
 }
 
 /** A piece's Fix where the sketch shows its relations — a row in the list,
@@ -282,7 +315,7 @@ export function splinePointIndex(e: Pick<SketchSpline, 'pts' | 'closed'>, at: An
   const closed = isClosed(e)
   if (at === 'a') return closed ? null : 0
   if (at === 'b') return closed ? null : n - 1
-  if (at === 'center') return null
+  if (at === 'center' || at[0] !== 'p') return null
   const i = Number(at.slice(1))
   if (!Number.isInteger(i) || i < 0 || i >= n) return null
   return closed || (i > 0 && i < n - 1) ? i : null
@@ -296,14 +329,25 @@ export function splineAnchor(e: Pick<SketchSpline, 'pts' | 'closed'>, i: number)
 }
 
 /** Where an anchor lies. */
+/** Where a distance dimension takes an end that is a round piece's centre:
+ *  on its rim nearest the other end, or farthest from it. */
+export type DistanceEdge = 'near' | 'far'
+
+/** The radius an end of a distance dimension stands off its anchor: the
+ *  piece's radius for a round piece's centre under `edge`, else none. */
+export function rimRadius(e: SketchEntity | undefined, at: AnchorAt, edge: DistanceEdge | undefined): number {
+  return edge && at === 'center' && e && (e.kind === 'arc' || e.kind === 'circle') ? e.r : 0
+}
+
 export function anchorPoint(e: SketchEntity, at: AnchorAt): Vec2 {
   switch (e.kind) {
     case 'line':
       return at === 'b' ? e.b : at === 'a' ? e.a : [(e.a[0] + e.b[0]) / 2, (e.a[1] + e.b[1]) / 2]
     case 'arc':
+      if (isQuadrant(at)) return quadrantOf(e.c, e.r, at)
       return at === 'a' ? arcPoint(e, e.start) : at === 'b' ? arcPoint(e, e.start + e.sweep) : at === 'p0' ? arcPoint(e, e.start + e.sweep * (e.gripT ?? 0.5)) : e.c
     case 'circle':
-      return e.c
+      return isQuadrant(at) ? quadrantOf(e.c, e.r, at) : e.c
     case 'spline': {
       const i = splinePointIndex(e, at)
       if (i !== null) return e.pts[i]
@@ -314,6 +358,22 @@ export function anchorPoint(e: SketchEntity, at: AnchorAt): Vec2 {
     case 'point':
       return e.p
   }
+}
+
+/** The quadrant points a round piece has: a circle's four, and those of
+ *  an arc's that lie on the arc itself. */
+export function quadrantsOf(e: SketchEntity): { at: QuadrantAt; point: Vec2 }[] {
+  if (e.kind !== 'circle' && e.kind !== 'arc') return []
+  const out: { at: QuadrantAt; point: Vec2 }[] = []
+  QUADRANTS.forEach((at, k) => {
+    if (e.kind === 'arc') {
+      // How far round from the start the quadrant lies, the way the arc runs.
+      const turn = ((((k * Math.PI) / 2 - e.start) * Math.sign(e.sweep || 1)) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI)
+      if (turn > Math.abs(e.sweep) + 1e-9) return
+    }
+    out.push({ at, point: quadrantOf(e.c, e.r, at) })
+  })
+  return out
 }
 
 /** The anchors an entity offers: a spline's are its fit points, its ends
@@ -460,6 +520,7 @@ export function constraintEntities(c: Constraint): number[] {
     case 'length':
     case 'radius':
     case 'diameter':
+    case 'arcLength':
       return [c.entity]
     case 'parallel':
     case 'perpendicular':
@@ -545,6 +606,8 @@ export function relationTakes(kind: ConstraintKind, entities: readonly SketchEnt
     case 'radius':
     case 'diameter':
       return entities.length === 1 && round(kinds[0])
+    case 'arcLength':
+      return entities.length === 1 && kinds[0] === 'arc'
     case 'coincident':
     case 'symmetric':
     case 'distance':
@@ -879,7 +942,20 @@ export function copyPiecesAt(sketch: Sketch, ids: readonly number[], motions: re
       const { id: _id, place: _place, ...rest } = c
       void _id
       void _place
-      addConstraint(sketch, renumbered(rest as ConstraintInput, id))
+      const made = renumbered(rest as ConstraintInput, id)
+      // Horizontal and Vertical are about the sheet, not the pieces: a
+      // copy turned 90° swaps them and one turned any other way loses
+      // them, as Mirror does. Kept as they were, the solver forced the
+      // turned copies upright and crushed them to nothing.
+      if (made.kind === 'horizontal' || made.kind === 'vertical') {
+        const line = entityOf(sketch, made.entity)
+        if (line?.kind !== 'line') continue
+        const v = sub2(line.b, line.a)
+        const kind = Math.abs(v[1]) < 1e-7 ? 'horizontal' : Math.abs(v[0]) < 1e-7 ? 'vertical' : null
+        if (kind) addConstraint(sketch, { ...made, kind })
+        continue
+      }
+      addConstraint(sketch, made)
     }
     copies.push(pieces.map((e) => id(e.id)))
   }

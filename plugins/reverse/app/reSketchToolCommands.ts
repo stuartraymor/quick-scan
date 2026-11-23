@@ -13,7 +13,9 @@ import { exactComb, DEFAULT_COMB } from '../core/curvatureComb'
 import { curveOf } from '../core/curveEval'
 import { findRegions } from '../core/regions'
 import type { Vec2 } from '../../../src/core/flat/types'
-import { cloneSketch, entityOf, type Sketch, type SketchEntity } from '../core/sketch'
+import { cloneSketch, entityOf, type Anchor, type Sketch, type SketchEntity } from '../core/sketch'
+import { buildCornerTrim } from '../core/sketchCornerTrim'
+import { filletScanFit } from '../core/filletFit'
 import { sketchDeviation } from '../core/sketchDeviation'
 import { mirrorAbout, type MirrorAxis, type SketchEditResult } from '../core/sketchEdits'
 import { applyPattern, type CentreRef, type DirectionRef, type LinearDirection, MAX_INSTANCES, type PatternSpec } from '../core/sketchPatterns'
@@ -102,6 +104,65 @@ export const sketchMirror: Command<{ sketch: Ref; pieces: number[]; axis: Json; 
       const r = done(mirrorAbout(sk, pieces, line), 'mirror')
       return { sketch: r.sketch, extra: { made: r.ids } }
     }),
+}
+
+// ------------------------------------------------------------------ corner
+
+export const sketchCorner: Command<{ sketch: Ref; pieces: number[]; ends?: ('a' | 'b')[]; mode?: 'trim' | 'autoFillet' | 'fixedFillet'; radius?: number; addDimension?: boolean; tolerance?: number; detail?: Detail }> = {
+  name: 'corner',
+  title: 'Join or fillet a sketch corner',
+  description:
+    'Corner Trim, Auto Fillet or Fixed Size Fillet on two pieces (lines, arcs; open curves for trim), through the same geometry the panel’s brush uses. trim: the pieces are cut or extended to the exact crossing of their carriers and joined there (no gap, no overlap); far ends never move. autoFillet: joined, then rounded by the circular arc fitted to the scan section round the corner (least-squares, tangent to both, outliers set aside); a sharp scan corner is joined sharp. fixedFillet: rounded at radius (mm). ends: which end of each piece is at the corner ("a"/"b"), the nearer ends by default. Returns the fillet radius, its arc id, and for autoFillet how far the scan points lie off the finished corner against tolerance (mm; the plan’s or 0.1): exceeds says the scan round is not circular and the arc misses the tolerance. One undo step.',
+  input: obj(
+    {
+      sketch: featureRef('sketch'),
+      pieces: arr(int('A piece’s id.'), 'The two pieces of the corner.', { minItems: 2, maxItems: 2 }),
+      ends: arr(enumOf(['a', 'b'] as const, 'An end.'), 'The corner end of each piece, in the order of pieces.', { minItems: 2, maxItems: 2 }),
+      mode: enumOf(['trim', 'autoFillet', 'fixedFillet'] as const, 'trim by default.'),
+      radius: num('mm, for fixedFillet.', { exclusiveMinimum: 0 }),
+      addDimension: bool('Put a radius dimension on the fillet (false by default).'),
+      tolerance: num('mm either side of the scan for the fit check; the plan’s or 0.1 by default.', { exclusiveMinimum: 0 }),
+      detail: detailIn,
+    },
+    ['sketch', 'pieces'],
+  ),
+  label: ({ mode = 'trim' }) => (mode === 'trim' ? 'corner trim' : mode === 'autoFillet' ? 'auto fillet' : 'fixed fillet'),
+  run: async ({ sketch, pieces, ends, mode = 'trim', radius, addDimension = false, tolerance, detail = 'brief' }) => {
+    const f = sketchNamed(sketch)
+    const sk = cloneSketch(f.sketch)
+    piecesOf(sk, f.name, pieces)
+    if (mode === 'fixedFillet' && radius === undefined) invalid('radius: give the fillet radius in mm for fixedFillet.')
+    let chains: Vec2[][] | undefined
+    if (mode === 'autoFillet') {
+      const d = re().sketchDraft
+      chains = await chainsOn(f.plane, f.frame, d && d.featureId === f.id ? d.level : undefined)
+      if (!chains.length) invalid('autoFillet: the scan does not cross this sketch’s plane. Use fixedFillet.')
+    }
+    const anchors: Anchor[] | undefined = ends ? pieces.map((entity, i) => ({ entity, at: ends[i] })) : undefined
+    const result = buildCornerTrim(sk, pieces, { mode, radiusMm: radius ?? 1, addDimension }, [], anchors, chains)
+    if (!result.ok) invalid(`corner: ${result.error}`)
+    const tol = tolerance ?? usePlan.getState().plan?.target.tolerance ?? 0.1
+    const fit = result.profile?.length && result.shape === 'arc' ? filletScanFit(result.sketch, result.changedIds, result.profile, tol) : null
+    const arc = result.changedIds[2]
+    const before = bodyRows(reverseSession())
+    let solve: ReturnType<typeof putSketch> = null
+    await change(() => {
+      re().editSketch(f.id)
+      // Built exactly on the pieces' carriers: put in as it is, so brushed
+      // pieces are not refitted to their scan points (as the brush does).
+      solve = result.exact ? putSketch(result.sketch, undefined, true) : putSketch(result.sketch, result.farAnchors)
+      if (re().commitSketch() === null) throw new CommandError('failed', 'That leaves the sketch with nothing in it.')
+    })
+    const extra: Json = {
+      mode,
+      ...(result.shape ? { shape: result.shape } : {}),
+      ...(result.radiusMm !== undefined && arc !== undefined ? { radius: round(result.radiusMm), arc } : {}),
+      ...(fit ? { scanFit: { max: round(fit.maxMm), rms: round(fit.rmsMm), points: fit.points, outside: fit.over, tolerance: tol, exceeds: fit.exceeds } } : {}),
+      ...(result.unswept ? { unswept: true } : {}),
+      solve,
+    }
+    return featureAnswer(session(), f.id, extra, detail, before)
+  },
 }
 
 // ----------------------------------------------------------------- pattern

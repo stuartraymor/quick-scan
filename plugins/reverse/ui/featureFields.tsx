@@ -231,14 +231,15 @@ export function OpFields({ op, canCut, testPrefix, onOp }: { op: 'new' | 'join' 
     <label className="field">
       <span>Result</span>
       <select data-test={`${testPrefix}-op`} value={op} onChange={(e) => onOp(e.target.value as 'new' | 'join' | 'cut')}>
+        {/* QUICKSURFACE's words and order: New Solid, Combine (Join), Cut. */}
+        <option value="new" title="A body of its own, whatever it overlaps — a tool to cut the scan with in Mesh Tools">
+          New Solid
+        </option>
         <option value="join" title="Made one with every body it touches; a body of its own where it touches none, one body of all where it bridges several">
-          Join
+          Combine (Join)
         </option>
         <option value="cut" disabled={!canCut} title="Taken out of every body it goes into; a body it parts is a body a piece">
           Cut
-        </option>
-        <option value="new" title="A body of its own, whatever it overlaps — a tool to cut the scan with in Mesh Tools">
-          New body
         </option>
       </select>
     </label>

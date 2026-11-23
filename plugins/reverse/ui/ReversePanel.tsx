@@ -17,6 +17,7 @@ import type { FeatureResult } from '../core/build'
 import { SuppressedRow, SuppressKey, useFeatureMenu } from './FeatureMenu'
 import { SweepIcon } from './SweepFields'
 import { useStore } from '../../../src/state/store'
+import { useDocumentOrder } from '../../../src/state/documentOrderStore'
 import { useThickness } from '../../../src/state/thicknessStore'
 import { useLength } from '../../../src/app/useUnits'
 import type { SketchChains } from '../app/useReverseWorkspace'
@@ -141,6 +142,9 @@ export function ReversePanel({ onOpenScan, onExportStep, onCompare, chainsOf }: 
   // A playback moves the bar itself, and the rows stand down while it runs:
   // the row it has come to is lit and kept in sight.
   const barLocked = editorOpen || playback !== null
+  // Rolled back, the panel is inert (the tool inspector's lock): its To end
+  // could not be pressed, so it gives way to To End of Model at the top.
+  const modelRolled = useDocumentOrder((s) => s.rollbackAt !== null)
   const playedId = playback && playback.at > 0 ? (features[playback.at - 1]?.id ?? null) : null
   useEffect(() => {
     if (playedId === null) return
@@ -161,7 +165,7 @@ export function ReversePanel({ onOpenScan, onExportStep, onCompare, chainsOf }: 
       className={'rollbar' + (rollDrag !== null ? ' dragging' : '') + (barLocked ? ' off' : '')}
       data-test="rollback-bar"
       data-at={features.length}
-      title={playback ? 'The playback moves the rollback bar — stop it to move the bar by hand' : editorOpen ? 'Finish what is open first' : 'The rollback bar — drag it up to set the features below it aside and add one earlier in the history; drag it down, or press To end, to build them again'}
+      title={playback ? 'The playback moves the rollback bar — stop it to move the bar by hand' : editorOpen ? 'Finish what is open first' : 'The rollback bar, the End of Model in History — drag it up to see the part as it stood earlier: the features below it are set aside, and nothing can be made, changed or deleted until the bar is back at the end. To End of Model, at the top of this panel or under the ribbon, builds them again'}
       onPointerDown={(e) => {
         if (barLocked || e.button !== 0) return
         e.currentTarget.setPointerCapture(e.pointerId)
@@ -179,7 +183,7 @@ export function ReversePanel({ onOpenScan, onExportStep, onCompare, chainsOf }: 
       onPointerCancel={() => setRollDrag(null)}
     >
       <span className="grip" />
-      {rolledBack.length > 0 && rollDrag === null && !playback && (
+      {rolledBack.length > 0 && rollDrag === null && !playback && !modelRolled && (
         <button data-test="rollback-end" disabled={editorOpen} title="Move the rollback bar to the end of the list: every feature is built again" onPointerDown={(e) => e.stopPropagation()} onClick={() => re.getState().rollTo(null)}>
           To end
         </button>
@@ -397,7 +401,7 @@ export function ReversePanel({ onOpenScan, onExportStep, onCompare, chainsOf }: 
               Features
               <InfoDot title="The feature list">
                 <p>
-                  The part is built from the top down. The <b>rollback bar</b> under the list is dragged up to go back in its history: the features below it are set aside, the part stands as it stood there, and whatever is made next goes in at the bar — a fillet before the shell, a cut before the pattern. Drag it back down, or press <b>To end</b>, and the rest is built again on top of what was added.
+                  The part is built from the top down. The <b>rollback bar</b> under the list is dragged up to go back in its history: the features below it are set aside and the part stands as it stood there. It is the same marker as <b>&lt; End of Model &gt;</b> in History. While it is up the model is only looked at: this panel and the modelling tools are off, and making, changing or deleting geometry is refused. <b>To End of Model</b>, at the top of this panel or in the strip under the ribbon, builds the rest again.
                 </p>
                 <p>A feature below the bar that loses what it stood on says so by name in its row, as any feature does.</p>
                 <p>

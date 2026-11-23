@@ -16,6 +16,7 @@ import { schemeById } from '../../../src/viewer/navSchemes'
 import { sceneTheme } from '../../../src/viewer/viewThemes'
 import { useFlatSceneSettings } from '../../../src/ui/FlatViewer'
 import type { SketchChains } from '../app/useReverseWorkspace'
+import { useReverse } from '../state/reStore'
 import { SketchBrushOverlay } from './SketchBrushOverlay'
 import { SketchExtraOverlay } from './SketchExtraOverlay'
 import { SketchSelectionTools } from './SketchSelectionTools'
@@ -23,6 +24,7 @@ import { SketchCornerTrimOverlay } from './SketchCornerTrimOverlay'
 import { SketchMirrorOverlay } from './SketchMirrorOverlay'
 import { SketchPatternOverlay } from './SketchPatternOverlay'
 import { SketchSplineOverlay } from './SketchSplineOverlay'
+import { SketchPieceMenu } from './SketchPieceMenu'
 import { SketchCornerGestureOverlay } from './SketchCornerGestureOverlay'
 import { SketchProjectOverlay } from './SketchProjectPanel'
 import { SketchEditPreview } from './SketchEditPreview'
@@ -111,6 +113,14 @@ export function SketchViewer({
     scene.onSheetDrag = (p, meta) => dragRef.current(p, { raw: meta.ctrl, unitsPerScreenPx: meta.unitsPerScreenPx })
     scene.onSheetDragEnd = () => dragEndRef.current()
     scene.onNoteSelect = (id) => noteRef.current(id)
+    // With the arrow a click on a dimension's number selects it — Delete
+    // then removes it, a drag moves it, a double-click opens it for typing,
+    // as SolidWorks has it. With the Dimension tool the click opens it.
+    scene.onDimensionSelect = (id) => {
+      if (useReverse.getState().sketchDraft?.tool !== 'select') return false
+      noteRef.current(id)
+      return true
+    }
     scene.onDimensionEdit = (id, value) => dimensionRef.current(id, value)
     scene.onDimensionMove = (id, p, begin) => dimensionMoveRef.current(id, p, begin)
     scene.onViewChange = (centre, upp) => viewRef.current(centre, upp)
@@ -133,6 +143,8 @@ export function SketchViewer({
       <SketchMirrorOverlay scene={activeScene} />
       <SketchPatternOverlay scene={activeScene} />
       <SketchSplineOverlay scene={activeScene} />
+      {/* After the spline's: a spline's right click is its own menu's. */}
+      <SketchPieceMenu scene={activeScene} />
       <SketchCornerGestureOverlay scene={activeScene} chainsOf={chainsOf} />
       <SketchProjectOverlay scene={activeScene} />
       <SketchEditPreview scene={activeScene} />

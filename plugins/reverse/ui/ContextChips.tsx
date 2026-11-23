@@ -28,6 +28,7 @@ import { commonFolder, folderOf } from '../core/bodyFolders'
 import type { FaceInfo } from '../core/build'
 import { folderPathText, isolateBodies, othersHidden } from './BodyList'
 import { pinNoteOnItems, useNotesOn } from '../app/useNotePins'
+import { Overlay } from './Overlay'
 
 /** What the status line says as a sketch opens on a plane — from a chip or
  *  from the panel's Sketch on list. */
@@ -344,7 +345,9 @@ export function ContextChips() {
   // about two of them, what lies between.
   const info = selectionInfo(items, units)
   if (chips.length === 0 && !info) return null
+  // Over the view, whether or not the CAD tools panel is open.
   return (
+    <Overlay>
     <div ref={barRef} className={'chipbar' + (info ? ' withinfo' : '')} data-test="context-chips" style={{ left: Math.max(8, selection.at.x + 12 + shift.x), top: Math.max(8, selection.at.y + 12 + shift.y) }}>
       {info && (
         <div className="chipinfo" data-test="chip-info">
@@ -374,5 +377,6 @@ export function ContextChips() {
         </button>
       ))}
     </div>
+    </Overlay>
   )
 }

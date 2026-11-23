@@ -24,6 +24,9 @@
 .sketch-display-grid label { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
 .tool-inspector .sketch-display-grid button { justify-self: end; width: 74px; }
 .tool-inspector .sketch-overdefined { margin-top: 6px; color: #777; }
+.tool-inspector .sketch-overdefined:not(:disabled) { color: var(--text, #e8eaed); border-color: #c8413a; }
+.tool-inspector .sketch-overdefined-ask { margin-top: 6px; padding: 8px; border: 1px solid #c8413a; border-radius: 4px; background: rgba(200, 65, 58, 0.12); }
+.tool-inspector .sketch-overdefined-ask p { margin: 0 0 6px; font-size: 12px; }
 .sketch-advanced { margin: 2px 0; }
 .sketch-advanced > summary { cursor: pointer; font-size: 10px; color: #666; padding: 4px 0; }
 .sketch-advanced[open] { display: grid; gap: 6px; border-top: 1px solid #ccc; }
@@ -393,10 +396,11 @@
    marks — a line's middle, a corner — in screen pixels, at every zoom, so
    the piece under it can still be taken hold of there. */
 .viewport-label.note-label.glyph {
-  margin: -7px 0 0 6px;
+  /* `--slot`: its place in the row when several glyphs mark one spot. */
+  margin: -10px 0 0 calc(8px + var(--slot, 0) * 23px);
   padding: 1px;
-  width: 16px;
-  height: 16px;
+  width: 22px;
+  height: 22px;
   box-sizing: border-box;
   display: flex;
   align-items: center;
@@ -406,16 +410,22 @@
   box-shadow: none;
   background: color-mix(in srgb, var(--stage) 85%, transparent);
   color: var(--ink);
-  font-size: 11.5px;
+  font-size: 15px;
   cursor: pointer;
 }
 
+/* A brush tool open (Corner Trim, the Fit brushes): the sketch's labels let
+   presses through, so a sweep can start on a glyph (useBrushingPage). */
+.sketch-brushing .viewport-label {
+  pointer-events: none !important;
+}
+
 .viewport-label.note-label.glyph svg {
-  width: 14px;
-  height: 14px;
+  width: 19px;
+  height: 19px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.8;
+  stroke-width: 2.2;
   stroke-linecap: round;
   stroke-linejoin: round;
   pointer-events: none;
@@ -457,6 +467,37 @@
     0 0 6px rgb(var(--glass));
 }
 
+/* A relation glyph while a drawing tool is in hand: seen, not clicked. */
+.viewport-label.note-label.passive {
+  pointer-events: none !important;
+}
+
+/* A driven (reference) dimension: in brackets, quieter — it reads the
+   sketch and holds nothing. */
+.viewport-label.distance-label.sketch-dim.driven .label-value {
+  opacity: 0.75;
+  font-style: italic;
+}
+.relations .driven-value {
+  font-style: italic;
+  opacity: 0.8;
+  white-space: nowrap;
+}
+
+/* A dimension that overdefines the sketch: yellow, as QUICKSURFACE marks it. */
+.viewport-label.distance-label.sketch-dim.overdefined .label-value {
+  background: #ffe600 !important;
+  color: #15171a !important;
+  border-color: #ffe600;
+  text-shadow: none;
+}
+/* A dimension selected with the arrow: Delete removes it. */
+.viewport-label.distance-label.sketch-dim.selected .label-value {
+  color: #ffb020;
+  background: color-mix(in srgb, var(--stage) 80%, transparent);
+  outline: 1px solid #ffb020;
+}
+
 .viewport-label.distance-label.sketch-dim.editable {
   pointer-events: auto;
   cursor: move;
@@ -490,6 +531,18 @@
 
 .relations .kv .name {
   cursor: pointer;
+}
+
+/* A dimension row keeps its name whole: with an arc's form, the Driving key
+   and the field beside it, the row wraps rather than cut the name to its
+   symbol. */
+.relations .kv[data-test='sketch-dimension-row'] {
+  flex-wrap: wrap;
+  row-gap: 3px;
+}
+
+.relations .kv[data-test='sketch-dimension-row'] .name {
+  flex: 1 0 auto;
 }
 
 .relations .kv input[type='number'] {
@@ -1499,3 +1552,11 @@
 
 /* Sketch assist temporarily replaces the editor panel; its portal remains visible. */
 body:has([data-test="sketch-assist-dialog"]) [data-test="sketch-editor"] { visibility: hidden; }
+
+/* The sketch's hint line, above its status: what the tool in hand wants
+   next, or why an edit was refused (amber, as an unmet relation's chip).
+   Pinned to the panel's bottom edge when a long list of relations would
+   scroll it out of sight. */
+.sketch-editor-parity .sketch-hint { margin: 6px 0 4px; padding: 3px 0; overflow-wrap: anywhere; position: sticky; bottom: 0; z-index: 2; background: var(--panel); }
+.sketch-editor-parity .sketch-hint.refused,
+:root[data-theme] .sketch-editor-parity .sketch-hint.refused { color: var(--amber); }

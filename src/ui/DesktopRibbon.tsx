@@ -56,13 +56,15 @@ type Props = {
   savable: boolean
   pluginTools?: ReactNode
   cadActions?: PluginRuntime['ribbonActions']
+  /** A plugin offers a way to measure that needs no scan (a sketch). */
+  measureReady?: boolean
 }
 function Group({ label, children }: { label: string; children: ReactNode }) {
   return <div className="desktop-ribbon-group"><div className="desktop-ribbon-tools">{children}</div><span className="desktop-ribbon-label">{label}</span></div>
 }
 
 /** Familiar command positions, backed by the existing session and plugin verbs. */
-export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExport, onExportVisible, onOpen, onExample, exampleBusy = false, onSave, onSaveAs, onDeselect, onSnapshot, onSurfaceArea, onVolume, onHideSelected, onIsolate, onShowHidden, onInvertHidden, onAutoColorize, onDefaultColor, onView, onFitView, savable, cadActions }: Props) {
+export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExport, onExportVisible, onOpen, onExample, exampleBusy = false, onSave, onSaveAs, onDeselect, onSnapshot, onSurfaceArea, onVolume, onHideSelected, onIsolate, onShowHidden, onInvertHidden, onAutoColorize, onDefaultColor, onView, onFitView, savable, cadActions, measureReady = false }: Props) {
   const file = useStore(s => s.fileName)
   const busy = useStore(s => s.busy)
   const interactive = useInteractiveAlign(s => s.open)
@@ -411,7 +413,7 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
     <Group label="Software Options">{tool('Options', 'settings', () => usePrefs.getState().openSettings(true), false, 'Navigation, display, files and agent options')}{tool('Mouse controls', 'navigate', () => usePrefs.getState().openSettings(true), false, 'Navigation scheme and display options')}</Group></>
   const analysisTab = <>
     <Group label="Tools">
-      {tool('Measure', 'wsMeasure', () => useMeasureTool.getState().setOpen(true), locked || !file, 'Measure on the mesh: 3D Distance, Extended Distance and Point')}
+      {tool('Measure', 'wsMeasure', () => useMeasureTool.getState().setOpen(true), locked || (!file && !measureReady), 'Measure on the mesh (3D Distance, Extended Distance, Point) and, in the CAD workspace, sketch geometry (Sketch)')}
       <div className="ribbon-text-stack">{smallText('Surface Area', 'surface', onSurfaceArea, !file, 'Surface area of the scan mesh')}{smallText('Volume', 'model', onVolume, !file, 'Volume enclosed by the scan mesh')}</div>
       <div className="ribbon-text-stack">{cadText('zebra', 'Zebra Stripes', 'curvature')}{cadText('envMap', 'Environment Map', 'scanColours')}{cadText('draftAnalysis', 'Draft', 'draft', false, 'Analysis:Draft')}</div>
       {tool('Snapshot', 'splitView', onSnapshot, !file, 'Snapshot to clipboard — copy the view as a picture')}

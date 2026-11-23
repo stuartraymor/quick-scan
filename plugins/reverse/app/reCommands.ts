@@ -21,7 +21,7 @@ import { buildStop } from './reBuildStop'
 import { bodySet, check, clearance, compare, compareInDeviationCommand, describe, step, stl } from './reBodyCommands'
 import { volumeCompare } from './reVolumeCompare'
 import { review } from './reReview'
-import { sketchAnalyse, sketchMirror, sketchPattern, sketchSelect, sketchSpline } from './reSketchToolCommands'
+import { sketchAnalyse, sketchCorner, sketchMirror, sketchPattern, sketchSelect, sketchSpline } from './reSketchToolCommands'
 import { planeDescribe, sectionFit, sectionOutline, sectionStack, sketchCandidates, tubeTrace } from './reSectionCommands'
 import { filletRead } from './reFilletRead'
 import { filletTry } from './reFilletTry'
@@ -123,6 +123,7 @@ export const reverseCommands: Command<never>[] = ([
   { ...sketchEdit, name: 'sketch.edit' },
   { ...sketchCandidates, name: 'sketch.candidates' },
   { ...sketchMirror, name: 'sketch.mirror' },
+  { ...sketchCorner, name: 'sketch.corner' },
   { ...sketchPattern, name: 'sketch.pattern' },
   { ...sketchSpline, name: 'sketch.spline' },
   { ...sketchSelect, name: 'sketch.select' },

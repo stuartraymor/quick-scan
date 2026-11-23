@@ -505,7 +505,7 @@ describe('Coincident in the sketch', () => {
     s().armRelation('coincident')
     s().sketchClick([5, 10], 0.5, false)
     expect(sk().relPicks).toEqual([{ kind: 'point', anchor: { entity: first, at: 'a' } }])
-    s().sketchClick([20, 30], 0.5, false)
+    s().sketchClick([15, 30], 0.5, false)
     expect(sk().relPicks).toEqual([])
     const on = sk().sketch.constraints.find((c) => c.kind === 'pointOn')
     expect(on && on.kind === 'pointOn' && on.on).toEqual({ line: second })
@@ -517,16 +517,30 @@ describe('Coincident in the sketch', () => {
     const dir = [other.b[0] - other.a[0], other.b[1] - other.a[1]]
     const off = ((end[0] - other.a[0]) * -dir[1] + (end[1] - other.a[1]) * dir[0]) / Math.hypot(dir[0], dir[1])
     expect(off).toBeCloseTo(0, 5)
-    // The relation stays in hand: a line onto the YZ plane's line (x = 0),
-    // the line clicked in its middle where it settled.
+    // The relation stays in hand: a line onto a coordinate plane's line,
+    // the line clicked in its middle where it settled. The line is held
+    // level, so the YZ plane's upright line (x = 0) is refused with the
+    // reason — the solver met it by shrinking the line to a point — and
+    // nothing changes; the ZX plane's level line (y = 0) takes it.
     expect(sk().tool).toBe('relation')
+    const settled = JSON.stringify(sk().sketch)
     s().sketchClick([(other.a[0] + other.b[0]) / 2, (other.a[1] + other.b[1]) / 2], 0.5, false)
-    expect(sk().relPicks).toEqual([{ kind: 'piece', id: second }])
+    expect(sk().relPicks).toMatchObject([{ kind: 'piece', id: second }])
     s().sketchClick([0, 50], 0.5, false)
+    expect(sk().error).toMatch(/shrink line [0-9]+ to a point/)
+    expect(JSON.stringify(sk().sketch)).toBe(settled)
+    expect(sk().relPicks).toEqual([])
+    s().sketchClick([(other.a[0] + other.b[0]) / 2, (other.a[1] + other.b[1]) / 2], 0.5, false)
+    s().sketchClick([60, 0], 0.5, false)
     const along = sk().sketch.constraints.find((c) => c.kind === 'collinear')
-    expect(along && along.kind === 'collinear' && along.on).toEqual({ datum: 'yz' })
-    expect((sk().sketch.entities[1] as { a: [number, number]; b: [number, number] }).b[0]).toBeCloseTo(0, 6)
-    // Two round pieces are refused with a reason, and the picks let go.
+    expect(along && along.kind === 'collinear' && along.on).toEqual({ datum: 'zx' })
+    const laid = sk().sketch.entities[1] as { a: [number, number]; b: [number, number] }
+    expect(laid.a[1]).toBeCloseTo(0, 6)
+    expect(laid.b[1]).toBeCloseTo(0, 6)
+    expect(Math.hypot(laid.b[0] - laid.a[0], laid.b[1] - laid.a[1])).toBeGreaterThan(1)
+    // Two round pieces: their centres meet (1.2.22), the first staying where
+    // it is and both radii kept — it was refused before ("Tangent or
+    // Concentric"), and before that a centre went on the other's rim.
     s().setSketchTool('circle')
     s().sketchClick([60, 60], 0.5, false, { off: true })
     s().sketchClick([65, 60], 0.5, false, { off: true })
@@ -534,10 +548,18 @@ describe('Coincident in the sketch', () => {
     s().sketchClick([80, 60], 0.5, false, { off: true })
     s().sketchClick([83, 60], 0.5, false, { off: true })
     s().armRelation('coincident')
-    s().sketchClick([65, 60], 0.5, false)
-    s().sketchClick([83, 60], 0.5, false)
-    expect(sk().error).toMatch(/Tangent or Concentric/)
+    // On the rims, away from their quadrant squares (which are points: 1.2.21).
+    s().sketchClick([60 + 5 * Math.SQRT1_2, 60 + 5 * Math.SQRT1_2], 0.5, false)
+    s().sketchClick([80 + 3 * Math.SQRT1_2, 60 + 3 * Math.SQRT1_2], 0.5, false)
+    expect(sk().error).toBeFalsy()
     expect(sk().relPicks).toEqual([])
+    const rounds = sk().sketch.entities.filter((e) => e.kind === 'circle')
+    const big = rounds.find((e) => e.kind === 'circle' && Math.abs(e.r - 5) < 1e-9)
+    const small = rounds.find((e) => e.kind === 'circle' && Math.abs(e.r - 3) < 1e-9)
+    expect(big && big.kind === 'circle' && big.c).toEqual([60, 60])
+    expect(small && small.kind === 'circle' && small.c[0]).toBeCloseTo(60, 6)
+    expect(small && small.kind === 'circle' && small.c[1]).toBeCloseTo(60, 6)
+    expect(sk().report?.unmet ?? []).toEqual([])
     s().discardSketch()
   })
 
@@ -630,13 +652,15 @@ describe('what the cursor lights in a sketch', () => {
     // Dimension: an end wins over its line, a plane's line where nothing is.
     s().setSketchTool('dimension')
     expect(at([10.1, 7.9])).toEqual({ pieces: [], point: [10, 8], datum: null })
-    expect(at([10, 4])).toEqual({ pieces: [side], point: null, datum: null })
+    // On its middle's square the line and the point are both lit (1.2.21).
+    expect(at([10, 4])).toEqual({ pieces: [side], point: [10, 4], datum: null })
+    expect(at([10, 3])).toEqual({ pieces: [side], point: null, datum: null })
     expect(at([-30, 0.1])?.datum).not.toBeNull()
     // With a length in hand, only what it would pair with: the side, for the
     // angle — not the line itself, nor the bare sheet, where a click puts
     // the number down.
     s().sketchClick([5, 0], 0.2, false)
-    expect(at([10, 4])).toEqual({ pieces: [side], point: null, datum: null })
+    expect(at([10, 3])).toEqual({ pieces: [side], point: null, datum: null })
     expect(at([5, 0.1])).toBeNull()
     expect(at([30, 30])).toBeNull()
     // Paired, nothing: the next click puts it down wherever it lands.
@@ -962,5 +986,42 @@ describe('the taper grip', () => {
     s().gripDrag('extrudeTo', 5, 'end')
     expect(s().extrudeDraft?.extent).toEqual({ kind: 'distance', from: 0, to: 15 })
     expect(s().extrudeDraft?.draftDeg).toBe(5)
+  })
+})
+
+describe('extrude Snapping', () => {
+  it('puts the dragged end through the snapped scan point, and drags free without one', () => {
+    const sketch = finishSquare()
+    s().startExtrude(sketch)
+    s().setExtrude({ extent: { kind: 'distance', from: 0, to: 10 } })
+    s().gripDrag('extrudeTo', 0, 'start')
+    expect(s().gripHeld).toBe(true)
+    // Over the scan: the end goes through the point's height over the
+    // sketch plane (z = 0), whatever the arrow's own delta says.
+    s().gripDrag('extrudeTo', 2, 'move', [3, 4, 17.456])
+    expect(s().extrudeDraft?.extent).toEqual({ kind: 'distance', from: 0, to: 17.46 })
+    // Off the scan: on from the snapped end by what the hand moves after,
+    // not back to the delta from where the drag began (1.2.13).
+    s().gripDrag('extrudeTo', 2, 'move', null)
+    expect(s().extrudeDraft?.extent).toEqual({ kind: 'distance', from: 0, to: 17.46 })
+    s().gripDrag('extrudeTo', 3, 'move', null)
+    expect(s().extrudeDraft?.extent).toEqual({ kind: 'distance', from: 0, to: 18.46 })
+    // Over the scan again: through the point under the cursor.
+    s().gripDrag('extrudeTo', 3, 'move', [0, 0, 12])
+    expect(s().extrudeDraft?.extent).toEqual({ kind: 'distance', from: 0, to: 12 })
+    s().gripDrag('extrudeTo', 3, 'end')
+    expect(s().gripHeld).toBe(false)
+    // The start arrow snaps the start.
+    s().gripDrag('extrudeFrom', 0, 'start')
+    s().gripDrag('extrudeFrom', 1, 'move', [0, 0, -4])
+    s().gripDrag('extrudeFrom', 1, 'end')
+    expect(s().extrudeDraft?.extent).toEqual({ kind: 'distance', from: -4, to: 12 })
+  })
+  it('lets go of a held grip when the editor closes', () => {
+    const sketch = finishSquare()
+    s().startExtrude(sketch)
+    s().gripDrag('extrudeTo', 0, 'start')
+    s().cancelExtrude()
+    expect(s().gripHeld).toBe(false)
   })
 })

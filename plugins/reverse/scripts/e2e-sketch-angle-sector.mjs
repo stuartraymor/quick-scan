@@ -25,11 +25,15 @@ try{
  await page.evaluate(()=>window.__re.store.getState().setSketchTool('dimension'));await sleep(150);
  for(const p of [[33,0],[25,5*S3]]){const at=await screen(p);await page.mouse.move(at.x,at.y);await sleep(80);await page.mouse.click(at.x,at.y);await sleep(200)}
  const inHand=await page.evaluate(()=>window.__re.store.getState().sketchDraft.dimMade);assert.ok(inHand!=null,'angle in hand');
- const seen={};
+ const seen={},field={};
  for(const [name,p] of [['minor',[30,4]],['supplementary',[12,6]],['reflex',[14,-6]],['supplementary2',[30,-4]]]){
   const at=await screen(p);await page.mouse.move(at.x,at.y,{steps:4});await sleep(200);
   seen[name]=await angleText();await page.screenshot({path:`${out}/0-${name}.png`});
+  // 1.2.8: the panel's number field reads the same sector while in hand.
+  field[name]=await page.$eval(`[data-test=sketch-dimension-input][data-dimension="${inHand}"]`,e=>e.value).catch(()=>null);
  }
+ console.log('panel field',JSON.stringify(field));
+ for(const [name,want] of [['minor',60],['supplementary',120],['reflex',300],['supplementary2',120]])assert.ok(field[name]!==null&&Math.abs(parseFloat(field[name])-want)<1e-6,`panel field reads ${want}° in hand (${name}): ${field[name]}`);
  console.log('live',JSON.stringify(seen));
  assert.match(seen.minor,/^60(\.0+)?\s*°/);assert.match(seen.supplementary,/^120(\.0+)?\s*°/);assert.match(seen.reflex,/^300(\.0+)?\s*°/);assert.match(seen.supplementary2,/^120(\.0+)?\s*°/);
  // Put it down in the reflex sector.
@@ -49,6 +53,6 @@ try{
  const ang=((dir(l2)-dir(l1))%360+360)%360;
  assert.ok(Math.abs(ang-70)<1e-4,'line 2 at 70° from line 1: '+ang);
  await page.screenshot({path:out+'/1-typed-290.png'});
- fs.writeFileSync(out+'/result.json',JSON.stringify({passed:true,seen,constraint:c,after:ang},null,2));
+ fs.writeFileSync(out+'/result.json',JSON.stringify({passed:true,seen,field,constraint:c,after:ang},null,2));
  assert.deepEqual(consoleErrors,[]);console.log('PASS angle sector: live',Object.values(seen).join(' / '),'· reflex kept on move · 290° drives line to',ang.toFixed(6));
 }catch(e){await page.screenshot({path:out+'/failure.png'});console.log(await page.evaluate(()=>document.body.innerText.slice(-1200)));throw e;}finally{await browser.close()}

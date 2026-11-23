@@ -4,6 +4,7 @@
 
 import type * as THREE from 'three'
 import { BACKFACE_GLSL_FRAGMENT, BACKFACE_GLSL_PREAMBLE, type BackfaceUniforms } from './backfaceTint'
+import { FIELD_GLSL_FRAGMENT, FIELD_GLSL_PREAMBLE, FIELD_GLSL_VERTEX, FIELD_GLSL_VERTEX_BODY, type FieldRampUniforms } from './fieldRamp'
 import { DEFLECT_GLSL_VERTEX, DEFLECT_GLSL_VERTEX_BODY, type DeflectionUniform } from './deflection'
 import { PAINT_GLSL_FRAGMENT, PAINT_GLSL_PREAMBLE, PAINT_GLSL_VERTEX, PAINT_GLSL_VERTEX_BODY, type PaintUniform } from './paintTint'
 import { TINT_GLSL_FRAGMENT, TINT_GLSL_PREAMBLE, TINT_GLSL_VERTEX, TINT_GLSL_VERTEX_BODY, type SurfaceOwnUniform, type SurfaceUniform } from './regionTint'
@@ -19,6 +20,8 @@ export interface ScanShaderUniforms {
   deflect: DeflectionUniform
   wire: WireUniforms
   depthOffset: { value: number }
+  /** The live map's ramp, read per fragment (see fieldRamp.ts). */
+  field: FieldRampUniforms
 }
 
 /**
@@ -49,9 +52,11 @@ export function patchScanShader(material: THREE.Material, u: ScanShaderUniforms)
     shader.uniforms.uSurfaceOwn = u.surfaceOwn
     shader.uniforms.uDeflect = u.deflect
     shader.uniforms.uScanDepthOffset = u.depthOffset
+    Object.assign(shader.uniforms, u.field)
     shader.vertexShader =
       'uniform float uScanDepthOffset;\n' +
       TINT_GLSL_VERTEX +
+      FIELD_GLSL_VERTEX +
       PAINT_GLSL_VERTEX +
       DEFLECT_GLSL_VERTEX +
       shader.vertexShader
@@ -59,6 +64,7 @@ export function patchScanShader(material: THREE.Material, u: ScanShaderUniforms)
           '#include <color_vertex>',
           `#include <color_vertex>
         ${TINT_GLSL_VERTEX_BODY}
+        ${FIELD_GLSL_VERTEX_BODY}
         ${PAINT_GLSL_VERTEX_BODY}`,
         )
         .replace('#include <begin_vertex>', `#include <begin_vertex>\n\t${DEFLECT_GLSL_VERTEX_BODY}`)
@@ -74,10 +80,12 @@ export function patchScanShader(material: THREE.Material, u: ScanShaderUniforms)
       BACKFACE_GLSL_PREAMBLE +
       PAINT_GLSL_PREAMBLE +
       TINT_GLSL_PREAMBLE +
+      FIELD_GLSL_PREAMBLE +
       shader.fragmentShader.replace(
         '#include <color_fragment>',
         `#include <color_fragment>
         ${TINT_GLSL_FRAGMENT}
+        ${FIELD_GLSL_FRAGMENT}
         ${BACKFACE_GLSL_FRAGMENT}
         ${PAINT_GLSL_FRAGMENT}`,
       )

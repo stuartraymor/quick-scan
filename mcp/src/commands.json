@@ -1,6 +1,6 @@
 {
-  "app": "1.2.3",
-  "saved": "2026-11-18T19:17:48.191Z",
+  "app": "1.2.27",
+  "saved": "2026-11-22T18:21:02.784Z",
   "commands": [
     {
       "name": "align.auto",
@@ -1666,7 +1666,7 @@
     {
       "name": "element.remove",
       "title": "Delete an element",
-      "description": "Delete an element — and with it every construction built on it and every dimension on any of them. Returns what went. One undo step.",
+      "description": "Delete an element — and with it every construction built on it and every dimension on any of them. Returns what went. One undo step. If CAD work is built on it (a sketch drawn on the plane, and what was made from that sketch), it is refused and those are named, as the Delete confirmation in the Objects panel lists them: ask the user, then call again with alsoDependents: true to delete them too.",
       "input": {
         "type": "object",
         "properties": {
@@ -1684,6 +1684,10 @@
               }
             ],
             "description": "The element."
+          },
+          "alsoDependents": {
+            "type": "boolean",
+            "description": "Also delete the CAD features built on it (named when the call is refused without this). Ask the user first."
           }
         },
         "required": [

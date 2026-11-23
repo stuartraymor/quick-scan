@@ -76,7 +76,11 @@ export interface ReState {
   addStepFile: (name: string, text: string) => StepFileRef
   /** Name a body or colour it — null takes the name or the colour back to
    *  the one it had. One step of the undo history; nothing is rebuilt. */
-  setBodyStyle: (id: number, patch: { name?: string | null; color?: string | null }) => void
+  setBodyStyle: (id: number, patch: { name?: string | null; color?: string | null; transparent?: boolean | null }) => void
+  /** QUICKSURFACE's Duplicate on a sketch: a copy on the same plane, named
+   *  "<name> - Copy", shown, at the end of the History. One undo step.
+   *  Returns its id, or null for no such sketch. */
+  duplicateSketch: (id: number) => number | null
   /** The components the body list sorts the bodies into (core/bodyFolders)
    *  — saved, undone with the features. */
   bodyFolders: BodyFolder[]
@@ -152,6 +156,8 @@ export interface ReState {
    *  with `restore` false — left at the step it stands at. */
   endPlayback: (restore: boolean) => void
   toggleFeatureVisible: (id: number) => void
+  /** A feature's name (above or below the bar); false when refused. */
+  renameFeature: (id: number, name: string) => boolean
   /** Features left out of the build, or built again (FeatureFlags) —
    *  below the rollback bar too; one undo step, a rebuild when anything
    *  changed. Returns the ids that changed. */
@@ -402,12 +408,23 @@ export interface ReState {
    *  rather than its radius, or back. With no value the size holds: the
    *  number doubled or halved, an expression carried over with it; with
    *  one — Ø12 typed over an R — it takes that, in one step. */
-  setDimensionForm: (id: number, form: 'radius' | 'diameter', value?: number, expr?: string | null) => void
+  /** A round piece's dimension as its radius or its diameter; a distance to
+   *  an arc or a circle taken from its centre or its rim, nearest or farthest. */
+  setDimensionForm: (id: number, form: 'radius' | 'diameter' | 'arcLength' | 'centre' | 'near' | 'far' | 'aligned' | 'x' | 'y', value?: number, expr?: string | null) => void
+  /** A dimension made driven — a reference dimension, in brackets, read
+   *  off the pieces and holding nothing — or driving again, holding the
+   *  pieces at what they read now. One step. */
+  setDimensionDriven: (id: number, driven: boolean) => void
   /** The number of the dimension the Dimension tool has in hand confirmed —
    *  typed, or taken as it stands with Enter: the dimension is done, and
    *  the next click starts the next one rather than pairing with it. */
   finishDimension: (id: number) => void
   removeSelectedConstraint: () => void
+  /** The constraints that overdefine the sketch in the editor (see
+   *  core/overdefined.ts), newest first. */
+  overdefining: () => number[]
+  /** Those constraints deleted, as one step to undo. */
+  removeConstraints: (ids: readonly number[]) => void
   selectConstraint: (id: number | null) => void
   deleteSelected: () => void
   sharpenSelected: () => void
@@ -469,6 +486,11 @@ export interface ReState {
   /** The other way along the normal: a distance extent's numbers change
    *  sign, so what stood in front of the plane stands behind it. */
   flipExtrude: () => void
+  /** QUICKSURFACE's "Set sketch on: Top plane / Bottom plane": the open
+   *  extrude's sketch moved along its normal onto that end of the body,
+   *  the depths re-read so the body stays where it is. Returns why not,
+   *  or null when done (or already there). One undo step. */
+  setExtrudeSketchOn: (end: 'top' | 'bottom') => string | null
   cancelExtrude: () => void
   commitExtrude: () => number | null
 
@@ -541,11 +563,14 @@ export interface ReState {
   setPreview: (preview: PreviewInfo) => void
   /** A feature grip dragged: millimetres along an extrude's arrow, degrees
    *  round a revolve's ring, since the drag began. */
-  gripDrag: (side: FeatureGripSide, delta: number, phase: 'start' | 'move' | 'end') => void
+  gripDrag: (side: FeatureGripSide, delta: number, phase: 'start' | 'move' | 'end', snap?: Vec3 | null) => void
   /** The grip whose number is shown in a field on it in the viewport — the
    *  one last dragged; the field stays after the hand lets go so the number
    *  can be typed over. Null with none. */
   gripField: FeatureGripSide | null
+  /** A feature grip is in the hand: the live map waits for its release,
+   *  as QUICKSURFACE's Analysis does, instead of chasing every step. */
+  gripHeld: boolean
   setGripField: (side: FeatureGripSide | null) => void
   /** A number typed into that field: the extent or the angle the grip
    *  drags. */
@@ -598,12 +623,28 @@ export const useReverse = create<ReState>()((set, get) => ({
         if (patch.color) next.color = patch.color
         else delete next.color
       }
-      if (next.name === was.name && next.color === was.color) return {}
+      if (patch.transparent !== undefined) {
+        if (patch.transparent) next.transparent = true
+        else delete next.transparent
+      }
+      if (next.name === was.name && next.color === was.color && next.transparent === was.transparent) return {}
       const bodyStyles = { ...s.bodyStyles }
-      if (next.name === undefined && next.color === undefined) delete bodyStyles[id]
+      if (next.name === undefined && next.color === undefined && next.transparent === undefined) delete bodyStyles[id]
       else bodyStyles[id] = next
       return { ...remember(s), bodyStyles, bodies: nameBodies(s.bodies, s.features, bodyStyles) }
     }),
+  duplicateSketch: (id) => {
+    const s = get()
+    const all = [...s.features, ...s.rolledBack]
+    const src = s.features.find((f): f is Extract<Feature, { kind: 'sketch' }> => f.kind === 'sketch' && f.id === id)
+    if (!src) return null
+    const names = new Set(all.map((f) => f.name))
+    let name = `${src.name} - Copy`
+    for (let n = 2; names.has(name); n++) name = `${src.name} - Copy (${n})`
+    const copy = { ...structuredClone(src), id: s.nextFeatureId, name, visible: true }
+    set({ ...remember(s), features: [...s.features, copy], nextFeatureId: s.nextFeatureId + 1, buildVersion: s.buildVersion + 1 })
+    return copy.id
+  },
   bodyFolders: [],
   addBodyFolder: (parent, what) => {
     const s = get()
@@ -760,6 +801,21 @@ export const useReverse = create<ReState>()((set, get) => ({
     }),
   toggleFeatureVisible: (id) =>
     set((s) => ({ ...remember(s), features: s.features.map((f) => (f.id === id ? { ...f, visible: !f.visible } : f)) })),
+  renameFeature: (id, name) => {
+    const s = get()
+    const text = name.trim()
+    const all = [...s.features, ...s.rolledBack]
+    const was = all.find((f) => f.id === id)
+    if (!was || !text || text.length > 120) return false
+    if (text === was.name) return true
+    // Names are how the panel, the agent and parameters tell features apart.
+    if (all.some((f) => f.id !== id && f.name === text)) return false
+    const named = (f: Feature): Feature => (f.id === id ? { ...f, name: text } : f)
+    const features = s.features.map(named)
+    // Bodies read their default name from their feature.
+    set({ ...remember(s), features, rolledBack: s.rolledBack.map(named), bodies: nameBodies(s.bodies, features, s.bodyStyles) })
+    return true
+  },
   setSuppressed: (ids, on) => {
     const s = get()
     const changed = [...s.features, ...s.rolledBack].filter((f) => ids.includes(f.id) && Boolean(f.suppressed) !== on).map((f) => f.id)
@@ -962,6 +1018,9 @@ export const useReverse = create<ReState>()((set, get) => ({
       preview: { status: 'idle' },
       mapReport: null,
       planesShown: {},
+      // Both eyes are saved with the project (1.2.15): another project, or
+      // none, starts with them open unless its file says otherwise.
+      scanHidden: false,
       bodiesHidden: false,
       overlapsShown: true,
     })),

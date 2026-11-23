@@ -23,6 +23,8 @@ export interface DeviationRun {
   ratio: number
   /** The deviation at each point of the run, mm (null: no reading). */
   d: (number | null)[]
+  /** The piece the run lies on. */
+  entity?: number
 }
 
 export interface DeviationStats {
@@ -182,7 +184,7 @@ export function sketchDeviation(sketch: Sketch, chains: readonly (readonly Vec2[
     let failed = false
     const classOf = (v: number | null) => (v === null ? 'none' : v <= tolerance ? 'pass' : 'fail') as DeviationRun['cls']
     let run: DeviationRun | null = null, runSum = 0, runN = 0
-    const close = () => { if (run && run.pts.length > 1) { run.ratio = runN ? runSum / runN / tolerance : 0; runs.push(run) } }
+    const close = () => { if (run && run.pts.length > 1) { run.ratio = runN ? runSum / runN / tolerance : 0; run.entity = e.id; runs.push(run) } }
     for (let i = 0; i < pts.length; i++) {
       const v = d[i]
       if (v !== null) { samples++; if (v < min) min = v; if (v > max) max = v; sum += v; sum2 += v * v } else unread++

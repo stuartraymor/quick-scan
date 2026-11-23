@@ -17,6 +17,7 @@ import { ReverseNotices } from './ui/ReverseNotices'
 import './ui/reverse.css'
 import { evaluateParameters } from './core/parameters'
 import { useReverse } from './state/reStore'
+import { nameBodies } from './state/reFeatureHelpers'
 import { reverseCommands } from './app/reCommands'
 import { registerReverseGuides } from './guides/guides'
 import { settleHeld } from './app/reCommandCore'
@@ -205,13 +206,25 @@ const plugin: ScanRulerPlugin = {
       sections: [
         {
           key: 'reverse',
-          capture: () => pick(useReverse.getState(), ['features', 'rolledBack', 'nextFeatureId', 'nextOfKind', 'parameters', 'nextParameterId', 'bodyStyles', 'bodyFolders', 'scanSeeThrough', 'bodiesSeeThrough', 'elementsShown']),
+          // Body eyes too (1.2.14): hiding a body, the scan or every body is
+          // undone as a sketch's or a datum's eye is (Hide All But This is
+          // one step), and a body's eye is saved with the project.
+          capture: () => pick(useReverse.getState(), ['features', 'rolledBack', 'nextFeatureId', 'nextOfKind', 'parameters', 'nextParameterId', 'bodyStyles', 'bodyFolders', 'scanSeeThrough', 'bodiesSeeThrough', 'elementsShown', 'hiddenBodies', 'scanHidden', 'bodiesHidden']),
           // The feature list as it was, built again; whatever the sketch had
           // of its own history, and whatever was selected, goes. The
           // parameters come back with it, their table read again.
           apply: (value) =>
             useReverse.setState((s) => {
               const v = value as Partial<typeof s>
+              // Only bodies' eyes, names or colours differ: no rebuild — the
+              // bodies there are shown, hidden and named again in place.
+              const cosmetic = (Object.keys(v) as (keyof typeof s)[]).every((k) => k === 'hiddenBodies' || k === 'bodyStyles' || k === 'scanHidden' || k === 'bodiesHidden' || v[k] === s[k])
+              if (cosmetic) {
+                const hiddenBodies = v.hiddenBodies ?? s.hiddenBodies
+                const bodyStyles = v.bodyStyles ?? s.bodyStyles
+                const hidden = new Set(hiddenBodies)
+                return { hiddenBodies, bodyStyles, scanHidden: v.scanHidden ?? s.scanHidden, bodiesHidden: v.bodiesHidden ?? s.bodiesHidden, bodies: nameBodies(s.bodies, s.features, bodyStyles).map((b) => ({ ...b, visible: !hidden.has(b.id) })) }
+              }
               return { ...v, parameterTable: evaluateParameters(v.parameters ?? s.parameters), past: [], future: [], selection: null, buildVersion: s.buildVersion + 1 }
             }),
         },
@@ -220,8 +233,9 @@ const plugin: ScanRulerPlugin = {
         {
           store: useReverse,
           label: 'Reverse engineer',
-          names: ['commitSketch', 'commitExtrude', 'commitRevolve', 'commitFeature', 'addConvertedFreeform', 'mergeFreeforms', 'removeFeature', 'toggleFeatureVisible', 'setSuppressed', 'setKeyParameter', 'rollTo', 'setScanSeeThrough', 'setBodiesSeeThrough', 'setOverlapsShown', 'setElementsShown', 'extrudeFace', 'addParameter', 'setParameter', 'removeParameter', 'addBodyFolder', 'renameBodyFolder', 'removeBodyFolder', 'moveToBodyFolder'],
+          names: ['commitSketch', 'commitExtrude', 'commitRevolve', 'commitFeature', 'addConvertedFreeform', 'mergeFreeforms', 'removeFeature', 'toggleFeatureVisible', 'setSuppressed', 'setKeyParameter', 'rollTo', 'setScanSeeThrough', 'setBodiesSeeThrough', 'setOverlapsShown', 'setElementsShown', 'extrudeFace', 'addParameter', 'setParameter', 'removeParameter', 'addBodyFolder', 'renameBodyFolder', 'removeBodyFolder', 'moveToBodyFolder', 'renameFeature', 'setBodyStyle', 'toggleBodyVisible', 'setBodiesVisible', 'setAllBodiesVisible'],
           labels: {
+            renameFeature: 'rename feature', setBodyStyle: 'rename or recolour body', toggleBodyVisible: 'show or hide body', setBodiesVisible: 'show or hide bodies', setAllBodiesVisible: 'show or hide all bodies',
             commitSketch: 'finish sketch', commitExtrude: 'save extrusion', commitRevolve: 'save revolution',
             commitFeature: 'save feature', addConvertedFreeform: 'convert Freeform to CAD body', mergeFreeforms: 'merge Freeform surfaces', rollTo: 'move rollback bar', setKeyParameter: 'edit feature parameter',
             addParameter: 'add parameter', setParameter: 'edit parameter', removeParameter: 'remove parameter',

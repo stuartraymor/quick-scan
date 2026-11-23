@@ -2,9 +2,10 @@
 // 2D Sketch overhaul 5: Duplicate / Pattern in four modes, and the exact
 // curve evaluation behind Along Curve spacing.
 import { describe, expect, it } from 'vitest'
-import { addEntity, addRectangle, emptySketch, entityOf, type SketchArc, type SketchCircle, type SketchLine, type SketchPoint } from '../core/sketch'
+import { addConstraint, addEntity, addRectangle, emptySketch, entityOf, type SketchArc, type SketchCircle, type SketchLine, type SketchPoint } from '../core/sketch'
 import { applyPattern, defaultPattern, niceStep, planPattern, type PatternSpec } from '../core/sketchPatterns'
 import { curveOf, curvatureOf } from '../core/curveEval'
+import { solveSketch } from '../core/solver'
 
 const close = (p: readonly number[], q: readonly number[], tol = 1e-9) => expect(Math.hypot(p[0] - q[0], p[1] - q[1])).toBeLessThan(tol)
 const pt = (s: ReturnType<typeof emptySketch>, id: number) => (entityOf(s, id) as SketchPoint).p
@@ -113,6 +114,26 @@ describe('circular and angular patterns', () => {
     expect(flipped.ok).toBe(true); if (!flipped.ok) return
     const f = entityOf(flipped.sketch, flipped.ids[0]) as SketchLine
     close(f.a, [105, 55], 1e-12)
+  })
+  it('turned copies of an upright line lose Vertical, or swap it at 90°, and keep their length when solved', () => {
+    // An upright line and the arc it runs into, as the fuzz found them: kept
+    // Vertical made the 30° copies upright again, crushing them to 5e-5 mm.
+    const s = emptySketch()
+    const l = addEntity(s, { kind: 'line', a: [13.7064, -13.4587], b: [13.7064, -10.8048] })
+    const a = addEntity(s, { kind: 'arc', c: [9.6601, -10.8048], r: 4.0463, start: 0, sweep: Math.PI / 2 })
+    addConstraint(s, { kind: 'vertical', entity: l, inferred: true })
+    addConstraint(s, { kind: 'coincident', p: { entity: l, at: 'b' }, q: { entity: a, at: 'a' } })
+    addConstraint(s, { kind: 'tangent', a: l, b: a })
+    const r = applyPattern(s, [a, l], { mode: 'angular', pivot: null, pivotRef: { kind: 'selection' }, count: 4, stepDeg: 30, flip: false, keepOrientation: false })
+    expect(r.ok).toBe(true); if (!r.ok) return
+    const lines = r.ids.filter((id) => entityOf(r.sketch, id)?.kind === 'line')
+    const hv = (id: number) => r.sketch.constraints.filter((c) => (c.kind === 'horizontal' || c.kind === 'vertical') && c.entity === id).map((c) => c.kind)
+    expect(lines.map(hv)).toEqual([[], [], ['horizontal']])
+    expect(r.sketch.constraints.filter((c) => c.kind === 'tangent')).toHaveLength(4)
+    expect(solveSketch(r.sketch).ok).toBe(true)
+    const solved = r
+    for (const id of lines) { const e = entityOf(solved.sketch, id) as SketchLine; expect(Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1])).toBeCloseTo(2.6539, 6) }
+    for (const id of r.ids.filter((id) => entityOf(r.sketch, id)?.kind === 'arc')) expect((entityOf(solved.sketch, id) as SketchArc).r).toBeCloseTo(4.0463, 6)
   })
   it('refuses a total angle over 360° or of zero', () => {
     const s = emptySketch(), p = addEntity(s, { kind: 'point', p: [1, 0] })

@@ -39,8 +39,20 @@ describe('exact curvature comb', () => {
     expect(tight.clamped).toBeGreaterThan(0)
     for (const [a, b] of tight.teeth) {
       expect([...a, ...b].every(Number.isFinite)).toBe(true)
-      expect(length(a, b)).toBeLessThanOrEqual(3 + 1e-9)
+      // The limit is given at the default scale and grows with the scale.
+      expect(length(a, b)).toBeLessThanOrEqual((3 * 1000) / DEFAULT_COMB.scale + 1e-9)
     }
+  })
+  it('every bend answers the scale: a tight arc at the limit grows and shrinks with the slider like a gentle one', () => {
+    const tight = piece({ kind: 'arc', c: [0, 0], r: 1, start: 0, sweep: 1.5 })
+    const gentle = piece({ kind: 'arc', c: [0, 0], r: 40, start: 0, sweep: 1.5 })
+    const tooth = (e: ReturnType<typeof piece>, scale: number) => { const c = exactComb(e, { ...DEFAULT_COMB, scale })!; return length(c.teeth[3][0], c.teeth[3][1]) }
+    for (const [lo, hi] of [[50, 100], [100, 400], [400, 500]]) {
+      expect(tooth(tight, hi) / tooth(tight, lo)).toBeCloseTo(hi / lo, 9)
+      expect(tooth(gentle, hi) / tooth(gentle, lo)).toBeCloseTo(hi / lo, 9)
+    }
+    // The tight one is still held back: no taller than the limit allows.
+    expect(tooth(tight, 50)).toBeCloseTo(DEFAULT_COMB.maxLength, 9)
   })
   it('crosses at an inflection, the tips line touching the curve', () => {
     const s = piece({ kind: 'spline', pts: [[0, 0], [10, 6], [20, 0], [30, -6], [40, 0]] })

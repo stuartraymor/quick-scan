@@ -3,8 +3,8 @@
 // workspace, on the blank stage: an extrude's ends put through points clicked
 // on the part, in front of the sketch plane and behind it; the ghost following
 // a grip's drag frame by frame; a new solid never offered a surface to join;
-// the rollback bar dragged up the feature list, a feature made at the bar and
-// the rest built again on top of it; a rectangle drawn past the card the sheet
+// the rollback bar dragged up the feature list, an edit refused while it is
+// up (the model is only looked at), and To end building the rest again; a rectangle drawn past the card the sheet
 // is framed by; and the prompt that walks Symmetric through its three picks.
 //
 // Prereqs: dev server running (npm run dev), Chrome installed.
@@ -29,6 +29,8 @@ await re((frame) => {
   const id = s().commitSketch()
   s().startExtrude(id)
   if (s().extrudeDraft.regions.length === 0) s().pickAllDraftRegions()
+  // 10 mm, said: the default depth is measured from the profile (1.1.x).
+  s().setExtrude({ extent: { kind: 'distance', from: 0, to: 10 } })
   s().commitExtrude()
 }, XY(0))
 await built()
@@ -147,7 +149,7 @@ const joinDefault = await re(() => {
 check(joinDefault.last.surface === true && joinDefault.op === 'join' && !joinDefault.target, `with a sheet the last body made, a new extrude joins what it meets — no body to choose (${JSON.stringify(joinDefault)})`)
 await page.waitForSelector('[data-test=extrude-op]')
 const results = await page.$$eval('[data-test=extrude-op] option', (os) => os.map((o) => o.textContent.trim()))
-check(JSON.stringify(results) === JSON.stringify(['Join', 'Cut', 'New body']) && !(await page.$('[data-test=extrude-target]')), `the box offers Join, Cut and New body and no body list (${results.join(' | ')})`)
+check(JSON.stringify(results) === JSON.stringify(['New Solid', 'Combine (Join)', 'Cut']) && !(await page.$('[data-test=extrude-target]')), `the box offers Join, Cut and New body and no body list (${results.join(' | ')})`)
 await click(page, '[data-test=extrude-cancel]')
 // The box opening scrolled the panel up to it, smoothly: the rows are
 // measured once it has come to rest.
@@ -157,7 +159,11 @@ await sleep(800)
 // ---- the rollback bar ----------------------------------------------------------------------------
 const rowsBefore = await page.$$eval('[data-test=feature-row]', (r) => r.length)
 check(rowsBefore === 6 && (await page.$('[data-test=rollback-bar]')) !== null, `six features, and the rollback bar under them (${rowsBefore})`)
-// Dragged up to between the second row and the third.
+// The list is scrolled to the bar first, as a hand would: the panel's
+// list runs past the bottom of the window. Then dragged up to between the
+// second row and the third.
+await page.$eval('[data-test=rollback-bar]', (el) => el.scrollIntoView({ block: 'center' }))
+await sleep(400)
 const rects = await page.$$eval('[data-test=feature-row]', (rows) => rows.map((r) => { const b = r.getBoundingClientRect(); return { x: b.left + b.width / 2, top: b.top, bottom: b.bottom } }))
 const bar = await page.$eval('[data-test=rollback-bar] .grip', (el) => { const b = el.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 } })
 await drag(page, [bar.x, bar.y], [bar.x, (rects[1].bottom + rects[2].top) / 2], { steps: 12 })
@@ -167,35 +173,55 @@ let rolled = await re(() => ({ head: window.__re.store.getState().features.map((
 check(rolled.head.length === 2 && rolled.tail.length === 4 && rolled.bodies.length === 1, `the bar dragged under the second row sets four features aside and the part stands as it stood there (${JSON.stringify(rolled)})`)
 check((await page.$$eval('[data-test=feature-row-rolled]', (r) => r.length)) === 4, 'the features below the bar are listed, set aside')
 await page.screenshot({ path: shotPath('reverse-history-rolled.png') })
-// A feature made now goes in at the bar: a fillet on the bare block.
+// Rolled back, the model is only looked at (since History's common End of
+// Model): a fillet asked for at the bar is refused with the reason, and
+// nothing is added. The bar is the History panel's End of Model.
+const endMark = await page.evaluate(() => document.querySelector('[data-test=history-end-marker], [data-test=history-end]')?.textContent ?? null)
 await re(() => {
   const s = () => window.__re.store.getState()
   const body = s().bodies[0].id
   const edge = window.__re.topology(body).edges.find((e) => e.fingerprint.kind === 'line' && Math.abs(e.fingerprint.length - 10) < 1e-6)
   s().startFeature('fillet')
-  s().toggleDraftEdge(body, edge)
-  s().setFeatureDraft({ radius: 2, radiusTyped: true, chain: false })
-  s().commitFeature()
+  if (s().featureDraft) {
+    s().toggleDraftEdge(body, edge)
+    s().setFeatureDraft({ radius: 2, radiusTyped: true, chain: false })
+    s().commitFeature()
+  }
 })
-await page.waitForFunction(() => !window.__re.store.getState().building && window.__re.store.getState().features.length === 3, { timeout: 60_000 })
-await click(page, '[data-test=rollback-end]')
+await sleep(1500)
+const refused = await page.evaluate(() => ({ status: document.querySelector('footer.strip')?.textContent ?? '', features: window.__re.store.getState().features.length, draft: window.__re.store.getState().featureDraft !== null }))
+check(/The model is rolled back. Move End of Model to the end before creating, editing or deleting geometry./.test(refused.status) && refused.features === 2 && !refused.draft, `rolled back, a fillet is refused with the reason and nothing is added (${JSON.stringify({ ...refused, status: refused.status.slice(0, 140), endMark })})`)
+const tip = await page.$eval('[data-test=rollback-bar]', (el) => el.title)
+check(/nothing can be made, changed or deleted until the bar is back at the end/.test(tip) && !/add one earlier/.test(tip), `the bar's tooltip says the rolled-back model is only looked at (${tip})`)
+// The tools are off while rolled back, and an inert ribbon or panel cannot
+// say why: a strip under the ribbon says it, and the panel's lock line,
+// each with To End of Model (1.2.12). The panel's own To end, which could
+// not be pressed, is gone.
+const seenAt = (sel) => page.$eval(sel, (el) => { const r = el.getBoundingClientRect(); const h = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return r.width > 0 && Boolean(h && (h === el || el.contains(h))) }).catch(() => false)
+const strip = { text: await page.$eval('[data-test=model-rolled-bar]', (el) => el.textContent).catch(() => null), key: await seenAt('[data-test=model-rolled-to-end]'), panelKey: await seenAt('[data-test=model-history-to-end]'), deadKey: (await page.$('[data-test=rollback-end]')) !== null }
+check(/The model is rolled back/.test(strip.text ?? '') && strip.key && strip.panelKey && !strip.deadKey, `rolled back, a strip under the ribbon and the panel's lock line say why, each with To End of Model, on screen (${JSON.stringify(strip)})`)
+await page.screenshot({ path: shotPath('reverse-history-rolled-strip.png') })
+await click(page, '[data-test=model-rolled-to-end]')
 await page.waitForFunction(() => !window.__re.store.getState().building && window.__re.store.getState().rolledBack.length === 0, { timeout: 60_000 })
+check((await page.$('[data-test=model-rolled-bar]')) === null, 'at End of Model the strip goes')
 await sleep(500)
 rolled = await re(() => {
   const s = window.__re.store.getState()
   return { kinds: s.features.map((f) => f.kind), failed: Object.values(s.results).filter((r) => r.status === 'failed').map((r) => r.message), volume: s.bodies.find((b) => !b.surface).volume }
 })
-check(rolled.kinds.join(',') === 'sketch,extrude,fillet,sketch,extrude,sketch,sheet', `To end builds the rest again on top of the fillet made at the bar (${rolled.kinds.join(',')})`)
-// The block, less the round's corner sliver (r² − πr²/4 over 10 mm), plus the boss above it (6 × 6 × 6 stands proud of z = 10).
-const want = 40 * 20 * 10 - (4 - Math.PI) * 10 + 6 * 6 * 6
-check(rolled.failed.length === 0 && Math.abs(rolled.volume - want) < 0.5, `every feature builds, and the body is the filleted block with its boss (${rolled.volume.toFixed(2)} of ${want.toFixed(2)} mm³; ${rolled.failed.join('; ')})`)
+check(rolled.kinds.join(',') === 'sketch,extrude,sketch,extrude,sketch,sheet', `To end builds the six features again (${rolled.kinds.join(',')})`)
+// The block plus the boss above it (6 × 6 × 6 stands proud of z = 10).
+const want = 40 * 20 * 10 + 6 * 6 * 6
+check(rolled.failed.length === 0 && Math.abs(rolled.volume - want) < 0.5, `every feature builds, and the body is the block with its boss (${rolled.volume.toFixed(2)} of ${want.toFixed(2)} mm³; ${rolled.failed.join('; ')})`)
 
 // ---- a rectangle past the card the sheet is framed by ---------------------------------------------
 await re((frame) => window.__re.store.getState().startSketch({ kind: 'world', axis: 'z', offset: 30 }, frame), XY(30))
 await page.waitForSelector('.viewslot.sketch canvas')
 await sleep(1500)
 await click(page, '[data-test=sketch-tool-rectangle]')
-const slot = await page.$eval('.viewslot.sketch', (el) => { const b = el.getBoundingClientRect(); return { left: b.left, right: b.right, top: b.top, bottom: b.bottom } })
+// The floating Edit Sketch panel stands over the view's left side: the
+// first corner goes just clear of it.
+const slot = await page.$eval('.viewslot.sketch', (el) => { const b = el.getBoundingClientRect(); const p = document.querySelector('[data-test=tool-inspector]:not([hidden])')?.getBoundingClientRect(); return { left: Math.max(b.left, p && p.right < b.right - 200 ? p.right : b.left), right: b.right, top: b.top, bottom: b.bottom } })
 await page.mouse.click(slot.left + 40, slot.top + (slot.bottom - slot.top) * 0.4)
 await sleep(200)
 await page.mouse.click(slot.right - 40, slot.top + (slot.bottom - slot.top) * 0.6)

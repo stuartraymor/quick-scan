@@ -149,7 +149,9 @@ function surfaceOfBodies(bodies: readonly { id: number; mesh: KernelMesh; sheet?
     pv += b.mesh.positions.length
     pi += b.mesh.indices.length
   }
-  const surface = new NominalSurface(positions, indices)
+  // The bodies are meshed face by face: their seams joined, a point beside
+  // a wall is signed by the edge it lands on, not by the face above it.
+  const surface = new NominalSurface(positions, indices, { joinSeams: true })
   // Whose each triangle is, in the order the surface's hits name them.
   const bodyOf = new Float64Array(corners / 3)
   const faceOf = new Int32Array(corners / 3)

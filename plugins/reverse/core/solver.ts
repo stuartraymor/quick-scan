@@ -25,14 +25,19 @@ import { choleskySolve, solveLinear, symmetricEigenN } from '../../../src/core/f
 import type { Vec2 } from '../../../src/core/flat/types'
 import { dot2, len2, normalize2, perp2, sub2 } from '../../../src/core/flat/vec2'
 import { traceLine, traceOf, traceOffset, type DatumPlane, type DatumTrace } from './datums'
-import { sectorSweep } from './angleSector'
+import { measureAngleDimension, sectorSweep } from './angleSector'
 import {
   anchorPoint,
   constraintEntities,
+  isDimension,
+  isDriven,
   arcPoint,
+  rimRadius,
   splineJoint,
   type Anchor,
   type Constraint,
+  type DistanceAxis,
+  type DistanceEdge,
   type Sketch,
   type SketchArc,
   type SketchEntity,
@@ -49,6 +54,9 @@ import { isClosed, nearestOnSpline, splineAt, splineCurve, splineDirAt, splineEn
 const HARD_WEIGHT = 1e4
 /** The stay-put weight of free geometry, against soft data of weight 1/σ. */
 const FREE_WEIGHT = 1e-1
+/** How much more a round piece's radius stays put than its centre where a
+ *  gap or a span is measured on its rim. */
+const RIM_KEEP = 300
 /** The pull of a dragged point towards the cursor: well above the stay-put
  *  and the soft data, so the point follows the hand and the rest of the
  *  sketch gives way — but under the hard equations, so a point dragged off
@@ -69,6 +77,9 @@ const CLOSE_FROM = 1e-7
 /** Slice points per piece the residuals are taken over — more buys nothing a
  *  fit at this scale can use. */
 const MAX_POINTS = 240
+/** The least an unknown is damped by, as a share of the stiffest unknown of
+ *  its own piece — see the descent. */
+const DAMP_SHARE = 0.05
 const MAX_ITERATIONS = 60
 /** The iterations a quick solve is allowed — one step of a drag, run
  *  again next frame from where this one got to, and run in full when the
@@ -248,8 +259,9 @@ function withHeldEnds(s: SketchSpline, sketch: Sketch): SketchSpline {
   return out
 }
 
-/** Subsample a piece's points evenly to the cap. */
-function thin(points: readonly Vec2[]): readonly Vec2[] {
+/** Subsample a piece's points evenly to the cap. Exported so a fit can be
+ *  finished on the very points the solver will hold the piece to. */
+export function thin(points: readonly Vec2[]): readonly Vec2[] {
   if (points.length <= MAX_POINTS) return points
   const step = points.length / MAX_POINTS
   const out: Vec2[] = []
@@ -264,6 +276,47 @@ function thin(points: readonly Vec2[]): readonly Vec2[] {
  * pulled to them; free ones stay near where they were.
  */
 export function solveSketch(sketch: Sketch, options: SolveOptions = {}): SolveReport {
+  if (!sketch.constraints.some(isDriven)) return solveHeld(sketch, options)
+  // A driven dimension holds nothing: the pieces are solved without it, and
+  // its value is read off them where the solve left them.
+  const held: Sketch = { ...sketch, constraints: sketch.constraints.filter((c) => !isDriven(c)) }
+  const report = solveHeld(held, options)
+  sketch.entities = held.entities
+  const solved = new Map(held.constraints.map((c) => [c.id, c]))
+  sketch.constraints = sketch.constraints.map((c) => solved.get(c.id) ?? c)
+  readDriven(sketch, options.datums)
+  return report
+}
+
+/** Every driven dimension's value read again off the pieces as they stand. */
+export function readDriven(sketch: Sketch, datums?: readonly DatumTrace[]): void {
+  if (!sketch.constraints.some(isDriven)) return
+  sketch.constraints = sketch.constraints.map((c) => {
+    if (!isDriven(c) || !isDimension(c)) return c
+    const value = readDimension(sketch, c, datums)
+    return value === null || value === c.value ? c : { ...c, value }
+  })
+}
+
+/** What a dimension reads on the pieces as they stand, whatever it holds
+ *  them to: null where what it hangs on is gone. */
+export function readDimension(sketch: Sketch, c: Extract<Constraint, { value: number }>, datums?: readonly DatumTrace[]): number | null {
+  switch (c.kind) {
+    case 'length':
+    case 'radius':
+    case 'diameter':
+    case 'arcLength': {
+      const e = sketch.entities.find((x) => x.id === c.entity)
+      return e ? measureDimension(sketch, c.kind, e) : null
+    }
+    case 'angle':
+      return measureAngleDimension(sketch, c.a, c.b, c.sector)
+    case 'distance':
+      return measureDimension(sketch, 'distance', c.p, c.q, datums, c.edge, c.axis)
+  }
+}
+
+function solveHeld(sketch: Sketch, options: SolveOptions): SolveReport {
   if (sketch.entities.some((e) => e.kind === 'spline')) sketch.entities = sketch.entities.map((e) => (e.kind === 'spline' ? withHeldEnds(e, sketch) : e))
   const slots = new Map<number, Slot>()
   const x0: number[] = []
@@ -318,6 +371,12 @@ export function solveSketch(sketch: Sketch, options: SolveOptions = {}): SolveRe
   // Where each stay-put term wants its piece: where the solve started, or,
   // for the let-go pass, where the pulled solve left it.
   const rests: { at: number; init: Float64Array }[] = []
+  // A round piece measured on its rim by a gap or a span keeps its size
+  // while the number is set: its centre moves, as a hand expects, and its
+  // radius gives only where nothing else can.
+  const rimSized = new Set(
+    sketch.constraints.flatMap((c) => (c.kind === 'distance' && c.edge ? [c.p, ...('entity' in c.q ? [c.q] : [])].filter((a) => a.at === 'center').map((a) => a.entity) : [])),
+  )
   for (const e of sketch.entities) {
     const s = slots.get(e.id)!
     if (e.fixed) continue
@@ -326,7 +385,13 @@ export function solveSketch(sketch: Sketch, options: SolveOptions = {}): SolveRe
     rests.push({ at, init })
     // A spline's end directions read as the chord they swing.
     const unit = Array.from(init, (_, i) =>
-      e.kind === 'arc' && i >= 3 ? Math.max(Math.abs(e.r), 1e-3) : e.kind === 'spline' && i >= 2 * e.pts.length ? Math.max(meanChord(e), 1e-3) : 1,
+      e.kind === 'arc' && i >= 3
+        ? Math.max(Math.abs(e.r), 1e-3)
+        : e.kind === 'spline' && i >= 2 * e.pts.length
+          ? Math.max(meanChord(e), 1e-3)
+          : i === 2 && (e.kind === 'arc' || e.kind === 'circle') && rimSized.has(e.id)
+            ? RIM_KEEP
+            : 1,
     )
     blocks.push({
       params: range(s),
@@ -701,21 +766,36 @@ export function solveSketch(sketch: Sketch, options: SolveOptions = {}): SolveRe
         const e = read(c.entity, xs)
         return e.kind === 'arc' || e.kind === 'circle' ? [e.r - (c.kind === 'radius' ? c.value : c.value / 2)] : [0]
       })
+    } else if (c.kind === 'arcLength') {
+      // Round the rim from end to end: the radius times the sweep.
+      hard(c, [c.entity], (xs) => {
+        const e = read(c.entity, xs)
+        return e.kind === 'arc' ? [Math.abs(e.r * e.sweep) - c.value] : [0]
+      })
     } else if (c.kind === 'distance') {
       const q = c.q
+      // A round end taken on its rim: the centres' distance less its radius
+      // for the nearest rim point, more for the farthest.
+      const sign = c.edge === 'far' ? 1 : -1
+      const rim = (xs: Float64Array, a: Anchor) => sign * rimRadius(read(a.entity, xs), a.at, c.edge)
       if ('line' in q) {
         hard(c, [c.p.entity, q.line], (xs) => {
           const p = anchorAt(xs, c.p)
           const l = lineOf(xs, q.line)
           if (!l) return [0]
           const d = normalize2(sub2(l.b, l.a)) ?? [1, 0]
-          return [Math.abs(dot2(sub2(p, l.a), perp2(d))) - c.value]
+          return [Math.abs(dot2(sub2(p, l.a), perp2(d))) + rim(xs, c.p) - c.value]
         })
       } else if ('datum' in q) {
         const trace = traceOf(options.datums, q.datum)
-        if (trace) hard(c, [c.p.entity], (xs) => [Math.abs(traceOffset(trace, anchorAt(xs, c.p))) - c.value])
+        if (trace) hard(c, [c.p.entity], (xs) => [Math.abs(traceOffset(trace, anchorAt(xs, c.p))) + rim(xs, c.p) - c.value])
       } else {
-        hard(c, [c.p.entity, q.entity], (xs) => [len2(sub2(anchorAt(xs, c.p), anchorAt(xs, q))) - c.value])
+        // Along one sheet axis: the difference in that coordinate alone.
+        const axis = c.axis
+        if (axis) {
+          const k: 0 | 1 = axis === 'x' ? 0 : 1
+          hard(c, [c.p.entity, q.entity], (xs) => [Math.abs(anchorAt(xs, q)[k] - anchorAt(xs, c.p)[k]) - c.value])
+        } else hard(c, [c.p.entity, q.entity], (xs) => [len2(sub2(anchorAt(xs, c.p), anchorAt(xs, q))) + rim(xs, c.p) + rim(xs, q) - c.value])
       }
     } else if (c.kind === 'pointOn') {
       // Signed distance off the carrier — zero on it.
@@ -814,6 +894,26 @@ export function solveSketch(sketch: Sketch, options: SolveOptions = {}): SolveRe
     return c
   }
 
+  // Each unknown's piece, and its unit against a millimetre (an arc's angles
+  // read as the arc they sweep, a spline's end directions as the chord they
+  // swing): what the damping below is levelled by.
+  const pieceOf = new Int32Array(m)
+  const unitSq = new Float64Array(m).fill(1)
+  let pieces = 0
+  for (const e of sketch.entities) {
+    const s = slots.get(e.id)!
+    for (let i = 0; i < s.count; i++) {
+      const fi = freeIndex[s.offset + i]
+      if (fi < 0) continue
+      pieceOf[fi] = pieces
+      const u = e.kind === 'arc' && i >= 3 ? Math.max(Math.abs(e.r), 1e-3) : e.kind === 'spline' && i >= 2 * e.pts.length ? Math.max(meanChord(e), 1e-3) : 1
+      unitSq[fi] = u * u
+    }
+    pieces++
+  }
+  const pieceMax = new Float64Array(pieces)
+  const damp = new Float64Array(m)
+
   const JtJ = new Float64Array(m * m)
   const Jtr = new Float64Array(m)
   const xt = new Float64Array(n)
@@ -821,8 +921,11 @@ export function solveSketch(sketch: Sketch, options: SolveOptions = {}): SolveRe
 
   /** Descend over `active` from where x stands, for at most `maxIterations`
    *  or until a step or its gain is under the tolerances. */
-  const descend = (active: Block[], maxIterations: number, stepTolerance: number, gainTolerance: number) => {
-    const residuals = (xs: Float64Array): number[][] => active.map((b) => b.eval(xs).map((r) => r * b.weight))
+  const descend = (active: Block[], maxIterations: number, stepTolerance: number, gainTolerance: number, hardWeight = HARD_WEIGHT) => {
+    // `hardWeight` stands in for the relations' own weight: see the pulled
+    // solve below.
+    const weightOf = (b: Block) => (b.weight === HARD_WEIGHT ? hardWeight : b.weight)
+    const residuals = (xs: Float64Array): number[][] => active.map((b) => { const w = weightOf(b); return b.eval(xs).map((r) => r * w) })
     let lambda = 1e-3
     let converged = false
     let rs = residuals(x)
@@ -843,14 +946,14 @@ export function solveSketch(sketch: Sketch, options: SolveOptions = {}): SolveRe
         // of x taken once per iteration and put back after each.
         const J: number[][] = []
         for (const p of cols) {
-          if (b.derivative) { J.push(b.derivative(x, p).map((v) => v * b.weight)); continue }
+          if (b.derivative) { const wd = weightOf(b); J.push(b.derivative(x, p).map((v) => v * wd)); continue }
           const h = 1e-6 * Math.max(1, Math.abs(x[p]))
           xt[p] = x[p] + h
           const rp = b.eval(xt)
           xt[p] = x[p] - h
           const rm = b.eval(xt)
           xt[p] = x[p]
-          const w = b.weight / (2 * h)
+          const w = weightOf(b) / (2 * h)
           J.push(rp.map((v, i) => (v - rm[i]) * w))
         }
         for (let i = 0; i < cols.length; i++) {
@@ -870,17 +973,31 @@ export function solveSketch(sketch: Sketch, options: SolveOptions = {}): SolveRe
       for (let i = 0; i < m; i++) gradNorm = Math.max(gradNorm, Math.abs(Jtr[i]))
       if (gradNorm < 1e-9) break
 
+      // The damping of each unknown: its own diagonal entry, as Marquardt
+      // scales it, but no less than a share (DAMP_SHARE) of the stiffest
+      // entry among its own piece's unknowns. The share is small, so which
+      // of two ends gives when a length is set is decided as before — the
+      // one fewer relations hold. Scaled by its own entry alone, the unknown a
+      // relation is least sensitive to was the cheapest to move: a line a
+      // millimetre too long, lying nearly level, was "shortened" by moving
+      // its end 19 mm sideways — a step the descent then refused, again and
+      // again at ever stronger damping, so a length held against a fixed
+      // point was not met in sixty iterations and crawled under a drag.
+      pieceMax.fill(0)
+      for (let i = 0; i < m; i++) pieceMax[pieceOf[i]] = Math.max(pieceMax[pieceOf[i]], JtJ[i * m + i] / unitSq[i])
+      for (let i = 0; i < m; i++) damp[i] = Math.max(JtJ[i * m + i], DAMP_SHARE * pieceMax[pieceOf[i]] * unitSq[i])
+
       let improved = false
       for (let attempt = 0; attempt < 12; attempt++) {
         // Damped normal equations, scaled to unit diagonal: the hard rows put
         // entries a million times the stay-put terms' on the diagonal, and the
         // elimination's pivot test would take the small ones for zeros.
         const S = new Float64Array(m)
-        for (let i = 0; i < m; i++) S[i] = 1 / Math.sqrt(JtJ[i * m + i] * (1 + lambda) + 1e-30)
+        for (let i = 0; i < m; i++) S[i] = 1 / Math.sqrt(JtJ[i * m + i] + lambda * damp[i] + 1e-30)
         const A = new Float64Array(m * m)
         for (let i = 0; i < m; i++) {
           for (let j = 0; j < m; j++) A[i * m + j] = JtJ[i * m + j] * S[i] * S[j]
-          A[i * m + i] += lambda * JtJ[i * m + i] * S[i] * S[i]
+          A[i * m + i] += lambda * damp[i] * S[i] * S[i]
         }
         const rhs = new Float64Array(m)
         for (let i = 0; i < m; i++) rhs[i] = -Jtr[i] * S[i]
@@ -952,6 +1069,18 @@ export function solveSketch(sketch: Sketch, options: SolveOptions = {}): SolveRe
   return finish(sketch, slots, x, blocks, iterations, softCount, quick)
 }
 
+/** A relation with the ends of the arcs in `reversed` named the other way
+ *  round — a new object where any changes, so kept steps are not touched. */
+function swapArcEnds(c: Constraint, reversed: ReadonlySet<number>): Constraint {
+  const swap = (a: unknown) => {
+    const x = a as { entity?: unknown; at?: unknown } | undefined
+    return x && typeof x.entity === 'number' && reversed.has(x.entity) && (x.at === 'a' || x.at === 'b') ? { ...x, at: x.at === 'a' ? 'b' : 'a' } : a
+  }
+  const r = c as Constraint & { p?: unknown; q?: unknown }
+  const p = swap(r.p), q = swap(r.q)
+  return p === r.p && q === r.q ? c : ({ ...c, ...(r.p !== undefined ? { p } : {}), ...(r.q !== undefined ? { q } : {}) } as Constraint)
+}
+
 /** The largest residual of any relation, unweighted, in millimetres. */
 function worstHard(blocks: Block[], x: Float64Array): number {
   let worst = 0
@@ -970,14 +1099,30 @@ function finish(
   writeGeometry = true,
 ): SolveReport {
   // Write the parameters back.
+  const reversed = new Set<number>()
   if (writeGeometry) sketch.entities = sketch.entities.map((e) => {
     const s = slots.get(e.id)!
     const out = withParams(e, x, s.offset)
-    if (out.kind === 'arc' || out.kind === 'circle') out.r = Math.abs(out.r)
+    if (out.kind === 'circle') out.r = Math.abs(out.r)
     if (out.kind === 'arc') {
+      // A radius walked negative puts every point of the arc across the
+      // centre: c + r·(cos t, sin t) with r < 0 is c + |r|·(cos(t + π), sin(t + π)).
+      // Turn the start by half a turn with the sign, so the ends, the grip
+      // and the run the solve met stay where they are.
+      if (out.r < 0) {
+        out.r = -out.r
+        out.start += Math.PI
+      }
+      // A sweep walked negative is the same arc run counter-clockwise from
+      // its other end, so its ends trade names: what the solve held at 'a'
+      // is now 'b'. The relations that name them are renamed below, and the
+      // grip keeps its place along the arc; before, a distance or a join on
+      // one end measured the other, and read as met.
       if (out.sweep < 0) {
         out.start += out.sweep
         out.sweep = -out.sweep
+        reversed.add(out.id)
+        if (out.gripT !== undefined) out.gripT = 1 - out.gripT
       }
       // An arc's end is periodic in its sweep, so the solver may have walked
       // the sweep round by whole turns on its way to the same end point; the
@@ -990,6 +1135,7 @@ function finish(
     }
     return out
   })
+  if (reversed.size) sketch.constraints = sketch.constraints.map((c) => swapArcEnds(c, reversed))
 
   // The report: which hard equations were not met, how many said nothing
   // new, and how the soft data sits.
@@ -1191,12 +1337,18 @@ function redundantRows(rows: number[][], cols: number[][], n: number, sketch: Sk
  *  it stands — what the panel offers as the default when one is added. */
 export function measureDimension(
   sketch: Sketch,
-  kind: 'length' | 'radius' | 'diameter' | 'angle' | 'distance',
+  kind: 'length' | 'radius' | 'diameter' | 'arcLength' | 'angle' | 'distance',
   a: SketchEntity | Anchor,
   b?: SketchEntity | Anchor | { line: number } | { datum: DatumPlane },
   datums?: readonly DatumTrace[],
+  edge?: DistanceEdge,
+  axis?: DistanceAxis,
 ): number | null {
   const ent = (id: number) => sketch.entities.find((e) => e.id === id)
+  // A round end taken on its rim under `edge` (see the distance constraint).
+  const rim = (x: SketchEntity | Anchor | { line: number } | { datum: DatumPlane }): number =>
+    !edge ? 0 : 'at' in x ? rimRadius(ent(x.entity), x.at, edge) : 'kind' in x ? rimRadius(x, 'center', edge) : 0
+  const sign = edge === 'far' ? 1 : -1
   const pointOf = (x: SketchEntity | Anchor): Vec2 | null => {
     if ('at' in x) {
       const e = ent(x.entity)
@@ -1210,6 +1362,9 @@ export function measureDimension(
   if (kind === 'radius' || kind === 'diameter') {
     return 'kind' in a && (a.kind === 'arc' || a.kind === 'circle') ? (kind === 'radius' ? a.r : 2 * a.r) : null
   }
+  if (kind === 'arcLength') {
+    return 'kind' in a && a.kind === 'arc' ? Math.abs(a.r * a.sweep) : null
+  }
   if (kind === 'angle') {
     if (!('kind' in a) || a.kind !== 'line' || !b || !('kind' in b) || b.kind !== 'line') return null
     const da = normalize2(sub2(a.b, a.a))
@@ -1222,16 +1377,17 @@ export function measureDimension(
   if (!p || !b) return null
   if ('datum' in b) {
     const trace = traceOf(datums, b.datum)
-    return trace ? Math.abs(traceOffset(trace, p)) : null
+    return trace ? Math.abs(traceOffset(trace, p)) + sign * rim(a) : null
   }
   if ('line' in b) {
     const l = ent(b.line)
     if (!l || l.kind !== 'line') return null
     const d = normalize2(sub2(l.b, l.a))
-    return d ? Math.abs(dot2(sub2(p, l.a), perp2(d))) : null
+    return d ? Math.abs(dot2(sub2(p, l.a), perp2(d))) + sign * rim(a) : null
   }
   const q = pointOf(b)
-  return q ? len2(sub2(p, q)) : null
+  if (q && axis) return Math.abs(axis === 'x' ? q[0] - p[0] : q[1] - p[1])
+  return q ? len2(sub2(p, q)) + sign * (rim(a) + rim(b)) : null
 }
 
 export { arcPoint }

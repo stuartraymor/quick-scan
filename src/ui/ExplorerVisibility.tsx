@@ -10,10 +10,10 @@ export function ExplorerCheckbox({ values, label, disabled, onSet, testId }: { v
   return <input ref={ref} type="checkbox" className="explorer-checkbox" data-test={testId} checked={checked} aria-label={label} aria-checked={mixed ? 'mixed' : checked} disabled={disabled || values.length === 0} onClick={event => event.stopPropagation()} onChange={event => onSet(event.currentTarget.checked)} />
 }
 
-export function ExplorerGroup({ label, values, disabled, onSet, children, testId }: { label: string; values: readonly boolean[]; disabled?: boolean; onSet: (shown: boolean) => void; children: ReactNode; testId?: string }) {
+export function ExplorerGroup({ label, values, disabled, onSet, children, testId, onContextMenu }: { label: string; values: readonly boolean[]; disabled?: boolean; onSet: (shown: boolean) => void; children: ReactNode; testId?: string; onContextMenu?: (event: React.MouseEvent) => void }) {
   if (values.length === 0) return null
   return <details className="explorer-group" open data-test={testId}>
-    <summary><ExplorerCheckbox values={values} label={`${label} visibility`} disabled={disabled} onSet={onSet} /><span>{label}({values.length})</span></summary>
+    <summary onContextMenu={onContextMenu ? event => { event.preventDefault(); onContextMenu(event) } : undefined}><ExplorerCheckbox values={values} label={`${label} visibility`} disabled={disabled} onSet={onSet} /><span>{label}({values.length})</span></summary>
     <div className="explorer-children">{children}</div>
   </details>
 }

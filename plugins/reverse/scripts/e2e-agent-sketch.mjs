@@ -33,8 +33,8 @@ try {
   check(waited.json?.connected === true, 'the page connected')
   await loadScan(page, meshPath); await openReverse(page)
   const names = (await agent.client.listTools()).tools.map((t) => t.name)
-  const wanted = ['reverse_sketch_mirror', 'reverse_sketch_pattern', 'reverse_sketch_spline', 'reverse_sketch_select', 'reverse_sketch_analyse']
-  check(wanted.every((n) => names.includes(n)), `the five sketch tools are listed (${wanted.filter((n) => names.includes(n)).length} of 5)`)
+  const wanted = ['reverse_sketch_mirror', 'reverse_sketch_pattern', 'reverse_sketch_spline', 'reverse_sketch_select', 'reverse_sketch_analyse', 'reverse_sketch_corner']
+  check(wanted.every((n) => names.includes(n)), `the six sketch tools are listed (${wanted.filter((n) => names.includes(n)).length} of 6)`)
 
   // A sketch across the cylinder at z = 0: the outline circle, a line that
   // leaves the wall, a seed point, a spline, and an arc to pattern along.
@@ -82,6 +82,16 @@ try {
 
   const undone = await ok('history_undo')
   check(/Agent: rebuild a spline/.test(JSON.stringify(undone.json?.undone ?? '')), `history_undo takes the agent’s step back: ${JSON.stringify(undone.json?.undone)}`)
+
+  // 1.2.8: a corner filleted by the agent, through the brush's geometry.
+  await ok('reverse_feature_add', { feature: { kind: 'sketch', name: 'Corner', plane: { kind: 'world', axis: 'z', offset: 2 }, sketch: { entities: [
+    { id: 1, kind: 'line', a: [-30, -20], b: [-5, -20] },
+    { id: 2, kind: 'line', a: [5, -12], b: [5, 10] },
+  ] } } })
+  const c = await ok('reverse_sketch_corner', { sketch: 'Corner', pieces: [1, 2], mode: 'fixedFillet', radius: 2 })
+  check(c.json?.radius === 2 && typeof c.json?.arc === 'number', `reverse_sketch_corner fixedFillet: R ${c.json?.radius}, arc ${c.json?.arc}`)
+  const cornerUndo = await page.$eval('[data-test="undo"]', (e) => e.title)
+  check(cornerUndo.startsWith('Undo: Agent: fixed fillet'), `the undo key names the corner step: "${cornerUndo}"`)
 } catch (e) {
   fail(String(e?.stack ?? e))
 } finally {

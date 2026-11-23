@@ -4,14 +4,13 @@
 
 import { negateExpression, openingDepth } from '../core/extrudeDepth'
 import type { StoreApi } from 'zustand'
-import { dot, sub } from '../../../src/core/vec'
 import { fmtLen } from '../../../src/core/units'
 import { usePrefs } from '../../../src/state/prefsStore'
 import { useStore } from '../../../src/state/store'
-import { dependentsOf, extentEndsOnPart, FULL_TURN_DEG, revolveMaxDeg, type SketchFeature } from '../core/features'
+import { dependentsOf, extentEndsOnPart, FULL_TURN_DEG, planeOffset, planeTakesOffset, revolveMaxDeg, withPlaneOffset, type SketchFeature } from '../core/features'
 import { extentThroughPoint } from '../core/preview'
 import { findRegions } from '../core/regions'
-import { extrudeDraftReady, extrudePickEnd, revolveDraftReady, startingPitch } from './reDrafts'
+import { extrudeDraftReady, extrudeHeightAt, extrudePickEnd, revolveDraftReady, startingPitch } from './reDrafts'
 import { autoRegions, CLOSE_OTHERS, coilOf, hideSketches, nameFor, remember, withExprs, withoutCoil, withoutTarget } from './reFeatureHelpers'
 import { faceExtrudeOp } from './reSketchDraft'
 import type { ReState } from './reStore'
@@ -20,7 +19,29 @@ import type { PreviewInfo } from './reTypes'
 type StoreSet = StoreApi<ReState>['setState']
 type StoreGet = StoreApi<ReState>['getState']
 
-export const solidSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'extrudeDraft' | 'startExtrude' | 'editExtrude' | 'setExtrude' | 'setExtrudeOp' | 'extrudeToPoint' | 'flipExtrude' | 'cancelExtrude' | 'extrudeFace' | 'commitExtrude' | 'revolveDraft' | 'startRevolve' | 'editRevolve' | 'setRevolve' | 'setRevolveCoil' | 'cancelRevolve' | 'commitRevolve' | 'toggleDraftRegion' | 'pickAllDraftRegions'> => ({
+/** Which side of an extrude's sketch plane the solid bodies stand on: 1 all
+ *  along its normal, -1 all against it, 0 on both sides, or nothing to go
+ *  by (no sketch, no solid, a box not known). */
+function solidSideOf(s: Pick<ReState, 'features' | 'bodies'>, d: { sketchId: number | null }): -1 | 0 | 1 {
+  const sketch = s.features.find((f): f is SketchFeature => f.kind === 'sketch' && f.id === d.sketchId)
+  const solids = s.bodies.filter((b) => !b.surface && b.visible !== false && b.box)
+  if (!sketch || solids.length === 0) return 0
+  const { origin, normal } = sketch.frame
+  let lo = Infinity
+  let hi = -Infinity
+  for (const b of solids) {
+    const { min, max } = b.box!
+    for (const x of [min[0], max[0]]) for (const y of [min[1], max[1]]) for (const z of [min[2], max[2]]) {
+      const h = (x - origin[0]) * normal[0] + (y - origin[1]) * normal[1] + (z - origin[2]) * normal[2]
+      if (h < lo) lo = h
+      if (h > hi) hi = h
+    }
+  }
+  const eps = 1e-6 * Math.max(1, hi - lo)
+  return lo >= -eps ? 1 : hi <= eps ? -1 : 0
+}
+
+export const solidSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'extrudeDraft' | 'startExtrude' | 'editExtrude' | 'setExtrude' | 'setExtrudeOp' | 'extrudeToPoint' | 'flipExtrude' | 'setExtrudeSketchOn' | 'cancelExtrude' | 'extrudeFace' | 'commitExtrude' | 'revolveDraft' | 'startRevolve' | 'editRevolve' | 'setRevolve' | 'setRevolveCoil' | 'cancelRevolve' | 'commitRevolve' | 'toggleDraftRegion' | 'pickAllDraftRegions'> => ({
 
   // ---- extrude and revolve -------------------------------------------------------
   extrudeDraft: null,
@@ -33,6 +54,9 @@ export const solidSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'extrude
       // measure, 10.
       const picked = regions ?? autoRegions(sketch?.sketch)
       const to = (sketch ? openingDepth(sketch.sketch, picked) : null) ?? 10
+      // A sketch that closes no region extrudes as a surface, as an open
+      // profile does in QUICKSURFACE (its Solid box unticked).
+      const surface = Boolean(sketch) && picked.length === 0 && sketch!.sketch.entities.some((e) => !e.construction && e.kind !== 'point') && findRegions(sketch!.sketch).length === 0
       // Join, as a CAD extrude does: every body it meets, a body of its own
       // where it meets none — the first one makes the first body.
       return {
@@ -49,6 +73,7 @@ export const solidSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'extrude
           extent: { kind: 'distance', from: 0, to },
           draftDeg: 0,
           op: 'join',
+          ...(surface ? { surface: true } : {}),
         },
       }
     }),
@@ -90,19 +115,29 @@ export const solidSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'extrude
     const d = get().extrudeDraft
     if (!d || d.op === op) return
     get().setExtrude({ op })
-    if ((op === 'cut') !== (d.op === 'cut')) get().flipExtrude()
+    if ((op === 'cut') === (d.op === 'cut')) return
+    // A cut goes into the solid and anything else away from it. Where the
+    // solids all stand on one side of the sketch's plane — a sketch on a
+    // body's top face, or on the plane a block was built up from — that
+    // side says which way; where they stand on both, the direction turns
+    // over as it always has.
+    const side = solidSideOf(get(), d)
+    const e = d.extent
+    if (side !== 0 && e.kind === 'distance' && !d.face) {
+      const now = Math.sign(e.to + e.from) || 1
+      const want = op === 'cut' ? side : -side
+      if (now !== want) get().flipExtrude()
+      return
+    }
+    get().flipExtrude()
   },
   extrudeToPoint: (point) => {
     const s = get()
     const d = s.extrudeDraft
-    const sketch = d && s.features.find((f): f is SketchFeature => f.kind === 'sketch' && f.id === d.sketchId)
-    // The plane the distance is measured from: the sketch's, or the pulled
-    // face's.
-    const plane = d?.face ? { origin: d.face.face.centroid, normal: d.face.face.dir } : sketch ? { origin: sketch.frame.origin, normal: sketch.frame.normal } : null
-    if (!d || !plane) return 'Choose the sketch first — the distance is measured from its plane.'
-    // Swept askew, the offset is counted along the sweep: the height over
-    // the plane, divided by how steeply the sweep leaves it.
-    const height = dot(sub(point, plane.origin), plane.normal) / (d.direction ? dot(d.direction, plane.normal) || 1 : 1)
+    // The distance is measured from the sketch's plane, or the pulled
+    // face's; swept askew, along the sweep.
+    const height = d ? extrudeHeightAt(d, s.features, point) : null
+    if (!d || height === null) return 'Choose the sketch first — the distance is measured from its plane.'
     const end = extrudePickEnd(d, height)
     const extent = extentThroughPoint(d.extent, end, height)
     if (!extent) {
@@ -130,9 +165,40 @@ export const solidSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'extrude
       }
       return { extrudeDraft: faceExtrudeOp({ ...d, exprs, extent: { ...d.extent, from: neg(d.extent.from), to: neg(d.extent.to) } }) }
     }),
+  setExtrudeSketchOn: (end) => {
+    const s = get()
+    const d = s.extrudeDraft
+    if (!d || d.face || d.sketchId === null) return 'Choose the sketch first.'
+    if (d.extent.kind !== 'distance') return 'Set Extent to Two-sided: the sketch is moved to an end given by a depth.'
+    if (d.direction) return 'The sketch moves along its own normal: set Direction to From sketch.'
+    const sketch = s.features.find((f): f is SketchFeature => f.kind === 'sketch' && f.id === d.sketchId)
+    if (!sketch || !planeTakesOffset(sketch.plane)) return 'This sketch’s plane cannot be moved.'
+    const others = dependentsOf(sketch.id, s.features).filter((f) => f.id !== d.featureId)
+    if (others.length > 0) return `${sketch.name} is also used by ${others.map((f) => f.name).join(', ')}: moving it would move that too.`
+    const { from, to } = d.extent
+    const shift = end === 'top' ? Math.max(from, to) : Math.min(from, to)
+    if (Math.abs(shift) < 1e-12) return null
+    const fix = (v: number) => Number((v - shift).toPrecision(12)) || 0
+    const extent = { ...d.extent, from: fix(from), to: fix(to) }
+    const { offset: _offset, ...sketchExprs } = sketch.exprs ?? {}
+    void _offset
+    const moved = { ...withPlaneOffset(sketch, Number((planeOffset(sketch.plane) + shift).toPrecision(12))), ...(sketch.exprs ? { exprs: Object.keys(sketchExprs).length > 0 ? sketchExprs : undefined } : {}) }
+    const { 'extent.from': _f, 'extent.to': _t, ...draftExprs } = d.exprs ?? {}
+    void _f
+    void _t
+    set({
+      ...remember(s),
+      // An extrude being edited is written with its new depths at once, so
+      // the sketch and the extrude agree whether the box is saved or not.
+      features: s.features.map((f) => (f.id === sketch.id ? moved : f.id === d.featureId && f.kind === 'extrude' ? withExprs({ ...f, extent }, f.exprs ? Object.fromEntries(Object.entries(f.exprs).filter(([k]) => k !== 'extent.from' && k !== 'extent.to')) : undefined) : f)),
+      extrudeDraft: { ...d, extent, ...(d.exprs ? { exprs: Object.keys(draftExprs).length > 0 ? draftExprs : undefined } : {}) },
+      buildVersion: s.buildVersion + 1,
+    })
+    return null
+  },
   cancelExtrude: () =>
     set((s) => {
-      const closed = { extrudeDraft: null, preview: { status: 'idle' } as PreviewInfo, gripField: null, ...(s.extrudeDraft?.featureId !== undefined ? { buildVersion: s.buildVersion + 1 } : {}) }
+      const closed = { extrudeDraft: null, preview: { status: 'idle' } as PreviewInfo, gripField: null, gripHeld: false, ...(s.extrudeDraft?.featureId !== undefined ? { buildVersion: s.buildVersion + 1 } : {}) }
       // The sketch made for a pulled face goes with the pull that was not
       // made — nothing else can have built on it while the box was open.
       const made = s.extrudeDraft?.featureId === undefined ? s.extrudeDraft?.fromFace?.sketchId : undefined
@@ -171,6 +237,23 @@ export const solidSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'extrude
       return id
     }
     const id = s.nextFeatureId
+    if (d.surface && d.sketchId !== null) {
+      // The Solid box unticked: the sketch's pieces swept as a surface.
+      const e = d.extent
+      const [from, to] = e.kind === 'symmetric' ? [-e.total / 2, e.total / 2] : e.kind === 'distance' ? [e.from, e.to] : [0, 0]
+      const sheet = nameFor(s, 'sheet')
+      set({
+        ...remember(s),
+        features: [...hideSketches(s.features, [d.sketchId]), { id, kind: 'sheet', name: d.name?.trim() || sheet.name, sketchId: d.sketchId, from, to, visible: true }],
+        nextFeatureId: id + 1,
+        nextOfKind: sheet.nextOfKind,
+        extrudeDraft: null,
+        preview: { status: 'idle' },
+        gripField: null,
+        buildVersion: s.buildVersion + 1,
+      })
+      return id
+    }
     const { name, nextOfKind } = nameFor(s, 'extrude')
     set({
       ...remember(s),

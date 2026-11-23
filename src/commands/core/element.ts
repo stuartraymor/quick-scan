@@ -14,6 +14,8 @@ import type { ScanSpot } from '../../core/geometry/nearest'
 import type { ElementKind, FitTold, PointFit, SigmaPreset, Vec3 } from '../../core/types'
 import { forgetSurface } from '../../app/surfaces'
 import { useStore } from '../../state/store'
+import { explorerEntries } from '../../state/explorerStore'
+import { dependencyCascade } from '../../core/explorerDependencies'
 import { commandHost } from '../host'
 import {
   elementRefSchema,
@@ -674,16 +676,28 @@ const renameCommand: Command<{ element: ElementRef; name: string }> = {
   },
 }
 
-const remove: Command<{ element: ElementRef }> = {
+const remove: Command<{ element: ElementRef; alsoDependents?: boolean }> = {
   name: 'remove',
   title: 'Delete an element',
   description:
-    'Delete an element — and with it every construction built on it and every dimension on any of them. Returns what went. One undo step.',
-  input: obj({ element: elementRefSchema('The element.') }, ['element']),
+    'Delete an element — and with it every construction built on it and every dimension on any of them. Returns what went. One undo step. ' +
+    'If CAD work is built on it (a sketch drawn on the plane, and what was made from that sketch), it is refused and those are named, as the Delete confirmation in the Objects panel lists them: ask the user, then call again with alsoDependents: true to delete them too.',
+  input: obj({ element: elementRefSchema('The element.'), alsoDependents: bool('Also delete the CAD features built on it (named when the call is refused without this). Ask the user first.') }, ['element']),
   label: () => 'delete element',
-  run: async ({ element }) => {
+  run: async ({ element, alsoDependents }) => {
     requireMeasureFree()
     const el = findElement(element)
+    // The same dependents the Objects panel's Delete lists: what other
+    // owners (the CAD workspace) built on this element or on its constructions.
+    const entries = explorerEntries()
+    const others = dependencyCascade([`core:element:${el.id}`], entries).filter((key) => !key.startsWith('core:') && key !== 'scan')
+    const labelOf = (key: string) => entries.find((entry) => entry.key === key)?.label ?? key
+    if (others.length > 0 && !alsoDependents) {
+      throw new CommandError('failed', `${el.name} is used by ${others.map(labelOf).join(', ')}. Deleting it deletes them too: ask the user, then call again with alsoDependents: true.`)
+    }
+    const unremovable = others.find((key) => !entries.find((entry) => entry.key === key)?.remove)
+    if (unremovable) throw new CommandError('failed', `${el.name} is used by ${labelOf(unremovable)}, which cannot be deleted now.`)
+    for (const key of [...others].reverse()) entries.find((entry) => entry.key === key)?.remove?.()
     const before = useStore.getState()
     const scene = commandHost().session.sceneRef.current
     forgetSurface(el.id)
@@ -695,6 +709,7 @@ const remove: Command<{ element: ElementRef }> = {
     return {
       removed: gone.map((e) => ({ id: e.id, name: e.name })),
       dimensionsRemoved: before.dimensions.filter((d) => !after.dimensions.some((x) => x.id === d.id)).map((d) => ({ id: d.id, name: d.name })),
+      ...(others.length > 0 ? { dependentsRemoved: others.map(labelOf) } : {}),
     }
   },
 }
