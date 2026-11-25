@@ -2,6 +2,7 @@
 // reverse.freeform.auto in the document: a closed sphere scan made a quad
 // cage at Low/Medium/Fine-style targets by either algorithm, fitted, built
 // into a body, undone, and refused where the input is wrong.
+import { setTimeout as yieldToRunner } from 'node:timers/promises'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SceneManager } from '../../../src/viewer/SceneManager'
 import { refused, run, soupOf, startHeadless, stlBytes, undoLabels, type Headless } from '../../../tests/commandKit'
@@ -45,7 +46,12 @@ interface Made {
   fitted: { iterations: number; tolerance: number; rms: number; max: number; points: number; within: number; fraction: number }
   ms: Record<string, number>
 }
-const auto = (input: unknown) => run<Made>('reverse.freeform.auto', input)
+// The headless kernel runs on this thread. Service pending worker messages
+// between synchronous CAD builds, as the desktop naturally does.
+const auto = async (input: unknown) => {
+  await yieldToRunner(0)
+  return run<Made>('reverse.freeform.auto', input)
+}
 
 describe('reverse.freeform.auto', () => {
   it('lays a closed cage over the scan at the density asked, fitted to it, one undo step', async () => {
@@ -68,6 +74,7 @@ describe('reverse.freeform.auto', () => {
     expect(r.body!.area).toBeLessThan(4 * Math.PI * 900 * 1.1)
     expect(undoLabels().at(-1)).toBe('Agent: auto freeform “Auto”')
     // Convert to CAD: the STEP file is read back and is a valid solid.
+    await yieldToRunner(0)
     const step = await run<{ verify: { ok: boolean } }>('reverse.export.step', { bodies: [r.bodies.changed![0].id], verify: true })
     expect(step.verify.ok).toBe(true)
     expect(useReverse.getState().features.filter((f) => f.kind === 'freeform')).toHaveLength(1)

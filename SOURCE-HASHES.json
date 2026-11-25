@@ -881,7 +881,7 @@
   "plugins/reverse/tests/reFreeformAsymmetricRepair.test.ts": "d447de822d04b3abca78abaef38536afa9e739dc634fa0b265540cbcf7e65f1f",
   "plugins/reverse/tests/reFreeformAuto.test.ts": "e2af18ac1395f50b183bbf2c02e58446433957953f97630ae0c33fa1e86134b9",
   "plugins/reverse/tests/reFreeformAutoBuildBench.test.ts": "4d44a32d0e25d47346bea04ff535e0ad1c9faafd25141bb2d998573ae7e76d04",
-  "plugins/reverse/tests/reFreeformAutoFeature.test.ts": "65db138186bf747037765a3d249e4b11ded294bbb20a8fd1d271b2519dc38023",
+  "plugins/reverse/tests/reFreeformAutoFeature.test.ts": "50c318488610a128e5db3b0bb8b6725338e1f5e7b0770129068200b71fe53ead",
   "plugins/reverse/tests/reFreeformAutoNative.test.ts": "40109b9a07804638616fba6e11af4aab87a1714b8ccb40e8bb904a8f49bd1658",
   "plugins/reverse/tests/reFreeformAutoParts.test.ts": "ce85295c684b52e064adca10a45bb31afcff71945a7115e6112c4b9cbd64253e",
   "plugins/reverse/tests/reFreeformAutoScans.test.ts": "59dba02d5cd55bf6fc3c1c72da9aec4d28a38cf9791a039042bb26bb7968fc6a",
