@@ -1049,7 +1049,7 @@
   "plugins/reverse/tests/reSketchFlip.test.ts": "c553a7cb2636e8c3455cc5ce15fe25266b249eb3d91a1de2c573882c764b7314",
   "plugins/reverse/tests/reSketchFuzzConstrain.test.ts": "55e0cd836431c89f09552b7c9a8a1d40e05313eee391ea9499fcab8a55a33f87",
   "plugins/reverse/tests/reSketchFuzzDraw.test.ts": "3e0096929b4cc447f9ce69d908cc43767d8edc8bc500605dab507c2aee630225",
-  "plugins/reverse/tests/reSketchFuzzModify.test.ts": "2a0643aa2884e3f203b3a8839f44b68eebbff7ba7158edd5c22adb3b89d7781c",
+  "plugins/reverse/tests/reSketchFuzzModify.test.ts": "df7bf1f90cf53e7023ac3c629863f6e97d12a3b1cee1e72ecebabe5fea25f848",
   "plugins/reverse/tests/reSketchGripBehavior.test.ts": "cff70a298fee08df851722362272c2d4d888217a31b7db188fbb07c7f7970877",
   "plugins/reverse/tests/reSketchHandlesParity.test.ts": "5e00a5f5d6ac2ee4f7721862f78e5b21ca37472f850fccfdeed38007bbbb3e44",
   "plugins/reverse/tests/reSketchHeldReport.test.ts": "3249efe229b43711e379e1fc380132ed85e723e11a0ab00325fd5a83a4939145",
