@@ -21,7 +21,8 @@
 // small blocks rather than one dense wall. The normal equations are solved
 // directly — a sketch has a few hundred parameters at most.
 
-import { choleskySolve, solveLinear, symmetricEigenN } from '../../../src/core/fit/linalg'
+import { countBelowThreshold } from './sketchRank'
+import { choleskySolve, solveLinear } from '../../../src/core/fit/linalg'
 import type { Vec2 } from '../../../src/core/flat/types'
 import { dot2, len2, normalize2, perp2, sub2 } from '../../../src/core/flat/vec2'
 import { traceLine, traceOf, traceOffset, type DatumPlane, type DatumTrace } from './datums'
@@ -70,7 +71,7 @@ const PULL_WEIGHT = 1e2
 const RELEASE_ITERATIONS = 6
 /** A hard residual over this, in millimetres, after convergence is a
  *  constraint the solver could not meet. */
-const UNMET_TOLERANCE = 1e-3
+const UNMET_TOLERANCE = 1e-6
 /** A relation held open by more than this against fitted pieces is closed
  *  by a pass without the slice points. */
 const CLOSE_FROM = 1e-7
@@ -316,8 +317,15 @@ export function readDimension(sketch: Sketch, c: Extract<Constraint, { value: nu
   }
 }
 
-function solveHeld(sketch: Sketch, options: SolveOptions): SolveReport {
-  if (sketch.entities.some((e) => e.kind === 'spline')) sketch.entities = sketch.entities.map((e) => (e.kind === 'spline' ? withHeldEnds(e, sketch) : e))
+/** Read the hard equations on exactly these saved pieces. No optimization,
+ * endpoint normalization or reference-dimension update is performed. */
+export function inspectSketch(sketch: Sketch, options: Pick<SolveOptions, 'datums'> = {}): SolveReport {
+  const held = { ...sketch, constraints: sketch.constraints.filter(c => !isDriven(c)) }
+  return solveHeld(held, options, true)
+}
+
+function solveHeld(sketch: Sketch, options: SolveOptions, inspectOnly = false): SolveReport {
+  if (!inspectOnly && sketch.entities.some((e) => e.kind === 'spline')) sketch.entities = sketch.entities.map((e) => (e.kind === 'spline' ? withHeldEnds(e, sketch) : e))
   const slots = new Map<number, Slot>()
   const x0: number[] = []
   for (const e of sketch.entities) {
@@ -777,7 +785,9 @@ function solveHeld(sketch: Sketch, options: SolveOptions): SolveReport {
       // A round end taken on its rim: the centres' distance less its radius
       // for the nearest rim point, more for the farthest.
       const sign = c.edge === 'far' ? 1 : -1
-      const rim = (xs: Float64Array, a: Anchor) => sign * rimRadius(read(a.entity, xs), a.at, c.edge)
+      // Radius parameters can walk negative before canonicalization. A rim
+      // offset is a physical size, so its sign must not turn a gap into a span.
+      const rim = (xs: Float64Array, a: Anchor) => sign * Math.abs(rimRadius(read(a.entity, xs), a.at, c.edge))
       if ('line' in q) {
         hard(c, [c.p.entity, q.line], (xs) => {
           const p = anchorAt(xs, c.p)
@@ -883,6 +893,7 @@ function solveHeld(sketch: Sketch, options: SolveOptions): SolveReport {
   }
 
   // ---- Levenberg–Marquardt ----------------------------------------------------
+  if (inspectOnly) return finish(sketch, slots, x, blocks, 0, softCount, false, false)
   const freeIndex = new Int32Array(n).fill(-1)
   let m = 0
   for (let i = 0; i < n; i++) if (free[i]) freeIndex[i] = m++
@@ -1058,10 +1069,12 @@ function solveHeld(sketch: Sketch, options: SolveOptions): SolveReport {
     for (const r of rests) for (let i = 0; i < r.init.length; i++) r.init[i] = x[r.at + i]
     descend(blocks.filter((b) => !pulls.includes(b)), RELEASE_ITERATIONS, 1e-9, 1e-12)
   }
-  if (!quick && softCount > 0 && worstHard(blocks, x) > CLOSE_FROM) {
+  if (!quick && worstHard(blocks, x) > CLOSE_FROM) {
     // Slice points a few microns apart on a clean cut weigh as much as the
     // relations, and hold them a micron or two open: the pieces settled
     // where the data put them, now stay there and let the relations close.
+    // A drag or a large dimension change can leave the same residual on
+    // drawn geometry even when there are no fitted points.
     for (const r of rests) for (let i = 0; i < r.init.length; i++) r.init[i] = x[r.at + i]
     descend(blocks.filter((b) => !pulls.includes(b) && (b.constraintId !== undefined || b.weight === FREE_WEIGHT)), RELEASE_ITERATIONS, 1e-9, 1e-12)
   }
@@ -1296,41 +1309,38 @@ function redundantRows(rows: number[][], cols: number[][], n: number, sketch: Sk
     if (e.fixed) for (let i = 0; i < count; i++) fixed[at + i] = 1
     at += count
   }
-  // Dense rows over every parameter, each brought to unit length — a
-  // coincidence on a large arc has derivatives the size of its radius, and
-  // left unscaled it would set the eigenvalue threshold for every other row
-  // — then the Gram matrix.
-  const dense = rows.map((r, i) => {
-    const row = new Float64Array(n)
-    cols[i].forEach((p, ci) => {
-      if (!fixed[p]) row[p] = r[ci]
-    })
-    let norm = 0
-    for (const v of row) norm += v * v
-    norm = Math.sqrt(norm)
-    if (norm > 0) for (let p = 0; p < n; p++) row[p] /= norm
-    return row
-  })
-  const gram = new Float64Array(k * k)
-  let largest = 0
+  // Normalize each equation and accumulate its Gram products only with
+  // equations that share a free parameter. Most sketch rows name just two
+  // pieces. Processing parameters in order preserves the dot-product order.
+  const columns: { row: number; value: number }[][] = Array.from({ length: n }, () => [])
   for (let i = 0; i < k; i++) {
-    for (let j = i; j < k; j++) {
-      let s = 0
-      for (let p = 0; p < n; p++) s += dense[i][p] * dense[j][p]
-      gram[i * k + j] = s
-      gram[j * k + i] = s
-      if (i === j) largest = Math.max(largest, s)
+    const derivatives = rows[i], parameters = cols[i]
+    let squared = 0
+    for (let j = 0; j < parameters.length; j++) {
+      if (!fixed[parameters[j]]) squared += derivatives[j] ** 2
+    }
+    if (squared === 0) continue
+    const norm = Math.sqrt(squared)
+    for (let j = 0; j < parameters.length; j++) {
+      const p = parameters[j], value = derivatives[j]
+      if (!fixed[p] && value !== 0) columns[p].push({ row: i, value: value / norm })
     }
   }
-  if (largest === 0) return k
-  const eig = symmetricEigenN(k, gram)
-  // The rows are finite differences, good to some eight digits, and the
-  // Gram matrix carries that noise into its small eigenvalues at about
-  // 1e-7 of the largest. A dependency is an eigenvalue that is zero but for
-  // that noise; a genuinely independent equation stands orders above it.
-  let zero = 0
-  for (const v of eig.values) if (v < 1e-6 * largest) zero++
-  return zero
+  const gram = new Float64Array(k * k)
+  for (const column of columns) {
+    for (let i = 0; i < column.length; i++) {
+      const a = column[i]
+      for (let j = 0; j <= i; j++) {
+        const b = column[j]
+        const value = gram[a.row * k + b.row] + a.value * b.value
+        gram[a.row * k + b.row] = value
+        gram[b.row * k + a.row] = value
+      }
+    }
+  }
+  let largest = 0
+  for (let i = 0; i < k; i++) largest = Math.max(largest, gram[i * k + i])
+  return largest === 0 ? k : countBelowThreshold(gram, k, 1e-6 * largest)
 }
 
 /** The measured value a dimension of this kind would read on the sketch as

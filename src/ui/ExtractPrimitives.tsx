@@ -23,7 +23,7 @@ import { useLength } from '../app/useUnits'
 
 export type Tool = { id: MarkGesture | null | 'through'; icon: IconName; title: string }
 /** Keep partial decimals editable; valid angles still regrow the wand live. */
-export function WandDegreesField() {
+export function WandDegreesField({ testId = 'extract-degrees' }: { testId?: string } = {}) {
   const degrees = useMark(s => s.wandDegrees), disabled = useMark(s => s.wandConnected)
   const [text, setText] = useState(String(Number(degrees.toFixed(2))))
   const [focused, setFocused] = useState(false)
@@ -36,7 +36,7 @@ export function WandDegreesField() {
     setFocused(false)
   }
   return <input type="number" min={WAND_MIN_DEG} max={WAND_MAX_DEG} step="0.01" value={text} disabled={disabled}
-    aria-label="Sensitivity in degrees" data-test="extract-degrees" onFocus={() => setFocused(true)} onBlur={commit}
+    aria-label="Sensitivity in degrees" data-test={testId} onFocus={() => setFocused(true)} onBlur={commit}
     onChange={e => { const value = e.target.value; setText(value); const n = Number(value); if (value !== '' && Number.isFinite(n) && n >= WAND_MIN_DEG && n <= WAND_MAX_DEG) useMark.getState().setWandDegrees(n) }}
     onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); e.currentTarget.blur() } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); canceled.current = true; e.currentTarget.blur() } }} />
 }
@@ -73,6 +73,50 @@ function NumberField({ value, onValid, min, label, test, disabled }: { value: nu
     onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); e.currentTarget.blur() } }} />
 }
 
+export function ExtractSelection({ count, onHide, onIsolate, onShowAll, onClear }: {
+  count: number; onHide: () => void; onIsolate: () => void; onShowAll: () => void; onClear: () => void
+}) {
+  const m = useMark()
+  const hidden = useShell(s => s.hiddenTriangles)
+  const toolOn = (t: Tool) => (t.id === 'through' ? m.backfaces : m.gesture === t.id)
+  const pick = (t: Tool) => {
+    if (t.id === 'through') m.setBackfaces(!m.backfaces)
+    else m.setGesture(t.id)
+  }
+  const none = count === 0
+  return <>
+      <div className="qs-iconrow" role="toolbar" aria-label="Selection tools">
+        {SELECTION_TOOLS.map((t) => (
+          <button key={String(t.id)} className={toolOn(t) ? 'on' : undefined} aria-pressed={toolOn(t)}
+            data-test={`extract-tool-${t.id ?? 'navigate'}`} title={t.title} onClick={() => pick(t)}>
+            <Icon name={t.icon} size={20} />
+          </button>
+        ))}
+      </div>
+      <div className="qs-degrees">
+        <input type="range" min={WAND_MIN_DEG} max={WAND_MAX_DEG} step={0.01} value={m.wandDegrees} disabled={m.wandConnected} aria-label="Sensitivity in degrees"
+          data-test="extract-degrees-slider" onChange={(e) => m.setWandDegrees(Number(e.target.value))} />
+        <WandDegreesField />
+        <span>degrees</span>
+      </div>
+      <label className="checkrow">
+        <input type="checkbox" checked={m.wandConnected} data-test="extract-connected" onChange={(e) => m.setWandConnected(e.target.checked)} />
+        <span>Select all connected triangles</span>
+      </label>
+      <div className="qs-iconrow" role="toolbar" aria-label="Selection options">
+        <button data-test="extract-enlarge" disabled={none} title="Enlarge currently selected area" onClick={() => m.resize(1)}><Icon name="enlarge" size={20} /></button>
+        <button data-test="extract-shrink" disabled={none} title="Shrink currently selected area" onClick={() => m.resize(-1)}><Icon name="shrink" size={20} /></button>
+        <button data-test="extract-isolate" disabled={none} title="Isolate (leave selected and hide others)" onClick={onIsolate}><Icon name="isolate" size={20} /></button>
+        <button data-test="extract-hide" disabled={none} title="Hide selected triangles" onClick={onHide}><Icon name="hide" size={20} /></button>
+        <button data-test="extract-show-all" disabled={hidden === 0} title="Shows all hidden triangles if any" onClick={onShowAll}><Icon name="show" size={20} /></button>
+        <button data-test="extract-deselect" disabled={none} title="Deselect all selected triangles (Ctrl + Q)" onClick={onClear}><Icon name="deselect" size={20} /></button>
+        {/* QUICKSURFACE ends this row with Select all; inverting an empty selection selects everything. */}
+        <button data-test="extract-select-all" title="Select all triangles" onClick={() => { onClear(); m.invert() }}><Icon name="all" size={20} /></button>
+      </div>
+      <p className="qs-count" data-test="extract-count">{none ? 'Nothing selected' : `${count.toLocaleString('en-US')} points selected`}</p>
+  </>
+}
+
 export function ExtractPrimitives({ onType, preview, onCreate, onClearPreview, onClose, onClear, fitting, onHide, onIsolate, onShowAll, onAnalyse, onAnalysisOff }: {
   onType: (kind: ElementKind) => void
   /** The fit on show, not created yet: QUICKSURFACE previews, then Create. */
@@ -102,7 +146,6 @@ export function ExtractPrimitives({ onType, preview, onCreate, onClearPreview, o
   const options = constraintOptions(constraintRefs, preview?.kind)
   const inferred = ex.autoConstrain ? preview?.autoChoice : undefined
   if (inferred && !options.some(option => option.id === inferred.id)) options.push(inferred)
-  const hidden = useShell((s) => s.hiddenTriangles)
   // The quick tools float where the last wand click landed, while that pick is
   // the selection: only a successful surface pick places them.
   const [quickAt, setQuickAt] = useState<{ x: number; y: number } | null>(null)
@@ -152,11 +195,6 @@ export function ExtractPrimitives({ onType, preview, onCreate, onClearPreview, o
     return () => window.removeEventListener('resize', place)
   }, [quickAt, open])
   if (!open) return null
-  const toolOn = (t: Tool) => (t.id === 'through' ? m.backfaces : m.gesture === t.id)
-  const pick = (t: Tool) => {
-    if (t.id === 'through') m.setBackfaces(!m.backfaces)
-    else m.setGesture(t.id)
-  }
   const none = m.count === 0
   const requestClose = () => {
     if (fitting) return
@@ -191,35 +229,7 @@ export function ExtractPrimitives({ onType, preview, onCreate, onClearPreview, o
         <button className="qs-x" data-test="extract-x" title="Close" disabled={fitting} onClick={requestClose}>×</button>
       </header>
       <p className="qs-step">1. Select the area that you want to fit a primitive</p>
-      <div className="qs-iconrow" role="toolbar" aria-label="Selection tools">
-        {SELECTION_TOOLS.map((t) => (
-          <button key={String(t.id)} className={toolOn(t) ? 'on' : undefined} aria-pressed={toolOn(t)}
-            data-test={`extract-tool-${t.id ?? 'navigate'}`} title={t.title} onClick={() => pick(t)}>
-            <Icon name={t.icon} size={20} />
-          </button>
-        ))}
-      </div>
-      <div className="qs-degrees">
-        <input type="range" min={WAND_MIN_DEG} max={WAND_MAX_DEG} step={0.01} value={m.wandDegrees} disabled={m.wandConnected} aria-label="Sensitivity in degrees"
-          data-test="extract-degrees-slider" onChange={(e) => m.setWandDegrees(Number(e.target.value))} />
-        <WandDegreesField />
-        <span>degrees</span>
-      </div>
-      <label className="checkrow">
-        <input type="checkbox" checked={m.wandConnected} data-test="extract-connected" onChange={(e) => m.setWandConnected(e.target.checked)} />
-        <span>Select all connected triangles</span>
-      </label>
-      <div className="qs-iconrow" role="toolbar" aria-label="Selection options">
-        <button data-test="extract-enlarge" disabled={none} title="Enlarge currently selected area" onClick={() => m.resize(1)}><Icon name="enlarge" size={20} /></button>
-        <button data-test="extract-shrink" disabled={none} title="Shrink currently selected area" onClick={() => m.resize(-1)}><Icon name="shrink" size={20} /></button>
-        <button data-test="extract-isolate" disabled={none} title="Isolate (leave selected and hide others)" onClick={onIsolate}><Icon name="isolate" size={20} /></button>
-        <button data-test="extract-hide" disabled={none} title="Hide selected triangles" onClick={onHide}><Icon name="hide" size={20} /></button>
-        <button data-test="extract-show-all" disabled={hidden === 0} title="Shows all hidden triangles if any" onClick={onShowAll}><Icon name="show" size={20} /></button>
-        <button data-test="extract-deselect" disabled={none} title="Deselect all selected triangles (Ctrl + Q)" onClick={onClear}><Icon name="deselect" size={20} /></button>
-        {/* QUICKSURFACE ends this row with Select all; inverting an empty selection selects everything. */}
-        <button data-test="extract-select-all" title="Select all triangles" onClick={() => { onClear(); m.invert() }}><Icon name="all" size={20} /></button>
-      </div>
-      <p className="qs-count" data-test="extract-count">{none ? 'Nothing selected' : `${m.count.toLocaleString('en-US')} points selected`}</p>
+      <ExtractSelection count={m.count} onHide={onHide} onIsolate={onIsolate} onShowAll={onShowAll} onClear={onClear} />
       <hr />
       <p className="qs-step">2. Select the type of the primitive</p>
       <div className="qs-typerow" role="toolbar" aria-label="Primitive type">
@@ -298,7 +308,7 @@ export function ExtractPrimitives({ onType, preview, onCreate, onClearPreview, o
       <footer>
         <button className="qs-help" title="Select an area with the tools in step 1 — the Magic Wand takes a well-defined face in one click — then click the primitive type in step 2 to preview the fit, and Create to keep it. Select the next area for the next one.">?</button>
         <div className="qs-command-actions">
-          {preview && !preview.problem && !fitting && <button data-test="extract-create-stay" onClick={() => onCreate(true)}>Create &amp; Stay</button>}
+          {preview && !preview.problem && !fitting && <button data-test="extract-create-stay" data-confirm="0" onClick={() => onCreate(true)}>Create &amp; Stay</button>}
           <div className="qs-command-end">
             {preview && !preview.problem && !fitting && <button data-test="extract-create" onClick={() => { if (onCreate(false)) onClose() }}>Create</button>}
             <button data-test="extract-close" data-command-close disabled={fitting} onClick={requestClose}>Close</button>

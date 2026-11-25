@@ -32,9 +32,9 @@ export const COINCIDENCE_MM = 1
 
 /** Something a fit can be held to. The key names it in a saved feature:
  *  `datum:xy`, `element:12`, `surface:7`. */
-export type ConstrainRef =
+export type ConstrainRef = { measured?: import('../../../src/core/types').FitData } & (
   | { key: string; kind: 'plane'; name: string; origin: Vec3; normal: Vec3 }
-  | { key: string; kind: 'axis'; name: string; origin: Vec3; dir: Vec3 }
+  | { key: string; kind: 'axis'; name: string; origin: Vec3; dir: Vec3 })
 
 /** `along`: the fit's direction is the reference's. `across`: square to it.
  *  `on`: along, and on the reference itself — coincident planes, a common
@@ -400,6 +400,7 @@ export function cylinderPatch(
   points: Float32Array,
   cylinder: { origin: Vec3; axis: Vec3; radius: number },
   expandPct: number,
+  minimumExtension = 1e-3,
 ): { from: number; to: number; u: Vec3; v: Vec3; start: number; sweep: number; full: boolean } {
   const [u, v] = orthoBasis(cylinder.axis)
   const o = cylinder.origin
@@ -412,7 +413,7 @@ export function cylinderPatch(
     if (t > hi) hi = t
     angles.push(Math.atan2(dot(q, v), dot(q, u)))
   }
-  const grow = Math.max((hi - lo) * (expandPct / 100), 1e-3)
+  const grow = Math.max((hi - lo) * (expandPct / 100), minimumExtension)
   // The points cover the turn but for their largest gap; the arc runs from
   // the gap's far side round to its near side.
   angles.sort((a, b) => a - b)

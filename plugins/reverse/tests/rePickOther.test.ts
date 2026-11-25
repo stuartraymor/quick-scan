@@ -40,6 +40,27 @@ describe('everything a click at one spot could take', () => {
     expect(labels(s, [0, 0.1], 'dimension', { ...ALL, center: false })).toHaveLength(0)
   })
 
+  it('filters coincident centers and whole curves separately, including Select Other', () => {
+    const { s } = rings()
+    expect(labels(s, [0, 0.1], 'coincident', { ...ALL, center: false })).toEqual([])
+    expect(labels(s, [10, 0.1], 'coincident', { ...ALL, curve: false })).toEqual([])
+  })
+
+  it('lists each enabled midpoint at an overlap, across the full pick radius', () => {
+    const s = emptySketch()
+    for (const length of [10, 20]) addEntity(s, { kind: 'line', a: [-length, 0], b: [length, 0] })
+    const allow = { ...ALL, midpoint: true, curve: false }
+    for (const mode of ['coincident', 'dimension'] as const)
+      expect(labels(s, [0, 0.9], mode, allow).sort()).toEqual(['Middle of line 1', 'Middle of line 2'])
+  })
+
+  it('offers both the named quadrant and the whole rim when both are enabled for Coincident', () => {
+    const { s, a } = rings()
+    expect(labels(s, [10, 0.1], 'coincident', { ...ALL, quadrant: true })).toEqual([
+      `Quadrant point of circle ${a}`, `Circle ${a}`
+    ])
+  })
+
   it('the one a plain click takes is listed first', () => {
     const s = emptySketch()
     const c = addEntity(s, { kind: 'circle', c: [0, 0], r: 10 })

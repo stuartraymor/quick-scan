@@ -5,8 +5,8 @@
 
 import { addScaled, dot, scale, sub } from '../../../src/core/vec'
 import type { ReKernel } from './kernel'
-import { composeHistory, sameSurface } from './kernelMath'
-import { isTrap, readFace } from './kernelOps'
+import { composeHistory, sameSurface, vec } from './kernelMath'
+import { isTrap, readFace, withSubShapes } from './kernelOps'
 import type { FaceHistory, RawFace, Shape, Tracked } from './kernelTypes'
 import type { OcctLike } from './occtTypes'
 
@@ -24,7 +24,20 @@ const FULL_WIDTH_SLACK = [1e-8, 1e-6, 1e-5]
  *  thinner than any tolerance, and the sliver is then taken off, its
  *  neighbours closing over it — the two rounds one half round, as the
  *  size asked. Anything the operation does at the exact size stands. */
-export function fullWidth(occt: OcctLike, kernel: ReKernel, solid: Shape, size: number, make: (size: number) => Tracked): Tracked {
+export function fullWidth(occt: OcctLike, kernel: ReKernel, solid: Shape, size: number, make: (size: number) => Tracked, edges: readonly number[]): Tracked {
+  // A sheet bend has no enclosed volume or full-width solid corner.
+  if (kernel.solidCount(solid) === 0) {
+    const result = make(size)
+    // A one-shell compound draws correctly but cannot be thickened as a
+    // shell. Extract its existing shell without rebuilding the faces.
+    const parts = kernel.trimComponents(result.shape)
+    if (parts.length === 1) {
+      kernel.release(result.shape)
+      return { ...result, shape: parts[0] }
+    }
+    kernel.release(...parts)
+    return result
+  }
   let exact: Tracked | null = null
   let failure: unknown = null
   // A trap goes on at once: the kernel is broken from it on, and every
@@ -32,6 +45,13 @@ export function fullWidth(occt: OcctLike, kernel: ReKernel, solid: Shape, size: 
   try {
     exact = make(size)
     if (kernel.isClosedSolid(exact.shape)) return exact
+    if (edges.length === 1) {
+      const repaired = repairSplineFinish(occt, kernel, solid, exact, edges[0], size)
+      if (repaired) {
+        kernel.release(exact.shape)
+        return repaired
+      }
+    }
   } catch (e) {
     if (isTrap(e)) throw e
     failure = e
@@ -57,6 +77,9 @@ export function fullWidth(occt: OcctLike, kernel: ReKernel, solid: Shape, size: 
     throw failure
   }
   if (exact) kernel.release(exact.shape)
+  // units-ok: CAD solver dimensions in the saved feature result
+  const note = `Full-width limit: requested ${size} mm. The solver used ${size * (1 - slack)} mm before closing the transition.`
+  near.note = note
   const width = 8 * size * slack
   if (!hasSlivers(occt, near.shape, width)) return near
   // The sliver taken off and its neighbours closed over it; or, where the
@@ -75,11 +98,85 @@ export function fullWidth(occt: OcctLike, kernel: ReKernel, solid: Shape, size: 
     if (kernel.isClosedSolid(closed) && !hasSlivers(occt, closed, width)) {
       const history = composeHistory(near.history, surfaceHistory(kernel, near.shape, closed))
       kernel.release(near.shape)
-      return { shape: closed, history }
+      return { shape: closed, history, note }
     }
     kernel.release(closed)
   }
   return near
+}
+
+/** STEP exchange can leave inconsistent trimming data where a blend meets
+ * two spline faces. Repair a private copy of the exact finish. Require a
+ * one-to-one correspondence of its faces and a measurable cut at the pick. */
+function repairSplineFinish(o: OcctLike, k: ReKernel, stock: Shape, exact: Tracked, edge: number, size: number): Tracked | null {
+  if (k.solidCount(exact.shape) !== 1 || !k.isClosedSolid(stock) || k.solidCount(stock) !== 1) return null
+  const sides = k.edgeSides(stock, [edge])[0]
+  if (!sides || !withSubShapes(o, stock, 'face', sides.faces, faces => faces.every(f => o.surfaceType(f) === 'bspline'))) return null
+  const point = withSubShapes(o, stock, 'edge', [edge], ([e]) => {
+    const { first, last } = o.curveParameters(e)
+    return vec(o.curvePointAtParam(e, (first + last) / 2))
+  })
+  const held: number[] = []
+  let accepted = false
+  let fixed: Shape | undefined
+  try {
+    const copy = k.copy(exact.shape)
+    held.push(copy)
+    fixed = o.fixShape(copy) as Shape
+    if (o.isNull(fixed) || !k.isClosedSolid(fixed) || k.solidCount(fixed) !== 1) return null
+    const defects = k.oddEdges(fixed).counts
+    if (defects.free || defects.inside || defects.nonManifold) return null
+    const rawVolume = k.volume(exact.shape)
+    const cut = k.volume(stock) - rawVolume
+    if (!(cut > 0 && Math.abs(rawVolume - k.volume(fixed)) <= cut * 0.002)) return null
+    const original = k.faces(exact.shape)
+    const repaired = k.faces(fixed)
+    if (original.length !== repaired.length || original.length <= o.subShapeCount(stock, 'face')) return null
+    const tolerance = Math.min(1e-5, size * 0.001)
+    const available = new Set(repaired)
+    const mapping: FaceHistory = new Map()
+    for (const face of original) {
+      const matches = [...available].filter(f => f.kind === face.kind &&
+        Math.abs(f.area - face.area) <= face.area * 1e-5 &&
+        Math.hypot(...sub(f.centroid, face.centroid)) <= tolerance)
+      if (matches.length !== 1) return null
+      const samePatch = withSubShapes(o, exact.shape, 'face', [face.hash], ([raw]) =>
+        withSubShapes(o, fixed!, 'face', [matches[0].hash], ([after]) =>
+          o.surfaceType(raw) === o.surfaceType(after) &&
+          faceSamplesAgree(o, k, raw, after, tolerance) && faceSamplesAgree(o, k, after, raw, tolerance)))
+      if (!samePatch) return null
+      available.delete(matches[0])
+      mapping.set(face.hash, [matches[0].hash])
+    }
+    const faces = o.getSubShapes(fixed, 'face')
+    held.push(...faces)
+    const clearance = Math.min(...faces.map(f => k.distanceToPoint(f as Shape, point)))
+    if (!(clearance > tolerance)) return null
+    const history = composeHistory(exact.history, mapping)
+    accepted = true
+    return { shape: fixed, history, note: 'Repaired spline trimming at the requested size.' }
+  } finally {
+    if (fixed !== undefined && !accepted) o.release(fixed)
+    for (const handle of held) o.release(handle)
+  }
+}
+
+/** Project interior points from one bounded face onto its matched face.
+ * Narrowly trimmed faces can miss the grid. Without a witness, decline. */
+function faceSamplesAgree(o: OcctLike, k: ReKernel, from: number, to: number, tolerance: number): boolean {
+  const { uMin, uMax, vMin, vMax } = o.uvBounds(from)
+  let witnessed = false
+  for (const s of [0.2, 0.5, 0.8]) {
+    for (const t of [0.2, 0.5, 0.8]) {
+      const u = uMin + s * (uMax - uMin)
+      const v = vMin + t * (vMax - vMin)
+      if (o.classifyPointOnFace(from, u, v) !== 'in') continue
+      const gap = k.distanceToPoint(to as Shape, vec(o.pointOnSurface(from, u, v)))
+      if (!(gap <= tolerance)) return false
+      witnessed = true
+    }
+  }
+  return witnessed
 }
 
 /** The handles of the faces of a shape narrower than `width` — the area

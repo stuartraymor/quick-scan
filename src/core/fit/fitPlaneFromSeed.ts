@@ -221,9 +221,9 @@ export function fitPlaneFromSeed(
  *  so nothing here needs outvoting; the seeded path weights by area because
  *  the region it grows reaches into a densely meshed rim. */
 export function fitPlaneOnSelection(
-  g: MeshGraph,
+  g: Pick<MeshGraph, 'positions' | 'normals'>,
   selection: Uint32Array,
-  settings: FitSettings,
+  settings: Pick<FitSettings, 'sigma'> & Partial<FitSettings>,
 ): PlaneFit & { region: Uint32Array; used?: Uint32Array } {
   requireSelection(selection, 'surface')
   const fin = fitPlaneClipped(g.positions, selection, settings.sigma)

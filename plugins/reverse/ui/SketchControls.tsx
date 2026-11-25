@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useState } from 'react'
+import { useMeasureTool } from '../../../src/state/measureToolStore'
 import type { SketchChains } from '../app/useReverseWorkspace'
 import { cloneSketch, entityOf, relationTakes, type ConstraintKind, type SketchEntity } from '../core/sketch'
 import { useReverse } from '../state/reStore'
@@ -89,7 +90,7 @@ export function SketchControls({chainsOf}:{chainsOf:()=>SketchChains|null}) {
    {key('polyline','Polyline','sketch-tool-polyline',()=>{presentation.setLineChain(true);tool('line')},active('line')&&presentation.lineChain)}
    {key('circle3','Circle - 3 Points','sketch-tool-circle-three',()=>{prefs.setDrawMode('circle','threePoint');tool('circle')},active('circle')&&prefs.drawModes.circle==='threePoint')}
    {key('circle','Circle - Centre, Radius','sketch-tool-circle',()=>{prefs.setDrawMode('circle','center');tool('circle')},active('circle')&&prefs.drawModes.circle==='center')}
-   {key('tangentArc','Tangent Arc — pick a line end, then the arc end','sketch-tool-tangent-arc',()=>extra('tangentArc'),presentation.tool==='tangentArc')}
+   {key('tangentArc','Tangent Arc — start anywhere and set a tangent direction, or start at a line end','sketch-tool-tangent-arc',()=>extra('tangentArc'),presentation.tool==='tangentArc')}
    {key('arc','Arc — start, end, point on arc','sketch-tool-arc',()=>{prefs.setDrawMode('arc','threePoint');tool('arc')},active('arc'))}
    {key('spline','Freeform Curve','sketch-tool-spline',()=>tool('spline'),active('spline'))}
    {key('middle','Middle Line of two lines','sketch-tool-middle',()=>{if(d.selection.length===2)middleLineSketchSelection();else extra('middle')},presentation.tool==='middle')}
@@ -126,7 +127,7 @@ export function SketchControls({chainsOf}:{chainsOf:()=>SketchChains|null}) {
   </div>
   <div className="sketch-selection-count" data-test="sketch-selection-count">{d.selection.length>0?`${d.selection.length} selected`:''}</div>
   <fieldset className="sketch-display"><legend>Display</legend>
-   <div className="sketch-entry-row"><button data-test="sketch-clip" aria-pressed={sliced} onClick={()=>re.setSketchSliced(!sliced)}>Clip</button><button data-test="sketch-normal" onClick={()=>window.dispatchEvent(new Event('quickscan-sketch-normal'))}>Normal to sketch</button></div>
+   <div className="sketch-entry-row"><button data-test="sketch-clip" aria-pressed={sliced} onClick={()=>re.setSketchSliced(!sliced)}>Clip</button><button data-test="sketch-normal" onClick={()=>window.dispatchEvent(new Event('quickscan-sketch-normal'))}>Normal to sketch</button><button data-test="sketch-open-measure" onClick={() => useMeasureTool.getState().setOpen(true)}>Measure</button></div>
    <label className="sketch-lock"><input type="checkbox" checked readOnly title="The sketch sheet remains normal to its plane"/>Lock view</label>
    <div className="sketch-display-grid">
     <label><input data-test="sketch-show-control-points" type="checkbox" checked={prefs.sketchControlPoints} onChange={e=>prefs.setSketchControlPoints(e.target.checked)}/>Control Points</label>

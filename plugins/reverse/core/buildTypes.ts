@@ -38,6 +38,10 @@ export type SketchStep = Extract<BuildStep, { kind: 'sketch' }>
  *  solid it would make on its own, before any join or cut — the way a CAD
  *  extrude shows its tool body while the distance is dragged. */
 export interface PreviewResult {
+  /** Result faces created by this finishing operation, in the preview mesh. */
+  finishFaces?: number[]
+  section?: import('./blendDrag').BlendSection
+  note?: string
   mesh: KernelMesh
   /** Set for a feature on a body: the preview is the body as the feature
    *  would leave it and stands in for it, edges and all — drawn as the
@@ -241,7 +245,18 @@ export interface RoundTripFind {
  *  space into, how many lay on the scan and were kept, whether they closed
  *  into a solid, and the open edges where they did not — as polylines,
  *  for drawing on the part. */
+export interface TrimPiece {
+  body: number
+  at: Vec3
+  mesh: KernelMesh
+  removed: boolean
+  /** Saved manual picks that classified this piece as removed. */
+  picks: number[]
+}
+
 export interface TrimReport {
+  /** Interactive finite-sheet preview only. */
+  pieces?: TrimPiece[]
   faces: number
   kept: number
   closed: boolean
@@ -262,7 +277,7 @@ export interface SurfaceReport {
   /** A plane or a cylinder rather than the freeform surface: what it was
    *  held to, what the free fit's RMS was before it was held, and a
    *  cylinder's radius. */
-  shape?: 'plane' | 'cylinder'
+  shape?: 'plane' | 'cylinder' | 'cone' | 'sphere'
   rmsFree?: number
   relations?: FoundRelation[]
   radius?: number
@@ -311,6 +326,10 @@ export interface FaceInfo {
 }
 
 export interface EdgeInfo {
+  /** Quarter turns from a complete circular edge's parameter origin. */
+  quadrants?: Vec3[]
+  /** Analytic circle centre, read in the rebuilt body's coordinates. */
+  center?: Vec3
   hash: number
   fingerprint: EdgeFingerprint
   /** The faces on either side, by hash — what says which edges bound a

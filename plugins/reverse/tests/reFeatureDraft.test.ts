@@ -58,7 +58,7 @@ describe('the feature drafts', () => {
     const re = useReverse.getState()
     re.startFeature('fillet', { body: 2, edges: [edge(11)] })
     const d = useReverse.getState().featureDraft!
-    expect(d.kind === 'fillet' && d.radius === DEFAULT_FILLET_MM && d.chain && d.estimate.status === 'idle').toBe(true)
+    expect(d.kind === 'fillet' && d.radius === DEFAULT_FILLET_MM && !d.chain && d.estimate.status === 'idle').toBe(true)
     expect(featureDraftReady(d)).toBe(true)
     const id = useReverse.getState().commitFeature()
     expect(id).toBe(3)

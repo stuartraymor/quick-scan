@@ -104,7 +104,7 @@ describe('the Dimension tool on two arcs, in the store', () => {
     // The rims are clicked where they face each other, which is on their
     // quadrant squares: with Quad on that is the two points (reQuadrantPicks),
     // so it is switched off here for the rims themselves.
-    useSnapFilter.getState().set('pick', 'quadrant', false)
+    useSnapFilter.getState().set('draw', 'quadrant', false)
     re.setSketchTool('dimension')
     re.sketchClick([5, 0], 0.5, false)
     re.sketchClick([32, 0], 0.5, false)
@@ -129,7 +129,7 @@ describe('the Dimension tool on two arcs, in the store', () => {
     // The rims are clicked where they face each other, which is on their
     // quadrant squares: with Quad on that is the two points (reQuadrantPicks),
     // so it is switched off here for the rims themselves.
-    useSnapFilter.getState().set('pick', 'quadrant', false)
+    useSnapFilter.getState().set('draw', 'quadrant', false)
     re.setSketchTool('dimension')
     re.sketchClick([5, 0], 0.5, false)
     re.sketchClick([32, 0], 0.5, false)

@@ -45,6 +45,19 @@ beforeEach(() => {
   })
 })
 
+describe('drawing a line from a previous sketch', () => {
+  it.each([[21, 0.026], [0.026, 21]])('keeps a projected first point when the second click is nearly axis-aligned (%s, %s)', (dx, dy) => {
+    s().startSketch({ kind: 'world', axis: 'z', offset: 0 }, XY)
+    s().setSketchTool('line')
+    s().sketchClick([4.1, 3.1], 0.5, false, { referencePoints: [{ type: 'midpoint', point: [4, 3] }] })
+    // The source may be hidden between the two clicks.
+    s().sketchClick([4 + dx, 3 + dy], 0.5, false, {})
+    const sketch = s().sketchDraft!.sketch
+    expect(sketch.entities[0]).toMatchObject({ kind: 'line', a: [4, 3], b: [4 + dx, 3 + dy] })
+    expect(sketch.constraints.some(c => c.kind === 'horizontal' || c.kind === 'vertical')).toBe(false)
+  })
+})
+
 describe('feature undo', () => {
   it('takes a finished sketch back and brings it again', () => {
     finishSquare()
@@ -518,19 +531,19 @@ describe('Coincident in the sketch', () => {
     const off = ((end[0] - other.a[0]) * -dir[1] + (end[1] - other.a[1]) * dir[0]) / Math.hypot(dir[0], dir[1])
     expect(off).toBeCloseTo(0, 5)
     // The relation stays in hand: a line onto a coordinate plane's line,
-    // the line clicked in its middle where it settled. The line is held
+    // the line clicked away from its midpoint marker where it settled. The line is held
     // level, so the YZ plane's upright line (x = 0) is refused with the
     // reason — the solver met it by shrinking the line to a point — and
     // nothing changes; the ZX plane's level line (y = 0) takes it.
     expect(sk().tool).toBe('relation')
     const settled = JSON.stringify(sk().sketch)
-    s().sketchClick([(other.a[0] + other.b[0]) / 2, (other.a[1] + other.b[1]) / 2], 0.5, false)
+    s().sketchClick([0.7 * other.a[0] + 0.3 * other.b[0], 0.7 * other.a[1] + 0.3 * other.b[1]], 0.5, false)
     expect(sk().relPicks).toMatchObject([{ kind: 'piece', id: second }])
     s().sketchClick([0, 50], 0.5, false)
     expect(sk().error).toMatch(/shrink line [0-9]+ to a point/)
     expect(JSON.stringify(sk().sketch)).toBe(settled)
     expect(sk().relPicks).toEqual([])
-    s().sketchClick([(other.a[0] + other.b[0]) / 2, (other.a[1] + other.b[1]) / 2], 0.5, false)
+    s().sketchClick([0.7 * other.a[0] + 0.3 * other.b[0], 0.7 * other.a[1] + 0.3 * other.b[1]], 0.5, false)
     s().sketchClick([60, 0], 0.5, false)
     const along = sk().sketch.constraints.find((c) => c.kind === 'collinear')
     expect(along && along.kind === 'collinear' && along.on).toEqual({ datum: 'zx' })
@@ -609,7 +622,10 @@ describe('what a new solid joins', () => {
     expect(s().revolveDraft?.op).toBe('join')
     s().startFeature('fillet')
     const fd = s().featureDraft
-    expect(fd?.kind === 'fillet' ? fd.body : null).toBe(2)
+    expect(fd).toMatchObject({ kind: 'fillet', body: null })
+    useReverse.setState({ bodies: [body(2, false), { ...body(5, true), visible: false }] })
+    s().startFeature('chamfer')
+    expect(s().featureDraft).toMatchObject({ kind: 'chamfer', body: 2 })
   })
 
   it('joins with no body there at all, and the first makes one', () => {

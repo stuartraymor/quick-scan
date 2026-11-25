@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { mapRoundGroups, roundRoles } from '../core/roundInputs'
 // The Reverse engineer workspace's plumbing: the kernel brought up when the
 // workspace is first entered, the slice chains a sketch is drawn over, the
 // bodies the rebuild after every change to the feature list makes pushed
@@ -9,7 +10,12 @@
 // (reSession.ts), which the commands work through too; this hook draws them
 // and does the rest of the asynchronous work.
 
+import { firstChamferReference } from '../core/chamferSides'
+import { featureDraftReady } from '../state/reDrafts'
+import { EXTRACT_MARK_COLOR } from '../../../src/state/markStore'
+import { useTrimDisplay, resetTrimDisplay } from '../state/trimDisplay'
 import { useStack } from '../state/stackStore'
+import { useMeasureTool } from '../../../src/state/measureToolStore'
 import { stackDistances } from '../core/stackedReference'
 import { useSectionLine } from '../state/sectionLineStore'
 import { edgesThroughSelection, longChains, sectionModeKey } from '../core/selectionCut'
@@ -23,6 +29,7 @@ import type { Vec3 } from '../../../src/core/types'
 import { rigidApply, rigidCompose, rigidInvert, type Rigid } from '../../../src/core/deviation/rigid'
 import type { KernelMesh } from '../core/kernel'
 import type { EdgeInfo, FaceInfo, PreviewStep } from '../core/build'
+import { prepareBlendDrag, nativeBlendDrag } from '../core/blendDrag'
 import { liveMapScale, paintedSparse, sparseSummary, type SparseField } from '../core/liveMap'
 import { displayValues, vertexNeighbours, type Neighbours } from '../core/mapDisplay'
 import { extrudeField, prepareExtrudeMap, prismEnds, prismReadable, type ExtrudeMapPrep } from '../core/prismMap'
@@ -46,13 +53,15 @@ import { COMPARE_CHORD_MM, COMPARE_REFERENCE_NAME, compareReferenceStl, mergeMes
 import { entityPolyline, sketchBounds, type EntityInput, type Sketch } from '../core/sketch'
 import { threadFaceReading } from '../core/thread'
 import { frameKey, transformFrame, WORLD_AXES, type SectionFrame } from '../../../src/core/section/frame'
-import { normalize } from '../../../src/core/vec'
+import { addScaled, normalize } from '../../../src/core/vec'
 import { projectCut } from '../../../src/core/section/slice'
 import type { MeshWorkerClient } from '../../../src/core/workerClient'
 import { colormapById } from '../../../src/core/field/colormap'
 import { usePrefs } from '../../../src/state/prefsStore'
 import { fmtLen, toDisplay, unitWord } from '../../../src/core/units'
 import { useRePrefs } from '../state/rePrefs'
+import { finishingIncrement, snapFinishingSize } from '../state/finishingInput'
+import { useFinishingAnalysis } from '../state/finishingAnalysis'
 import { bodyColor, coordinatePlaneShown, featureOfDraft, gripFieldValue, historyEditOf, reEditorOpen, selectionItems, sketchesUsedBy, snapDraftOf, useReverse, type BodyPick } from '../state/reStore'
 import type { NetworkData } from '../state/reTypes'
 import { useShell } from '../../../src/state/shellStore'
@@ -61,7 +70,7 @@ import type { FlatScene } from '../../../src/viewer/FlatScene'
 import type { BodyTopology } from '../viewer/bodyPicks'
 import type { SceneManager } from '../../../src/viewer/SceneManager'
 import type { SketchOverlayItem } from '../viewer/sketchOverlay'
-import type { VaryingEdgeEnds } from '../viewer/varyingEnds'
+import { stationLabels, type VaryingEdgeEnds } from '../viewer/varyingEnds'
 import { sketchPalette } from '../viewer/sketchPalette'
 import { saveFile } from '../../../src/app/exports'
 import { onScan } from '../../../src/app/scanEvents'
@@ -80,7 +89,7 @@ export interface SketchChains {
 
 /** The colour a sketch is drawn in, on the part and in its row. */
 const SKETCH_COLOR = '#3d8fd6'
-/** The colour of a cut's ghost — what it is about to take away. */
+/** The colour of a cut's ghost â€” what it is about to take away. */
 const CUT_COLOR = '#e0564f'
 /** The feature id a preview borrows: never a real one. */
 const PREVIEW_ID = -1
@@ -94,8 +103,11 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e))
 export function useReverseWorkspace({
   sceneRef,
   clientRef,
-  sheetRef,
+  sheetRef, scanHidden, bodiesHidden, showEdgeMap,
 }: {
+  showEdgeMap: boolean
+  scanHidden: boolean
+  bodiesHidden: boolean
   sceneRef: RefObject<SceneManager | null>
   /** The mesh worker, for cutting the scan on a sketch plane that is not a
    *  section's. */
@@ -103,9 +115,9 @@ export function useReverseWorkspace({
   /** The sheet a sketch is drawn on, for the development hook alone. */
   sheetRef?: RefObject<FlatScene | null>
 }) {
-  /** The workspace’s part of the viewport, once there is one. */
+  /** The workspaceâ€™s part of the viewport, once there is one. */
   const reScene = () => (sceneRef.current ? reSceneOf(sceneRef.current) : null)
-  // The kernel, the build and the bodies it made — the workspace's session,
+  // The kernel, the build and the bodies it made â€” the workspace's session,
   // which the commands work through too.
   const [session] = useState(() => createReverseSession({ sceneRef }))
   useEffect(() => installReverseSession(session), [session])
@@ -114,7 +126,7 @@ export function useReverseWorkspace({
   const topologies = session.topologies
   const chainsRef = useRef<SketchChains | null>(null)
   /** The scan's symmetry plane as last searched for, and a stamp that
-   *  moves whenever the scan or its alignment does — the plane of one
+   *  moves whenever the scan or its alignment does â€” the plane of one
    *  pose is not the plane of another. */
   const symmetryCache = useRef<SymmetryPlane | null>(null)
   /** The surface region last handed to the scene's marking layer. */
@@ -185,7 +197,7 @@ export function useReverseWorkspace({
       else useReverse.getState().setChains(0, sec ? 'cutting' : 'failed')
       return
     }
-    // No scan on the stage — the workspace used as plain CAD: there is
+    // No scan on the stage â€” the workspace used as plain CAD: there is
     // nothing to cut, and nothing to wait for.
     if (!useStore.getState().fileName) {
       useReverse.getState().setChains(0, 'idle')
@@ -252,7 +264,7 @@ export function useReverseWorkspace({
           ? { ...p, frame: transformFrame(p.frame, delta), face: transformFingerprint(p.face, delta) }
           : p
     // A projected piece's edge moves with the bodies too; its place on the
-    // sheet does not — the sheet moves with the part.
+    // sheet does not â€” the sheet moves with the part.
     const moveSources = (sketch: Sketch): Sketch =>
       sketch.entities.some((e) => e.source && 'edge' in e.source)
         ? { ...sketch, entities: sketch.entities.map((e) => (e.source && 'edge' in e.source ? { ...e, source: { body: e.source.body, edge: transformEdgeFingerprint(e.source.edge, delta) } } : e)) }
@@ -336,7 +348,7 @@ export function useReverseWorkspace({
   const editingOnBody = featureDraft?.featureId !== undefined && 'body' in featureDraft && featureDraft.body !== null ? { step: featureDraft.featureId, body: featureDraft.body } : null
   // ---- a feature on a body, being set up -------------------------------------------
   // What it asks the viewport for: a shell its faces, a fillet its edges,
-  // a hole a round face, a mirror a flat one — on the body it works on.
+  // a hole a round face, a mirror a flat one â€” on the body it works on.
   const draftPick: BodyPick | null = (() => {
     const d = featureDraft
     if (!d) return null
@@ -347,16 +359,20 @@ export function useReverseWorkspace({
       case 'mirror':
       case 'draft':
       case 'deleteFace':
+      case 'duplicateFace':
         return { mode: 'faces', bodies }
+      case 'trim':
+        return d.removed ? { mode: 'faces', bodies: d.tools.length < 2 ? null : d.tools.filter(t => t.kind === 'body').map(t => t.id) } : null
       // A thread's round face may be on any body: clicking one on another
       // moves the thread there.
       case 'thread':
         return { mode: 'faces', bodies: null }
-      // Faces to move are clicked on their body — any body for the first;
+      // Faces to move are clicked on their body â€” any body for the first;
       // snapping one onto the scan, the clicks are the scan's instead.
       case 'moveFace':
         return d.snap && d.faces.length === 1 ? null : { mode: 'faces', bodies: d.faces.length > 0 ? bodies : null }
       case 'fillet':
+        return { mode: d.mode === 'faceRound' ? 'faces' : 'edges', bodies }
       case 'chamfer':
         return { mode: 'edges', bodies }
       // A patch network's curve along a body's edge: any body's edge,
@@ -364,8 +380,8 @@ export function useReverseWorkspace({
       case 'network':
         return d.tool === 'draw' ? { mode: 'edges', bodies: null } : null
       // A Move takes a body by a click on any face of it, and a copy's
-      // lets it go by another. Moved, the bodies picked are out of sight —
-      // the ghost stands in for them where they are going — and only the
+      // lets it go by another. Moved, the bodies picked are out of sight â€”
+      // the ghost stands in for them where they are going â€” and only the
       // others are there to click and add.
       case 'moveBody':
         return { mode: 'faces', bodies: d.copy ? null : useReverse.getState().bodies.map((b) => b.id).filter((id) => !d.bodies.includes(id)) }
@@ -385,9 +401,10 @@ export function useReverseWorkspace({
   const bodiesVersion = useReverse((s) => s.bodiesVersion)
   const bodies = useReverse((s) => s.bodies)
   // The bodies put away as a whole are not drawn; they stay in the model
-  // and in the map, which is the point — the map on the scan alone.
-  const bodiesHidden = useReverse((s) => s.bodiesHidden)
+  // and in the map, which is the point â€” the map on the scan alone.
   const onReverse = workspace === 'reverse'
+  const measuring = useMeasureTool(s=>s.open)
+  const hideSketchPart=useReverse(s=>Boolean(s.sketchDraft)&&!s.sketchModelShown)
   // The bodies are the part: drawn on every tab, as QUICKSURFACE keeps its
   // CAD on screen from Main to Analysis (read live, 2026-11-20). Leaving
   // the CAD tabs used to take them off the scene while the Objects list
@@ -397,15 +414,15 @@ export function useReverseWorkspace({
     if (!scene) return
     reSceneOf(scene).setBodies(
       bodies
-        .map((b) => ({ id: b.id, mesh: meshes.get(b.id), visible: b.visible && !bodiesHidden, color: b.color ?? bodyColor(b.id), topology: topologies.get(b.id) }))
+        .map((b) => ({ id: b.id, mesh: meshes.get(b.id), visible: b.visible && !bodiesHidden && !hideSketchPart, color: b.color ?? bodyColor(b.id), topology: topologies.get(b.id) }))
         .filter((b): b is { id: number; mesh: KernelMesh; visible: boolean; color: string; topology: BodyTopology | undefined } => b.mesh !== undefined),
     )
     // With no scan the bodies are the part, and the size everything else
-    // goes by — a pick's reach, a plane's extent — follows them.
+    // goes by â€” a pick's reach, a plane's extent â€” follows them.
     if (onReverse && !useStore.getState().fileName && bodies.length > 0) useStore.setState({ modelSize: scene.modelSize() })
-  }, [bodiesVersion, bodies, bodiesHidden, onReverse, sceneRef])
+  }, [bodiesVersion, bodies, bodiesHidden, hideSketchPart, onReverse, sceneRef])
 
-  // A body's row in the list, or a component's, under the pointer — and
+  // A body's row in the list, or a component's, under the pointer â€” and
   // the rows picked there: the bodies lit in the viewport, through
   // whatever stands in front of them.
   const listHover = useReverse((s) => (s.bodyHover?.from === 'list' ? s.bodyHover.ids : null))
@@ -420,7 +437,7 @@ export function useReverseWorkspace({
 
   // Two solid bodies shown that run into each other: what they share is
   // drawn red over them, where the faces they have in common would fight
-  // for the same pixels — worked out by the kernel's worker once each
+  // for the same pixels â€” worked out by the kernel's worker once each
   // build lands, and kept as it was while one is under way; with the
   // Bodies key's Overlaps switch off, not at all. The scan is not a body:
   // a body modelled on it lies in it, as it should.
@@ -467,7 +484,7 @@ export function useReverseWorkspace({
           version: bodiesVersion,
           mesh: async (chord: number) => {
             const client = session.client()
-            if (!client) throw new Error('The CAD kernel is not running — open the Reverse engineer workspace once.')
+            if (!client) throw new Error('The CAD kernel is not running â€” open the Reverse engineer workspace once.')
             const [m] = await client.referenceMeshes([b.id], chord)
             if (!m) throw new Error(`${b.name} is not built any more.`)
             return { positions: m.positions, indices: m.indices }
@@ -489,11 +506,10 @@ export function useReverseWorkspace({
 
   // The part being designed is what is solid, as in any CAD viewport, and
   // the scan lies over it as a see-through reference once there is a body
-  // to see through to — it says where the part still stands proud or shy.
+  // to see through to â€” it says where the part still stands proud or shy.
   // The menus of the view bar's Scan and Bodies keys set either part
   // see-through or solid as asked; both solid, each shows where it stands
   // proud of the other.
-  const scanHidden = useReverse((s) => s.scanHidden)
   const scanSeeThrough = useReverse((s) => s.scanSeeThrough)
   const bodiesSeeThrough = useReverse((s) => s.bodiesSeeThrough)
   const anyBodyShown = !bodiesHidden && bodies.some((b) => b.visible)
@@ -513,14 +529,14 @@ export function useReverseWorkspace({
     sceneRef.current?.setScanVisible(!scanHidden)
     reScene()?.setBodiesSolid(!bodiesSeeThrough)
     reScene()?.setBodiesFaint(snapping && !scanHidden)
-    sceneRef.current?.setScanGhost((scanSeeThrough ?? anyBodyShown) && !scanHidden && !snapping)
+    sceneRef.current?.setScanGhost((scanSeeThrough ?? anyBodyShown) && !scanHidden && !snapping && !showEdgeMap)
     return () => {
       sceneRef.current?.setScanVisible(true)
       reScene()?.setBodiesSolid(false)
       reScene()?.setBodiesFaint(false)
       sceneRef.current?.setScanGhost(false)
     }
-  }, [scanHidden, scanSeeThrough, bodiesSeeThrough, anyBodyShown, snapping, onReverse, sceneRef])
+  }, [scanHidden, scanSeeThrough, bodiesSeeThrough, anyBodyShown, snapping, showEdgeMap, onReverse, sceneRef])
 
   // Transparent on one body (its style), over whatever the Bodies key says.
   const bodyStylesNow = useReverse((s) => s.bodyStyles)
@@ -607,8 +623,8 @@ export function useReverseWorkspace({
 
   // ---- the coordinate planes ------------------------------------------------------------
   // The XY, YZ and XZ planes at the origin, as their rows in the body list
-  // set them — up on a blank stage, put away over a scan, until their eyes
-  // say otherwise — at the stage's size, which follows the bodies with no
+  // set them â€” up on a blank stage, put away over a scan, until their eyes
+  // say otherwise â€” at the stage's size, which follows the bodies with no
   // scan. Not under a sketch: its sheet draws where they cross it.
   const planesShown = useReverse((s) => s.planesShown)
   const modelSize = useStore((s) => s.modelSize)
@@ -685,7 +701,7 @@ export function useReverseWorkspace({
   // ---- Stacked sections in the view -------------------------------------------------------
   // While a sketch is being placed with Stacked sections on: the upper plane
   // with its own (blue) arrow and the slab between it and the sketch's plane,
-  // the cut planes across it — dragged, it moves the upper plane where the
+  // the cut planes across it â€” dragged, it moves the upper plane where the
   // panel reads it, and the cuts follow (PlaceSketch).
   useEffect(() => {
     const scene = sceneRef.current
@@ -704,7 +720,7 @@ export function useReverseWorkspace({
 
   // ---- the sketches on the part ----------------------------------------------------------
   // Every visible committed sketch, stood up in its plane, with its closed
-  // regions along for the feature editors to offer as profiles — all but
+  // regions along for the feature editors to offer as profiles â€” all but
   // the one being edited, which the sheet over the viewport draws. A sketch
   // a feature has used is hidden by the commit; it is drawn all the same
   // while a feature made from it is open, so its profiles can be seen and
@@ -724,7 +740,7 @@ export function useReverseWorkspace({
   useEffect(() => {
     const scene = sceneRef.current
     if (!scene) return
-    if (!onReverse) {
+    if (!onReverse && !measuring) {
       reSceneOf(scene).setSketches([])
       return
     }
@@ -747,7 +763,7 @@ export function useReverseWorkspace({
       }))
     reSceneOf(scene).setSketches(items)
     // Runs on the listed dependencies only, not on everything it reads.
-  }, [features, editedSketchId, draftSketchKey, playedSketch, onReverse, sceneRef])
+  }, [features, editedSketchId, draftSketchKey, playedSketch, onReverse, measuring, sceneRef])
 
   // ---- the feature being set up: its profiles on offer, its ghost, its grips -------
   const extrudeDraft = useReverse((s) => s.extrudeDraft)
@@ -765,8 +781,8 @@ export function useReverseWorkspace({
   // The regions of the sketches are click targets while an editor is open,
   // the picked ones lit; a revolve also takes a sketch line, or an element
   // with an axis, for its axis. With no editor open they are click targets
-  // still — a click selects, and the chips by it say what the thing can
-  // become — with the selected one lit, and the elements light under the
+  // still â€” a click selects, and the chips by it say what the thing can
+  // become â€” with the selected one lit, and the elements light under the
   // cursor while they are on offer.
   useEffect(() => {
     const scene = sceneRef.current
@@ -794,7 +810,7 @@ export function useReverseWorkspace({
 
   // The bodies' faces and edges as click targets: what an editor asks for
   // (a fillet its edges, a shell its faces, on the bodies it names), or,
-  // with nothing open, the faces of every body — a click selects one and
+  // with nothing open, the faces of every body â€” a click selects one and
   // the chips by it say what it can become. Not under a sketch: the sheet
   // lies over the part then.
   useEffect(() => {
@@ -820,6 +836,7 @@ export function useReverseWorkspace({
   useEffect(() => {
     const scene = sceneRef.current
     if (!scene) return
+    if (useReverse.getState().gripHeld && (featureDraft?.kind === 'fillet' || featureDraft?.kind === 'chamfer')) return
     const faces: { bodyId: number; hash: number }[] = []
     const edges: { bodyId: number; hash: number }[] = []
     const corners: { bodyId: number; point: [number, number, number] }[] = []
@@ -832,6 +849,7 @@ export function useReverseWorkspace({
     }
     const chain: { bodyId: number; hash: number }[] = []
     const varying: VaryingEdgeEnds[] = []
+    let chamferReference: { point: Vec3; hash: number; flipped: boolean } | null = null
     // The face an extrude reaches to, and the face it pulls, found on the
     // body by their fingerprints.
     for (const on of [toFaceExtent?.face ? toFaceExtent : null, pulledFace]) {
@@ -845,13 +863,23 @@ export function useReverseWorkspace({
       const body = d.body
       if (d.kind === 'shell' || d.kind === 'draft' || d.kind === 'moveFace' || d.kind === 'deleteFace') for (const f of d.faces) if (f.hash >= 0) faces.push({ bodyId: body, hash: f.hash })
       if (d.kind === 'thread' && d.face && d.face.hash >= 0) faces.push({ bodyId: body, hash: d.face.hash })
-      if (d.kind === 'fillet' || d.kind === 'chamfer') {
+      if (d.kind === 'fillet' && d.mode === 'faceRound' && d.roundFaces) {
+        for (const role of roundRoles) for (const face of d.roundFaces[role]) if (face.hash >= 0) faces.push({ bodyId: body, hash: face.hash })
+      } else if (d.kind === 'fillet' || d.kind === 'chamfer') {
         for (const e of d.edges) if (e.hash >= 0) edges.push({ bodyId: body, hash: e.hash })
         // The edges the round will run on along, tangent to the picked
         // ones: lit fainter, so what one click takes is seen before the
         // kernel is asked.
         const topology = topologies.get(body)
         if (d.chain && topology) for (const hash of tangentChain(topology.edges, edges.map((e) => e.hash), splitEdges(topology))) chain.push({ bodyId: body, hash })
+        if (topology && d.kind === 'chamfer' && d.mode !== 'equal' && d.edges[0]) {
+          const picks = d.chain ? chain : edges
+          const hash = firstChamferReference(topology, picks.map(p => p.hash), d.flip)
+          if (hash !== undefined) {
+            faces.push({ bodyId: body, hash })
+            chamferReference = { point: d.edges[0].fingerprint.mid, hash, flipped: d.flip }
+          }
+        }
         // An edge at a varying radius, lit as picked; while the box shows
         // them, a dot on each end and its Start and End named by it with
         // the radius there.
@@ -860,24 +888,38 @@ export function useReverseWorkspace({
             if (v.edge.hash < 0) continue
             edges.push({ bodyId: body, hash: v.edge.hash })
             if (d.mode !== 'variable') continue
-            for (const point of v.edge.ends) corners.push({ bodyId: body, point })
-            varying.push({ index, ends: v.edge.ends, endTangents: v.edge.endTangents, radius: v.radius })
+            let labels: VaryingEdgeEnds = { index, ends: v.edge.ends, endTangents: v.edge.endTangents, radius: v.radius }
+            if (topology && (v.points?.length || v.chain)) {
+              const hashes = (v.chain ?? d.chain) ? tangentChain(topology.edges, [v.edge.hash], splitEdges(topology)) : [v.edge.hash]
+              const byHash = new Map(topology.edges.map(e => [e.hash, e]))
+              for (const hash of hashes.slice(1)) chain.push({ bodyId: body, hash })
+              try {
+                const placed = stationLabels(hashes.map(h => byHash.get(h)!), v.points ?? [])
+                if (placed) labels = { ...labels, ...placed }
+              } catch { /* The exact preview reports a disconnected chain. */ }
+            }
+            for (const point of [...labels.ends, ...(labels.stations ?? []).map(s => s.point)]) corners.push({ bodyId: body, point })
+            varying.push(labels)
           }
         }
       }
     }
     reSceneOf(scene).setBodyPicks(faces, edges, chain, corners)
     reSceneOf(scene).setVaryingEnds(varying, unitsShown)
+    reSceneOf(scene).setChamferReference(chamferReference, () => {
+      const re = useReverse.getState(), draft = re.featureDraft
+      if (draft?.kind === 'chamfer' && draft.mode !== 'equal') re.setFeatureDraft({ flip: !draft.flip })
+    })
   }, [onReverse, editorOpen, selection, featureDraft, toFaceExtent, pulledFace, bodiesVersion, sceneRef, unitsShown])
 
   /** The feature the open editor would make, as a feature, or null while
-   *  it is not complete enough to build — nothing picked, no axis yet. A
+   *  it is not complete enough to build â€” nothing picked, no axis yet. A
    *  feature on a body previews under its own id when it is being edited,
    *  so the builder works on the body as it stood before it. */
   const draftFeature = (): Feature | null => {
     if (featureDraft) return featureOfDraft(featureDraft, featureDraft.featureId ?? PREVIEW_ID, 'Preview')
     if (!draft) return null
-    // Solid unticked: the sketch's pieces swept as a surface — the Sheet
+    // Solid unticked: the sketch's pieces swept as a surface â€” the Sheet
     // feature Create makes, previewed as it will be built.
     if (extrudeDraft?.surface && extrudeDraft.sketchId !== null) {
       const e = extrudeDraft.extent
@@ -891,7 +933,7 @@ export function useReverseWorkspace({
       if (e.kind === 'toFace' && !e.face) return null
       if (e.kind === 'toBody' && e.body < 0) return null
       if (e.kind === 'betweenPlanes' && (!e.a || !e.b)) return null
-      // An end found on the bodies — the next face, the last — is measured
+      // An end found on the bodies â€” the next face, the last â€” is measured
       // against the body the extrude joins or cuts, as it stood before
       // this extrude when the extrude is being edited: the ghost carries
       // the feature's own id, its operation and its target for that. The
@@ -926,30 +968,45 @@ export function useReverseWorkspace({
   // viewport draws it see-through. A drag changes the draft many times a
   // second and the kernel answers a few times a second, so one request is
   // out at a time and the newest draft is asked for the moment the answer
-  // lands — never a queue, and never a wait for the hand to stop, which is
+  // lands â€” never a queue, and never a wait for the hand to stop, which is
   // what a debounce made of a steady drag: a ghost that stood still until
   // the hand did. Every answer is drawn, being newer than what is up. A
   // straight extrude does not wait even for that: its ghost is a prism,
   // and a prism under a new From and To is the last one stretched along the
-  // normal (prismStretch) — done here, every frame, the kernel's own ghost
+  // normal (prismStretch) â€” done here, every frame, the kernel's own ghost
   // taking over as it lands.
   const previewBusy = useRef(false)
   const previewNext = useRef<(() => void) | null>(null)
   const previewSession = useRef<string | null>(null)
-  /** The network last asked for, as its data — see the preview below. */
+  /** The network last asked for, as its data â€” see the preview below. */
   const networkAsked = useRef<string | null>(null)
   /** The prism the ghost on screen was built as, and the one the draft
    *  asks for now. */
   const ghostBase = useRef<{ key: string; origin: Vec3; dir: Vec3; from: number; to: number } | null>(null)
   const ghostWanted = useRef<{ key: string; from: number; to: number } | null>(null)
-  /** What the Move ghost on screen was drawn of — the bodies, copied or
-   *  not, as built — so a drag only carries it by its matrix. */
+  /** What the Move ghost on screen was drawn of â€” the bodies, copied or
+   *  not, as built â€” so a drag only carries it by its matrix. */
   const moveGhost = useRef<string | null>(null)
+  const blendHeld = useReverse(s => s.gripHeld && (s.featureDraft?.kind === 'fillet' || s.featureDraft?.kind === 'chamfer'))
+  const blendBase = useRef<{ key: string; drag: NonNullable<ReturnType<typeof prepareBlendDrag>>; finishFaces?: number[] } | null>(null)
+  const blendDrawing = useRef(false)
+  const blendDrawn = useRef<typeof featureDraft>(null)
+  const [settledDrag, setSettledDrag] = useState<typeof featureDraft>(null)
+  const exactWhileHeld = blendHeld && settledDrag !== null && settledDrag === featureDraft
+  const simpleBlend = featureDraft && !('skipFailing' in featureDraft && featureDraft.skipFailing) && (
+    (featureDraft.kind === 'fillet' && featureDraft.mode === 'constant') ||
+    (featureDraft.kind === 'chamfer' && featureDraft.mode === 'equal')
+  ) && !featureDraft.chain && featureDraft.edges.length === 1 ? featureDraft : null
+  const blendKey = simpleBlend ? JSON.stringify([bodiesVersion, simpleBlend.kind, simpleBlend.featureId, simpleBlend.body, simpleBlend.edges[0].hash]) : null
   useEffect(() => {
     const scene = sceneRef.current
     const client = session.client()
     const re = useReverse.getState()
+    blendDrawing.current = false
+    if (blendBase.current?.key !== blendKey) blendBase.current = null
     const putAway = () => {
+      blendBase.current = null
+      blendDrawn.current = null
       previewSession.current = null
       previewNext.current = null
       ghostBase.current = null
@@ -962,8 +1019,27 @@ export function useReverseWorkspace({
       if (re.preview.status !== 'idle') re.setPreview({ status: 'idle' })
       return
     }
-    // A snapped face that goes into the history — the extrude's distance,
-    // the sketch's line — has no one step to preview: the whole list
+    if (blendHeld && !exactWhileHeld && simpleBlend && simpleBlend.body !== null && blendKey && blendBase.current?.key === blendKey) {
+      const live = blendBase.current.drag
+      const size = simpleBlend.kind === 'fillet' ? simpleBlend.radius : simpleBlend.distance
+      if (size > 0) {
+        previewNext.current = null
+        previewSession.current = null
+        if (blendDrawn.current !== simpleBlend) {
+          live.resize(size)
+          reSceneOf(scene).drawBlendDrag(live.mesh, live.outline, simpleBlend.body, ghostColor(), blendBase.current.finishFaces)
+          blendDrawn.current = simpleBlend
+        }
+        blendDrawing.current = true
+        if (re.preview.status !== 'building') re.setPreview({ status: 'building' })
+        // Keep motion frame-local. At rest, re-intersect the terminal faces
+        // even if the user is still holding the arrow to inspect the corner.
+        const timer = window.setTimeout(() => setSettledDrag(simpleBlend), 150)
+        return () => window.clearTimeout(timer)
+      }
+    }
+    // A snapped face that goes into the history â€” the extrude's distance,
+    // the sketch's line â€” has no one step to preview: the whole list
     // builds again. What is shown is where the face will lie. A move
     // followed by the draft the scan asked for is two features, and is
     // shown the same way, the ghost leaned onto the scan's plane.
@@ -982,7 +1058,7 @@ export function useReverseWorkspace({
     }
     // A Move's ghost is the bodies themselves: their meshes as built, drawn
     // once in their place and carried by the move's matrix at every change
-    // of a number — a drag of the gizmo moves it frame by frame, with
+    // of a number â€” a drag of the gizmo moves it frame by frame, with
     // nothing to wait for. The worker is asked all the same, one request
     // out at a time, for the bodies where they are going: what the live map
     // reads the scan against.
@@ -1026,7 +1102,7 @@ export function useReverseWorkspace({
       re.setPreview({ status: 'failed', message: step.message })
       return
     }
-    // A network asks again only when the network changed — not for each
+    // A network asks again only when the network changed â€” not for each
     // point of a curve still being drawn, nor for a patch picked.
     if (step.kind === 'network') {
       const key = JSON.stringify([step.nodes, step.curves, step.cells, step.spans, step.fit])
@@ -1057,21 +1133,22 @@ export function useReverseWorkspace({
         .preview(step, sketch, stepFilesFor([step]))
         .then((answer) => {
           // Another editor since, or none: the answer is for a box that is
-          // shut. A newer draft of the same box: drawn all the same — it is
-          // nearer the hand than what is up — but not reported, the numbers
+          // shut. A newer draft of the same box: drawn all the same â€” it is
+          // nearer the hand than what is up â€” but not reported, the numbers
           // and the map being the last answer's to give.
           if (previewSession.current !== asked || !answer) return
           const latest = previewNext.current === null
+          if ((step.kind === 'fillet' || step.kind === 'chamfer') && (!latest || useReverse.getState().featureDraft !== featureDraft)) return
           // A feature on a body hands back the body as it would leave it:
           // drawn solid in the body's place. A cut's tool is inside the
           // body it cuts, and is drawn through it.
           const fd = useReverse.getState().featureDraft
           // A face being moved keeps its ghost see-through: the scan under
           // it is what is being clicked.
-          const replaces = !fd || !('body' in fd) || fd.body === null || fd.kind === 'moveFace' || fd.kind === 'duplicateFace' || (fd.kind === 'mirror' && !fd.join) || (fd.kind === 'offsetBody' && fd.keep) ? [] : fd.kind === 'boolean' && fd.tool !== null && !fd.keep ? [fd.body, fd.tool] : [fd.body]
+          const replaces = fd?.kind === 'trim' && fd.removed?.length ? fd.tools.filter(t => t.kind === 'body').map(t => t.id) : !fd || !('body' in fd) || fd.body === null || fd.kind === 'moveFace' || fd.kind === 'duplicateFace' || (fd.kind === 'mirror' && !fd.join) || (fd.kind === 'offsetBody' && fd.keep) ? [] : fd.kind === 'boolean' && fd.tool !== null && !fd.keep ? [fd.body, fd.tool] : [fd.body]
           const cutting = (draft?.op ?? (fd && 'op' in fd ? fd.op : null)) === 'cut'
           // A Move draws its own ghost; the answer is the map's.
-          if (fd?.kind !== 'moveBody') reScene()?.setBodyPreview(answer.mesh, ghostColor(), { replaces, through: replaces.length === 0 && cutting, edges: answer.edges })
+          if (fd?.kind !== 'moveBody') reScene()?.setBodyPreview(answer.trim?.pieces ? null : answer.mesh, ghostColor(), { replaces, through: replaces.length === 0 && cutting, edgeFeature: fd?.kind === 'fillet' || fd?.kind === 'chamfer', finishFaces: answer.finishFaces, fitSurface: fd?.kind === 'surface', edges: answer.edges || fd?.kind === 'surface' })
           // The prism this ghost is, and the hand's newer one on top of it.
           ghostBase.current = prism
           const wanted = ghostWanted.current
@@ -1080,11 +1157,17 @@ export function useReverseWorkspace({
             if (m) reScene()?.setBodyPreviewStretch(m)
           }
           if (!latest) return
-          useReverse.getState().setPreview({ status: 'ok', volume: answer.volume, closed: answer.closed, ...(answer.surface ? { surface: answer.surface } : {}), ...(answer.trim ? { trim: answer.trim } : {}), ...(answer.network ? { network: answer.network } : {}), ...(answer.sheetFaces !== undefined ? { sheetFaces: answer.sheetFaces } : {}), ...(answer.failure ? { failure: answer.failure } : {}) })
+          if (blendKey && simpleBlend && answer.closed && !answer.failure) {
+            const drag = answer.section ? prepareBlendDrag(answer.mesh, answer.section)
+              : nativeBlendDrag(answer.mesh, simpleBlend.edges[0].fingerprint, simpleBlend.kind, simpleBlend.kind==='fillet' ? simpleBlend.radius : simpleBlend.distance)
+            blendBase.current = drag ? { key: blendKey, drag, finishFaces: answer.finishFaces } : null
+          }
+          useReverse.getState().setPreview({ status: 'ok', volume: answer.volume, closed: answer.closed, ...(answer.note ? { note: answer.note } : {}), ...(answer.surface ? { surface: answer.surface } : {}), ...(answer.trim ? { trim: answer.trim } : {}), ...(answer.network ? { network: answer.network } : {}), ...(answer.sheetFaces !== undefined ? { sheetFaces: answer.sheetFaces } : {}), ...(answer.failure ? { failure: answer.failure } : {}) })
           setGhostTick((t) => t + 1)
         })
         .catch((e) => {
           if (previewSession.current !== asked || previewNext.current !== null) return
+          if ((step.kind === 'fillet' || step.kind === 'chamfer') && useReverse.getState().featureDraft !== featureDraft) return
           ghostBase.current = null
           if (useReverse.getState().featureDraft?.kind !== 'moveBody') reScene()?.setBodyPreview(null, '#ffffff')
           useReverse.getState().setPreview({ status: 'failed', message: message(e), ...(e instanceof PreviewFailure && e.where.length > 0 ? { where: e.where } : {}) })
@@ -1099,13 +1182,13 @@ export function useReverseWorkspace({
     if (previewBusy.current) previewNext.current = ask
     else ask()
     // Runs on the listed dependencies only, not on everything it reads.
-  }, [featureOpen, extrudeDraft, revolveDraft, featureDraft, features, kernelStatus, bodiesVersion, sceneRef])
+  }, [featureOpen, extrudeDraft, revolveDraft, featureDraft, features, kernelStatus, bodiesVersion, blendHeld, exactWhileHeld, sceneRef])
 
   // A feature reopened for editing is set up on the part as it stood
   // before it: the build ran the features before it alone
   // (featuresToBuild), and its picks are found again on that body by
   // their fingerprints, so they light where they were made. Not while a
-  // build is under way — the bodies drawn until it answers are the old
+  // build is under way â€” the bodies drawn until it answers are the old
   // ones, whose hashes would name the wrong faces.
   useEffect(() => {
     if (!editingOnBody || kernelStatus !== 'ready') return
@@ -1127,6 +1210,8 @@ export function useReverseWorkspace({
     } else if (d.kind === 'thread') {
       if (d.face && d.face.hash < 0) re.setFeatureDraft({ face: faceOf(d.face) })
     } else if (d.kind === 'fillet' || d.kind === 'chamfer') {
+      if (d.kind === 'fillet' && d.roundFaces && roundRoles.some(role => d.roundFaces![role].some(f => f.hash < 0)))
+        re.setFeatureDraft({ roundFaces: mapRoundGroups(d.roundFaces, faceOf) })
       const edgeOf = (e: EdgeInfo): EdgeInfo => {
         if (e.hash >= 0) return e
         const i = matchEdge(e.fingerprint, topology.edges.map((x) => x.fingerprint), tol)
@@ -1139,7 +1224,7 @@ export function useReverseWorkspace({
   }, [editingOnBody?.step, editingOnBody?.body, kernelStatus, bodiesVersion])
 
   // A thread's round face, once it names a face of the mesh: a boss or a
-  // bore, read off the face's triangles — and, while no size has been
+  // bore, read off the face's triangles â€” and, while no size has been
   // chosen or typed, the standard's size for it, as the face is drawn: a
   // boss's major diameter, a bore's minor.
   const threadFaceKey = featureDraft?.kind === 'thread' && featureDraft.face && featureDraft.body !== null && featureDraft.internal === null ? `${featureDraft.body}:${featureDraft.face.hash}` : null
@@ -1181,8 +1266,11 @@ export function useReverseWorkspace({
         const reading = readCornerCut(fp, fp.mid, cut, reach)
         const now = useReverse.getState().featureDraft
         if (!now || now.kind !== 'fillet' || now.radiusTyped) return
-        if (reading) useReverse.getState().setFeatureDraft({ radius: Math.round(reading.radius * 100) / 100, estimate: { status: 'found', radius: reading.radius, points: reading.points } })
-        else useReverse.getState().setFeatureDraft({ estimate: { status: 'none' } })
+        if (reading) {
+          const units = usePrefs.getState().units
+          const radius = Math.max(finishingIncrement(units), snapFinishingSize(reading.radius, units))
+          useReverse.getState().setFeatureDraft({ radius, estimate: { status: 'found', radius: reading.radius, points: reading.points } })
+        } else useReverse.getState().setFeatureDraft({ estimate: { status: 'none' } })
       })
       .catch(() => {
         if (!stale) useReverse.getState().setFeatureDraft({ estimate: { status: 'none' } })
@@ -1195,11 +1283,42 @@ export function useReverseWorkspace({
 
   // The open edges of a trim that did not close, drawn on the part: the
   // preview's while a trim box is open, else those of every visible trim
-  // body — where the next surface has to go. In the same red, where a
+  // body â€” where the next surface has to go. In the same red, where a
   // round, a chamfer or a shell fails: the edges or the face outlines the
-  // kernel cannot do at the size asked — the preview's while its box is
+  // kernel cannot do at the size asked â€” the preview's while its box is
   // open, else those of every built feature that failed so.
   const previewOpen = useReverse((s) => (s.featureDraft?.kind === 'trim' && s.preview.status === 'ok' ? s.preview.trim?.openEdges : undefined))
+  const trimPieces = useReverse(s => s.featureDraft?.kind === 'trim' && s.preview.status === 'ok' ? s.preview.trim?.pieces : undefined)
+  const trimDisplay = useTrimDisplay()
+  const trimOpen = featureDraft?.kind === 'trim'
+  useEffect(() => { if (!trimOpen) resetTrimDisplay() }, [trimOpen])
+  useEffect(() => {
+    if (!sceneRef.current || !onReverse || !trimPieces) return
+    const view = reSceneOf(sceneRef.current)
+    view.setEditingBodies([...new Set(trimPieces.map(p => p.body))])
+    view.setTrimPieces(trimPieces.filter(p => !trimDisplay.hidden.includes(p.body) &&
+      (trimDisplay.view === 'all' || p.removed === (trimDisplay.view === 'removed'))).map(piece => ({
+        piece, wireframe: trimDisplay.wireframe, color: piece.removed ? '#cd7160' : bodies.find(b => b.id === piece.body)?.color ?? bodyColor(piece.body),
+      })))
+    view.onTrimPick = piece => {
+      const re = useReverse.getState()
+      const d = re.featureDraft
+      if (d?.kind !== 'trim' || re.preview.status !== 'ok' || re.preview.trim?.pieces !== trimPieces) return
+      if (!piece.removed && re.preview.trim.kept <= 1) {
+        useStore.getState().setStatus('Keep at least one trim piece.')
+        return
+      }
+      useTrimDisplay.setState(s => ({ history: [...s.history, { removed: d.removed, corrections: d.corrections }].slice(-64) }))
+      if (!d.removed) {
+        re.setFeatureDraft({ corrections: [...(d.corrections ?? []), { at: piece.at, keep: piece.removed }] })
+        return
+      }
+      const removed = d.removed.filter((_, i) => !piece.picks.includes(i))
+      if (!piece.removed) removed.push({ body: piece.body, at: piece.at })
+      re.setFeatureDraft({ removed })
+    }
+    return () => { view.onTrimPick = null; view.setTrimPieces(null); view.setEditingBodies([]) }
+  }, [onReverse, sceneRef, trimPieces, trimDisplay, bodies])
   const previewWhere = useReverse((s) => (s.featureDraft ? (s.preview.status === 'failed' ? s.preview.where : s.preview.status === 'ok' ? s.preview.failure?.where : undefined) : undefined))
   const results = useReverse((s) => s.results)
   useEffect(() => {
@@ -1228,7 +1347,7 @@ export function useReverseWorkspace({
   }, [onReverse, featureDraft?.kind, previewOpen, previewWhere, results, bodies, sceneRef])
 
   // A Fit Surface's control net, drawn over the part while the box is open
-  // and its Control Net tick is on — the preview's net, so it follows the
+  // and its Control Net tick is on â€” the preview's net, so it follows the
   // numbers as they are typed. The tick goes with the box.
   const netOn = useControlNet((s) => s.on)
   const poleStrength = useControlNet((s) => s.strength)
@@ -1252,7 +1371,7 @@ export function useReverseWorkspace({
   }, [netDraftShape])
 
   // A surface's region is shown on the scan as a marking while its box is
-  // open — the same layer the tools paint into, so a flood and a brush
+  // open â€” the same layer the tools paint into, so a flood and a brush
   // stroke land in one place. The region goes to the scene when the store
   // changed it (a flood, Clear, a reopened feature) and comes back from
   // the scene when the tools did (App's paint change); `regionShown`
@@ -1272,13 +1391,13 @@ export function useReverseWorkspace({
     if (!surfaceRegion || regionShown.current === surfaceRegion) return
     regionShown.current = surfaceRegion
     if (surfaceRegion.length === 0) scene.clearPaint()
-    else scene.setPaintedVertices(surfaceRegion, ghostColor())
+    else scene.setPaintedVertices(surfaceRegion, EXTRACT_MARK_COLOR)
     // Runs on the listed dependencies only, not on everything it reads.
   }, [surfaceOpen, surfaceRegion, sceneRef])
 
   // A new mirror opens on the scan's own symmetry plane: a symmetry plane
   // already measured in Measure when there is one, else the mesh worker's
-  // mirror registration from the scan's principal planes — a few seconds on
+  // mirror registration from the scan's principal planes â€” a few seconds on
   // a big scan, once per scan and alignment. A plane the operator chooses
   // in the meantime stands; a part with no symmetry says so in the box.
   const mirrorKey = featureDraft?.kind === 'mirror' && featureDraft.featureId === undefined ? 'new' : null
@@ -1327,7 +1446,7 @@ export function useReverseWorkspace({
   // Deviation workspace's nearest-point machinery on the ghost's own
   // tessellation and the scan's vertices near it (core/re/liveMap), run in
   // the kernel worker, which holds the last ghost and the bodies already.
-  // The scan goes over once per file and once more per datum alignment —
+  // The scan goes over once per file and once more per datum alignment â€”
   // the viewport's vertices, alignment baked in, the frame the bodies are
   // built in.
   const [ghostTick, setGhostTick] = useState(0)
@@ -1347,7 +1466,9 @@ export function useReverseWorkspace({
     }
   }, [kernelStatus, fileName, triangleCount, appliedAlignment, session])
 
-  const liveMapOn = useRePrefs((s) => s.liveMap)
+  const selectingSurface = featureDraft?.kind === 'surface' && !featureDraftReady(featureDraft)
+  const edgeOpen = featureDraft?.kind === 'fillet' || featureDraft?.kind === 'chamfer'
+  const liveMapOn = useRePrefs(s => !edgeOpen && (surfaceOpen ? s.surfaceMap : s.liveMap))
   const liveMapRange = useRePrefs((s) => s.liveMapRange)
   const colormap = usePrefs((s) => s.colormap)
   const bodyMap = useReverse((s) => s.bodyMap)
@@ -1371,7 +1492,7 @@ export function useReverseWorkspace({
     return next
   }
   /** Lay a reading on the scan: per fragment from the readings, drawn with
-   *  the noise averaged out between like neighbours (core/mapDisplay) — the
+   *  the noise averaged out between like neighbours (core/mapDisplay) â€” the
    *  figures stay the readings' own. A reading of the bodies that names
    *  vertices deep inside them keeps its violet, vertex by vertex. */
   const paintMap = (field: SparseField, source: 'ghost' | 'bodies') => {
@@ -1386,9 +1507,32 @@ export function useReverseWorkspace({
     } else scene.setSparseValues(field.subset, displayValues(field, scan.adj, liveMapRange, scan.slot), scale, map)
     useReverse.getState().setMapReport({ source, ...sparseSummary(field, liveMapRange), range: liveMapRange, tick: ++mapTick.current })
   }
+  // Publish the visual and its local reading in the mouse event. Waiting
+  // for React effects here costs a rendered frame on a large reconstruction.
+  useEffect(() => {
+    const draw = () => {
+      const { featureDraft: d, gripHeld } = useReverse.getState()
+      const scene = sceneRef.current
+      const base = blendBase.current
+      if (!gripHeld || !base || !scene || !d || (d.kind !== 'fillet' && d.kind !== 'chamfer') ||
+          d.body === null || d.chain || d.edges.length !== 1 || (d.kind === 'fillet' ? d.mode !== 'constant' : d.mode !== 'equal')) return
+      const key = JSON.stringify([bodiesVersion,d.kind,d.featureId,d.body,d.edges[0].hash])
+      if (base.key !== key) return
+      const size = d.kind === 'fillet' ? d.radius : d.distance
+      if (!(size > 0)) return
+      base.drag.resize(size)
+      reSceneOf(scene).drawBlendDrag(base.drag.mesh,base.drag.outline,d.body,ghostColor(),base.finishFaces)
+      blendDrawn.current = d
+      blendDrawing.current = true
+    }
+    draw()
+    return useReverse.subscribe((s,previous) => {
+      if (s.gripHeld && (s.featureDraft !== previous.featureDraft || !previous.gripHeld)) draw()
+    })
+  }, [bodiesVersion,sceneRef])
   // A straight extrude's map while it is set up: read in closed form
-  // against the profiles (core/prismMap) on every change of its ends — every
-  // frame of a drag, the hand still on the arrow — the part across the
+  // against the profiles (core/prismMap) on every change of its ends â€” every
+  // frame of a drag, the hand still on the arrow â€” the part across the
   // plane read once per profile. The kernel's map of the built ghost takes
   // over once the ghost lands with the hand off it.
   const prismPrep = useRef<{ key: string; sketch: SketchFeature; positions: Float32Array; prep: ExtrudeMapPrep } | null>(null)
@@ -1421,24 +1565,24 @@ export function useReverseWorkspace({
       scene?.setSparseField(null, null)
       if (useReverse.getState().mapReport) useReverse.getState().setMapReport(null)
     }
-    if (!onReverse || !scene || !client || kernelStatus !== 'ready') {
+    if (!onReverse || !scene || !client || kernelStatus !== 'ready' || selectingSurface || edgeOpen) {
       lift()
       return
     }
     // The ghost's map while an editor has a ghost up and the preference is
     // on; otherwise the bodies' map on the key. Neither: nothing painted.
-    // A ghost being rebuilt — every step of a drag — leaves the last map
+    // A ghost being rebuilt â€” every step of a drag â€” leaves the last map
     // on the scan until the new ghost lands, rather than lifting it and
     // laying it again, which would flicker under the hand.
-    if (featureOpen && previewStatus === 'building' && liveMapOn) return
+    if (featureOpen && liveMapOn && (previewStatus === 'building' || blendDrawing.current)) return
     // An arrow or ring in the hand on a straight extrude: the map above
     // follows the hand, and the kernel's reads the ghost on release. Any
     // other feature's map is read from its ghost whenever one lands, hand
-    // on the grip or not — a pause in the drag shows where it stands.
+    // on the grip or not â€” a pause in the drag shows where it stands.
     const prismLive = featureOpen && liveMapOn && extrudeDraft !== null && prismReadable(extrudeDraft) && extrudeDraft.sketchId !== null
     if (prismLive && gripHeld) return
     const ghostShown = featureOpen && previewStatus === 'ok'
-    const source: 'preview' | 'bodies' | null = ghostShown ? (liveMapOn ? 'preview' : null) : bodyMap && visibleBodyIds !== '' && !building ? 'bodies' : null
+    const source: 'preview' | 'bodies' | null = ghostShown ? (liveMapOn ? 'preview' : null) : !surfaceOpen && bodyMap && visibleBodyIds !== '' && !building ? 'bodies' : null
     if (!source) {
       lift()
       return
@@ -1457,14 +1601,14 @@ export function useReverseWorkspace({
           })
           .catch(() => {})
       },
-      source === 'preview' ? MAP_DEBOUNCE_MS : 0,
+      source === 'preview' && !simpleBlend ? MAP_DEBOUNCE_MS : 0,
     )
     return () => {
       stale = true
       window.clearTimeout(timer)
     }
     // Runs on the listed dependencies only, not on everything it reads.
-  }, [onReverse, kernelStatus, featureOpen, previewStatus, ghostTick, scanTick, liveMapOn, liveMapRange, colormap, bodyMap, visibleBodyIds, bodiesVersion, building, gripHeld, sceneRef])
+  }, [onReverse, kernelStatus, surfaceOpen, selectingSurface, featureOpen, edgeOpen, previewStatus, ghostTick, scanTick, liveMapOn, liveMapRange, colormap, bodyMap, visibleBodyIds, bodiesVersion, building, gripHeld, sceneRef])
 
   // Measure's elements, where the Reverse store can read them.
   const measured = useStore((s) => s.elements)
@@ -1472,7 +1616,7 @@ export function useReverseWorkspace({
     useReverse.getState().setElementRefs(measured.map((e) => ({ id: e.id, name: e.name, fit: e.fit })))
   }, [measured])
   // An extracted body follows its element or its shadow: extended, refitted
-  // or taken again in Measure, it is built again — on the way back in, not
+  // or taken again in Measure, it is built again â€” on the way back in, not
   // at every move of a grip.
   const sectionsNow = useStore((s) => s.sections)
   useEffect(() => {
@@ -1482,7 +1626,7 @@ export function useReverseWorkspace({
   }, [measured, sectionsNow, onReverse])
 
   // ---- the curvature map ---------------------------------------------------------------
-  // The scan coloured by its mean curvature on the view bar's key — read
+  // The scan coloured by its mean curvature on the view bar's key â€” read
   // once per scan by the mesh worker, which holds the graph (an alignment
   // turns the part and leaves its curvature alone), painted by the scene
   // sync as the full map it is. A ghost with its live map takes the surface
@@ -1509,10 +1653,46 @@ export function useReverseWorkspace({
       stale = true
     }
   }, [onReverse, curvatureMap, curvatureRead, fileName, triangleCount, clientRef])
+  const fitMapShown = useReverse(s => s.mapReport?.source === 'ghost' && s.mapReport.points > 0)
+  useEffect(() => {
+    const scene = sceneRef.current
+    if (!scene || !onReverse || !surfaceOpen || !liveMapOn || !fitMapShown) return
+    scene.setFieldOverPaint(true)
+    reSceneOf(scene).setFitAnalysisShown(true)
+    return () => { scene.setFieldOverPaint(false); reSceneOf(scene).setFitAnalysisShown(false) }
+  }, [sceneRef, onReverse, surfaceOpen, liveMapOn, fitMapShown])
+  const transparency = useFinishingAnalysis(s => s.transparency)
+  const tolerance = useFinishingAnalysis(s => s.tolerance)
+  const colouring = useFinishingAnalysis(s => s.colouring)
+  useEffect(() => {
+    const scene = sceneRef.current
+    if (!scene || !onReverse || !edgeOpen) return
+    scene.setScanOpacityOverride(1 - transparency / 100)
+    return () => scene.setScanOpacityOverride(null)
+  }, [onReverse, edgeOpen, transparency, sceneRef])
+  useEffect(() => {
+    const scene = sceneRef.current
+    if (!onReverse || !scene || !showEdgeMap) return
+    const view = reSceneOf(scene), client = session.client()
+    view.setFinishingDisplay({ tolerance, colouring,
+      measure: client && triangleCount ? async (positions, triangles) => {
+        const values = await client.previewSurfaceDeviation(positions, true)
+        const data = { positions, triangles, values }
+        return useReverse.getState().gripHeld ? data : client.refineSurfaceDeviation(data, tolerance, true)
+      } : undefined,
+      report: (reading, statistics) => {
+        const previous = useFinishingAnalysis.getState()
+        if (previous.reading !== reading || previous.statistics !== (statistics ?? null)) {
+          useFinishingAnalysis.setState({ reading, statistics: statistics ?? null })
+        }
+      },
+    })
+    return () => view.setFinishingDisplay(null)
+  }, [onReverse, sceneRef, showEdgeMap, tolerance, colouring, triangleCount, scanTick, fileName, appliedAlignment, session])
   const ghostMapUp = featureOpen && liveMapOn && (previewStatus === 'ok' || previewStatus === 'building')
   useEffect(() => {
-    useReverse.getState().setCurvatureShown(onReverse && curvatureMap && curvatureRead && !ghostMapUp)
-  }, [onReverse, curvatureMap, curvatureRead, ghostMapUp])
+    useReverse.getState().setCurvatureShown(onReverse && !surfaceOpen && curvatureMap && curvatureRead && !ghostMapUp)
+  }, [onReverse, surfaceOpen, curvatureMap, curvatureRead, ghostMapUp])
 
   // The grips: arrows on an extrude's faces and its far edge, a ring about
   // a revolve's axis, in the colour the ghost wears. The arrows and the Move
@@ -1525,7 +1705,10 @@ export function useReverseWorkspace({
     if (featureOpen && featureDraft) {
       if ((featureDraft.kind === 'fillet' || featureDraft.kind === 'chamfer') && featureDraft.edges[0]) {
         const g = edgeGrip(featureDraft.edges[0].fingerprint)
-        if (g) grips = [g]
+        if (g) {
+          const size = featureDraft.kind === 'fillet' ? featureDraft.radius : featureDraft.distance
+          grips = [{ ...g, position: addScaled(g.position, g.dir, size) }]
+        }
       } else if (featureDraft.kind === 'shell' && featureDraft.faces[0]) grips = [faceGrip(featureDraft.faces[0].fingerprint)]
       else if (featureDraft.kind === 'moveFace' && featureDraft.faces[0]) grips = [moveGrip(featureDraft.faces[0].fingerprint, featureDraft.offset)]
       else if (featureDraft.kind === 'moveBody' && featureDraft.bodies.length > 0) grips = moveGrips(featureDraft)
@@ -1577,7 +1760,7 @@ export function useReverseWorkspace({
     const length = shown?.unit === 'mm'
     scene.setGripField(
       shown && gripField
-        ? { side: gripField, value: length ? toDisplay(shown.value, units) : shown.value, unit: length ? unitWord(units) : shown.unit, ...(shown.expr !== undefined ? { text: shown.expr } : {}) }
+        ? { side: gripField, live: featureDraft?.kind === 'fillet' || featureDraft?.kind === 'chamfer', value: length ? toDisplay(shown.value, units) : shown.value, unit: length ? unitWord(units) : shown.unit, ...(shown.expr !== undefined ? { text: shown.expr } : {}) }
         : null,
     )
     // Runs on the listed dependencies only, not on everything it reads.
@@ -1587,7 +1770,7 @@ export function useReverseWorkspace({
     const re = useReverse.getState()
     const ids = re.bodies.filter((b) => b.visible).map((b) => b.id)
     if (ids.length === 0 || !session.client()) {
-      useStore.getState().setError('No visible body to export — build one first.')
+      useStore.getState().setError('No visible body to export â€” build one first.')
       return
     }
     try {
@@ -1600,22 +1783,22 @@ export function useReverseWorkspace({
   }
 
   /** The visible solid bodies as a reference part for the Deviation
-   *  workspace — or the bodies named, a sheet among them meshed too (it is
-   *  read on its front under the map's facing limit) — see core/re/compare. Null, with the reason on the status
+   *  workspace â€” or the bodies named, a sheet among them meshed too (it is
+   *  read on its front under the map's facing limit) â€” see core/re/compare. Null, with the reason on the status
    *  line, when there is nothing to compare. With the file, `mapMesh`: the
-   *  bodies' viewport meshes merged — the map on the bodies reads them in
+   *  bodies' viewport meshes merged â€” the map on the bodies reads them in
    *  place of the comparison's far finer mesh, at the spacings they serve
-   *  (VIEW_MESH_MAP_SPACING) — or null. */
+   *  (VIEW_MESH_MAP_SPACING) â€” or null. */
   const compareReference = async (bodyIds?: number[]): Promise<{ file: File; mapMesh: { positions: Float32Array; indices: Uint32Array } | null } | null> => {
     const re = useReverse.getState()
     const ids = bodyIds ?? re.bodies.filter((b) => b.visible && !b.surface).map((b) => b.id)
     const client = session.client()
     if (ids.length === 0 || !client) {
-      useStore.getState().setError('No visible solid body to compare — build one first.')
+      useStore.getState().setError('No visible solid body to compare â€” build one first.')
       return null
     }
     try {
-      useStore.getState().setStatus(`Meshing the bodies to a ${fmtLen(COMPARE_CHORD_MM, usePrefs.getState().units)} chord for the comparison…`)
+      useStore.getState().setStatus(`Meshing the bodies to a ${fmtLen(COMPARE_CHORD_MM, usePrefs.getState().units)} chord for the comparisonâ€¦`)
       const stl = compareReferenceStl(await client.referenceMeshes(ids, COMPARE_CHORD_MM, true))
       if (!stl) {
         useStore.getState().setError('The bodies gave no triangles to compare against.')
@@ -1632,11 +1815,11 @@ export function useReverseWorkspace({
 
   // In development the workspace's state and the slice under the sketch are
   // reachable from the console and the e2e scripts, for looking at a real
-  // scan's sketch offline — nothing in a production build.
+  // scan's sketch offline â€” nothing in a production build.
   if (import.meta.env.DEV) {
     ;(window as unknown as { __re?: unknown }).__re = {
       store: useReverse,
-      /** The kernel, the build and what it made — see reSession. */
+      /** The kernel, the build and what it made â€” see reSession. */
       session,
       /** The Measure store beside it, for a script reading an element. */
       measure: useStore,
@@ -1648,8 +1831,8 @@ export function useReverseWorkspace({
       sheet: () => sheetRef?.current ?? null,
       /** A body's faces and edges with their fingerprints, as last built. */
       topology: (id: number) => topologies.get(id) ?? null,
-      /** A datum alignment applied the way a project's is on load — the
-       *  scan's vertices, the viewport and the store together — for a
+      /** A datum alignment applied the way a project's is on load â€” the
+       *  scan's vertices, the viewport and the store together â€” for a
        *  script that has no faces to click for a 3-2-1. */
       alignTo: async (m: Rigid) => {
         const rigid: Rigid = { r: Float64Array.from(m.r), t: Float64Array.from(m.t) }
@@ -1658,7 +1841,7 @@ export function useReverseWorkspace({
         useStore.getState().applyAlignment(rigid)
       },
       /** The colour the scan wears at its vertex nearest a point, in the
-       *  viewport's frame — what the live map painted there. */
+       *  viewport's frame â€” what the live map painted there. */
       colorNear: (p: Vec3) => {
         const scene = sceneRef.current
         const pos = scene?.scanPositions()
@@ -1678,7 +1861,7 @@ export function useReverseWorkspace({
 
   /** What the sketch being drawn can project: the edges of every body on
    *  show and the pieces of every other sketch on show, each as the piece
-   *  it would become on the draft's plane — those that project at all —
+   *  it would become on the draft's plane â€” those that project at all â€”
    *  with what it is taken from, so it follows that (project.ts). */
   const projectablesOf = (): Projectable[] => {
     const re = useReverse.getState()

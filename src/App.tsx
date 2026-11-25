@@ -68,6 +68,7 @@ import { ViewportMenu } from './ui/ViewportMenu'
 import { BoxSelect } from './ui/BoxSelect'
 import { ALIGN_HINT_LINES, ExtractHints } from './ui/ExtractHints'
 import { MeasureDialog } from './ui/MeasureDialog'
+import { useMeasureTool } from './state/measureToolStore'
 import { SnapBar } from './ui/SnapBar'
 import { MultipleSections } from './ui/MultipleSections'
 import { BusyOverlay } from './ui/BusyOverlay'
@@ -1890,6 +1891,7 @@ export default function App() {
   // over the thing the user came to see, and whatever else the workspace still
   // needs has its own row in the panel to say so.
   const needsModels = !fileName
+  const measuringGeometry = useMeasureTool(s => s.open) && runtimes.some(r => r.measure?.modes.some(mode => !mode.disabled))
   const [exampleBusy, setExampleBusy] = useState(false)
   const openExample = async (id: string) => {
     if (exampleBusy || useStore.getState().busy) return
@@ -2202,7 +2204,7 @@ export default function App() {
               ]}
             />
           )}
-          {needsModels && !picking && !onFlat && active?.startPane !== null && (
+          {needsModels && !measuringGeometry && !picking && !onFlat && active?.startPane !== null && (
             <StartPane
               skip={active?.startPane?.skip}
               title={

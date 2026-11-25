@@ -36,6 +36,7 @@ import { NameField } from '../../../src/ui/RefSelect'
 import { useLength } from '../../../src/app/useUnits'
 import type { LengthPresets } from '../../../src/core/units'
 import { CORNER_GAP_MM } from '../core/corners'
+import { SketchCommandIcon } from './SketchCommandIcon'
 import { SketchControls } from './SketchControls'
 import { useSketchPresentation } from '../state/sketchPresentation'
 import { SketchExtractPanel } from './SketchExtractPanel'
@@ -466,6 +467,34 @@ export function SketchEditor({ chainsOf }: { chainsOf: () => SketchChains | null
   return (
     <div className="draftbox sketch-editor-parity" data-test="sketch-editor" ref={boxRef}>
       <SketchControls chainsOf={chainsOf} />
+      {(shape === 'rectangle' || shape === 'polygon') && (
+        <label className="kv">
+          <span className="name">Drawing method</span>
+          <select data-test="sketch-drawing-method" value={drawModes[shape]} onChange={event => {
+            const method = DRAW_MODES[shape].find(item => item.id === event.target.value)
+            if (method) {
+              useRePrefs.getState().setDrawMode(shape, method.id)
+              re.getState().setSketchTool(shape)
+            }
+          }}>
+            {shapeModes.map(method => <option key={method.id} value={method.id}>{method.label}</option>)}
+          </select>
+        </label>
+      )}
+      {draft.tool === 'polygon' && (
+        <label className="kv" data-test="sketch-polygon-sides" title="How many sides the polygon has — three and up">
+          <span className="name">Sides</span>
+          <input
+            type="number"
+            min={3}
+            max={POLYGON_MAX_SIDES}
+            step={1}
+            value={polygonSides}
+            data-test="sketch-polygon-sides-input"
+            onChange={(e) => useRePrefs.getState().setPolygonSides(Number(e.target.value))}
+          />
+        </label>
+      )}
       <details className="sketch-advanced"><summary>Sketch settings and additional tools</summary>
       <div className="sec-head">
         {draft.featureId !== undefined ? `Edit ${draft.name}` : 'New sketch'}
@@ -585,20 +614,6 @@ export function SketchEditor({ chainsOf }: { chainsOf: () => SketchChains | null
       </button>
       <FitOptionsModal open={fitOptionsOpen} onClose={() => setFitOptionsOpen(false)} chainsOf={chainsOf} />
 
-      {draft.tool === 'polygon' && (
-        <label className="kv" data-test="sketch-polygon-sides" title="How many sides the polygon has — three and up">
-          <span className="name">Sides</span>
-          <input
-            type="number"
-            min={3}
-            max={POLYGON_MAX_SIDES}
-            step={1}
-            value={polygonSides}
-            data-test="sketch-polygon-sides-input"
-            onChange={(e) => useRePrefs.getState().setPolygonSides(Number(e.target.value))}
-          />
-        </label>
-      )}
       {draft.selection.some((id) => sketch.entities.find((e) => e.id === id)?.kind === 'spline') && (
         <button
           className="chip nominal"
@@ -742,7 +757,11 @@ export function SketchEditor({ chainsOf }: { chainsOf: () => SketchChains | null
                 unit={c.kind === 'angle' ? '°' : len.word()}
                 testId="sketch-dimension-input"
                 dataDimension={c.id}
-                onCommit={(v, expr) => re.getState().setDimensionValue(c.id, v, expr)}
+                onCommit={(v, expr) => {
+                  re.getState().setDimensionValue(c.id, v, expr)
+                  const stored = re.getState().sketchDraft?.sketch.constraints.find(dim => dim.id === c.id)
+                  return !!stored && 'value' in stored && Math.abs(stored.value - v) < 1e-12 && (stored.expr ?? null) === expr
+                }}
                 onEnter={() => re.getState().finishDimension(c.id)}
               />
               )}
@@ -762,6 +781,7 @@ export function SketchEditor({ chainsOf }: { chainsOf: () => SketchChains | null
           {relations.map((c) => (
             <div key={c.id} className={'kv' + (draft.selectedConstraint === c.id ? ' sel' : '')} data-test="sketch-relation-row">
               <span className="name" onClick={() => re.getState().selectConstraint(c.id)}>
+                {c.kind === 'coincident' && <SketchCommandIcon name="coincident" />}
                 {constraintLabel(c, sketch)}
               </span>
               {unmet.some((u) => u.id === c.id) && <b className="warn">⚠</b>}

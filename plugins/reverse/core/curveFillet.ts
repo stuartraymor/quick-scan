@@ -11,7 +11,7 @@
 // points, found first on the whole piece-round-piece profile and then settled
 // on the points the round spans, between its tangent points.
 import type { Vec2 } from '../../../src/core/flat/types'
-import { addConstraint, addEntity, arcPoint, entityOf, type Anchor, type Sketch, type SketchArc, type SketchLine } from './sketch'
+import { addConstraint, addEntity, arcPoint, arcThrough, entityOf, type Anchor, type Sketch, type SketchArc, type SketchLine } from './sketch'
 import { runsNear } from './cornerProfile'
 
 type End = 'a' | 'b'
@@ -204,6 +204,78 @@ function alongSide(side: FilletSide, j: Vec2, p: Vec2): number {
   return turn * arc.r
 }
 
+/** A circular stretch bounded by different curvature on both sides can supply
+ * its own radius even when brushing the sides displaced their fitted carriers.
+ * Three points alone always define a circle. Require an independent fourth
+ * sample, both transitions and the tangent directions of the selected corner. */
+function sampledRound(sides: readonly [FilletSide, FilletSide], joint: Vec2, points: Vec2[]) {
+  if (points.length < 6) return null
+  let nearest = 0
+  for (let i = 1; i < points.length; i++) {
+    if (dist(points[i], joint) < dist(points[nearest], joint)) nearest = i
+  }
+  for (let i = Math.max(2, nearest - 1); i <= Math.min(nearest + 1, points.length - 3); i++) {
+    // Work in local chord units to avoid cancellation on translated scans.
+    const origin = points[i], chord = dist(points[i - 1], points[i + 1])
+    if (!chord) continue
+    const local = (p: Vec2) => scale(sub(p, origin), 1 / chord)
+    const arc = arcThrough(local(points[i - 1]), local(points[i + 1]), [0, 0])
+    if (!arc) continue
+    let radius = arc.r * chord, centre = add(origin, scale(arc.c, chord))
+    // Real sections pass through float32 buffers. Compare the signed
+    // curvature of consecutive triples, then verify the whole run from
+    // a long chord. Tangent flanks can lie very close to the circle at
+    // the transition while having a different curvature.
+    const sag = radius * (1 - Math.cos(arc.sweep / 2))
+    const precision = Math.max(Math.abs(origin[0]), Math.abs(origin[1]), chord) * 2 ** -23
+    if (sag <= 8 * precision) continue
+    const tolerance = Math.max(radius * 1e-8, 4 * precision)
+    const curvature = (k: number) => {
+      const u = sub(points[k], points[k-1]), v = sub(points[k+1], points[k])
+      const length = Math.hypot(...u) * Math.hypot(...v) * dist(points[k-1], points[k+1])
+      return length > 0 ? 2 * cross(u, v) / length : NaN
+    }
+    const bend = curvature(i)
+    const matches = (k: number) => {
+      const span = Math.min(chord / 2, dist(points[k-1], points[k]), dist(points[k], points[k+1]))
+      const error = Math.min(0.03 / radius, Math.max(1e-7 / radius, 16 * precision / (span * span)))
+      return Math.abs(curvature(k) - bend) <= error
+    }
+    let first = i - 1, last = i + 1
+    while (first > 0 && matches(first)) first--
+    while (last + 1 < points.length && matches(last)) last++
+    if (first === 0 || last === points.length - 1 || last - first < 3 || nearest < first || nearest > last) continue
+    const mid = (first + last) >> 1
+    const fit = arcThrough(local(points[first]), local(points[last]), local(points[mid]))
+    if (!fit) continue
+    radius = fit.r * chord
+    centre = add(origin, scale(fit.c, chord))
+    const samples = points.slice(first, last + 1)
+    if (samples.some(p => Math.abs(dist(p, centre) - radius) > tolerance)) continue
+    const round = curveRound(sides, joint, radius)
+    if (!round) continue
+    const start = norm(sub(points[first], centre)), end = norm(sub(points[last], centre))
+    const a = norm(sub(round.ta, round.centre)), b = norm(sub(round.tb, round.centre))
+    const agreement = Math.max(Math.min(dot(start, a), dot(end, b)), Math.min(dot(start, b), dot(end, a)))
+    if (agreement < Math.cos(Math.PI / 9)) continue
+    // Reject doubled-back points and runs wrapping around a carrier. A
+    // fillet follows one minor arc through distinct samples in chain order.
+    let swept = 0, sign = 0, distinct = 1, valid = true
+    for (let k = first + 1; k <= last; k++) {
+      const u = sub(points[k - 1], centre), v = sub(points[k], centre)
+      const turn = Math.atan2(cross(u, v), dot(u, v))
+      if (Math.abs(turn) < 1e-9) continue
+      distinct++
+      if (sign && Math.sign(turn) !== sign) { valid = false; break }
+      sign = Math.sign(turn)
+      swept += Math.abs(turn)
+    }
+    if (!valid || distinct < 4 || swept >= Math.PI || swept < Math.PI / 36) continue
+    return { radius, points: samples }
+  }
+  return null
+}
+
 /** Read the round between a line and an arc, or two arcs, off the slice chains. */
 export function analyseCurveCorner(sides: readonly [FilletSide, FilletSide], j: Vec2, chains: readonly (readonly Vec2[])[]): CurveProfile {
   if (!chains.length) return { kind: 'none', reason: 'Auto Fillet reads the corner from the scan section, and this sketch has none. Use Fixed Size Fillet.' }
@@ -226,6 +298,12 @@ export function analyseCurveCorner(sides: readonly [FilletSide, FilletSide], j: 
   const sa = mad(fa), sb = mad(fb), sigma = Math.max(sa, sb)
   const tau = Math.max(4 * sigma, 2e-4 * reach)
   const quiet = sa > 0 && sb > 0 ? Math.min(sa, sb) : sigma
+  const sampled = sampledRound(sides, j, run.filter(p => original.has(p)))
+  if (sampled) {
+    const round = curveRound(sides, j, sampled.radius)!
+    const rms = Math.sqrt(sampled.points.reduce((sum, p) => sum + (dist(p, round.centre) - round.r) ** 2, 0) / sampled.points.length)
+    return { kind: 'arc', radius: sampled.radius, used: sampled.points, rms, sigma, confident: true }
+  }
   // The section near the corner: the run's own vertices when it has enough, inside the reach.
   const near = run.filter((p) => dist(p, j) <= 0.95 * reach)
   const own = near.filter((p) => original.has(p))

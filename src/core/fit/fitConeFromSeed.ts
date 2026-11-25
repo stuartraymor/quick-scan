@@ -140,7 +140,7 @@ export function fitConeFromSeed(
  *  estimate takes over when the marked surface is noisy enough that the
  *  normals alone cannot pin the direction down. */
 export function fitConeOnSelection(
-  g: MeshGraph,
+  g: Pick<MeshGraph, 'positions' | 'normals'>,
   selection: Uint32Array,
   settings: FitSettings,
 ): ConeFit & { region: Uint32Array } {

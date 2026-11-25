@@ -1,0 +1,102 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+import {writeFileSync} from 'node:fs'
+import {check,click,finish,launchApp,loadScan,shotPath,sleep} from '../../../scripts/e2e-lib.mjs'
+import {openReverse,reverseHelpers} from './lib.mjs'
+const fixture=shotPath('measure-plane.obj')
+writeFileSync(fixture,'v -30 -20 -2\nv 30 -20 -2\nv 30 20 -2\nv -30 20 -2\nf 1 2 3\nf 1 3 4\n')
+const {browser,page,consoleErrors}=await launchApp({width:1500,height:960,protocolTimeout:600000})
+const {re}=reverseHelpers(page)
+const shell=()=>page.evaluate(async()=>(await import('/src/state/shellStore.ts')).useShell.getState().workspace)
+const clickWorld=async p=>{
+ const q=await page.evaluate(async p=>(await import('/src/state/shellStore.ts')).useShell.getState().screenPointOf(p),p)
+ if(!q)throw Error('Fixture point is off screen')
+ const target=await page.evaluate(q=>document.elementFromPoint(q.x,q.y)?.tagName,q)
+ if(target!=='CANVAS')throw Error(`Measurement click is covered by ${target} at ${JSON.stringify(q)}`)
+ await page.mouse.move(q.x,q.y);await sleep(150);await page.mouse.click(q.x,q.y);await sleep(200)
+}
+const readouts=()=>page.$$eval('[data-test=measure-readout]',es=>es.map(e=>({title:e.querySelector('b')?.textContent,rows:[...e.querySelectorAll('[data-test=measure-row]')].map(r=>({label:r.dataset.label,value:r.dataset.value}))})))
+try{
+ await loadScan(page,fixture);await openReverse(page)
+ if(await page.$('[data-test=support-card] .sc-x'))await click(page,'[data-test=support-card] .sc-x')
+ await re(()=>window.__re.store.setState({features:[{id:100,kind:'sketch',name:'Measure reference',plane:{kind:'world',axis:'z',offset:0},frame:{origin:[0,0,0],normal:[0,0,1],basisU:[1,0,0],basisV:[0,1,0]},visible:false,sketch:{entities:[{id:1,kind:'line',a:[2,2],b:[12,2]},{id:2,kind:'line',a:[4,7],b:[10,7]},{id:3,kind:'circle',c:[18,5],r:3}],constraints:[],nextId:4}}],nextId:101}))
+ await sleep(300)
+ const tabs=await page.$$('button')
+ for(const button of tabs)if(await button.evaluate(e=>e.textContent.trim()==='Analysis')){await button.click();break}
+ await sleep(400)
+ const workspace=await shell()
+ await click(page,'[data-test=ribbon-measure]');await sleep(300)
+ check(await page.$eval('[data-test=measure-adaptive]',e=>e.getAttribute('aria-pressed')==='true'),'Measure opens in Automatic without requiring a geometry mode')
+ check(await shell()===workspace,'opening Measure keeps the current workspace')
+ const eye='input[aria-label="Measure reference visibility"]'
+ const eyes=await page.$$(eye)
+ check(eyes.length>0,'Objects/History expose the reference sketch visibility control')
+ if(!eyes.length)throw Error('No reference sketch visibility control')
+ await eyes[0].click();await sleep(350)
+ check(await re(()=>window.__re.store.getState().features[0].visible),'a hidden sketch can be revealed while Measure stays open')
+ // Keep the dialog away from the geometry, using its visible drag handle.
+ const head=await page.$eval('[data-test=measure-dialog] header',e=>{const r=e.getBoundingClientRect();return{x:r.x+50,y:r.y+r.height/2}})
+ await page.mouse.move(head.x,head.y);await page.mouse.down();await page.mouse.move(70,180,{steps:8});await page.mouse.up();await sleep(200)
+ const before=await re(()=>JSON.stringify(window.__re.store.getState().features[0].sketch))
+ await clickWorld([7,2,0]);await clickWorld([7,7,0])
+ let rows=await readouts()
+ check(rows.some(r=>r.rows.some(v=>/distance/i.test(v.label)&&Math.abs(Number(v.value)-5)<1e-8)),`two line midpoint picks give distance 5 (${JSON.stringify(rows)})`)
+ check(await shell()===workspace,'measuring committed sketches does not switch workspace')
+ await click(page,'[data-test=measure-delete-all]')
+ await clickWorld([-8,5,-2]);await clickWorld([18,5,0]);rows=await readouts()
+ check(rows.some(r=>r.title.includes('Scan surface point')&&r.rows.some(v=>/distance/i.test(v.label)&&Math.abs(Number(v.value)-Math.sqrt(680))<0.25)), 'a free click inside a scan triangle pairs with the true sketch center')
+ await click(page,'[data-test=measure-delete-all]')
+ await clickWorld([18,5,0])
+ rows=await readouts()
+ check(rows.some(r=>/centre of circle/.test(r.title)&&r.rows.some(v=>v.value==='18,5,0')),`circle centre reports its exact world coordinates (${JSON.stringify(rows)})`)
+ await click(page,'[data-test=measure-delete-all]')
+ await clickWorld([21,5,0]);rows=await readouts()
+ check(rows.length>0,'circle quadrant is measurable without a mode change')
+ check(await re(()=>JSON.stringify(window.__re.store.getState().features[0].sketch))===before,'automatic measurement leaves sketch geometry unchanged')
+ await click(page,'[data-test=measure-delete-all]')
+ await re(()=>window.__re.store.setState(s=>({features:s.features.map(f=>f.id===100?{...f,frame:{...f.frame,origin:[1,2,1]}}:f)})))
+ await sleep(250)
+ await clickWorld([19,7,1]);rows=await readouts()
+ check(rows.some(r=>r.rows.some(v=>/world XYZ/.test(v.label)&&v.value==='19,7,1')),`translated sketch centre reports actual world XYZ (${JSON.stringify(rows)})`)
+ await click(page,'[data-test=measure-delete-all]')
+ await click(page,'[data-test=measure-close]')
+ await click(page,'[data-test=workspace-reverse]')
+ await re(()=>window.__re.store.getState().startSketch({kind:'world',axis:'z',offset:4},{origin:[1,2,4],normal:[0,0,1],basisU:[1,0,0],basisV:[0,1,0]},[{kind:'line',a:[2,-6],b:[10,-6]}]))
+ await sleep(500)
+ await click(page,'[data-test=sketch-open-measure]');await sleep(600)
+ const draftBefore=await re(()=>JSON.stringify(window.__re.store.getState().sketchDraft.sketch))
+ const historyRow=await page.$('[data-test=explorer-history-feature-100]')
+ const visibleEye=(await historyRow.evaluateHandle(e=>e.parentElement.querySelector('input'))).asElement()
+ check(!(await visibleEye.evaluate(e=>e.disabled)),'reference sketch visibility stays available while measuring in an active sketch')
+ await visibleEye.click();await sleep(100)
+ check(!(await re(()=>window.__re.store.getState().features[0].visible)),'reference sketch can be hidden during read-only Measure without closing the sketch')
+ await click(page,'[data-test=explorer-history-feature-100]');await sleep(200)
+ check(await re(()=>window.__re.store.getState().features[0].visible),'selecting the reference sketch in History reveals it for measurement')
+ for(let i=0;i<12;i++){
+  const visible=await page.evaluate(async()=>{const screen=(await import('/src/state/shellStore.ts')).useShell.getState().screenPointOf;return [[7,-4,4],[19,7,1]].every(p=>{const q=screen(p);return q&&q.x>550&&q.x<1480&&q.y>200&&q.y<880})})
+  if(visible)break
+  await page.mouse.move(868,548);await page.mouse.wheel({deltaY:-250});await sleep(120)
+ }
+ await clickWorld([7,-4,4]);await clickWorld([19,7,1]);rows=await readouts()
+ check(rows.some(r=>r.rows.some(v=>/distance/i.test(v.label)&&Math.abs(Number(v.value)-Math.sqrt(274))<1e-8)),`active sketch to prior sketch uses the common world frame (${JSON.stringify(rows)})`)
+ await click(page,'[data-test=measure-delete-all]')
+ await clickWorld([8,4,1]);await clickWorld([7,-4,4]);rows=await readouts()
+ check(rows.some(r=>r.rows.some(v=>/distance/i.test(v.label)&&Math.abs(Number(v.value)-Math.sqrt(74))<1e-8)), 'previous sketch midpoint to active midpoint preserves the planes’ Z separation')
+ check(await re(()=>JSON.stringify(window.__re.store.getState().sketchDraft.sketch))===draftBefore,'cross-sketch measurement and visibility do not edit the open sketch')
+ await page.screenshot({path:shotPath('adaptive-measure.png')})
+ await click(page,'[data-test=measure-close]')
+ check(await page.$('[data-test=measure-dialog]')===null,'Measure closes cleanly')
+ // Draw with the pointer deliberately off the exact targets. The endpoints must
+ // land on the previous sketch projected into this sheet, despite its different Z.
+ await visibleEye.click()
+ await click(page,'[data-test=explorer-history-feature-100]')
+ await click(page,'[data-test=sketch-tool-line]')
+ for(const local of [[7,2],[18,5]]) {
+   const q=await page.evaluate(p=>window.__re.sheet().sheetScreenPoint(p),local)
+   const [x,y]=[q.x+2,q.y+1]
+   if(await page.evaluate(([x,y])=>document.elementFromPoint(x,y)?.tagName,[x,y])!=='CANVAS') throw Error('Drawing target is covered')
+   await page.mouse.move(x,y);await sleep(150);await page.mouse.click(x,y);await sleep(180)
+ }
+ const line=await re(()=>window.__re.store.getState().sketchDraft.sketch.entities.at(-1))
+ check(line.kind==='line'&&Math.hypot(line.a[0]-7,line.a[1]-2)<1e-8&&Math.hypot(line.b[0]-18,line.b[1]-5)<1e-8,'drawing snaps both endpoints to the projected prior midpoint and circle center')
+ check(await re(()=>JSON.stringify(window.__re.store.getState().features[0].sketch))===before,'drawing from references preserves the original sketch')
+}catch(e){check(false,e.stack??String(e))}finally{await finish(browser,consoleErrors)}

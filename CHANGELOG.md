@@ -1,3 +1,80 @@
+## 1.2.34 - Shared Edit Sketch snap settings
+
+Make Coincident, Dimension, Select Other and geometry measurements in Edit Sketch follow the same snap settings. Disabled centers and curves are excluded from coincident picks.
+
+## 1.2.33 - Dimension uses Edit Sketch snaps
+
+Dimension follows the active Edit Sketch snap switches, including All. Changing a switch in either tool updates the other.
+
+## 1.2.32 — Edit Sketch
+
+- Dimension picks enabled endpoints, centers, midpoints and quadrants throughout the eight-pixel pick radius. The floating editor leaves the snap switches accessible.
+- Dragging a shared sketch vertex or fitted center updates its connected geometry and dependent dimensions. A selected circle can be resized from a quadrant.
+- Large constrained sketches use a faster redundancy check when drawing, undoing, redoing and reopening.
+- Rectangle accepts the first corner over a dimension label. Tangent Arc can start on the open sheet. Three-point arcs retain the through-point defined by the third click.
+- Trim supports a red drag trail, crossed-span removal and isolated-piece deletion in one undo step. Coincident, Slot and Hexagon use revised sketch graphics.
+
+## 1.2.31 — Auto Freeform rebuilt
+
+Auto Freeform has a new engine and QUICKSURFACE's full dialog. On the lego test scan (268,000 triangles) at Medium, Preview takes about 3 seconds where it took 74, and OK about 16 seconds where it took 164; the window stays responsive throughout.
+
+- **New quad layout.** The quads now follow the shape of the part (a field-aligned layout, ported from the open-source Instant Meshes, which QUICKSURFACE's Basic algorithm also uses). Counts, open or closed result and the share of irregular points match QUICKSURFACE's Basic on the test scans. An open scan now gives an open surface whose edge follows the scan's edge; before, every result was closed.
+- **New fit.** The cage is solved so that its surface lies on the scan. On lego the surface is 0.03 mm RMS from the scan with over 90 % of it within 0.05 mm.
+- **The dialog matches QUICKSURFACE's.** Algorithm (Basic, Feature aligned), Extract from selected triangles only, Target Quads Count, Feature Details, Symmetry, Improve holes' boundaries, Draw guide curves on the mesh with Remove Last Curve and Clear all curves, Preview, Clear Result, Actual number of quads, Surface Display, help, OK and Cancel. Basic hides the feature controls, as there. The ribbon icon has its small "A".
+- **Feature aligned** gives the part's features more quads than the target, by Feature Details (Low, Balanced, Higher, Highest), at QUICKSURFACE's own counts.
+- **Symmetry** lays out one half and mirrors it, so the result is exactly symmetric with points on the plane.
+- **Guide curves.** Tick the box, click points on the mesh, and double-click or right-click to finish a curve. The quads' edges are steered along it.
+- **Extract from selected triangles only** covers just the part of the scan you have painted.
+- **Improve holes' boundaries** closes small holes and evens ragged edges before the layout.
+- **Progress and Stop.** A bar names the stage (preparing, laying out, fitting, refining, measuring). Stop ends the run at once.
+- **Result numbers.** After Preview the dialog shows RMS and maximum deviation, the share within tolerance, the irregular points, whether the surface is open or closed, and the time taken.
+- **More ▸ Refine to tolerance** (not in QUICKSURFACE) adds rows of quads where the surface is still further from the scan than the tolerance you give, up to twice the quads.
+- **More ▸ Hard edge angle** sets how sharp a scan edge must be for the layout to keep it sharp (40° by default).
+- **Fewer CAD faces.** OK makes the body from the fitted surface itself. Lego at Medium becomes 295 faces where it was about 1,950; the closed basic_part becomes about 230–280 faces where a cage of that size was one face a quad.
+- Scans whose file repeats vertices along a seam are joined first, and crumbs beside the part (pieces under 2 % of the largest) are left out.
+- For agents: `reverse.freeform.auto` takes `algorithm`, `details`, `improveHoles`, `guides`, `selectedOnly`, `refineTolerance`, `hardEdgeAngle` and `resnap`, and answers with the fit's deviation and the time of each stage. `reverse.freeform.create` takes `fitToScan`.
+
+Known limits: Feature aligned has about 2–3 % irregular points on the test part where QUICKSURFACE has 1.2 % (its Feature aligned engine is proprietary). QUICKSURFACE's own Basic cage fits the test part a little closer (0.14 mm RMS against 0.16–0.18). Refine to tolerance works on the whole surface for symmetric results (it lays the surface out again, finer) rather than adding rows locally.
+
+## 1.2.30 — Geometry, selection and Measure
+
+- Polygon checks each side before adding geometry. Three-point Rectangle keeps the angle defined by snapped points. When a side is too short, the sketch keeps the preceding clicks so you can retry. Rectangle and Polygon show their drawing methods in the sketch panel.
+- Numbered sketch marks let close drawing clicks reach their targets. Spline pins still support dragging and click-to-finish. A tangent arc must have a usable radius.
+
+- Show a reference sketch or solid from Objects or History while a new sketch stays open. In Automatic Measure, selecting the source row distinguishes points from different objects that overlap on screen. A CAD center takes precedence over a coincident sketch origin.
+- Midpoints and centers on a sketch viewed edge-on can be measured in their original 3D location. Snapping a new line places its endpoints on the active plane, including when the source sketch is tilted.
+- A near-horizontal or near-vertical line drawn to a previous sketch keeps the exact reference positions. Automatic axis inference still applies to freehand lines. Angled references use a screen-pixel hit radius in Measure.
+
+- Extraction confirmation and Escape use the command's own cleanup and close lifecycle. Middle-click cannot commit behind its close question.
+- Undo/Redo inspect the saved geometry instead of reporting a solved copy; geometry remains byte-for-byte unchanged.
+- Destructive-edit protection continues to run after the 40-step undo buffer fills.
+- The local desktop build passed the four captured Auto Fillet radius replays, 3,000 constraint workflows and 240 mouse workflows. The project audit record contains the measurements and remaining coverage limits.
+
+- Distance form changes reject negative/non-finite typed values; driven dimensions reject typed form edits while still allowing read-only display form changes.
+
+- Correct physical rim-gap equations for negative intermediate radii; inspect retained reference-held geometry without solving a different copy; reach a uniquely identified painted corner independently of brush width.
+
+- Auto Fillet follows the painted crossing and reads the radius of a verified circular stretch in the scan. It keeps tangency to the fitted sides and reports when their position makes the finished arc miss tolerance.
+- Sketch drags preserve fully constrained geometry and prevent collapsing previews. Releasing an impossible move restores the sketch and its undo and redo history.
+- Conflicting relation and dimension edits explain the conflict in the inspector. A refused dimension displays its retained value. Repeated relation picks preserve the existing relation.
+- Coincident respects explicitly picked line midpoints and circle quadrants. Body clicks away from point markers retain collinearity behavior; actual midpoint/glyph mouse regressions pass.
+- Open Measure directly from a sketch and reveal previous sketches from Objects or History. Click their midpoints and centers to measure between planes. Drawing a new line snaps its endpoints to those references projected onto the active plane.
+- Automatic Measure reads CAD vertices, midpoints, circular centers and quadrants, edge lengths, round sizes and face areas. It measures supported edge and plane pairs in model coordinates, and accepts mixed sketch, solid and scan point picks. Overlapping edges prefer the nearer depth when they occupy the same pixel.
+
+## 1.2.29 — Auto Fillet works when you paint over the corner point
+
+The user found Auto Fillet worked about three times in four, where QUICKSURFACE works every time. A new test paints corners the way a person does: lines brushed with Fit Line on five scans, then the corner point painted four ways (a stroke through it, a dab, a stroke across the round, a scribble). On 1.2.28's code it failed 546 of 889 tries; now it fails 2.
+
+- **Painting over the corner point is enough.** Lines and arcs fitted to a scan stop where its round begins, short of the point where they would meet. A sweep on that point that did not also reach both pieces was refused ("Sweep across the two pieces that meet at the corner"). Now the lines and arcs whose carriers cross under the paint are found, up to 200 brush widths (1,400 px) from their ends, and are highlighted while the button is held. This applies to Corner Trim, Auto Fillet and Fixed Size Fillet.
+- **No Accept step.** A round the scan supports only weakly was kept waiting for Accept. Now it is made at once, as QUICKSURFACE makes it, and the panel says what to check.
+- **A side that bows is not taken for noise.** The sharp-corner test read the noise as the spread of the side's offsets from its line. A gentle bow inflated that, and a real round (R 5 on a 49° corner) was joined sharp. The noise is now read from point to point.
+- **No "does not run continuously … Use Fixed Size Fillet".** Where the section runs no clean step from one line to the other (a small round, a line brushed into the round, a broken section), the round is read from the section round the corner point, and the panel says so.
+- **The painted end of an arc moves.** Where one end of a curve piece is painted and the other is not, that end moves.
+- **Pieces the paint touches come first.** A piece reached only through its corner point is used only when the touched pieces make no corner.
+- **No sub-micron arcs.** A round under 0.001 mm is read as sharp, and the lines are joined. This covers a sharp corner on a mesh section, and lines brushed into the round that cross on the scan.
+- **On a nearly folded-back corner, the round is kept.** There the point-to-point noise reading jumps between the two sides, so it is capped at the old spread.
+- Tests: `reSketchFuzzModify` caught the last three (30 of 2,000 workflows failed before them, 0 now); `reAutoFilletUser` (five scans and 200 built line–arc and arc–arc corners, the corner point painted four ways, every result checked for carriers, tangency, Undo and a later solve); `e2e-sketch-autofillet-dab` (a 4 px dab on each corner point of the measured plate reads QUICKSURFACE's R 5.004061 and R 4.565252).
+
 ## 1.2.28 — Right-drag pans without opening a menu on Linux and macOS browsers, and CI's GUI checks fit
 
 A second fix found by GitHub's CI while publishing. 1.2.27 passed its unit tests there but was held for these.

@@ -41,7 +41,7 @@ export interface OcctLike {
   getSubShapes(shape: number, type: 'solid' | 'shell' | 'face' | 'edge'): number[]
   /** A solid closed by a shell. */
   makeSolid(shell: number): number
-  subShapeCount(shape: number, type: 'solid' | 'shell' | 'face' | 'edge'): number
+  subShapeCount(shape: number, type: 'solid' | 'shell' | 'face' | 'wire' | 'edge'): number
   subShapeHashes(shape: number, type: 'face' | 'edge', upper: number): number[]
   hashCode(shape: number, upper: number): number
   surfaceType(face: number): string
@@ -59,10 +59,11 @@ export interface OcctLike {
   curveParameters(edge: number): { first: number; last: number }
   curvePointAtParam(edge: number, t: number): XYZ
   curveTangent(edge: number, t: number): XYZ
+  curveSplit(edge: number, parameter: number): [number, number]
   curveLength(edge: number): number
   edgeToFaceMap(shape: number, upper: number): number[]
   wireframe(shape: number, deflection: number): { points: Float32Array; edgeGroups: Int32Array }
-  fillet(solid: number, edges: number[], radius: number): number
+  fillet(solid: number, edges: number[], radius: number | { start: number; end: number }[]): number
   filletVariable(solid: number, edge: number, startRadius: number, endRadius: number): number
   loft(wires: number[], isSolid: boolean, ruled: boolean): number
   linearPattern(shape: number, direction: XYZ, spacing: number, count: number): number
@@ -71,6 +72,7 @@ export interface OcctLike {
   bsplineSurface(controlPoints: XYZ[], rows: number, cols: number): number
   sew(shapes: number[], tolerance?: number): number
   sewAndSolidify(faces: number[], tolerance?: number): number
+  fixShape(shape: number): number
   healSolid(shape: number, tolerance?: number): number
   chamfer(solid: number, edges: number[], distance: number): number
   /** `distance` on each edge's first face in the solid's face order, at

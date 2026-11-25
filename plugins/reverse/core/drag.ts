@@ -7,10 +7,16 @@
 
 import type { Vec2 } from '../../../src/core/flat/types'
 import { add2, sub2 } from '../../../src/core/flat/vec2'
-import { addConstraint, addEntity, anchorPoint, anchorsOf, arcThrough, constraintEntities, entityOf, splinePointIndex, type AnchorAt, type Constraint, type Sketch, type SketchArc, type SketchEntity } from './sketch'
+import { addConstraint, addEntity, anchorPoint, anchorsOf, arcThrough, constraintEntities, entityOf, isQuadrant, quadrantsOf, splinePointIndex, type Anchor, type AnchorAt, type Constraint, type Sketch, type SketchArc, type SketchEntity } from './sketch'
 import { solveSketch } from './solver'
 
 const TWO_PI = 2 * Math.PI
+
+/** Fraction of the counter-clockwise sweep at the picked through-point. */
+export function arcGripFraction(arc: Pick<SketchArc, 'c' | 'start' | 'sweep'>, through: Vec2): number {
+  const angle = Math.atan2(through[1] - arc.c[1], through[0] - arc.c[0])
+  return (((angle - arc.start) % TWO_PI + TWO_PI) % TWO_PI) / arc.sweep
+}
 
 /** Three-point arc grips. Preserve the two untouched defining points;
  * solving toward just one endpoint otherwise moves the entire circle. */
@@ -22,15 +28,50 @@ export function reshapeArc(e: SketchArc, at: AnchorAt, p: Vec2): SketchArc {
   // Keep endpoint identity for existing relations. Crossing the chord to
   // reverse winding needs an explicit topology change, not silent swapping.
   if (!fit || !fit.startsAtP) return e
-  const angle = Math.atan2(through[1] - fit.c[1], through[0] - fit.c[0])
-  const gripT = (((angle - fit.start) % TWO_PI + TWO_PI) % TWO_PI) / fit.sweep
+  const gripT = arcGripFraction(fit, through)
   return { ...e, c: fit.c, r: fit.r, start: fit.start, sweep: fit.sweep, gripT }
 }
 
-export function sketchGrips(e: SketchEntity): { at: AnchorAt | 'body'; point: Vec2 }[] {
+export function sketchGrips(e: SketchEntity, selected = false): { at: AnchorAt | 'body'; point: Vec2 }[] {
   if (e.kind === 'line') return [{at:'a',point:e.a},{at:'b',point:e.b},{at:'body',point:anchorPoint(e,'center')}]
   if (e.kind === 'arc') return (['a','b','p0','center'] as const).map(at=>({at,point:anchorPoint(e,at)}))
+  if (e.kind === 'circle' && selected) return [{ at: 'center', point: e.c }, ...quadrantsOf(e)]
   return anchorsOf(e).map(at=>({at,point:anchorPoint(e,at)}))
+}
+
+/** Editable grips that represent the same sketch vertex. A fit on one of
+ * its incident pieces is released when the operator drags that vertex.
+ * Midpoints and quadrant points are derived locations on their carriers;
+ * their relations are enforced by the solver. */
+export function joinedGrips(sketch: Sketch, start: Anchor): Map<number, AnchorAt> {
+  const grips = new Map<number, AnchorAt>([[start.entity, start.at]])
+  const links = new Map<string, Anchor[]>()
+  const key = (p: Anchor) => p.entity + ':' + p.at
+  const link = (p: Anchor, q: Anchor) => {
+    const k = key(p)
+    const others = links.get(k)
+    if (others) others.push(q)
+    else links.set(k, [q])
+  }
+  for (const c of sketch.constraints) {
+    if (c.kind !== 'coincident' && c.kind !== 'concentric') continue
+    const p: Anchor = c.kind === 'coincident' ? c.p : { entity: c.a, at: 'center' }
+    const q: Anchor = c.kind === 'coincident' ? c.q : { entity: c.b, at: 'center' }
+    link(p, q)
+    link(q, p)
+  }
+  const pieces = new Map(sketch.entities.map(e => [e.id, e]))
+  const queue = [start]
+  for (let i = 0; i < queue.length; i++) {
+    for (const q of links.get(key(queue[i])) ?? []) {
+      if (grips.has(q.entity)) continue
+      const e = pieces.get(q.entity)
+      if (!e || (q.at === 'center' && e.kind === 'line') || !sketchGrips(e).some(g => g.at === q.at)) continue
+      grips.set(q.entity, q.at)
+      queue.push(q)
+    }
+  }
+  return grips
 }
 
 /** An angle brought into (0, 2π] — an arc's sweep, which is never nothing. */
@@ -57,8 +98,13 @@ export function moveAnchor(e: SketchEntity, at: AnchorAt, p: Vec2): SketchEntity
       }
       return { ...e, sweep: positiveSweep(angle - e.start) }
     }
-    case 'circle':
-      return translateEntity(e, sub2(p, e.c))
+    case 'circle': {
+      if (!isQuadrant(at)) return translateEntity(e, sub2(p, e.c))
+      const axis = at === 'q0' || at === 'q2' ? 0 : 1
+      const sign = at === 'q0' || at === 'q1' ? 1 : -1
+      const r = sign * (p[axis] - e.c[axis])
+      return r > 1e-6 ? { ...e, r } : e
+    }
     case 'spline': {
       // A fit point goes where the hand is, the curve bending through it.
       const i = splinePointIndex(e, at)
@@ -91,6 +137,7 @@ export function translateEntity(e: SketchEntity, delta: Vec2): SketchEntity {
 export function detached(e: SketchEntity): SketchEntity {
   if (!('points' in e)) return e
   const { points: _points, scatter: _scatter, ...rest } = e
+  if ('pointWeights' in rest) delete rest.pointWeights
   return rest as SketchEntity
 }
 

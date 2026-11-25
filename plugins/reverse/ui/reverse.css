@@ -430,6 +430,15 @@
   stroke-linejoin: round;
   pointer-events: none;
 }
+.viewport-label.note-label.glyph.coincident svg {
+  fill: currentColor;
+}
+[data-test='sketch-relation-row'] .name svg {
+  width: 16px;
+  height: 16px;
+  vertical-align: middle;
+  margin-right: 4px;
+}
 .viewport-label.note-label.glyph.editing {
   color: var(--accent-d);
   background: var(--accent-soft);
@@ -603,6 +612,18 @@
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
+
+[data-test="trim-editor"] fieldset {
+  min-inline-size: 0;
+  margin: 4px 0;
+  padding: 4px 6px 6px;
+  border: 1px solid var(--line);
+}
+[data-test="trim-editor"] input[type="range"] { width: 100%; }
+[data-test="trim-editor"] [data-test^="trim-visible-"][aria-pressed="true"] {
+  border-color: var(--accent);
+}
+[data-test="trim-editor"] details > summary { cursor: pointer; }
 
 /* The trim's surfaces: a short list of checks, scrolling past a dozen. */
 .checklist {
@@ -1560,3 +1581,7 @@ body:has([data-test="sketch-assist-dialog"]) [data-test="sketch-editor"] { visib
 .sketch-editor-parity .sketch-hint { margin: 6px 0 4px; padding: 3px 0; overflow-wrap: anywhere; position: sticky; bottom: 0; z-index: 2; background: var(--panel); }
 .sketch-editor-parity .sketch-hint.refused,
 :root[data-theme] .sketch-editor-parity .sketch-hint.refused { color: var(--amber); }
+
+.edge-mode-bar { display: flex; gap: 4px; padding-block: 4px 7px; border-bottom: 1px solid var(--border, #8888); }
+.edge-mode-bar button { display: grid; place-items: center; width: 36px; height: 32px; padding: 2px; }
+.edge-mode-bar button[aria-pressed="true"] { outline: 2px solid currentColor; outline-offset: -2px; }

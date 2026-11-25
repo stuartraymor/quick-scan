@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Auto Freeform, Basic (F6 of audit-2026-11-07/FREEFORM_ROADMAP.md), the
-// core: the closed quad cage that a voxel remesh lays over a scan, on solids
-// whose answer is known — a sphere, a box, a torus.
+// Auto Freeform, the whole run (core/freeform/autoFreeform.ts) on solids
+// whose answer is known — a sphere, a box, a torus, an open dome: the quad
+// cage a field-aligned layout lays over a scan and the fit takes onto it.
 import { describe, expect, it } from 'vitest'
 import { ScanPaths } from '../../../src/core/geometry/scanPath'
-import { AUTO_QUADS_MAX, AUTO_QUADS_MIN, AutoError, autoCage } from '../core/freeform/auto'
-import { subdivide } from '../core/freeform/subdivide'
+import { AUTO_QUADS_MAX, AUTO_QUADS_MIN, AUTO_TARGETS, AutoError, DETAIL_FACTOR, type AutoSettings, runAutoFreeform } from '../core/freeform/autoFreeform'
 import { sphereScan } from './networkMeshes'
 
-const paths = (m: { positions: Float32Array; indices: Uint32Array }) => new ScanPaths(m.positions, m.indices)
+const auto = (m: { positions: Float32Array; indices: Uint32Array }, settings: Partial<AutoSettings> & { quads: number }) => runAutoFreeform(m, { algorithm: 'basic', ...settings })
 
 /** A torus of major radius R, minor r. */
 function torus(R: number, r: number, nu = 80, nv = 40) {
@@ -75,31 +74,36 @@ function topology(c: { positions: Float64Array; faces: number[][] }) {
   return { V, E, F, euler: V - E + F, loose }
 }
 
-describe('autoCage', () => {
-  it('covers a sphere with a closed genus-0 quad mesh near the target, vertices on the scan', () => {
-    const scan = paths(sphereScan(30, 0.01, 5))
+describe('runAutoFreeform', () => {
+  it('covers a sphere with a closed genus-0 quad mesh near the target, its surface on the scan', () => {
+    const ball = sphereScan(30, 0.01, 5)
+    const scan = new ScanPaths(ball.positions, ball.indices)
     for (const target of [300, 1000, 2000]) {
-      const r = autoCage(scan, target)
-      expect(Math.abs(r.quads - target) / target).toBeLessThan(0.05)
+      const r = auto(ball, { quads: target })
+      expect(Math.abs(r.quads - target) / target).toBeLessThan(0.08)
       const t = topology(r.cage)
       expect(t).toMatchObject({ F: r.quads, loose: 0, euler: 2 })
-      // Every face a quad; every vertex on the scan to within a hair, the cage kept off the inside.
-      expect(r.cage.faces.every((f) => f.length === 4)).toBe(true)
+      expect(r.closed).toBe(true)
+      expect(r.boundaryEdges).toBe(0)
+      expect(r.cage.faces.every((f) => f.length === 4 && new Set(f).size === 4)).toBe(true)
+      // The fitted surface lies on the sphere: far nearer than the cage's own vertices, which stand off it.
+      expect(r.deviation.rms).toBeLessThan(0.05)
+      expect(r.deviation.max).toBeLessThan(0.5)
+      expect(r.deviation.missed).toBe(0)
       for (let v = 0; v < t.V; v++) {
         const c = scan.closest([r.cage.positions[v * 3], r.cage.positions[v * 3 + 1], r.cage.positions[v * 3 + 2]])
-        expect(c!.distance).toBeLessThan(0.6)
+        expect(c!.distance).toBeLessThan(1.5)
       }
-      // The voxel surface of a sphere is staircase all over: many vertices with three or five edges (a flat-sided part has far fewer; basic_part 8 %, native 2.6 %), but most still have four.
-      expect(r.irregular / t.V).toBeLessThan(0.5)
       // Edges even: the mean is close to the square the target makes of the area.
       expect(r.edge).toBeGreaterThan(0.6 * Math.sqrt((4 * Math.PI * 900) / target))
       expect(r.edge).toBeLessThan(1.5 * Math.sqrt((4 * Math.PI * 900) / target))
+      // The preview mesh is the surface measured: sixteen sub-quads a quad.
+      expect(r.surface.indices.length).toBe(r.quads * 16 * 6)
     }
   })
 
   it('winds every face outward', () => {
-    const scan = paths(sphereScan(30, 0, 5))
-    const { cage } = autoCage(scan, 800)
+    const { cage } = auto(sphereScan(30, 0, 5), { quads: 800 })
     let inward = 0
     for (const f of cage.faces) {
       const p = f.map((v) => [cage.positions[v * 3], cage.positions[v * 3 + 1], cage.positions[v * 3 + 2]])
@@ -118,35 +122,78 @@ describe('autoCage', () => {
   })
 
   it('wraps a box and a torus as closed surfaces of the right topology', () => {
-    const b = autoCage(paths(box(40, 30, 20)), 600)
+    const b = auto(box(40, 30, 20), { quads: 600 })
     expect(topology(b.cage)).toMatchObject({ loose: 0, euler: 2 })
-    expect(Math.abs(b.quads - 600) / 600).toBeLessThan(0.08)
-    const t = autoCage(paths(torus(25, 8)), 1200)
+    expect(Math.abs(b.quads - 600) / 600).toBeLessThan(0.1)
+    const t = auto(torus(25, 8), { quads: 1200 })
     expect(topology(t.cage)).toMatchObject({ loose: 0, euler: 0 })
-    expect(Math.abs(t.quads - 1200) / 1200).toBeLessThan(0.08)
+    expect(Math.abs(t.quads - 1200) / 1200).toBeLessThan(0.1)
   })
 
-  it('refines to a smooth surface the scan lies close to', () => {
-    const scan = paths(sphereScan(30, 0.01, 5))
-    const { cage } = autoCage(scan, 1500)
-    const fine = subdivide(subdivide(cage))
-    let worst = 0
-    let sum = 0
-    for (let v = 0; v < fine.positions.length; v += 3) {
-      const c = scan.closest([fine.positions[v], fine.positions[v + 1], fine.positions[v + 2]])!
-      worst = Math.max(worst, c.distance)
-      sum += c.distance
+  it('lays an open cage over an open scan, its rim on the scan’s', () => {
+    // A dome: the cap of a sphere above z = 10.
+    const ball = sphereScan(30, 0, 5)
+    const keep: number[] = []
+    for (let t = 0; t < ball.indices.length; t += 3) {
+      if ([0, 1, 2].every((k) => ball.positions[ball.indices[t + k] * 3 + 2] > 10)) keep.push(ball.indices[t], ball.indices[t + 1], ball.indices[t + 2])
     }
-    // A cage on the scan lies inside it by the shrink of the limit surface: a fraction of the edge, not far.
-    expect(worst).toBeLessThan(1.2)
-    expect(sum / (fine.positions.length / 3)).toBeLessThan(0.5)
+    const dome = { positions: ball.positions, indices: Uint32Array.from(keep) }
+    const r = auto(dome, { quads: 400 })
+    expect(r.closed).toBe(false)
+    expect(r.boundaryEdges).toBeGreaterThan(10)
+    const t = topology(r.cage)
+    // One rim: a disc.
+    expect(t.euler).toBe(1)
+    let lowest = Infinity
+    for (let v = 0; v < t.V; v++) lowest = Math.min(lowest, r.cage.positions[v * 3 + 2])
+    expect(lowest).toBeGreaterThan(6)
+    expect(lowest).toBeLessThan(14)
+    expect(r.deviation.rms).toBeLessThan(0.1)
   })
 
-  it('refuses a target out of range and a scan with nothing in it', () => {
-    const scan = paths(sphereScan(30, 0, 3))
-    expect(() => autoCage(scan, AUTO_QUADS_MIN - 1)).toThrow(AutoError)
-    expect(() => autoCage(scan, AUTO_QUADS_MAX + 1)).toThrow(AutoError)
-    expect(() => autoCage(scan, Number.NaN)).toThrow(AutoError)
-    expect(() => autoCage(new ScanPaths(new Float32Array(0), new Uint32Array(0)), 1000)).toThrow(AutoError)
+  it('leaves out a crumb beside the part, and says how many pieces there were', () => {
+    const ball = sphereScan(30, 0, 4)
+    const n = ball.positions.length / 3
+    const positions = Float32Array.from([...ball.positions, 80, 0, 0, 81, 0, 0, 80, 1, 0])
+    const indices = Uint32Array.from([...ball.indices, n, n + 1, n + 2])
+    const r = auto({ positions, indices }, { quads: 300 })
+    expect(r.pieces).toBe(2)
+    expect(r.piecesKept).toBe(1)
+    expect(r.closed).toBe(true)
+  })
+
+  it('Feature aligned gives the features more quads than the target, by Feature Details', () => {
+    const ball = sphereScan(30, 0, 5)
+    expect(AUTO_TARGETS).toEqual({ low: 1000, medium: 2000, fine: 4000 })
+    const low = auto(ball, { algorithm: 'feature', quads: 400, details: 'low' })
+    const balanced = auto(ball, { algorithm: 'feature', quads: 400 })
+    expect(Math.abs(low.quads - 400 * DETAIL_FACTOR.low) / (400 * DETAIL_FACTOR.low)).toBeLessThan(0.1)
+    expect(Math.abs(balanced.quads - 400 * DETAIL_FACTOR.balanced) / (400 * DETAIL_FACTOR.balanced)).toBeLessThan(0.1)
+    expect(balanced.algorithm).toBe('feature')
+  })
+
+  it('reports each stage as it runs, and stops when the progress throws', () => {
+    const ball = sphereScan(30, 0, 5)
+    const seen: string[] = []
+    let last = -1
+    runAutoFreeform(ball, { algorithm: 'basic', quads: 500 }, (stage, overall) => {
+      if (seen[seen.length - 1] !== stage) seen.push(stage)
+      expect(overall).toBeGreaterThanOrEqual(last - 1e-9)
+      expect(overall).toBeLessThanOrEqual(1)
+      last = overall
+    })
+    expect(seen).toEqual(['prepare', 'layout', 'fit', 'refine', 'measure'])
+    expect(last).toBe(1)
+    let calls = 0
+    expect(() => runAutoFreeform(ball, { algorithm: 'basic', quads: 500 }, (stage) => { if (stage === 'layout' && ++calls > 3) throw new Error('stopped') })).toThrow()
+  })
+
+  it('refuses a target out of range, an algorithm it has not and a scan with nothing in it', () => {
+    const ball = sphereScan(30, 0, 3)
+    expect(() => auto(ball, { quads: AUTO_QUADS_MIN - 1 })).toThrow(AutoError)
+    expect(() => auto(ball, { quads: AUTO_QUADS_MAX + 1 })).toThrow(AutoError)
+    expect(() => auto(ball, { quads: Number.NaN })).toThrow(AutoError)
+    expect(() => auto(ball, { quads: 500, algorithm: 'bogus' as never })).toThrow(AutoError)
+    expect(() => auto({ positions: new Float32Array(0), indices: new Uint32Array(0) }, { quads: 1000 })).toThrow(AutoError)
   })
 })

@@ -230,7 +230,17 @@ export class SurfaceMarking {
   private marqueeSvg: SVGSVGElement
   private marqueeShape: SVGPolygonElement
 
+  // Right-click removes a marked region. Let that click finish without also
+  // opening the stage menu over the next selection.
+  private onMarkContextMenu = (event: MouseEvent): void => {
+    if (event.target instanceof HTMLCanvasElement && this.pointerGesture() && !event.shiftKey && !event.ctrlKey && !event.metaKey) {
+      event.preventDefault()
+      event.stopPropagation()
+    }
+  }
+
   constructor(private ctx: MarkingContext) {
+    ctx.container.addEventListener('contextmenu', this.onMarkContextMenu)
     const NS = 'http://www.w3.org/2000/svg'
     this.marqueeSvg = document.createElementNS(NS, 'svg')
     this.marqueeSvg.setAttribute('class', 'marquee')
@@ -921,6 +931,7 @@ export class SurfaceMarking {
   }
 
   dispose(): void {
+    this.ctx.container.removeEventListener('contextmenu', this.onMarkContextMenu)
     document.removeEventListener('pointermove', this.onPaintMove)
     document.removeEventListener('pointerup', this.onPaintUp)
     document.removeEventListener('pointercancel', this.onPaintUp)

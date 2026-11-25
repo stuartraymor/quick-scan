@@ -31,3 +31,12 @@ it('rejects a missing measurement without mutating the input',()=>{
 it('respects the sampling budget and rejects an invalid tolerance',()=>{
  const c=input();expect(refineDeviation(c,measure,.01,4)).toBe(c);expect(()=>refineDeviation(c,measure,0)).toThrow('Invalid')
 })
+
+it('keeps supported readings and marks a missing band when finishing spans a scan boundary', () => {
+  const scan = (p: Float32Array) => Float32Array.from({ length: p.length / 3 }, (_, i) => p[i * 3] < 0 ? NaN : .25)
+  const c = input()
+  c.values = scan(c.positions)
+  const out = refineDeviation(c, scan, .01, 500, 3, true)
+  expect(out.positions.length).toBeGreaterThan(c.positions.length)
+  expect(out.values).toEqual(scan(out.positions))
+})

@@ -384,6 +384,7 @@ export class SceneManager {
 
   /** The marking's tint, as a uniform: recolouring what is marked is one write
    *  here rather than a pass over the mask — see paintTint.ts. */
+  private uFieldOverPaint = { value: 0 }
   private uPaintColor: PaintUniform = paintUniform()
 
   /** The bare surface colour the shader paints under a region's border, kept
@@ -458,7 +459,7 @@ export class SceneManager {
     null
   /** The text typed into the field on a plugin's grip and entered, or the
    *  field closed with Escape — see setGripField. */
-  onGripFieldCommit: ((side: GripSide, text: string) => void) | null = null
+  onGripFieldCommit: ((side: GripSide, text: string, quiet?: boolean, restoring?: boolean) => boolean | void) | null = null
   onGripFieldClose: (() => void) | null = null
 
   constructor(container: HTMLDivElement) {
@@ -608,7 +609,7 @@ export class SceneManager {
       // something of its own.
       onActiveSide: (side) =>
         this.overlays.setPreviewActiveSide(isSectionSide(side) || isPluginSide(side) ? null : side),
-      onFieldCommit: (side, value) => this.onGripFieldCommit?.(side, value),
+      onFieldCommit: (side, value, quiet, restoring) => this.onGripFieldCommit?.(side, value, quiet, restoring),
       onFieldClose: () => this.onGripFieldClose?.(),
     })
     this.viewport.renderer.domElement.addEventListener('pointermove', (e) => {
@@ -997,7 +998,7 @@ export class SceneManager {
       side: THREE.DoubleSide,
     })
     this.applyScanFinish(material)
-    patchScanShader(material, { backface: this.backface, paintColor: this.uPaintColor, surfaceColor: this.uSurfaceColor, surfaceOwn: this.uSurfaceOwn, deflect: this.uDeflect, wire: this.wire, depthOffset: this.scanDepthOffset, field: this.uField })
+    patchScanShader(material, { backface: this.backface, paintColor: this.uPaintColor, fieldOverPaint: this.uFieldOverPaint, surfaceColor: this.uSurfaceColor, surfaceOwn: this.uSurfaceOwn, deflect: this.uDeflect, wire: this.wire, depthOffset: this.scanDepthOffset, field: this.uField })
     setSurfaceOpacity(material, this.scanOpacity())
     const mesh = new THREE.Mesh(geometry, material)
     // The geometry under the mesh changes hands (an edited copy, a resplit),
@@ -2309,7 +2310,7 @@ export class SceneManager {
    *  dragged, and a field to type into once the hand lets go — Enter
    *  commits through onGripFieldCommit, Escape closes through
    *  onGripFieldClose. Null takes it away. */
-  setGripField(field: { side: GripSide; value: number; unit: string; text?: string } | null): void {
+  setGripField(field: { side: GripSide; value: number; unit: string; text?: string; live?: boolean } | null): void {
     this.grips.setField(field)
   }
 
@@ -3318,7 +3319,13 @@ export class SceneManager {
 
   /** Paint a reading on some of the scan's vertices, leaving the rest as
    *  they are, or pass null to lift it. See regionColors.setSparseField. */
+  setFieldOverPaint(enabled: boolean): void {
+    this.uFieldOverPaint.value = enabled ? 1 : 0
+    this.invalidate()
+  }
+
   setSparseField(subset: Uint32Array | null, rgb: Uint8Array | null): void {
+    this.transientField = false
     if (this.sparseValues) {
       this.sparseValues = null
       this.writeFieldAttrs()
@@ -3340,17 +3347,27 @@ export class SceneManager {
    * The colour buffer gets the same colours per vertex, for everything that
    * reads a vertex's colour. Null lifts it.
    */
-  setSparseValues(subset: Uint32Array | null, values: Float32Array | null, scale?: FieldScale, map?: Colormap): void {
+  private transientField = false
+
+  setSparseValues(subset: Uint32Array | null, values: Float32Array | null, scale?: FieldScale, map?: Colormap, transient = false): void {
     if (!subset || !values || !scale || !map || subset.length !== values.length) {
       this.setSparseField(null, null)
       return
     }
-    const rgb = new Uint8Array(values.length * 3)
-    paintField(values, scale, map, rgb)
     setFieldRamp(this.uField, scale, map)
     this.sparseValues = { subset, values }
     this.writeFieldAttrs()
-    this.paintSparse(subset, rgb)
+    // The scan shader reads these attributes directly. Clear the stationary
+    // vertex paint once when dragging, then leave the full colour bake to
+    // the settled reading.
+    if (transient) {
+      if (!this.transientField) this.paintSparse(null, null)
+    } else {
+      const rgb = new Uint8Array(values.length * 3)
+      paintField(values, scale, map, rgb)
+      this.paintSparse(subset, rgb)
+    }
+    this.transientField = transient
   }
 
   /** Lay the reading on show into the scan's fieldW / fieldV attributes —

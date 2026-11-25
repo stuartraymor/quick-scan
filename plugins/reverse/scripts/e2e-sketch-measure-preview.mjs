@@ -61,17 +61,25 @@ try {
   const before = await sketchNow()
 
   // ---- Measure opens on the Sketch way --------------------------------------------
+  await click(page, '[data-test=sketch-tool-line]')
+  await click(page, '[data-test=snap-endpoint]')
   await analysisTab()
   check(await page.$eval('[data-test=ribbon-measure]', (el) => !el.disabled), 'with a sketch and no scan, Analysis → Measure can be pressed')
   await click(page, '[data-test=ribbon-measure]')
   await page.waitForSelector('[data-test=measure-dialog]')
+  check(await page.$eval('[data-test=snap-endpoint]', el => el.getAttribute('aria-pressed')) === 'false', 'Automatic Measure inherits End off in Edit Sketch')
+  // This regression exercises the explicit Sketch option; the separate
+  // adaptive test covers the new workspace-independent default.
+  await click(page, '[data-test=measure-plugin-sketch]')
   await page.waitForSelector('[data-test=sketch-editor]'); await sleep(600)
   const ways = await page.evaluate(() => Object.fromEntries(['3d', 'extended', 'point', 'plugin-sketch'].map((k) => {
     const b = document.querySelector(`[data-test=measure-${k}]`)
     return [k, { disabled: b?.disabled, pressed: b?.getAttribute('aria-pressed') }]
   })))
   check(ways['3d'].disabled && ways.extended.disabled && ways.point.disabled, `the mesh's ways are greyed with no scan (${JSON.stringify(ways)})`)
-  check(ways['plugin-sketch'].pressed === 'true' && !ways['plugin-sketch'].disabled, `the dialog opens on the Sketch way (${JSON.stringify(ways['plugin-sketch'])})`)
+  check(ways['plugin-sketch'].pressed === 'true' && !ways['plugin-sketch'].disabled, `the explicit Sketch way remains available (${JSON.stringify(ways['plugin-sketch'])})`)
+  check(await page.$eval('[data-test=snap-endpoint]', el => el.getAttribute('aria-pressed')) === 'false', 'Sketch Measure inherits End off in Edit Sketch')
+  await click(page, '[data-test=snap-endpoint]')
   const head = await page.$eval('[data-test=measure-dialog] header', (el) => { const q = el.getBoundingClientRect(); return { x: q.left + 40, y: q.top + q.height / 2 } })
   await page.mouse.move(head.x, head.y); await page.mouse.down(); await page.mouse.move(head.x - 265, head.y + 20, { steps: 8 }); await page.mouse.up(); await sleep(200)
   // With no scan the sheet opens close in: wheel out over the view until
@@ -92,7 +100,7 @@ try {
     const b = document.querySelector('[data-test=snap-bar]')
     return { context: b?.dataset.context, keys: [...(b?.querySelectorAll('.snapkey') ?? [])].map((k) => k.dataset.test) }
   })
-  check(bar.context === 'pick' && bar.keys.includes('snap-quadrant') && bar.keys.includes('snap-center') && !bar.keys.includes('snap-scan'), `the snap bar shows the Pick switches while the Sketch way is chosen (${JSON.stringify(bar)})`)
+  check(bar.context === 'sketchPick' && bar.keys.includes('snap-quadrant') && bar.keys.includes('snap-center') && !bar.keys.includes('snap-scan'), `the snap bar shows the Pick switches while the Sketch way is chosen (${JSON.stringify(bar)})`)
 
   // ---- preview before a click -----------------------------------------------------
   await hoverAt(await onSheet([A[0] + R * Math.cos(0.6), A[1] + R * Math.sin(0.6)]))
@@ -149,6 +157,26 @@ try {
   await click(page, '[data-test=measure-delete-all]'); await sleep(200)
 
   check((await sketchNow()) === before, 'the sketch is unchanged by previewing and measuring it')
+  // Two unequal parallel lines: midpoint distance is sqrt(41), whereas
+  // carrier distance is 5. This detects a pick silently falling to the line.
+  await click(page, '[data-test=measure-delete-all]')
+  await re(() => window.__re.store.setState(s => {
+    const d=s.sketchDraft, sk=d.sketch, id=sk.nextId
+    return {sketchDraft:{...d,sketch:{...sk,nextId:id+2,entities:[...sk.entities,
+      {id,kind:'line',a:[-8,0],b:[2,0]}, {id:id+1,kind:'line',a:[-1,5],b:[3,5]}]}}}
+  }))
+  await sleep(300)
+  const withLines=await sketchNow()
+  if(await page.$eval('[data-test=snap-midpoint]', e=>e.getAttribute('aria-pressed')!=='true')) await click(page,'[data-test=snap-midpoint]')
+  await clickAt(await onSheet([-3,0])); await clickAt(await onSheet([1,5]))
+  const midRead=await page.$eval('[data-test=measure-readout]', e=>({title:e.querySelector('b')?.textContent,values:[...e.querySelectorAll('[data-test=measure-row]')].map(r=>Number(r.dataset.value))}))
+  check(midRead.values.some(v=>Math.abs(v-Math.sqrt(41))<1e-8) && /mid|middle/i.test(midRead.title??''), `Mid on measures the two midpoints to 1e-8 mm, sqrt(41), rather than the carriers (${JSON.stringify(midRead)})`)
+  check(await sketchNow()===withLines,'midpoint measurement leaves both lines and the other sketch geometry unchanged')
+  await click(page,'[data-test=measure-delete-all]'); await click(page,'[data-test=snap-midpoint]')
+  await clickAt(await onSheet([-3,0])); await clickAt(await onSheet([1,5]))
+  const lineRead=await page.$eval('[data-test=measure-readout]', e=>({title:e.querySelector('b')?.textContent,values:[...e.querySelectorAll('[data-test=measure-row]')].map(r=>Number(r.dataset.value))}))
+  check(lineRead.values.every(v=>Math.abs(v-Math.sqrt(41))>=1e-8) && !/mid|middle/i.test(lineRead.title??''), `Mid off does not silently retain midpoint picks (${JSON.stringify(lineRead)})`)
+  await click(page,'[data-test=snap-midpoint]')
   await click(page, '[data-test=measure-close]'); await sleep(300)
   const after = await page.evaluate(() => ({ preview: document.querySelectorAll('[data-test=measure-preview-outline], [data-test=measure-preview-label]').length, bar: document.querySelector('[data-test=snap-bar]')?.dataset.context ?? null }))
   check(after.preview === 0 && after.bar !== 'measure', `closing Measure takes the preview away and gives the bar back (${JSON.stringify(after)})`)

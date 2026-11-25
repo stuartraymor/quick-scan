@@ -22,7 +22,7 @@
 import type { FieldScale } from '../field/colormap'
 import { deviationScale } from './deviation'
 import { rigidApply, rigidRotate, type Rigid } from './rigid'
-import { emptyHit, type NominalSurface } from './surface'
+import { emptyHit, type ClosestHit, type NominalSurface } from './surface'
 
 /** The reference cut finer for its map: a mesh of its own, every vertex a
  *  reading, each triangle with the reference triangle it lies in. */
@@ -327,6 +327,14 @@ const SQUARE_DEG = 60
 /** Readings nearer than this are on the surface, whatever the line's
  *  direction, mm. */
 const ON_SURFACE = 1e-3
+const MIN_NORMAL_ALIGNMENT = Math.cos((SQUARE_DEG * Math.PI) / 180)
+
+/** Past the rim of a scan, a lateral nearest point cannot support a reading. */
+export function scanSupportsPoint(x: number, y: number, z: number, hit: ClosestHit): boolean {
+  if (hit.distance <= ON_SURFACE) return true
+  const normalDistance = (x - hit.px) * hit.nx + (y - hit.py) * hit.ny + (z - hit.pz) * hit.nz
+  return Math.abs(normalDistance) >= MIN_NORMAL_ALIGNMENT * hit.distance
+}
 /** How far round a point a facing scan face is first looked for: this many
  *  millimetres, or this many times the distance to the nearest face of any
  *  facing, whichever is the more. */
@@ -350,7 +358,6 @@ export function readReference(scan: NominalSurface, samples: ReferenceSamples, {
   const sn = new Float64Array(3)
   const outward = scanOutward(scan, samples, toScan, reach)
   const minFacing = facingDeg === null ? null : Math.cos((facingDeg * Math.PI) / 180)
-  const square = Math.cos((SQUARE_DEG * Math.PI) / 180)
   const chunk = Math.max(1, Math.floor(n / 50))
   for (let v = 0; v < n; v++) {
     rigidApply(toScan, positions[v * 3], positions[v * 3 + 1], positions[v * 3 + 2], p)
@@ -370,10 +377,7 @@ export function readReference(scan: NominalSurface, samples: ReferenceSamples, {
           (near < reach && scan.closestFacing(p[0], p[1], p[2], fx, fy, fz, minFacing, hit, reach))) &&
         outward * (sn[0] * hit.nx + sn[1] * hit.ny + sn[2] * hit.nz) >= minFacing
     }
-    if (found && hit.distance > ON_SURFACE) {
-      const along = Math.abs((p[0] - hit.px) * hit.nx + (p[1] - hit.py) * hit.ny + (p[2] - hit.pz) * hit.nz) / hit.distance
-      if (along < square) found = false
-    }
+    if (found && !scanSupportsPoint(p[0], p[1], p[2], hit)) found = false
     values[v] = found ? outward * hit.signed : NaN
     if (onProgress && v % chunk === 0) onProgress(v / n)
   }

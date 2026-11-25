@@ -13,11 +13,13 @@ export interface MeasuredTriangles {
  * Positions stay on the input facets; this never moves the CAD/control net.
  * The budgets bound work, not a continuous maximum-error guarantee. */
 export function refineDeviation(input: MeasuredTriangles, measure: (p: Float32Array) => Float32Array,
-  tolerance: number, maxSamples = 200_000, maxPasses = 6): MeasuredTriangles {
+  tolerance: number, maxSamples = 200_000, maxPasses = 6, allowMissing = false): MeasuredTriangles {
   if (!(Number.isFinite(tolerance) && tolerance > 0)) throw new Error('Invalid deviation tolerance.')
   let data = input
   const clipped = (v: number) => Math.max(-5 * tolerance, Math.min(5 * tolerance, v))
-  const differs = (measured: number, interpolated: number) => Math.abs(clipped(measured) - clipped(interpolated)) > tolerance * .02
+  const differs = (measured: number, interpolated: number) =>
+    Number.isFinite(measured) !== Number.isFinite(interpolated) ||
+    Math.abs(clipped(measured) - clipped(interpolated)) > tolerance * .02
   for (let pass = 0; pass < maxPasses; pass++) {
     const { positions, triangles, values } = data, count = positions.length / 3
     if (count + triangles.length * 4 / 3 > maxSamples) break
@@ -41,7 +43,7 @@ export function refineDeviation(input: MeasuredTriangles, measure: (p: Float32Ar
       probes.push((positions[3 * triangles[i] + axis] + positions[3 * triangles[i + 1] + axis] + positions[3 * triangles[i + 2] + axis]) / 3)
     }
     const samplePositions = Float32Array.from(probes), sampled = measure(samplePositions)
-    if (sampled.length !== probes.length / 3 || !sampled.every(Number.isFinite)) throw new Error('Incomplete deviation correspondence.')
+    if (sampled.length !== probes.length / 3 || (!allowMissing && !sampled.every(Number.isFinite))) throw new Error('Incomplete deviation correspondence.')
     const split = new Set<number>()
     for (let i = 0; i < triangles.length; i += 3) {
       const [a, b, c] = triangles.subarray(i, i + 3), ab = edges.get(key(a, b))!, bc = edges.get(key(b, c))!, ca = edges.get(key(c, a))!

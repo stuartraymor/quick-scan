@@ -87,7 +87,7 @@ try {
   let o = await newest()
   check(o && /circle/.test(o.title), `a click on the rim reads the circle (${o?.title})`)
   check(o && near(o.rows['Radius']?.value, R, 1e-12) && near(o.rows['Diameter']?.value, 2 * R, 1e-12) && near(o.rows['Circumference']?.value, 2 * Math.PI * R, 1e-9), `radius 3, diameter 6, circumference 6π, exact (${JSON.stringify(o?.rows && [o.rows['Radius']?.text, o.rows['Diameter']?.text, o.rows['Circumference']?.text])})`)
-  check(o && o.rows['Centre']?.point === `${A[0]},${A[1]}`, `and its centre at (−7, 4) (${o?.rows['Centre']?.point})`)
+  check(o && o.rows['Centre (sketch XY)']?.point === `${A[0]},${A[1]}`, `and its centre at (−7, 4) in sketch XY (${o?.rows['Centre (sketch XY)']?.point})`)
   const label = await page.evaluate(() => [...document.querySelectorAll('.measure-label')].map((el) => el.textContent))
   check(label.some((t) => /^R 3\.0000/.test(t)), `the radius boxed over the sheet (${JSON.stringify(label)})`)
   await page.screenshot({ path: shotPath('01-sheet-circle.png') })

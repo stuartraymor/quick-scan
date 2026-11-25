@@ -96,7 +96,14 @@ const fresh = async () => {
 }
 
 const results = [], failures = []
-const record = (row, problem) => { results.push({ ...row, ok: !problem, problem: problem ?? undefined }); if (problem) { failures.push({ ...row, problem }); console.log('FAIL', JSON.stringify({ ...row, problem })) } }
+const record = (row, problem) => {
+  results.push({ ...row, ok: !problem, problem: problem ?? undefined })
+  if (problem) { failures.push({ ...row, problem }); console.log('FAIL', JSON.stringify({ ...row, problem })) }
+  // Preserve completed scenarios if a later one hangs, and distinguish the
+  // actual UI actions from merely different random seeds.
+  fs.writeFileSync(out + `/progress-seed${SEED}.json`, JSON.stringify({ seed: SEED, total: results.length, failed: failures.length, results }, null, 1))
+  if (results.length % 10 === 0) console.log(`PROGRESS seed ${SEED}: ${results.length} completed, ${failures.length} failed`)
+}
 
 try {
   await loadScan(page, meshPath); await openReverse(page)
@@ -244,7 +251,9 @@ try {
         // Spread the pieces over the plate, apart from each other.
         const c = [-16 + (i % 3) * 13 + between(-1, 1), (i < 3 ? 6 : -10) + between(-1, 1)]
         await button(`[data-test=${TOOLS[t].sel}]`)
-        for (const p of TOOLS[t].clicks(c)) await clickAt(p)
+        const clicks = TOOLS[t].clicks(c)
+        ;(row.actions ??= []).push({ tool: t, button: TOOLS[t].sel, clicks })
+        for (const p of clicks) await clickAt(p)
         await escape(2)
         const now = await sketch(); snapshots.push(now)
         finite(now)

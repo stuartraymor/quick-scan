@@ -702,6 +702,7 @@ export const FEATURE_IN: Record<string, JsonSchema> = {
             obj(
               {
                 edge: edgePick,
+                transition: enumOf(['smooth', 'linear'], 'Smooth uses the kernel transition. Linear varies the circular section linearly along one straight edge between planar supports with perpendicular ends.'),
                 radius: oneOf(
                   [
                     arr(num('mm', { exclusiveMinimum: 0 }), 'The radius at the edge’s first end, as reverse.body.describe lists its ends, then at its other.', { minItems: 2, maxItems: 2 }),
@@ -711,7 +712,7 @@ export const FEATURE_IN: Record<string, JsonSchema> = {
                 ),
               },
               ['edge', 'radius'],
-              'An edge rounded at a radius running evenly from the first to the second along it — rounded after the plain edges. One radius law per tangent chain: the kernel rounds the whole chain with the edge. Where plain rounds at its ends shorten it away, round it in a fillet of its own, before them.',
+              'An edge rounded at a varying radius from the first end to the second — rounded after the plain edges. One radius law per tangent chain: the kernel rounds the whole chain with the edge. Where plain rounds at its ends shorten it away, round it in a fillet of its own, before them.',
             ),
           ],
           'An edge at radius, or { edge, radius: [start, end] } at a varying one.',
@@ -769,7 +770,7 @@ export const FEATURE_IN: Record<string, JsonSchema> = {
   cutPlane: obj({ kind: kind('cutPlane'), name: nameIn, body: bodyRef, plane: planeIn, keep: enumOf([1, -1], '1 keeps the side the plane’s normal points to, −1 the other.'), exprs: exprsIn('plane.offset — the plane’s offset, a coordinate plane’s coordinate: the cut follows the parameters it reads') }, ['kind', 'body', 'plane'], 'Cut a body at a plane.'),
   mirror: obj({ kind: kind('mirror'), name: nameIn, body: bodyRef, plane: mirrorPlaneIn, join: bool('Joined with the original (the default), or a body of its own.'), exprs: exprsIn('plane.offset — the plane’s offset, a coordinate plane’s coordinate; a face of the body has none') }, ['kind', 'body', 'plane'], 'Mirror a body.'),
   boolean: obj({ kind: kind('boolean'), name: nameIn, op: enumOf(['join', 'cut', 'intersect'], 'For a sheet as the body: intersect keeps the sheet inside a solid tool, cut keeps it outside, join sews it to a sheet tool where the two meet edge to edge.'), body: bodyRef, tool: bodyRef, keep: bool('Keep the tool as a body of its own. With a sheet as the body, a solid tool stays a body whatever this says — one outline prism trims several sheets; a sheet joined goes into the result unless kept.') }, ['kind', 'op', 'body', 'tool'], 'Combine two bodies. A feature that made several bodies — a new extrude of four tabs — named as body or tool takes every piece. A sheet (a fitted surface, a sheet) as the body is trimmed before it is thickened: intersected with an outline prism, its ends stand square to the wall once thickened; two sheets trimmed to each other (split, keep scan) are joined into one, and thicken as one wall.'),
-  sheet: obj({ kind: kind('sheet'), name: nameIn, sketchId: featureRef('sketch'), from: num(), to: num(), exprs: exprsIn('from, to') }, ['kind', 'sketchId', 'from', 'to'], 'A sketch’s pieces extruded as a surface, to split a body with.'),
+  sheet: obj({ kind: kind('sheet'), projectOnto: bodyRef, planar: bool('Make a planar face of the largest closed sketch region.'), name: nameIn, sketchId: featureRef('sketch'), from: num(), to: num(), exprs: exprsIn('from, to') }, ['kind', 'sketchId', 'from', 'to'], 'A sketch’s pieces extruded as a surface, to split a body with.'),
   split: obj(
     { kind: kind('split'), name: nameIn, body: bodyRef, tools: arr(bodyRef, 'The sheets or bodies cutting it.', { minItems: 1 }), keep: enumOf(['scan', 'largest', 'smallest', 'between'], 'Which pieces stay: those on the scan (the default; largest and smallest say nothing of the part), the largest, the smallest — by volume, a sheet’s by area — or between: those with a face on every tool, on one side of each — the wall between two fitted skins (tools: [outer, inner]), refused where the skins meet inside the body, and for a sheet.'), tolerance: num('mm', { exclusiveMinimum: 0 }), overlap: num('', { exclusiveMinimum: 0, maximum: 1 }), within: nullable(num('', { minimum: 0 }), 'mm. Cut within the freeform fitted surfaces’ regions: each trimmed to its region’s outline grown by this much before it cuts, the body outside the outlines left as it was — only what was fitted cuts, not the margin or the carrying on. For a band or a swage across a face the rest of the part keeps. Left out (null takes it off): the whole sheet, carried on to the body’s sides.'), exprs: exprsIn('tolerance, overlap') },
     ['kind', 'body', 'tools'],
@@ -778,6 +779,7 @@ export const FEATURE_IN: Record<string, JsonSchema> = {
   loft: obj(
     {
       kind: kind('loft'),
+      surface: bool('Build the uncapped sheet through the section outlines.'),
       name: nameIn,
       sketches: arr(featureRef('sketch'), 'The sketches in order, each giving its largest region.', { minItems: 2 }),
       sections: arr(
@@ -822,6 +824,10 @@ export const FEATURE_IN: Record<string, JsonSchema> = {
       kind: kind('thicken'),
       name: nameIn,
       sheet: { ...bodyRef, description: 'The sheet or fitted surface made a solid, by id or name; it stays a body of its own, put out of view.' },
+      constraint: nullable(oneOf([
+        obj({ mode: enumOf(['direction', 'toPlane']), plane: planeIn }, ['mode', 'plane']),
+        obj({ mode: kind('betweenPlanes'), plane: planeIn, end: planeIn }, ['mode', 'plane', 'end']),
+      ], 'Direction or limit planes.'), 'Clear to use the sheet normal.'),
       thickness: num('The wall, mm.', { exclusiveMinimum: 0 }),
       side: enumOf(['in', 'out', 'both'], 'in (the default): against the sheet’s normal (reverse.body.describe gives a face’s dir); out: along it; both: half each way.'),
       op: enumOf(['new', 'join', 'cut'], 'new (the default): a body of its own; join or cut: with every solid it meets, or with target alone.'),
@@ -952,7 +958,7 @@ export const FEATURE_IN: Record<string, JsonSchema> = {
         [],
         'The panel’s defaults where left out. The answer’s result.surface gives rms, max, the net and the worst points, and pastRegion { off, at }: how far the surface stands off the scan under it past its region — the margin, a hole in the region — the most and where, warned past 0.2 mm; a split by it carries that into the part (split within keeps to the region). A robust fit’s result.surface.strays, and a fit refused for running away result.strays, name the points that are not the surface’s: [{ points, box, offMm: [least, most], why }] — a second sheet over or under it along the height direction, or points the robust fit left out far off; give each box in region.exclude and fit again.',
       ),
-      shape: enumOf(['freeform', 'plane', 'cylinder']),
+      shape: enumOf(['freeform', 'plane', 'cylinder', 'cone', 'sphere']),
       constrain: anyObject('A plane’s or a cylinder’s Auto Constrain — { mode: "auto" } by default.'),
       exprs: exprsIn('region.box.min.x, region.box.min.y, region.box.min.z, region.box.max.x, region.box.max.y, region.box.max.z — the box the region is read in (region: { box }): the points are read again in it when a parameter moves it'),
     },
@@ -992,6 +998,7 @@ export const FEATURE_IN: Record<string, JsonSchema> = {
   trim: obj(
     {
       kind: kind('trim'),
+      removed: nullable(arr(obj({ body: bodyRef, at: vec3('Point inside the piece, in part coordinates.') }, ['body', 'at'])), 'Manual trim. Null restores scan matching.'),
       name: nameIn,
       tools: arr(oneOf([obj({ kind: kind('body'), id: bodyRef }, ['kind', 'id']), obj({ kind: kind('element'), id: oneOf([int('The element’s id.'), str('The element’s name, whole, case aside.', { minLength: 1 })], 'A plane, cylinder, cone, sphere or torus element of 3D Measure, by id or name.') }, ['kind', 'id'])]), 'The surfaces and elements closing the solid.', { minItems: 1 }),
       tolerance: num('mm', { exclusiveMinimum: 0 }),

@@ -1,11 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// Auto Freeform in the window (1.2.31): the dialog as QUICKSURFACE lays it
+// out, a preview made in its own worker with the page left free, Stop,
+// Clear Result, guide curves, the result's numbers, OK, undo and redo.
+//
+// With SCAN=<a real scan> it also runs Medium on it and writes how long the
+// preview took and the longest the page went without a frame meanwhile.
 import assert from 'node:assert/strict'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { SphereGeometry } from 'three'
-import { launchApp, loadScan, MOD, OUT_DIR, shotPath } from '../../../scripts/e2e-lib.mjs'
+import { launchApp, loadScan, MOD, OUT_DIR, repoFile, shotPath } from '../../../scripts/e2e-lib.mjs'
 
-const sphere = new SphereGeometry(20, 32, 24), vertices = sphere.getAttribute('position'), indices = sphere.index
+const sphere = new SphereGeometry(20, 64, 48), vertices = sphere.getAttribute('position'), indices = sphere.index
 let obj = ''
 for (let i = 0; i < vertices.count; i++) obj += `v ${vertices.getX(i)} ${vertices.getY(i)} ${vertices.getZ(i)}\n`
 for (let i = 0; i < indices.count; i += 3) obj += `f ${indices.getX(i) + 1} ${indices.getX(i + 1) + 1} ${indices.getX(i + 2) + 1}\n`
@@ -14,26 +20,55 @@ writeFileSync(file, obj)
 const { browser, page, consoleErrors } = await launchApp()
 const button = '[data-test=ribbon-auto-freeform]', dialog = '[data-test=auto-freeform-dialog]'
 const features = () => page.evaluate(() => document.querySelectorAll('[data-test=feature-row]').length)
+const type = (sel, text) => page.$eval(sel, (e, text) => { const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; setter.call(e, text); e.dispatchEvent(new Event('input', { bubbles: true })) }, text)
+const noPreview = async () => {
+  assert.equal(await page.evaluate(() => window.__re.reScene().bodyPreview), null)
+  assert.equal(await page.evaluate(() => window.__re.reScene().cagePreview), null)
+}
+const preview = async (timeout = 180000) => {
+  await page.click('[data-test=auto-freeform-preview]')
+  await page.waitForSelector('[data-test=auto-freeform-quads]', { timeout })
+  return Number((await page.$eval('[data-test=auto-freeform-quads]', e => e.textContent)).replace(/[^0-9]/g, ''))
+}
+const visible = sel => page.$eval(sel, e => getComputedStyle(e.closest('label') ?? e).visibility !== 'hidden')
 try {
   await page.evaluate(() => Array.from(document.querySelectorAll('button')).find(e => e.textContent.trim() === 'Freeform').click())
   assert.equal(await page.$eval(button, e => e.disabled), true)
   await loadScan(page, file)
-  await page.evaluate(async () => {
-    const { ready } = await import('/plugins/reverse/app/reCommandCore.ts')
-    const client = (await ready()).client(), original = client.preview.bind(client)
-    window.__autoTest = { gate: false, completed: 0 }
-    client.preview = async (...args) => {
-      window.__autoTest.ask = structuredClone(args[0])
-      if (window.__autoTest.gate) await new Promise(resolve => { window.__autoTest.release = resolve })
-      const result = await original(...args)
-      window.__autoTest.completed++
-      return result
-    }
-  })
   await page.click(button)
   await page.waitForSelector(dialog, { timeout: 120000 })
+
+  // The dialog as QUICKSURFACE's: the controls, their order and what they start at.
+  const labels = await page.$eval(dialog + ' form', f => Array.from(f.querySelectorAll('fieldset:not(.ff-display) > label, .ff-auto-pair button, .ff-preview-actions button')).map(e => e.textContent.replace(/\s+/g, ' ').trim().replace(/ ?(Basic|Low|None).*$/, '')))
+  assert.deepEqual(labels.slice(0, 11), ['Algorithm', 'Extract from selected triangles only', 'Target Quads Count', 'Feature Details', 'Symmetry', "Improve holes' boundaries", 'Draw guide curves on the mesh', 'Remove Last Curve', 'Clear all curves', 'Preview', 'Clear Result'])
+  assert.equal(await page.$eval('[data-test=auto-freeform-algorithm]', e => e.value), 'feature')
+  assert.equal(await page.$eval('[data-test=auto-freeform-algorithm]', e => e.selectedOptions[0].textContent), 'Feature aligned')
   assert.equal(await page.$eval('[aria-label="Target Quads Count"]', e => e.value), 'medium')
+  assert.equal(await page.$eval('[aria-label="Quads"]', e => e.value), '2000')
+  assert.equal(await page.$eval('[aria-label="Quads"]', e => e.disabled), true)
+  assert.equal(await page.$eval('[data-test=auto-freeform-details]', e => e.value), 'balanced')
+  assert.equal(await page.$eval('[aria-label="Symmetry"]', e => e.value), 'none')
+  assert.equal(await page.$eval('[data-test=auto-freeform-selected]', e => e.disabled), true)
+  assert.equal(await page.$eval('[data-test=auto-freeform-holes]', e => e.checked), false)
+  assert.equal(await page.$eval('[data-test=auto-freeform-guides]', e => e.checked), false)
   assert.equal(await page.$eval('[data-test=auto-freeform-ok]', e => e.disabled), true)
+  assert.equal(await page.$eval('[data-test=auto-freeform-clear]', e => e.disabled), true)
+  assert.ok(await page.evaluate(() => document.querySelector('.statusbar, [data-test=status]')?.textContent.includes('Set desired resolution and press Preview.') ?? true))
+  // Basic: the feature controls are not shown, and their room is kept.
+  const previewTop = () => page.$eval('[data-test=auto-freeform-preview]', e => e.getBoundingClientRect().top)
+  const top = await previewTop()
+  await page.select('[data-test=auto-freeform-algorithm]', 'basic')
+  for (const sel of ['[data-test=auto-freeform-details]', '[aria-label="Symmetry"]', '[data-test=auto-freeform-holes]', '[data-test=auto-freeform-guides]']) assert.equal(await visible(sel), false, sel)
+  assert.equal(await previewTop(), top)
+  await page.select('[data-test=auto-freeform-algorithm]', 'feature')
+  assert.equal(await visible('[data-test=auto-freeform-details]'), true)
+  // Help, and More.
+  await page.click('[data-test=auto-freeform-help]')
+  assert.ok(await page.$('[data-test=auto-freeform-help-text]'))
+  await page.click('[data-test=auto-freeform-help]')
+  assert.equal(await page.$('[data-test=auto-freeform-help-text]'), null)
+  assert.equal(await page.$eval('.ff-auto-more', e => e.open), false)
+
   const initialViewport = page.viewport()
   await page.setViewport({ width: 1000, height: 480 })
   assert.ok(await page.$eval(dialog + ' form', e => e.getBoundingClientRect().bottom <= innerHeight))
@@ -42,13 +77,15 @@ try {
   await page.keyboard.press('Escape')
   await page.waitForSelector(dialog, { hidden: true })
   assert.equal(await features(), 0)
+
   await page.click(button)
   await page.waitForSelector(dialog)
   await page.select('[aria-label="Target Quads Count"]', 'custom')
-  await page.$eval('[aria-label="Quads"]', e => { const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; setter.call(e, '99'); e.dispatchEvent(new Event('input', { bubbles: true })) })
-  await page.waitForFunction(() => document.querySelector('[data-test=auto-freeform-ok]').disabled)
-  await page.$eval('[aria-label="Quads"]', e => { const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; setter.call(e, '100'); e.dispatchEvent(new Event('input', { bubbles: true })) })
-  await page.select('[aria-label="Symmetry"]', 'oyz')
+  await type('[aria-label="Quads"]', '99')
+  await page.waitForFunction(() => document.querySelector('[data-test=auto-freeform-preview]').disabled)
+  await type('[aria-label="Quads"]', '200')
+  await page.waitForFunction(() => !document.querySelector('[data-test=auto-freeform-preview]').disabled)
+  // The view turns and zooms with the dialog open.
   const camera = () => page.evaluate(() => {
     const c = window.__scanruler.scene().viewport.camera
     return { quaternion: c.quaternion.toArray(), zoom: c.zoom }
@@ -62,104 +99,131 @@ try {
   await page.mouse.wheel({ deltaY: 200 })
   await page.waitForFunction(z => window.__scanruler.scene().viewport.camera.zoom !== z, {}, cameraBefore.zoom)
   assert.ok(await page.$(dialog))
-  assert.equal(await features(), 0)
-  await page.evaluate(() => { window.__autoTest.gate = true })
+
+  // Escape while a preview is being made: the run is stopped, nothing is left.
   await page.click('[data-test=auto-freeform-preview]')
-  await page.waitForFunction(() => Boolean(window.__autoTest.release), { timeout: 120000 })
   await page.keyboard.press('Escape')
   await page.waitForSelector(dialog, { hidden: true })
-  await page.evaluate(() => { window.__autoTest.gate = false; window.__autoTest.release() })
-  await page.waitForFunction(() => window.__autoTest.completed === 1, { timeout: 180000 })
+  await new Promise(r => setTimeout(r, 1500))
   assert.equal(await features(), 0)
-  assert.equal(await page.evaluate(() => window.__re.reScene().bodyPreview), null)
-  assert.equal(await page.evaluate(() => window.__re.reScene().cagePreview), null)
+  await noPreview()
+
+  // Preview: a surface and its cage on the part, numbers in the dialog, no history.
   await page.click(button)
+  await page.waitForSelector(dialog)
   await page.select('[aria-label="Target Quads Count"]', 'custom')
-  await page.$eval('[aria-label="Quads"]', e => { const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; setter.call(e, '100'); e.dispatchEvent(new Event('input', { bubbles: true })) })
+  await type('[aria-label="Quads"]', '200')
   await page.select('[aria-label="Symmetry"]', 'oyz')
   const undoBefore = await page.evaluate(() => document.querySelector('[data-test=undo]')?.getAttribute('title'))
   assert.equal(typeof undoBefore, 'string')
-  await page.click('[data-test=auto-freeform-preview]')
-  await page.waitForSelector('[data-test=auto-freeform-quads]', { timeout: 180000 })
+  const quads = await preview()
+  assert.ok(quads > 200 && quads < 700, `Feature aligned, Balanced gives about 2.2 × 200 quads: ${quads}`)
   assert.equal(await features(), 0)
   assert.ok(await page.evaluate(() => window.__re.reScene().bodyPreview?.geometry.attributes.position.count > 0))
   assert.ok(await page.evaluate(() => window.__re.reScene().cagePreview?.geometry.attributes.position.count > 0))
   assert.equal(await page.evaluate(() => document.querySelector('[data-test=undo]')?.getAttribute('title')), undoBefore)
   assert.equal(await page.$eval(dialog, e => getComputedStyle(e).backgroundColor), 'rgba(0, 0, 0, 0)')
   assert.ok(await page.$eval(dialog + ' form', e => e.getBoundingClientRect().right < innerWidth / 2))
+  const stats = await page.$eval('[data-test=auto-freeform-stats]', e => e.textContent)
+  assert.match(stats, /Deviation: RMS .*max/)
+  assert.match(stats, /% within/)
+  assert.match(stats, /irregular point/)
+  assert.match(stats, /closed/)
+  assert.equal(await page.$('[data-test=auto-freeform-progress]'), null)
   await page.screenshot({ path: shotPath('auto-freeform-preview.png') })
+
   const displayClick = text => page.$eval('[data-test=freeform-surface-display]', (e, text) => Array.from(e.querySelectorAll('button')).find(b => b.textContent === text).click(), text)
   await displayClick('Deviation')
   await page.waitForSelector('[data-test=freeform-deviation-legend]', { timeout: 120000 })
   assert.ok(await page.evaluate(() => window.__re.reScene().bodyPreview.material.vertexColors))
   assert.ok(await page.evaluate(() => window.__re.reScene().bodyPreview.geometry.attributes.color.count === window.__re.reScene().bodyPreview.geometry.attributes.position.count))
   await displayClick('Options')
-  await page.$eval('[aria-label="Deviation tolerance"]', e => { const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; setter.call(e, '0'); e.dispatchEvent(new Event('input', { bubbles: true })) })
+  await type('[aria-label="Deviation tolerance"]', '0')
   assert.equal(await page.$eval('[data-test=freeform-deviation-options]', e => e.querySelector('[data-test=deviation-options-ok]').disabled), true)
-  await page.$eval('[aria-label="Deviation tolerance"]', e => { const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; setter.call(e, '0.2'); e.dispatchEvent(new Event('input', { bubbles: true })) })
+  await type('[aria-label="Deviation tolerance"]', '0.2')
   await page.click('input[name=preview-colouring][value=pass-fail]')
   await page.click('[data-test=deviation-options-ok]')
   await page.waitForSelector('[data-test=freeform-deviation-options]', { hidden: true })
   assert.ok(await page.$eval('[data-test=freeform-deviation-legend]', e => e.textContent.includes('0.2')))
   assert.ok(await page.evaluate(() => {
     const colours = window.__re.reScene().bodyPreview.geometry.attributes.color.array
-    return Array.from({length: colours.length / 3}, (_, i) => [colours[3*i],colours[3*i+1],colours[3*i+2]]).every(c => (c[0] === 1 && c[1] === 0 && c[2] === 0) || (c[0] === 0 && c[1] === 1 && c[2] === 0))
+    return Array.from({ length: colours.length / 3 }, (_, i) => [colours[3 * i], colours[3 * i + 1], colours[3 * i + 2]]).every(c => (c[0] === 1 && c[1] === 0 && c[2] === 0) || (c[0] === 0 && c[1] === 1 && c[2] === 0))
   }))
   await displayClick('Surface Only (Space)')
   assert.equal(await page.evaluate(() => window.__scanruler.scene().scanShown()), false)
   await page.$eval('[data-test=auto-freeform-dialog] form', e => e.focus())
   await page.keyboard.press('Space')
   assert.equal(await page.evaluate(() => window.__scanruler.scene().scanShown()), true)
-  await page.keyboard.press('Space')
-  assert.equal(await page.evaluate(() => window.__scanruler.scene().scanShown()), false)
   await page.screenshot({ path: shotPath('auto-freeform-deviation.png') })
-  await displayClick('Options')
-  await page.$eval('[aria-label="Deviation tolerance"]', e => { const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; setter.call(e, '9'); e.dispatchEvent(new Event('input', { bubbles: true })) })
-  await page.keyboard.press('Escape')
-  await page.waitForSelector('[data-test=freeform-deviation-options]', { hidden: true })
-  assert.ok(await page.$(dialog))
-  assert.ok(await page.$eval('[data-test=freeform-deviation-legend]', e => e.textContent.includes('0.2')))
-
   await displayClick('Shaded')
   assert.equal(await page.evaluate(() => window.__re.reScene().bodyPreview.material.vertexColors), false)
-  assert.equal(await page.evaluate(() => Boolean(window.__re.reScene().bodyPreview.geometry.attributes.color)), false)
+
+  // Clear Result takes the preview away and greys OK again.
   await page.click('[data-test=auto-freeform-clear]')
-  assert.equal(await page.evaluate(() => window.__scanruler.scene().scanShown()), true)
-  assert.equal(await page.evaluate(() => window.__re.reScene().bodyPreview), null)
-  assert.equal(await page.evaluate(() => window.__re.reScene().cagePreview), null)
+  await noPreview()
+  assert.equal(await page.$eval('[data-test=auto-freeform-ok]', e => e.disabled), true)
   assert.equal(await features(), 0)
-  await page.click('[data-test=auto-freeform-preview]')
-  await page.waitForSelector('[data-test=auto-freeform-quads]', { timeout: 180000 })
+  // The algorithm changed: the result stays until the next Preview. Anything else changed: it goes.
+  await preview()
+  await page.select('[data-test=auto-freeform-algorithm]', 'basic')
+  assert.ok(await page.$('[data-test=auto-freeform-quads]'))
+  await page.select('[data-test=auto-freeform-algorithm]', 'feature')
+  await page.select('[aria-label="Symmetry"]', 'none')
+  await page.waitForSelector('[data-test=auto-freeform-quads]', { hidden: true })
+  await noPreview()
+
+  // Guide curves: two clicks on the mesh and a double-click make one; the keys take it away.
+  await page.click('[data-test=auto-freeform-guides]')
+  assert.equal(await page.$eval('[data-test=auto-freeform-remove-curve]', e => e.disabled), true)
+  const canvas = await page.$eval('.viewport canvas', e => { const r = e.getBoundingClientRect(); return { x: r.left + r.width * 0.42, y: r.top + r.height * 0.45 } })
+  await page.mouse.click(canvas.x - 40, canvas.y)
+  await page.mouse.click(canvas.x + 40, canvas.y + 20)
+  await page.mouse.click(canvas.x + 70, canvas.y - 10, { count: 2 })
+  await page.waitForFunction(() => !document.querySelector('[data-test=auto-freeform-remove-curve]').disabled)
+  await page.screenshot({ path: shotPath('auto-freeform-guide.png') })
+  const withGuide = await preview()
+  assert.ok(withGuide > 0)
+  await page.click('[data-test=auto-freeform-clear-curves]')
+  assert.equal(await page.$eval('[data-test=auto-freeform-remove-curve]', e => e.disabled), true)
+  await page.waitForSelector('[data-test=auto-freeform-quads]', { hidden: true })
+  await page.click('[data-test=auto-freeform-guides]')
+
+  // More: Refine to tolerance adds quads.
+  await page.click('[data-test=auto-freeform-more]')
+  await page.select('[data-test=auto-freeform-algorithm]', 'basic')
+  const plain = await preview()
+  assert.ok(Math.abs(plain - 200) <= 30, `Basic at 200: ${plain}`)
+  await page.click('[data-test=auto-freeform-refine]')
+  await type('[aria-label="Refine tolerance"]', '0.005')
+  const refined = await preview()
+  assert.ok(refined > plain, `refined ${refined} against ${plain}`)
+  await page.click('[data-test=auto-freeform-refine]')
+
+  // Cancel leaves nothing.
   await page.keyboard.press('Escape')
   await page.waitForSelector(dialog, { hidden: true })
-  assert.equal(await page.evaluate(() => window.__re.reScene().bodyPreview), null)
-  assert.equal(await page.evaluate(() => window.__re.reScene().cagePreview), null)
+  await noPreview()
   assert.equal(await features(), 0)
+
+  // OK keeps the previewed cage as a freeform: one feature, one body, one undo step.
   await page.click(button)
   await page.waitForSelector(dialog)
   await page.select('[aria-label="Target Quads Count"]', 'custom')
-  await page.$eval('[aria-label="Quads"]', e => { const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; setter.call(e, '100'); e.dispatchEvent(new Event('input', { bubbles: true })) })
+  await type('[aria-label="Quads"]', '100')
   await page.select('[aria-label="Symmetry"]', 'oyz')
-  await page.click('[data-test=auto-freeform-preview]')
-  await page.waitForSelector('[data-test=auto-freeform-quads]', { timeout: 180000 })
-  await page.select('[aria-label="Symmetry"]', 'none')
-  await page.waitForSelector('[data-test=auto-freeform-quads]', { hidden: true })
-  assert.equal(await page.evaluate(() => window.__re.reScene().bodyPreview), null)
-  assert.equal(await page.evaluate(() => window.__re.reScene().cagePreview), null)
-  await page.select('[aria-label="Symmetry"]', 'oyz')
-  await page.click('[data-test=auto-freeform-preview]')
-  await page.waitForSelector('[data-test=auto-freeform-quads]', { timeout: 180000 })
-  const previewQuads = Number((await page.$eval('[data-test=auto-freeform-quads]', e => e.textContent)).replace(/[^0-9]/g, ''))
+  const previewQuads = await preview()
   await page.screenshot({ path: shotPath('auto-freeform-dialog.png') })
-  const expectedCage = await page.evaluate(() => window.__autoTest.ask)
   await page.click('[data-test=auto-freeform-ok]')
-  await page.waitForSelector(dialog, { hidden: true, timeout: 180000 })
+  await page.waitForSelector(dialog, { hidden: true, timeout: 300000 })
   assert.equal(await features(), 1)
-  const committed = await page.evaluate(() => { const f = window.__re.store.getState().features.find(f => f.kind === 'freeform'); return { positions: f.positions, faces: f.faces, creases: f.creases } })
-  assert.deepEqual(committed, { positions: expectedCage.positions, faces: expectedCage.faces, creases: expectedCage.creases })
-  assert.equal(await page.evaluate(() => window.__re.store.getState().features.find(f => f.kind === 'freeform').faces.length), previewQuads)
-  assert.equal(await page.evaluate(() => window.__re.reScene().bodyPreview), null)
-  assert.equal(await page.evaluate(() => window.__re.reScene().cagePreview), null)
+  const committed = await page.evaluate(() => { const f = window.__re.store.getState().features.find(f => f.kind === 'freeform'); return { positions: f.positions, faces: f.faces.length } })
+  assert.equal(committed.faces, previewQuads)
+  // Symmetric about x = 0: every vertex has its mirror image.
+  const pts = []
+  for (let i = 0; i < committed.positions.length; i += 3) pts.push(committed.positions.slice(i, i + 3))
+  for (const p of pts) assert.ok(pts.some(q => Math.hypot(q[0] + p[0], q[1] - p[1], q[2] - p[2]) < 1e-6), `no mirror image of ${p}`)
+  assert.ok(pts.filter(p => p[0] === 0).length > 4)
+  await noPreview()
   assert.equal(await page.evaluate(() => document.querySelectorAll('[data-test=body-row]').length), 1)
   await page.mouse.move(1200, 700)
   await page.keyboard.down(MOD); await page.keyboard.press('KeyZ'); await page.keyboard.up(MOD)
@@ -167,7 +231,53 @@ try {
   await page.keyboard.down(MOD); await page.keyboard.down('Shift'); await page.keyboard.press('KeyZ'); await page.keyboard.up('Shift'); await page.keyboard.up(MOD)
   await page.waitForFunction(() => document.querySelectorAll('[data-test=body-row]').length === 1, { timeout: 120000 })
   assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), 'dark')
-  assert.deepEqual(consoleErrors, [])
   await page.screenshot({ path: shotPath('auto-freeform-result.png') })
-  console.log('PASS Auto Freeform preview, clear, cancel without mutation, commit with symmetry, undo/redo, dark theme')
+
+  // A real scan, when one is given: Medium, with the page's frames watched, and Stop.
+  if (process.env.SCAN) {
+    await page.keyboard.down(MOD); await page.keyboard.press('KeyZ'); await page.keyboard.up(MOD)
+    await page.waitForFunction(() => document.querySelectorAll('[data-test=feature-row]').length === 0)
+    await loadScan(page, repoFile(process.env.SCAN))
+    await page.click(button)
+    await page.waitForSelector(dialog)
+    await page.select('[data-test=auto-freeform-algorithm]', 'basic')
+    await page.evaluate(() => {
+      const w = window
+      w.__frames = { longest: 0, last: performance.now(), on: true }
+      const tick = () => {
+        const now = performance.now()
+        w.__frames.longest = Math.max(w.__frames.longest, now - w.__frames.last)
+        w.__frames.last = now
+        if (w.__frames.on) requestAnimationFrame(tick)
+      }
+      requestAnimationFrame(tick)
+    })
+    // Stop, mid-run.
+    await page.click('[data-test=auto-freeform-preview]')
+    await page.waitForSelector('[data-test=auto-freeform-progress]', { timeout: 30000 })
+    const stopAt = Date.now()
+    await page.click('[data-test=auto-freeform-stop]')
+    await page.waitForSelector('[data-test=auto-freeform-progress]', { hidden: true, timeout: 5000 })
+    const stopMs = Date.now() - stopAt
+    assert.ok(stopMs < 500, `Stop took ${stopMs} ms`)
+    assert.equal(await page.$('[data-test=auto-freeform-quads]'), null)
+    assert.equal(await page.$eval('[data-test=auto-freeform-preview]', e => e.disabled), false)
+    await noPreview()
+    await page.evaluate(() => { window.__frames.longest = 0; window.__frames.last = performance.now() })
+    const started = Date.now()
+    const real = await preview(300000)
+    const previewMs = Date.now() - started
+    const longestFrame = await page.evaluate(() => { window.__frames.on = false; return window.__frames.longest })
+    const text = await page.$eval('[data-test=auto-freeform-stats]', e => e.textContent)
+    await page.screenshot({ path: shotPath('auto-freeform-real-scan.png') })
+    const record = { scan: process.env.SCAN, algorithm: 'basic', target: 2000, quads: real, previewMs, longestFrameMs: Math.round(longestFrame), stopMs, stats: text }
+    writeFileSync(join(OUT_DIR, 'auto-freeform-real-scan.json'), JSON.stringify(record, null, 2))
+    console.log('REAL SCAN', JSON.stringify(record))
+    assert.ok(Math.abs(real - 2000) / 2000 < 0.08, `Medium on the real scan: ${real}`)
+    assert.ok(longestFrame < 250, `the page went ${Math.round(longestFrame)} ms without a frame during the preview`)
+    await page.keyboard.press('Escape')
+    await page.waitForSelector(dialog, { hidden: true })
+  }
+  assert.deepEqual(consoleErrors, [])
+  console.log('PASS Auto Freeform: dialog layout, worker preview, Stop, guide curves, refine, clear, cancel without mutation, commit with symmetry, undo/redo, dark theme')
 } finally { await browser.close() }

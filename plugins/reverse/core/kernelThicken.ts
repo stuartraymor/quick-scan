@@ -4,7 +4,7 @@
 // the wall it came to, measured along the sheet's edge.
 
 import type { Vec3 } from '../../../src/core/types'
-import { parseHistory, vec } from './kernelMath'
+import { cadEdgeLength, parseHistory, vec } from './kernelMath'
 import { HASH_BOUND, isTrap, KernelError, tracked } from './kernelOps'
 import { rawRefusal } from './kernelShell'
 import type { Shape, Tracked } from './kernelTypes'
@@ -144,7 +144,7 @@ function wallAlongEdge(occt: OcctLike, base: Shape, solid: Shape, from: Readonly
     if (far.length === 0) return null
     const skin = o.makeCompound(far)
     made.push(skin)
-    const lengths = edges.map((e) => o.curveLength(e))
+    const lengths = edges.map((e) => cadEdgeLength(o, e))
     const total = lengths.reduce((a, b) => a + b, 0)
     if (!(total > 0)) return null
     let least = Infinity

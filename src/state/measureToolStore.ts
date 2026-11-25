@@ -10,7 +10,7 @@ import { create } from 'zustand'
 import type { Vec3 } from '../core/types'
 
 /** The dialog's own ways, and a plugin's (`plugin:<id>`). */
-export type MeasureMode = '3d' | 'extended' | 'point' | 'curve' | `plugin:${string}`
+export type MeasureMode = 'adaptive' | '3d' | 'extended' | 'point' | 'curve' | `plugin:${string}`
 
 /** One named result of a readout. Lengths in millimetres, areas in square
  *  millimetres, angles in degrees; a point's coordinates in `point`. */
@@ -46,6 +46,7 @@ export interface MeasureReadout {
  *  would stand between, and that reading — the second of a pair, say,
  *  before its click. Same placing as a readout's. */
 export interface MeasurePreview {
+  pointLabel?: string
   outline: Vec3[][]
   witness: Vec3[]
   row?: MeasureRow
@@ -79,7 +80,7 @@ interface MeasureToolState {
 
 export const useMeasureTool = create<MeasureToolState>((set, get) => ({
   open: false,
-  mode: '3d',
+  mode: 'adaptive',
   items: [],
   pending: null,
   preview: null,
@@ -94,17 +95,17 @@ export const useMeasureTool = create<MeasureToolState>((set, get) => ({
       set({ items: [...items, m] })
       return m
     }
-    if (mode !== '3d' && mode !== 'extended') return null
+    if (mode !== 'adaptive' && mode !== '3d' && mode !== 'extended') return null
     if (!pending) {
       set({ pending: p })
       return null
     }
-    const m: Measurement = { kind: mode, a: pending, b: p }
+    const m: Measurement = { kind: mode === 'adaptive' ? 'extended' : mode, a: pending, b: p }
     set({ items: [...items, m], pending: null })
     return m
   },
   add: (m) => set((s) => ({ items: [...s.items, m] })),
-  deleteAll: () => set({ items: [], pending: null }),
+  deleteAll: () => set({ items: [], pending: null, preview: null }),
   deleteLast: () => set((s) => (s.pending ? { pending: null } : { items: s.items.slice(0, -1) })),
 }))
 

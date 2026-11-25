@@ -34,6 +34,10 @@ function planeKey(ref: PlaneRef): string {
  *  place, not a label. The chosen plane stays shown while the box is open. */
 export function PlaneSelect({ value, testId, placeholder, onChange }: { value: PlaneRef | null; testId: string; placeholder: string; onChange: (ref: PlaneRef) => void }) {
   const options = planeOptions()
+  if (value?.kind === 'world' && !options.some(o => o.key === planeKey(value))) {
+    const name = { x: 'YZ', y: 'XZ', z: 'XY' }[value.axis]
+    options.push({ key: planeKey(value), label: name + ' offset plane', ref: value, group: 'Coordinate planes' })
+  }
   const re = useReverse
   const hint = (key: string | null) => {
     const o = key ? options.find((x) => x.key === key) : undefined

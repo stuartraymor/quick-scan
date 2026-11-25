@@ -142,9 +142,10 @@ export function SketchCornerTrimOverlay({ scene, chainsOf }: { scene: FlatScene 
           built = cache.built
         }
         const touched = built?.touched ?? sweptCandidates(draft.sketch, area).touched
-        // Every piece the area touches, then the pair it is read as.
+        // Every piece the area touches, then the pair it is read as, which
+        // may be reached through its corner point without being touched.
         ctx.strokeStyle = blue; ctx.lineCap = 'round'
-        for (const id of touched) {
+        for (const id of new Set([...touched, ...(built?.pair?.ids ?? [])])) {
           const e = entityOf(draft.sketch, id)
           if (!e) continue
           const chosen = built?.pair?.ids.includes(id)

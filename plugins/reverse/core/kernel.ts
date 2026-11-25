@@ -28,10 +28,14 @@ import { patternPitch } from './features'
 import type { ThreadCut } from './thread'
 import { type FaceHistory, type KernelBounds, type KernelMesh, type LoopPiece, type Profile, type RawEdge, type RawFace, type Shape, type StepLabel, type StepPart, type Tracked, type WasmSource } from './kernelTypes'
 import { type OcctLike, type XcafReader, type XYZ } from './occtTypes'
-import { circleThrough, edgeKindOf, faceKindOf, parseHistory, partName, stepColor, vec, xyz } from './kernelMath'
+import { cadEdgeLength, circleThrough, edgeKindOf, faceKindOf, parseHistory, partName, stepColor, vec, xyz } from './kernelMath'
 import { loopMiddle, rectangleLoop } from './loops'
 import { draftFaces, moveFace, offsetFacesTracked } from './kernelFaces'
-import { asSolid, booleanFuzz, bothFaceHashes, FUZZY_COARSE_MM, fuzzyBooleans, HASH_BOUND, isTrap, keepingSplits, KernelError, readFace, run, tracked, tracedHistory, withSubShapes } from './kernelOps'
+import { asSolid, booleanFuzz, bothFaceHashes, FUZZY_COARSE_MM, fuzzyBooleans, HASH_BOUND, isTrap, keepingSplits, KernelError, pointInside, readFace, run, tracked, tracedHistory, withSubShapes } from './kernelOps'
+import { rollingFaceRound } from './rollingFaceRound'
+import { stationFillet } from './kernelStations'
+import type { BuildStep } from './buildSteps'
+import type { RadiusPoint } from './roundInputs'
 import { fullWidth } from './kernelRounds'
 import { collapsesInward, type FaceOffsetLimit, faceOffsetLimits, mostSpecific, offsetFault, onCopy, rawRefusal, shellByOffsetCut, shellPlain, shellSharpInside } from './kernelShell'
 import { meshEveryFace, meshVolume } from './kernelMesh'
@@ -326,6 +330,8 @@ function oddEdgeText(e: StepEdge): string {
 }
 
 export class ReKernel {
+  private stationKernel?: OcctLike
+  private loadingStations?: Promise<void>
   private readonly occt: OcctLike
   /** What the kernel said when it first trapped inside its WebAssembly, or
    *  null: once set it is broken, and is let go (reService.ts). */
@@ -335,6 +341,7 @@ export class ReKernel {
     occt: OcctLike,
     /** The OCCT version the package reports, for the imprint and the log. */
     readonly version: string,
+    private readonly workerAssets: boolean,
   ) {
     this.occt = watchTraps(occt, (message) => {
       this.trapped ??= message
@@ -349,10 +356,20 @@ export class ReKernel {
       OcctKernel: { init(options?: { wasm?: WasmSource }): Promise<unknown> }
     }
     const kernel = (await mod.OcctKernel.init(wasm === undefined ? undefined : { wasm })) as OcctLike
-    return new ReKernel(kernel, 'OCCT 8.0.1 via occt-wasm 5.7.1')
+    return new ReKernel(kernel, 'OCCT 8.0.1 via occt-wasm 5.7.1', wasm !== undefined)
   }
 
-  private wire(loop: readonly LoopPiece[]): Shape {
+  async prepareStations(steps: readonly BuildStep[]): Promise<void> {
+    if (!steps.some(s => s.kind === 'fillet' && s.variable?.some(v => v.transition !== 'linear' && (v.chain || v.points?.length)))) return
+    this.loadingStations ??= (async () => {
+      const { OcctKernel } = await import('occt-stations')
+      const wasm = this.workerAssets ? (await import('occt-stations/dist/occt-wasm.wasm?url')).default : undefined
+      this.stationKernel = await OcctKernel.init({ wasm }) as unknown as OcctLike
+    })().catch(error => { this.loadingStations = undefined; throw error })
+    await this.loadingStations
+  }
+
+  wire(loop: readonly LoopPiece[]): Shape {
     if (loop.length === 0) throw new KernelError('A profile loop has no edges.')
     const edges = loop.map((piece) => {
       switch (piece.kind) {
@@ -549,6 +566,12 @@ export class ReKernel {
     })
   }
 
+  revolveSheet(piece: LoopPiece, origin: Vec3, axis: Vec3, sweep: number): Shape {
+    const wire = this.wire([piece])
+    try { return this.occt.revolve(wire, { point: xyz(origin), direction: xyz(axis) }, sweep) as Shape }
+    finally { this.release(wire) }
+  }
+
   /** An exact bounded face from polynomial poles and knots. The returned
    *  face owns its handle independently of the temporary imported shell. */
   surfaceFromControlNet(surface: PolynomialSurface): Shape {
@@ -614,12 +637,13 @@ export class ReKernel {
 
   /** A solid through the outer loops of the profiles, in order — ruled
    *  (straight between them) or smooth. */
-  loft(profiles: readonly Profile[], ruled: boolean): Shape {
+  loft(profiles: readonly Profile[], ruled: boolean, solid = true): Shape {
     return run('Lofting', () => {
       if (profiles.length < 2) throw new KernelError('a loft needs two or more profiles.')
       const wires = profiles.map((p) => this.wire(p.outer))
       try {
-        return asSolid(this.occt, this.occt.loft(wires, true, ruled))
+        const shape = this.occt.loft(wires, solid, ruled)
+        return solid ? asSolid(this.occt, shape) : shape as Shape
       } finally {
         for (const w of wires) this.occt.release(w)
       }
@@ -974,6 +998,30 @@ export class ReKernel {
     })
   }
 
+  /** Independent solids, open shells and lone faces of a sewn compound. */
+  trimComponents(shape: Shape): Shape[] {
+    const o = this.occt
+    if (o.getShapeType(shape) !== 'compound') return []
+    const nested = new Set<number>()
+    const parts: Shape[] = []
+    try {
+      for (const kind of ['solid', 'shell', 'face'] as const) {
+        for (const handle of o.getSubShapes(shape, kind)) {
+          const hash = o.hashCode(handle, HASH_BOUND)
+          if (nested.has(hash)) { o.release(handle); continue }
+          parts.push(handle as Shape)
+          nested.add(hash)
+          const children = kind === 'solid' ? ['shell', 'face'] as const : kind === 'shell' ? ['face'] as const : []
+          for (const child of children) for (const h of o.getSubShapes(handle, child)) {
+            nested.add(o.hashCode(h, HASH_BOUND))
+            o.release(h)
+          }
+        }
+      }
+      return parts.sort((a, b) => this.surfaceArea(b) - this.surfaceArea(a))
+    } catch (error) { this.release(...parts); throw error }
+  }
+
   /** A box with these corners. */
   box(min: Vec3, max: Vec3): Shape {
     return run('Making the box', () => {
@@ -1091,18 +1139,42 @@ export class ReKernel {
       return this.roundOnCopy(solid, edgeHashes, (copy, hashes) =>
         fullWidth(this.occt, this, copy, radius, (r) =>
           withSubShapes(this.occt, copy, 'edge', hashes, (edges) => tracked(this.occt, this.occt.filletWithHistory(copy, edges, r, this.faceHashes(copy), HASH_BOUND))),
+          hashes,
         ),
       )
     })
+  }
+
+  rollingFaceRound(solid: Shape, faces: number[], rails: number[], caps: number[]): Tracked {
+    return run('Face round', () => withSubShapes(this.occt, solid, 'face', [...faces, ...caps], handles =>
+      withSubShapes(this.occt, solid, 'edge', rails, edges => {
+        const shape = rollingFaceRound(this.occt, solid, handles.slice(0, 3), edges, handles.slice(3))
+        try { return { shape, history: tracedHistory(this.occt, [solid], shape) } }
+        catch (error) { this.release(shape); throw error }
+      })))
   }
 
   /** One edge rounded at a radius running evenly from `r1` at its start —
    *  the end where the edge's curve begins, the first of `edges`' ends — to
    *  `r2` at its other end, on a copy of the solid. The kernel tracks no
    *  history for it: the caller traces the faces by where they lie. */
-  filletVariable(solid: Shape, edgeHash: number, r1: number, r2: number): Shape {
+  filletVariable(solid: Shape, edgeHash: number, r1: number, r2: number, points: RadiusPoint[] = [], chain: readonly number[] = [edgeHash]): Shape {
     return run('Filleting', () => {
       if (!(r1 > 0 && r2 > 0)) throw new KernelError('the radii must be positive.')
+      if (points.length || chain.length > 1) {
+        const aux = this.stationKernel
+        if (!aux) throw new Error('The variable-radius solver has not loaded.')
+        const original = this.occt.subShapeHashes(solid, 'edge', HASH_BOUND)
+        const copy = aux.fromBREPBinary(this.occt.toBREPBinary(solid))
+        const edges = aux.getSubShapes(copy, 'edge')
+        try {
+          const wanted = chain.map(hash => edges[original.indexOf(hash)])
+          if (edges.length !== original.length || wanted.some(h => h === undefined)) throw new Error('Could not transfer the selected edges.')
+          const made = stationFillet(aux, copy, wanted, [r1, r2], points)
+          try { return this.occt.fromBREPBinary(aux.toBREPBinary(made)) as Shape }
+          finally { aux.release(made) }
+        } finally { edges.forEach(h => aux.release(h)); aux.release(copy) }
+      }
       return this.shapeOnCopy(solid, [edgeHash], (copy, hashes) => withSubShapes(this.occt, copy, 'edge', hashes, ([edge]) => asSolid(this.occt, this.occt.filletVariable(copy, edge, r1, r2))))
     })
   }
@@ -1115,6 +1187,7 @@ export class ReKernel {
       return this.roundOnCopy(solid, edgeHashes, (copy, hashes) =>
         fullWidth(this.occt, this, copy, distance, (d) =>
           withSubShapes(this.occt, copy, 'edge', hashes, (edges) => tracked(this.occt, this.occt.chamferWithHistory(copy, edges, d, this.faceHashes(copy), HASH_BOUND))),
+          hashes,
         ),
       )
     })
@@ -1465,6 +1538,24 @@ export class ReKernel {
     return run('Copying the face', () => withSubShapes(this.occt, shape, 'face', [faceHash], ([f]) => this.occt.copy(f) as Shape))
   }
 
+  maxFaceCurvature(shape: Shape, hash: number): number {
+    return withSubShapes(this.occt, shape, 'face', [hash], ([f]) => {
+      const uv = this.occt.uvBounds(f)
+      const c = this.occt.surfaceCurvature(f, (uv.uMin + uv.uMax) / 2, (uv.vMin + uv.vMax) / 2)
+      return Math.max(Math.abs(c.min), Math.abs(c.max))
+    })
+  }
+
+  /** Find a unique trimmed edge through the supplied points after a local rebuild. */
+  edgeThroughPoints(shape: Shape, length: number, points: readonly Vec3[], tolerance: number): number | null {
+    const edges = this.occt.getSubShapes(shape, 'edge')
+    try {
+      const matching = edges.filter(edge => Math.abs(this.occt.curveLength(edge) - length) < tolerance &&
+        points.every(p => this.distanceToPoint(edge as Shape, p) < tolerance))
+      return matching.length === 1 ? this.occt.hashCode(matching[0], HASH_BOUND) : null
+    } finally { for (const edge of edges) this.occt.release(edge) }
+  }
+
   /** A face's unit normals at the points of it nearest `points`, by the
    *  face's hash — the surface's own normal there, which way the face looks
    *  aside: a patch held tangent to the face reads a line, not a side. */
@@ -1477,6 +1568,25 @@ export class ReKernel {
         }),
       ),
     )
+  }
+
+  trimPlane(shape: Shape): RawFace | null {
+    const faces = this.occt.getSubShapes(shape, 'face')
+    try {
+      return faces.length === 1 && faceKindOf(this.occt.surfaceType(faces[0])) === 'plane'
+        ? readFace(this.occt, faces[0]) : null
+    } finally { for (const face of faces) this.occt.release(face) }
+  }
+
+  interiorPoint(shape: Shape): Vec3 | null {
+    const faces = this.occt.getSubShapes(shape, 'face')
+    try {
+      for (const face of faces) {
+        const p = pointInside(this.occt, face)
+        if (p) return vec(p)
+      }
+      return null
+    } finally { for (const face of faces) this.occt.release(face) }
   }
 
   /** Each face of a shape by its hash with a point on it: its surface at
@@ -1659,15 +1769,29 @@ export class ReKernel {
     })
   }
 
-  /** Total length of edges incident to only one face. */
+  /** Draw only physical openings. A periodic face meets itself at its seam. */
+  openEdgePolylines(shape: Shape, deflection: number): Float32Array[] {
+    const free = new Set(this.oddEdges(shape).edges.filter(e => e.kind === 'free').map(e => e.hash))
+    if (!free.size) return []
+    const { points, edgeGroups } = this.occt.wireframe(shape, deflection)
+    const lines: Float32Array[] = []
+    for (let i = 0; i + 2 < edgeGroups.length; i += 3) {
+      const offset = edgeGroups[i], count = edgeGroups[i + 1], hash = edgeGroups[i + 2]
+      if (free.has(hash) && count > 0) lines.push(points.slice(offset, offset + count))
+    }
+    return lines
+  }
+
+  /** Total length of physical boundary edges. */
   openEdgeLength(shape: Shape, rectangularFaces = false): number {
+    if (!rectangularFaces) return this.oddEdges(shape).edges.reduce((sum, e) => e.kind === 'free' ? sum + e.length : sum, 0)
     return run('Measuring open edges', () => {
       const o = this.occt
       const facesOf = this.edgeFaces(shape, rectangularFaces)
       const edges = o.getSubShapes(shape, 'edge')
       try {
         return edges.reduce((sum, edge) =>
-          facesOf.get(o.hashCode(edge, HASH_BOUND))?.length === 1 ? sum + o.curveLength(edge) : sum, 0)
+          facesOf.get(o.hashCode(edge, HASH_BOUND))?.length === 1 ? sum + cadEdgeLength(o, edge) : sum, 0)
       } finally {
         for (const edge of edges) o.release(edge)
       }
@@ -1721,18 +1845,21 @@ export class ReKernel {
       try {
         return handles.map((e) => {
           const hash = o.hashCode(e, HASH_BOUND)
-          const kind = edgeKindOf(o.curveType(e))
+          const curveType = o.curveType(e)
+          const kind = edgeKindOf(curveType)
           const { first, last } = o.curveParameters(e)
           const at = (t: number): Vec3 => vec(o.curvePointAtParam(e, first + (last - first) * t))
           const mid = at(0.5)
-          const length = o.curveLength(e)
+          const length = cadEdgeLength(o, e, curveType)
           let dir: Vec3 = canonicalDir(vec(o.curveTangent(e, (first + last) / 2)))
           let radius: number | undefined
+          let center: Vec3 | undefined
           if (kind === 'circle') {
             const c = circleThrough(at(0.25), at(0.5), at(0.75))
             if (c) {
               dir = canonicalDir(c.axis)
               radius = c.radius
+              center = c.center
             }
           }
           const tangentAt = (t: number): Vec3 => normalize(vec(o.curveTangent(e, first + (last - first) * t))) ?? [0, 0, 1]
@@ -1747,7 +1874,9 @@ export class ReKernel {
             ends: [at(0), at(1)],
             endTangents: [tangentAt(0), tangentAt(1)],
           }
-          return radius === undefined ? base : { ...base, radius }
+          if (radius === undefined) return base
+          const complete = Math.abs(length - 2 * Math.PI * radius) <= 1e-10 * length
+          return { ...base, radius, center, quadrants: complete ? [base.ends[0], at(0.25), mid, at(0.75)] : undefined }
         })
       } finally {
         for (const e of handles) o.release(e)
@@ -1821,6 +1950,10 @@ export class ReKernel {
 
   faceCount(shape: Shape): number {
     return run('Counting faces', () => this.occt.subShapeCount(shape, 'face'))
+  }
+
+  wireCount(shape: Shape): number {
+    return run('Counting boundary wires', () => this.occt.subShapeCount(shape, 'wire'))
   }
 
   /** How many shells each solid of a shape has, solid by solid: one for a

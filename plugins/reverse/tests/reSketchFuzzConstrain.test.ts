@@ -30,6 +30,7 @@ import { useRePrefs } from '../state/rePrefs'
 import { DEFAULT_DRAW_MODES, setCircularDimensioning } from '../core/draw'
 import { fixId, type Constraint, type Sketch, type SketchEntity } from '../core/sketch'
 import { XY } from './reKit'
+import {auditDistance} from './sketchDistanceOracle'
 
 vi.setConfig({ testTimeout: 4 * 3600_000 })
 
@@ -92,6 +93,10 @@ const unit = (v: V2): V2 | null => {
  *  sketch module, so the check does not share the product's mistakes. */
 function anchorAt(e: SketchEntity | undefined, at: string): V2 | null {
   if (!e) return null
+  if ((e.kind === 'circle' || e.kind === 'arc') && /^q[0-3]$/.test(at)) {
+    const [dx, dy] = [[1,0], [0,1], [-1,0], [0,-1]][Number(at[1])]
+    return [e.c[0] + dx * e.r, e.c[1] + dy * e.r]
+  }
   switch (e.kind) {
     case 'line':
       return at === 'a' ? e.a : at === 'b' ? e.b : at === 'center' ? [(e.a[0] + e.b[0]) / 2, (e.a[1] + e.b[1]) / 2] : null
@@ -162,19 +167,7 @@ function dimensionReads(sk: Sketch, c: Constraint): number | null {
       return c.kind === 'radius' ? e.r : 2 * e.r
     }
     case 'distance': {
-      const p = anchorAt(E.get(c.p.entity), c.p.at)
-      if (!p) return null
-      if ('datum' in c.q) {
-        const o = datumOffset(c.q.datum, p)
-        return o === null ? null : Math.abs(o)
-      }
-      if ('line' in c.q) {
-        const l = lineOf(c.q.line)
-        const d = l ? unit(sub(l.b, l.a)) : null
-        return l && d ? Math.abs(cross(d, sub(p, l.a))) : null
-      }
-      const q = anchorAt(E.get(c.q.entity), c.q.at)
-      return q ? dist(p, q) : null
+      return auditDistance(sk,c)
     }
     case 'angle': {
       const la = lineOf(c.a)
@@ -372,7 +365,8 @@ function finiteDeep(x: unknown): boolean {
   return true
 }
 
-const VALID_AT: Record<string, string[]> = { line: ['a', 'b', 'center'], arc: ['a', 'b', 'center', 'p0'], circle: ['center'], point: ['center'] }
+const quadrants = ['q0', 'q1', 'q2', 'q3']
+const VALID_AT: Record<string, string[]> = { line: ['a', 'b', 'center'], arc: ['a', 'b', 'center', 'p0', ...quadrants], circle: ['center', ...quadrants], point: ['center'] }
 
 /** The largest numeric difference between two values of the same shape, or
  *  Infinity where their shapes differ. */
@@ -551,7 +545,8 @@ class Runner {
       known.methods.add(m)
       softErrors.set(d.error, known)
       if (!d.error.trim() || /undefined|NaN|\[object|Infinity|null/.test(d.error)) this.fail('unreadable-error', `${where}: "${d.error}"`)
-      if (json !== before.json || d.history.length !== before.hist) this.fail(`refusal-changed-sketch:${m}`, `${where} said "${d.error}" but changed the sketch (history ${before.hist}→${d.history.length})`)
+      const original = (m === 'sketchDragEnd' && this.drag) ? this.drag.before : before
+      if (json !== original.json || d.history.length !== original.hist) this.fail(`refusal-changed-sketch:${m}`, `${where} said "${d.error}" but changed the sketch (history ${original.hist}→${d.history.length})`)
     }
 
     // Nothing an add or a drag does takes a relation away.
@@ -580,23 +575,31 @@ class Runner {
 
     // A piece that was whole and is now (next to) a point — unless a value
     // typed made it so small, or it is a step given back by undo or redo.
-    if (json !== before.json && !RESTORERS.has(m)) {
-      const was = new Map(before.sketch.entities.map((e) => [e.id, size(e)]))
+    const start = m === 'sketchDragEnd' && this.drag ? this.drag.before : before
+    if (json !== start.json && !RESTORERS.has(m)) {
+      const was = new Map(start.sketch.entities.map((e) => [e.id, size(e)]))
       const tinyTyped = sk.constraints.some((c) => 'value' in c && c.kind !== 'angle' && c.value < 0.05)
       for (const e of sk.entities) {
         const w = was.get(e.id)
         const now = size(e)
         if (w === undefined || tinyTyped || !(w >= 1e-3)) continue
-        if (degenerate(e) || (now < 1e-2 * w && now < 0.05)) this.fail(`collapsed:${e.kind}:${m}:${before.report?.ok ? 'from-solved' : 'from-unsolved'}`, `${where} shrank ${e.kind} ${e.id} from ${w.toPrecision(6)} to ${now.toExponential(3)} (${geometryOf(e)}); report ok=${rep?.ok}`)
+        if (degenerate(e) || (now < 1e-2 * w && now < 0.05)) this.fail(`collapsed:${e.kind}:${m}:${start.report?.ok ? 'from-solved' : 'from-unsolved'}`, `${where} shrank ${e.kind} ${e.id} from ${w.toPrecision(6)} to ${now.toExponential(3)} (${geometryOf(e)}); report ok=${rep?.ok}`)
       }
     }
 
     // A relation asked for twice is taken twice.
     if (m === 'addRelation' || (m === 'sketchClick' && before.tool === 'relation')) {
-      const key = (c: Constraint) => `${c.kind}:${ids(c).sort((x, y) => x - y).join(',')}`
+      const anchorKey = (a: {entity: number; at: string}) => `${a.entity}/${a.at}`
+      const key = (c: Constraint) => {
+        if (c.kind === 'coincident') return 'coincident:' + [anchorKey(c.p), anchorKey(c.q)].sort().join(',')
+        if (c.kind === 'pointOn') return `pointOn:${anchorKey(c.p)}:${JSON.stringify(c.on)}:${!!c.bounded}`
+        if (c.kind === 'symmetric') return `symmetric:${[anchorKey(c.p), anchorKey(c.q)].sort()}:${JSON.stringify(c.about)}`
+        if (c.kind === 'collinear' && 'datum' in c.on) return `collinear:${c.line}:${c.on.datum}`
+        return `${c.kind}:${ids(c).sort((x, y) => x - y).join(',')}`
+      }
       const had = new Set(before.sketch.constraints.map(key))
       const added = sk.constraints.filter((c) => !before.sketch.constraints.some((b) => b.id === c.id))
-      for (const c of added) if (had.has(key(c))) this.fail(`ux:duplicate-relation-accepted:${c.kind}`, `${where} added ${describeC(c)} again (redundant=${rep?.redundant})`)
+      for (const c of added) if (had.has(key(c))) this.fail(`ux:duplicate-relation-accepted:${c.kind}`, `${where} added ${describeC(c)} beside ${before.sketch.constraints.filter(old => key(old) === key(c)).map(describeC).join(', ')} (redundant=${rep?.redundant})`)
       if (added.length && before.report?.ok && rep && !rep.ok) this.fail(`ux:conflicting-relation-kept:${added[0].kind}`, `${where} added ${added.map(describeC).join('; ')}; unmet now ${show(rep.unmet)} (shown as ⚠, no refusal)`)
     }
     if (INTENT.has(m) && json === before.json && !d.error && d.tool === before.tool && (d.armedRelation ?? null) === before.armed && (d.dimMade ?? null) === before.dimMade && m !== 'setDimensionValue') {
@@ -1267,13 +1270,13 @@ describe('2D Sketch: relations, dimensions and dragging at random', () => {
     const generatedMs = Date.now() - started
 
     // Each signature shrunk to the fewest calls that still show it.
-    const report: { sig: string; workflows: number; seed: number; detail: string; minimal: string; minimalDetail: string }[] = []
+    const report: { sig: string; workflows: number; seed: number; detail: string; minimal: string; minimalDetail: string; original: string; originalSteps: Step[] }[] = []
     for (const [sig, g] of [...groups].sort((a, b) => b[1].count - a[1].count)) {
       await breathe()
       const small = sig.startsWith('ux:') ? g.first.steps : shrink(g.first.steps, sig)
       const again = replay(small)
       const f = [...again.failures, ...again.ux].find((x) => x.sig === sig)
-      report.push({ sig, workflows: g.count, seed: g.first.seed, detail: g.first.detail, minimal: sig.startsWith('ux:') ? '(not shrunk)' : code(small), minimalDetail: f?.detail ?? '(did not reproduce on replay)' })
+      report.push({ sig, workflows: g.count, seed: g.first.seed, detail: g.first.detail, minimal: sig.startsWith('ux:') ? '(not shrunk)' : code(small), minimalDetail: f?.detail ?? '(did not reproduce on replay)', original: code(g.first.steps), originalSteps: g.first.steps })
     }
     const errors = [...softErrors].sort((a, b) => b[1].count - a[1].count).map(([msg, v]) => ({ msg, count: v.count, methods: [...v.methods], example: v.example }))
     const failing = report.filter((x) => !x.sig.startsWith('ux:'))

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { pointValueCache } from './pointValueCache'
 import { emptyHit, NominalSurface } from '../../../../src/core/deviation/surface'
+import { scanSupportsPoint } from '../../../../src/core/deviation/onReference'
 
 /** Signed distance at surface vertices, relative to the reference scan winding. */
 export function previewDeviation(positions: Float32Array, scan: NominalSurface): Float32Array {
@@ -17,7 +18,7 @@ export function previewDeviation(positions: Float32Array, scan: NominalSurface):
  * exactly identical Float32 coordinates; tolerances never enter the cache key.
  * A changed scan must get a new sampler (including a winding/transform change).
  */
-export function deviationSampler(scan: NominalSurface, capacity = 200_000): (positions: Float32Array) => Float32Array {
+export function deviationSampler(scan: NominalSurface, capacity = 200_000, requireSupport = false): (positions: Float32Array) => Float32Array {
   if (!Number.isInteger(capacity) || capacity < 1) throw new Error('Invalid deviation cache capacity.')
   const cache = pointValueCache(capacity)
   const hit = emptyHit()
@@ -30,7 +31,7 @@ export function deviationSampler(scan: NominalSurface, capacity = 200_000): (pos
       if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) { values[i] = NaN; continue }
       const a=bits[i*3], b=bits[i*3+1], c=bits[i*3+2], known=cache.get(a,b,c)
       if (known !== undefined) { values[i]=known; continue }
-      const value = scan.closest(x,y,z,hit) ? hit.signed : NaN
+      const value = scan.closest(x,y,z,hit) && (!requireSupport || scanSupportsPoint(x,y,z,hit)) ? hit.signed : NaN
       values[i] = value
       // Unavailable correspondence must remain unavailable, never a passing value.
       if (Number.isFinite(value)) cache.set(a,b,c,value)

@@ -12,11 +12,12 @@
 // writing their word itself; how typed text in inches is kept is said in
 // reLength.ts.
 
-import { useRef, useState, type KeyboardEvent } from 'react'
+import { useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { useUnits } from '../../../src/app/useUnits'
 import { unitWord } from '../../../src/core/units'
 import { formatValue, type ParameterKind } from '../core/expression'
 import { useReverse } from '../state/reStore'
+import { finishingSizeError, setFinishingFieldError } from '../state/finishingInput'
 import { fieldText, isNumericLiteral, readField } from './reLength'
 
 /** The id of the datalist of parameter names, rendered once by the
@@ -35,6 +36,8 @@ export function ExprInput({
   passKeys,
   onCommit,
   onEnter,
+  live = false,
+  finishingLength = false,
 }: {
   value: number
   /** The expression behind the value, or none. */
@@ -56,44 +59,68 @@ export function ExprInput({
   passKeys?: { enter: () => void }
   /** The number read, and the expression it was typed as — null for a
    *  plain number. */
-  onCommit: (value: number, expr: string | null) => void
+  onCommit: (value: number, expr: string | null) => boolean | void
   /** Enter, once the text has been taken. */
   onEnter?: () => void
+  live?: boolean
+  finishingLength?: boolean
 }) {
   const scope = useReverse((s) => s.parameterTable.scope)
   const units = useUnits()
   const [error, setError] = useState<string | null>(null)
   const shown = expr ?? fieldText(value, kind, places, units)
+  const field = useRef<HTMLInputElement>(null)
+  const original = useRef({ value, expr })
+  useLayoutEffect(() => {
+    if (live && field.current && document.activeElement !== field.current) field.current.value = shown
+  }, [live, shown])
   const word = unit === '' ? '' : kind === 'length' ? unitWord(units) : (unit ?? '')
   const result = formatValue(value, kind, units)
   // Whether the box was typed in since it last showed its value. The box
   // shows a rounded number: one typed over with the same figures is meant
   // exactly — "6" over a stored 5.9999997 makes it 6 — while a box only
   // looked at changes nothing.
+  useLayoutEffect(() => {
+    if (!finishingLength) return
+    return () => setFinishingFieldError(testId, null)
+  }, [finishingLength, testId, units])
+  const validate = (text: string) => {
+    const r = readField(text, kind, scope, units)
+    if (!finishingLength) return r
+    const message = !text ? 'Enter a size.' : !r.ok ? r.error : finishingSizeError(r.value, units)
+    setFinishingFieldError(testId, message)
+    return message ? { ok: false as const, error: message } : r
+  }
   const typedIn = useRef(false)
   const take = (input: HTMLInputElement): boolean => {
     const t = input.value.trim()
-    const retyped = typedIn.current && !expr && t === shown
+    const retyped = !live && typedIn.current && !expr && t === shown
     typedIn.current = false
-    if (t === '' || (t === shown && !retyped)) {
+    if ((!finishingLength && t === '') || (t === shown && !retyped && !error)) {
+      if (finishingLength) setFinishingFieldError(testId, null)
       setError(null)
       return true
     }
-    const r = readField(t, kind, scope, units)
+    const r = validate(t)
     if (!r.ok) {
       setError(r.error)
       return false
     }
     setError(null)
+    if (live && r.value === value && (r.expr ?? null) === (expr ?? null)) return true
     if (min !== undefined && r.value < min) {
       if (r.expr && !isNumericLiteral(t)) {
         setError('The expression gives a depth below zero.')
         return false
       }
       input.value = fieldText(min, kind, places, units)
-      onCommit(min, null)
-    } else {
-      onCommit(r.value, r.expr)
+    }
+    const limited = min !== undefined && r.value < min
+    if (onCommit(limited ? min : r.value, limited ? null : r.expr) === false) {
+      // A refused edit keeps the previous model value, so the input key
+      // stays the same. Restore its displayed value explicitly.
+      input.value = shown
+      return false
     }
     return true
   }
@@ -112,9 +139,14 @@ export function ExprInput({
       // The field's own: the old text comes back, and the key goes no
       // further to put a tool or a selection down.
       e.preventDefault()
-      e.currentTarget.value = shown
+      if (finishingLength) setFinishingFieldError(testId, null)
+      if (live) {
+        onCommit(original.current.value, original.current.expr ?? null)
+        e.currentTarget.value = original.current.expr ?? fieldText(original.current.value, kind, places, units)
+        typedIn.current = false
+      } else e.currentTarget.value = shown
       setError(null)
-      e.currentTarget.blur()
+      if (!finishingLength) e.currentTarget.blur()
     }
   }
   return (
@@ -127,12 +159,26 @@ export function ExprInput({
           autoComplete="off"
           list={PARAMETER_NAMES_LIST}
           data-test={testId}
+          aria-invalid={finishingLength && error ? true : undefined}
           data-dimension={dataDimension}
           data-pass-undo={shown}
-          key={shown}
+          ref={field}
+          key={live ? testId + (finishingLength ? units : '') : shown}
           defaultValue={shown}
           title={expr ? `${expr} = ${result}` : undefined}
-          onInput={() => { typedIn.current = true }}
+          onFocus={() => { original.current = { value, expr } }}
+          onInput={e => {
+            typedIn.current = true
+            if (!live && !finishingLength) return
+            const text = e.currentTarget.value.trim()
+            const read = validate(text)
+            if (finishingLength) setError(read.ok ? null : read.error)
+            if (!live) return
+            if (text && read.ok && (min === undefined || read.value >= min)) {
+              setError(null)
+              onCommit(read.value, read.expr)
+            }
+          }}
           onBlur={(e) => take(e.currentTarget)}
           onKeyDown={keys}
         />

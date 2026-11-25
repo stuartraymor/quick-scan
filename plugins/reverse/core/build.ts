@@ -1,3 +1,13 @@
+import type { BlendSection } from './blendDrag'
+import { cylinderEdgeFillet, straightEdgeBlend } from './straightEdgeBlend'
+import { linearVariableRound } from './linearVariableRound'
+import { grooveChamfer } from './grooveChamfer'
+import { conicalRimChamfer } from './conicalRimChamfer'
+import { cylindricalRimCut } from './cylindricalRimCut'
+import { shoulderBlend } from './shoulderBlend'
+import { boreEdgeChamfer } from './boreEdgeChamfer'
+import { boreEntranceFillet } from './boreEntranceFillet'
+import { miterChamfer } from './miterChamfer'
 import { snapRayReach, type SnapQuery } from './freeform/snap'
 // SPDX-License-Identifier: AGPL-3.0-only
 import { deviationSampler } from './freeform/previewDeviation'
@@ -20,6 +30,10 @@ import { deviationSampler } from './freeform/previewDeviation'
 import { buildEditedSurface, polynomialOfFit } from './editedSurface'
 import type { NominalSurface } from '../../../src/core/deviation/surface'
 import { emptyHit } from '../../../src/core/deviation/surface'
+import { computeVertexNormals } from '../../../src/core/geometry/normals'
+import { roundSurface } from './roundSurface'
+import { extractedSurface } from './extractedSurface'
+import { mutualTrim, previewTrimPiece, trimSheetPieces } from './mutualTrim'
 import type { Vec3 } from '../../../src/core/types'
 import { addScaled, cross, dot, len, normalize, scale, sub } from '../../../src/core/vec'
 import { frameKey, sketchFrameOn } from '../../../src/core/section/frame'
@@ -37,6 +51,10 @@ import { carriedHeight, controlNetOf, fitSurfaceReported, GRID_AREA_SLACK, GRID_
 import { fieldAt, type NearScan, offPastRegion, PAST_REGION_MM, pastRegion, regionOutline } from './surfaceRegion'
 import { constrainCylinder, constrainPlane, cylinderPatch, planePatch, type ConstrainRef } from './autoConstrain'
 import { surfaceOfMeshes } from './liveMap'
+import { sheetBend } from './sheetBend'
+import { crossingCylinderFillet, validateCrossingChamfer } from './crossingCylinderFinish'
+import { faceRound } from './faceRound'
+import { roundRoles, type RoundGroups } from './roundInputs'
 import { describeEdge, describeFace, edgeDistance, faceDistance, matchEdge, matchFace, matchTolerance, type MatchTolerance, splitEdges, tangentChain, type EdgeFingerprint, type FaceFingerprint } from './topo'
 import { livePicks, runStoredWhere, sharpBySurfaces, type StoredPick, whereWords } from './where'
 import { type Body, bodyBrief, type BodyCheck, type BodyStep, boxesMeet, type BuildResult, type BuildSteps, type BuiltBody, type Diagnosis, diagonalOf, type EdgeBrief, type EdgeInfo, type FaceInfo, type FeatureResult, type FilletTries, type FilletTry, halton, type KeptBuild, type Look, meshBox, meshDeflection, type Overlap, pickEach, type PlacedSketch, type PrefixNode, type PreviewResult, type PreviewStep, type RoundTrip, type RoundTripFind, type SketchStep, type Snapshot, type SolidStep, SPLIT_SAMPLES, stepKeys, surfaceMeshDeflection, SURFACE_TRIANGLES, type OffScanReport, type SurfaceReport, type TrimReport } from './buildTypes'
@@ -189,6 +207,7 @@ export class Builder {
   private measureDeviation: ReturnType<typeof deviationSampler> | null = null
   /** The scan's vertices, the frame the bodies are built in — what a
    *  surface is fitted through, by the region's indices. */
+  private scanNormals: Float32Array | null = null
   private scanPositions: Float32Array | null = null
 
   /** The builder's state after every step of the builds it made, in a
@@ -313,7 +332,8 @@ export class Builder {
     return this.measureDeviation!(positions)
   }
 
-  setScan(surface: NominalSurface | null, positions: Float32Array | null = null): void {
+  setScan(surface: NominalSurface | null, positions: Float32Array | null = null, normals: Float32Array | null = null): void {
+    this.scanNormals = normals
     this.scan = surface
     this.measureDeviation = surface ? deviationSampler(surface) : null
     this.scanPositions = positions
@@ -460,47 +480,100 @@ export class Builder {
    *  faces that makes tested against the scan, the ones lying on it sewn
    *  — a solid when they close, a surface body of the kept faces with its
    *  open edges otherwise. See features.ts TrimFeature. */
-  private trimOf(step: Extract<BuildStep, { kind: 'trim' }>): { shape: Shape; report: TrimReport; surface: boolean } {
+  private trimOf(step: Extract<BuildStep, { kind: 'trim' }>, preview = false): { shape: Shape; report: TrimReport; surface: boolean } {
     const k = this.kernel
+    if (step.removed) {
+      if (step.primitives.length) throw new Error('Choose sheet bodies for manual trim.')
+      if (step.removed.some(p => !step.bodies.includes(p.body))) throw new Error('A selected piece belongs to a sheet outside the trim.')
+      return mutualTrim(k, step.bodies.map(id => {
+        const sheet = this.bodyBefore(step.id, id)
+        if (!sheet?.surface) throw new Error('A sheet selected for manual trim is missing or is a solid.')
+        return { id, shape: sheet.shape }
+      }), step.removed, preview, step.mergeFaces)
+    }
     if (!this.scan) throw new Error('The scan is not here to trim against.')
     const tools: Shape[] = []
     const made: Shape[] = []
     try {
-      // A surface fitted as a plane or a cylinder cuts as the whole plane or
-      // cylinder, like a measured element: its drawn patch ends where its
-      // region did, grown by a share, and two such patches need not reach
-      // each other at a corner the scan rounded off.
       const whole: TrimPrimitive[] = []
+      const sourceId = new Map<TrimPrimitive | Shape, number>()
+      const sheets: Shape[] = []
       for (const id of step.bodies) {
-        const b = this.bodyById(id)
-        if (!b) throw new Error('A surface this trim closes is gone, or failed to build.')
-        const p = this.fittedFor(id, b, 'trim')
-        if (p) whole.push(p)
-        else tools.push(b.shape)
+        const body = this.bodyById(id)
+        if (!body) throw new Error('A surface this trim closes is gone, or failed to build.')
+        if (body.surface) sheets.push(body.shape)
+        const primitive = this.fittedFor(id, body, 'trim')
+        sourceId.set(primitive ?? body.shape, id)
+        if (primitive) whole.push(primitive)
+        else tools.push(body.shape)
       }
-      const box = this.trimBox(tools)
-      const diagonal = Math.hypot(box.max[0] - box.min[0], box.max[1] - box.min[1], box.max[2] - box.min[2])
-      for (const p of [...whole, ...step.primitives]) {
-        const s = this.trimPrimitive(p, diagonal)
-        made.push(s)
-        tools.push(s)
+      const faces: Shape[] = []
+      const owner = new Map<Shape, number>()
+      const onlySheets = !step.primitives.length && sheets.length === step.bodies.length
+      if (onlySheets && sheets.length >= 2 && (!whole.length || sheets.length === 2)) {
+        // Keep the fitted bounds when two sheets cut one another. For a pair
+        // with an analytical fit, retain the carrier fallback for gaps.
+        const pieces: Shape[][] = []
+        for (const [i, sheet] of sheets.entries()) {
+          const split = trimSheetPieces(k, sheet, sheets.filter((_, j) => j !== i), SHEET_SEW_MM)
+          for (const piece of split) owner.set(piece, step.bodies[i])
+          made.push(...split)
+          pieces.push(split)
+        }
+        if (!whole.length || pieces.every(split => split.length > 1)) faces.push(...pieces.flat())
       }
-      const solidBox = k.box(box.min, box.max)
-      made.push(solidBox)
-      const faces = k.splitFaces(solidBox, tools)
-      const kept: Shape[] = []
-      for (const f of faces) {
+      if (!faces.length) {
+        // Analytical carriers can close a rounded scan corner even when the
+        // selected patches stop short of each other.
+        owner.clear()
+        const box = this.trimBox(tools)
+        const diagonal = Math.hypot(box.max[0] - box.min[0], box.max[1] - box.min[1], box.max[2] - box.min[2])
+        for (const primitive of [...whole, ...step.primitives]) {
+          const carrier = this.trimPrimitive(primitive, diagonal)
+          made.push(carrier)
+          tools.push(carrier)
+          if (sourceId.has(primitive)) sourceId.set(carrier, sourceId.get(primitive)!)
+        }
+        const solidBox = k.box(box.min, box.max)
+        made.push(solidBox)
+        faces.push(...k.splitFaces(solidBox, tools))
+        made.push(...faces)
+        if (preview && onlySheets) {
+          // Identify each cut cell by the bounded tool face it lies on.
+          // The surrounding box is scaffolding and has no input body.
+          const carriers = tools.flatMap(tool => {
+            const own = k.facesOf(tool)
+            made.push(...own)
+            return own.map(face => ({ face, id: sourceId.get(tool)! }))
+          })
+          for (const face of faces) {
+            const at = k.interiorPoint(face)
+            if (!at) continue
+            const carrier = carriers.find(c => k.distanceToPoint(c.face, at) < SHEET_SEW_MM)
+            if (carrier) owner.set(face, carrier.id)
+          }
+        }
+      }
+      const corrections = new Map<Shape, boolean>()
+      for (const edit of step.corrections ?? []) {
+        const matches = faces.filter(f => k.distanceToPoint(f, edit.at) < SHEET_SEW_MM)
+        if (matches.length !== 1) throw new Error('A corrected trim piece changed. Apply Automatic Trimming again to clear its picks.')
+        corrections.set(matches[0], edit.keep)
+      }
+      const kept = faces.filter(f => {
+        if (corrections.has(f)) return corrections.get(f)!
         const share = this.onScanShare(f, step.tolerance)
-        if (share !== null && share >= step.overlap) kept.push(f)
-        else k.release(f)
-      }
+        return share !== null && share >= step.overlap
+      })
       // units-ok: build message, also the agent's answer
       if (kept.length === 0) throw new Error(`None of the ${faces.length} faces the tools cut lies on the scan within ${step.tolerance} mm — widen the tolerance, or add the surfaces the part still lacks.`)
-      const sewn = k.sewFaces(kept, step.tolerance)
-      k.release(...kept)
+      const fragments = preview && kept.every(f => owner.has(f))
+        ? faces.filter(f => owner.has(f)).flatMap(f => previewTrimPiece(k, f, owner.get(f)!, !kept.includes(f), []) ?? [])
+        : []
+      const sewn = step.mergeFaces === false ? k.sewPatches(kept, step.tolerance, true) : k.sewFaces(kept, step.tolerance)
       const closed = k.isClosedSolid(sewn)
-      const openEdges = closed ? [] : k.edges(sewn, meshDeflection(diagonalOf(this.kernel, sewn))).filter((e) => e.faceHashes.length < 2).map((e) => e.polyline)
-      return { shape: sewn, report: { faces: faces.length, kept: kept.length, closed, openEdges }, surface: !closed }
+      const openEdges = closed ? [] : k.openEdgePolylines(sewn, meshDeflection(diagonalOf(this.kernel, sewn)))
+      return { shape: sewn, report: { faces: faces.length, kept: kept.length, closed, openEdges, ...(fragments.length > 0 && fragments.length === owner.size ? { pieces: fragments } : {}) }, surface: !closed }
     } finally {
       k.release(...made)
     }
@@ -745,6 +818,11 @@ export class Builder {
       if (step.shape !== 'freeform') throw Error('Control-pole edits require a freeform surface.')
       return buildEditedSurface(this.kernel, step.controlSurface, xyz)
     }
+    if (step.shape === 'cone' || step.shape === 'sphere') {
+      if (!this.scanNormals && this.scan) this.scanNormals = computeVertexNormals(scan, this.scan.index)
+      if (!this.scanNormals) throw new Error('Reload the reference mesh to fit its marked vertices.')
+      return roundSurface(this.kernel, step.shape, scan, this.scanNormals, step.region, xyz, step.fit.expandPct)
+    }
     if (step.shape === 'plane' || step.shape === 'cylinder') return this.primitiveSurface(step, xyz)
     const { fit, worst, dropped, strays } = fitSurfaceReported(xyz, step.fit, step.facing)
     const face = this.faceThrough(fit)
@@ -810,10 +888,23 @@ export class Builder {
       else if (p.kind === 'cylinder') refs.push({ key: `surface:${s.id}`, kind: 'axis', name: s.name, origin: p.origin, dir: p.axis })
     }
     const points = xyz.length / 3
+    const useSelection = step.fit.primitiveSolver === 'extract'
+    if (useSelection && !this.scanNormals && this.scan && this.scanPositions) {
+      this.scanNormals = computeVertexNormals(this.scanPositions, this.scan.index)
+    }
+    if (useSelection && !this.scanNormals) throw new Error('Reload the reference mesh to fit its marked vertices with scan normals.')
+    const shared = useSelection && this.scanPositions && this.scanNormals
+      ? extractedSurface(step.shape === 'plane' ? 'plane' : 'cylinder', this.scanPositions, this.scanNormals, step.region, refs, step.constrain, step.fit.constraintTolerances)
+      : undefined
     if (step.shape === 'plane') {
-      const fit = constrainPlane(xyz, refs, step.constrain)
+      const plane = shared?.held.kind === 'plane' ? shared.held : undefined
+      const fit = plane && shared ? { ...shared, origin: plane.center, normal: plane.normal } : constrainPlane(xyz, refs, step.constrain)
       if (!fit) throw new Error('The region has no plane through it — its points lie in a line.')
-      const patch = planePatch(xyz, fit, step.fit.expandPct)
+      const margin = 1 + 2*step.fit.expandPct/100
+      const patch = plane ? {
+        u: plane.basisU, v: plane.basisV, width: 2*plane.extentU*margin, height: 2*plane.extentV*margin,
+        corner: addScaled(addScaled(plane.center, plane.basisU, -plane.extentU*margin), plane.basisV, -plane.extentV*margin),
+      } : planePatch(xyz, fit, step.fit.expandPct)
       const face = k.face({ outer: rectangleLoop(patch.corner, patch.u, patch.v, patch.width, patch.height), holes: [] })
       return {
         face,
@@ -821,9 +912,10 @@ export class Builder {
         primitive: { kind: 'plane', origin: fit.origin, normal: fit.normal, basisU: patch.u, basisV: patch.v },
       }
     }
-    const fit = constrainCylinder(xyz, refs, step.constrain)
+    const cylinder = shared?.held.kind === 'cylinder' ? shared.held : undefined
+    const fit = cylinder && shared ? { ...shared, origin: cylinder.center, axis: cylinder.axis, radius: cylinder.radius } : constrainCylinder(xyz, refs, step.constrain)
     if (!fit) throw new Error('No cylinder was found through the region — mark more of the round, or fit it as a freeform surface.')
-    const patch = cylinderPatch(xyz, fit, step.fit.expandPct)
+    const patch = cylinderPatch(xyz, fit, step.fit.expandPct, shared ? 0 : undefined)
     const on = (angle: number): Vec3 => addScaled(addScaled(fit.origin, patch.u, fit.radius * Math.cos(angle)), patch.v, fit.radius * Math.sin(angle))
     const pieces: LoopPiece[] = patch.full
       ? [{ kind: 'circle', center: fit.origin, normal: fit.axis, radius: fit.radius }]
@@ -1545,7 +1637,7 @@ export class Builder {
       const origin = sides.reduce((o, f) => Math.max(o, f.origin), -1)
       const fingerprint: EdgeFingerprint = { kind: e.kind, mid: e.mid, dir: e.dir, length: e.length, faces: sides.map((f) => ({ kind: f.kind, dir: f.dir })), origin }
       if (e.radius !== undefined) fingerprint.radius = e.radius
-      return { hash: e.hash, fingerprint, faces: e.faceHashes, ends: e.ends, endTangents: e.endTangents, polyline: e.polyline }
+      return { hash: e.hash, fingerprint, center: e.center, quadrants: e.quadrants, faces: e.faceHashes, ends: e.ends, endTangents: e.endTangents, polyline: e.polyline }
     })
     return { faces, edges }
   }
@@ -2018,6 +2110,11 @@ export class Builder {
   private sheetPlaced(step: Extract<BuildStep, { kind: 'sheet' }>): Extract<BuildStep, { kind: 'sheet' }> {
     const placed = this.placed.get(step.sketchId)
     if (!placed?.changed) return step
+    if (step.profile) {
+      const profile = loftProfile(placed, this.placedRegions(step.sketchId), 'the planar surface')
+      if (typeof profile === 'string') throw new Error(profile)
+      return { ...step, profile, dir: placed.frame.normal }
+    }
     return { ...step, pieces: sketchPieces(placed), dir: placed.frame.normal }
   }
 
@@ -2119,8 +2216,31 @@ export class Builder {
       }
     }
     if (step.kind === 'fill') throw new Error('A Fill Surface is built, not previewed: its face is made when the list is built.')
-    if (step.kind === 'extend') throw new Error('An Extend Surface is built, not previewed: its face is made when the list is built.')
+    if (step.kind === 'extend') {
+      const face = this.extendOf(step)
+      try { return { mesh: k.mesh(face, surfaceMeshDeflection(diagonalOf(k,face))), closed: false, volume: 0, sheetFaces: k.faceCount(face) } }
+      finally { k.release(face) }
+    }
     const began = performance.now()
+    let section: BlendSection | undefined
+    let bodyNote: string | undefined
+    let finishFaces: number[] | undefined
+    const previewBody = (step: BodyStep) => {
+      const made = this.applyToBody(step)
+      if (step.kind === 'fillet' || step.kind === 'chamfer') {
+        const before = this.bodyFor(step).origins
+        const inherited = new Set(before.keys())
+        // Boolean history includes the cutting tool. Its contact face becomes
+        // the finish and must be measured along with rolling-ball surfaces.
+        for (const [source, descendants] of made.history) {
+          if (before.has(source)) for (const hash of descendants) inherited.add(hash)
+        }
+        finishFaces = k.faceHashes(made.shape).filter(hash => !inherited.has(hash))
+      }
+      section = made.section
+      bodyNote = made.note
+      return made.shape
+    }
     const solid =
       step.kind === 'extrude' || step.kind === 'revolve'
         ? this.solidOf(step, sketch)
@@ -2139,8 +2259,8 @@ export class Builder {
               : step.kind === 'surface'
                 ? this.surfaceOf(step)
                 : step.kind === 'trim'
-                  ? this.trimOf(step)
-                  : this.applyToBody(step).shape
+                  ? this.trimOf(step, true)
+                  : previewBody(step)
     const stepMs = performance.now() - began
     const shape = typeof solid === 'number' ? solid : 'face' in solid ? solid.face : solid.shape
     try {
@@ -2149,12 +2269,12 @@ export class Builder {
       if (typeof solid !== 'number') return { mesh, volume: solid.surface ? 0 : k.volume(shape), closed: solid.report.closed, trim: solid.report }
       const onBody = step.kind !== 'extrude' && step.kind !== 'revolve' && step.kind !== 'extract' && step.kind !== 'sheet' && step.kind !== 'loft' && step.kind !== 'sweep' && step.kind !== 'thicken' && step.kind !== 'duplicateFace'
       // A pattern of a sheet is a sheet: faces to count, no volume to read.
-      if (onBody && k.isSurface(shape)) return { mesh, volume: 0, closed: false, sheetFaces: k.faceCount(shape) }
+      if ((onBody || step.kind === 'sheet' || step.kind === 'duplicateFace' || (step.kind === 'loft' && step.surface)) && k.isSurface(shape)) return { mesh, volume: 0, closed: false, sheetFaces: k.faceCount(shape) }
       const closed = k.isClosedSolid(shape)
       // A round or a shell that left no closed solid says where, as a
       // failed one does.
       const failure = !closed && (step.kind === 'fillet' || step.kind === 'chamfer' || step.kind === 'shell') ? this.diagnose(step, stepMs) : null
-      return { mesh, volume: k.volume(shape), closed, ...(onBody ? { edges: true } : {}), ...(failure ? { failure } : {}) }
+      return { mesh, volume: k.volume(shape), closed, finishFaces, ...(section ? { section } : {}), ...(bodyNote ? { note: bodyNote } : {}), ...(onBody ? { edges: true } : {}), ...(failure ? { failure } : {}) }
     } finally {
       k.release(shape)
     }
@@ -2319,7 +2439,7 @@ export class Builder {
     return out
   }
 
-  private applyToBody(step: BodyStep): Tracked & { consumed?: number[]; edges?: EdgeBrief[]; copies?: Map<number, number>; patches?: Map<number, number>; fit?: SurfaceFitResult; offScan?: OffScanReport[] } {
+  private applyToBody(step: BodyStep): Tracked & { section?: BlendSection; consumed?: number[]; edges?: EdgeBrief[]; copies?: Map<number, number>; patches?: Map<number, number>; fit?: SurfaceFitResult; offScan?: OffScanReport[] } {
     const k = this.kernel
     const body = this.bodyFor(step)
     switch (step.kind) {
@@ -2330,6 +2450,16 @@ export class Builder {
       }
       case 'fillet':
       case 'chamfer': {
+        if (step.kind === 'fillet' && step.roundFaces) {
+          if (body.surface) throw new Error('Full round requires a solid. For a joined sheet, select a shared edge and use a radius fillet.')
+          const groups: RoundGroups<number> = { left: [], center: [], right: [] }
+          for (const role of roundRoles) {
+            const found = this.findFaces(step.body, step.roundFaces[role], step.id)
+            if ('lost' in found) throw new Error(`The ${role} face is gone: ${found.lost}.`)
+            groups[role] = found.hashes
+          }
+          return faceRound(k, body.shape, groups, step.chain)
+        }
         const varying = step.kind === 'fillet' ? (step.variable ?? []) : []
         const found = step.edges.length > 0 || varying.length === 0 ? this.findEdges(step.body, step.edges, step.id, { asked: step.edgesWhere }) : { hashes: [] }
         if ('lost' in found) throw new Error(`The edge this ${step.kind} was on is gone (was: ${found.lost}).`)
@@ -2341,6 +2471,14 @@ export class Builder {
         // the plain round would take the varying edge before its own round
         // — and the varying round takes the chain anyway.
         const at = varying.length > 0 ? this.varyingEdges(step.body, varying, step.id) : []
+        if (body.surface) {
+          const selected = new Set([...picked, ...at])
+          const unsupported = all.find(e => selected.has(e.hash) && (e.faces.length !== 2 || e.faces[0] === e.faces[1]))
+          if (unsupported) {
+            const why = unsupported.faces.length < 2 ? 'a free boundary' : unsupported.faces.length > 2 ? 'a non-manifold junction' : 'a periodic seam'
+            throw new Error(`The selected ${describeEdge(unsupported.fingerprint)} is ${why}. Select the shared bend between two faces, or join the adjoining sheets first.`)
+          }
+        }
         const theirs = new Set(at.length > 0 ? tangentChain(all, at, splitEdges(topology)) : [])
         const hashes = picked.filter((h) => !theirs.has(h))
         const merged = found.hashes.filter((h) => theirs.has(h) && !at.includes(h)).length
@@ -2355,11 +2493,68 @@ export class Builder {
         }
         const edges = hashes.flatMap(brief)
         this.edgesInPlay = edgesAsked(step.kind === 'fillet' ? 'round' : 'bevel', [...hashes, ...at], all, body.origins, [...found.hashes, ...at])
+        if (!body.surface && varying.length === 0 && hashes.length === 1 && edges[0]?.kind === 'circle') {
+          const symmetric = step.kind === 'fillet' || !step.mode ||
+            (step.mode === 'twoDistances' && (step.distance2 ?? step.distance) === step.distance)
+          const pick = all.find(e => e.hash === hashes[0])
+          const supports = pick?.fingerprint.faces.map(f => f.kind) ?? []
+          if (symmetric && pick?.quadrants && supports.includes('cylinder')) {
+            let turned: Tracked | null = null
+            if (step.kind === 'chamfer' && supports.includes('torus')) turned = grooveChamfer(k, body.shape, hashes[0], step.distance)
+            if (supports.includes('plane')) turned = shoulderBlend(k, body.shape, topology, pick, step.kind === 'fillet' ? step.radius : step.distance, step.kind)
+            if (turned) return { ...turned, edges }
+          }
+        }
         if (step.skipFailing && varying.length === 0) return this.roundWhatHolds(step, body, hashes, all, splitEdges(topology), brief)
-        if (step.kind === 'chamfer' && step.mode) return { ...this.chamferSided(step, body, hashes), edges }
         if (varying.length === 0) {
-          const made = step.kind === 'fillet' ? k.filletTracked(body.shape, hashes, step.radius) : k.chamferTracked(body.shape, hashes, step.distance)
-          return { ...made, edges }
+          const single = !step.chain && hashes.length === 1 && edges[0]?.kind === 'line'
+          const sided = step.kind === 'chamfer' && step.mode ? {
+            want: step.mode === 'twoDistances'
+              ? { mode: step.mode, distance: step.distance, distance2: step.distance2 ?? step.distance }
+              : { mode: step.mode, distance: step.distance, angleDeg: step.angleDeg ?? 45 },
+            flip: step.flip ?? false,
+          } : undefined
+          const local = () => straightEdgeBlend(k, body.shape, hashes[0], step.kind === 'fillet' ? step.radius : step.distance, step.kind, sided)
+          // The native kernel takes an entire tangent contour even for one
+          // hash. Respect an explicit single span before invoking that solver.
+          const bounded = !body.surface && single && tangentChain(all, hashes, splitEdges(topology)).length > 1
+          // Pocket rounds can make the implicit contour builder fail before
+          // it returns a recoverable error. Resolve this explicit selection
+          // first when its supporting geometry is present.
+          const bore = !body.surface && !step.chain && step.kind === 'chamfer' && !step.mode && edges.some(e => e.kind === 'line') &&
+            topology.faces.some(f => f.fingerprint.kind === 'torus')
+            ? boreEdgeChamfer(k, body.shape, hashes, step.distance) : null
+          const section = bore ?? (bounded ? local() : null)
+          if (section) return { ...section, edges }
+          const crossing = !body.surface && hashes.length === 1 && !step.chain
+            ? all.find(e => e.hash === hashes[0] && e.fingerprint.kind === 'other' &&
+              e.fingerprint.faces.length === 2 && e.fingerprint.faces.every(f => f.kind === 'cylinder'))
+            : undefined
+          let made: Tracked
+          try {
+            made = step.kind === 'fillet' ? k.filletTracked(body.shape, hashes, step.radius)
+              : step.mode ? this.chamferSided(step, body, hashes) : k.chamferTracked(body.shape, hashes, step.distance)
+          } catch (error) {
+            if (body.surface || step.chain || isTrap(error)) throw error
+            let recovered = single && !bounded ? local() : null
+            if (!recovered && hashes.length === 1 && edges[0]?.kind === 'circle' &&
+                (!sided || (step.kind === 'chamfer' && sided.want.mode === 'twoDistances' && sided.want.distance2 === step.distance))) {
+              const rim = all.find(e => e.hash === hashes[0])
+              if (rim) recovered = cylindricalRimCut(k, body.shape, topology, rim, step.kind === 'fillet' ? step.radius : step.distance, step.kind)
+            }
+            if (!recovered && step.kind === 'chamfer' && hashes.length === 1 && edges[0]?.kind === 'circle' &&
+                (!sided || (sided.want.mode === 'twoDistances' && sided.want.distance2 === step.distance))) {
+              const rim = all.find(e => e.hash === hashes[0] && e.fingerprint.faces.some(f => f.kind === 'cone'))
+              if (rim) recovered = conicalRimChamfer(k, body.shape, topology, rim, step.distance)
+            }
+            if (!recovered && single && step.kind === 'fillet') recovered = cylinderEdgeFillet(k, body.shape, hashes[0], step.radius)
+            if (!recovered && crossing && step.kind === 'fillet') recovered = crossingCylinderFillet(k, body.shape, crossing, all, topology.faces, step.radius)
+            if (!recovered && step.kind === 'fillet' && hashes.length >= 3) recovered = boreEntranceFillet(k, body.shape, hashes, step.radius)
+            if (!recovered && step.kind === 'chamfer' && !step.mode && hashes.length > 1) recovered = miterChamfer(k, body.shape, hashes, step.distance)
+            if (!recovered) throw error
+            made = recovered
+          }
+          return { ...(crossing && step.kind === 'chamfer' ? validateCrossingChamfer(k, made) : made), edges }
         }
         return { ...this.roundVarying(step as Extract<BodyStep, { kind: 'fillet' }>, body, hashes, varying, at), edges: [...edges, ...at.flatMap(brief)] }
       }
@@ -2488,7 +2683,7 @@ export class Builder {
       }
       case 'offsetBody':
         // Every face of an offset is new, and the offset's own.
-        return { shape: k.offsetSolid(body.shape, step.distance), history: new Map() }
+        return { shape: body.surface ? k.offsetSheet(body.shape, step.distance) : k.offsetSolid(body.shape, step.distance), history: new Map() }
       case 'pattern': {
         const row = k.pattern(body.shape, step.mode, step.origin, step.dir, step.count, step.step)
         let shape = row
@@ -2624,7 +2819,7 @@ export class Builder {
     const holds = (hs: readonly number[]): Tracked | null => {
       try {
         const r = op(hs)
-        if (k.isClosedSolid(r.shape)) return r
+        if (body.surface ? k.isSurface(r.shape) : k.isClosedSolid(r.shape)) return r
         k.release(r.shape)
       } catch (e) {
         // A trap goes on at once: the kernel is broken from it on.
@@ -2682,8 +2877,19 @@ export class Builder {
           hash = t.edges[j].hash
         }
         const before = k.faces(current.shape)
-        const next = k.filletVariable(current.shape, hash, v.radius[0], v.radius[1])
-        const history = this.geometricHistory(before, next)
+        let chain = [hash]
+        if (v.chain ?? (v.points?.length && step.chain)) {
+          const topology = this.topology(current.shape === body.shape ? body : { ...body, shape: current.shape, origins }, 1)
+          chain = tangentChain(topology.edges, [hash], splitEdges(topology))
+        }
+        if (body.surface && (v.points?.length || chain.length > 1))
+          throw new Error('Interior radius stations and varying chains require a solid. Use start and end radii on one sheet bend.')
+        if (v.transition === 'linear' && (body.surface || chain.length > 1))
+          throw new Error('A linear radius transition needs a single straight edge of a solid. Turn off tangent propagation or select Smooth.')
+        const linear = v.transition === 'linear' ? linearVariableRound(k, current.shape, hash, v.radius, v.points) : undefined
+        const next = linear ? linear.shape : body.surface ? sheetBend(k, current.shape, hash, { mode: 'variable', radii: v.radius })
+          : k.filletVariable(current.shape, hash, v.radius[0], v.radius[1], v.points, chain)
+        const history = linear?.history ?? this.geometricHistory(before, next)
         origins = this.propagate(next, origins, history, step.id)
         if (current.shape !== body.shape) k.release(current.shape)
         current = { shape: next, history: composeHistory(current.history, history) }
@@ -2709,6 +2915,15 @@ export class Builder {
   chamferSided(step: Extract<BuildStep, { kind: 'chamfer' }>, body: Body, hashes: readonly number[], scale = 1): Tracked {
     const k = this.kernel
     const want: SidedChamfer = step.mode === 'twoDistances' ? { mode: 'twoDistances', distance: step.distance, distance2: step.distance2 ?? step.distance } : { mode: 'distanceAngle', distance: step.distance, angleDeg: step.angleDeg ?? 45 }
+    if (body.surface) {
+      if (hashes.length !== 1) throw new Error('Select one sheet bend per asymmetric chamfer.')
+      const scaled: SidedChamfer = want.mode === 'twoDistances'
+        ? { ...want, distance: want.distance * scale, distance2: want.distance2 * scale }
+        : { ...want, distance: want.distance * scale }
+      const shape = sheetBend(k, body.shape, hashes[0], scaled, step.flip)
+      try { return { shape, history: k.tracedHistory(body.shape, shape) } }
+      catch (error) { k.release(shape); throw error }
+    }
     const topology = this.topology(body, 1)
     const all = topology.edges
     const splits = splitEdges(topology)
@@ -3820,7 +4035,17 @@ export class Builder {
           }
           own.set(f.hash, maker)
         }
-        this.bodies.set(step.id, { name: step.name, shape, origins: own, surface })
+        const parts = step.groupFaces === false ? k.trimComponents(shape) : []
+        if (parts.length > 1) {
+          k.release(shape)
+          for (const [index, part] of parts.entries()) {
+            const id = index === 0 ? step.id : this.freshId(step.id)
+            this.bodies.set(id, { name: `${step.name} (${index + 1})`, shape: part, origins: own, surface: !k.isClosedSolid(part) })
+          }
+        } else {
+          k.release(...parts)
+          this.bodies.set(step.id, { name: step.name, shape, origins: own, surface })
+        }
         results.push({ id: step.id, status: 'ok', trim: report })
         return
       }
@@ -3868,8 +4093,8 @@ export class Builder {
         results.push({ id: step.id, status: 'ok', surface: report })
         return
       }
-      if (step.kind === 'sheet') {
-        const sheet = this.sheetOf(step)
+      if (step.kind === 'sheet' || (step.kind === 'loft' && step.surface)) {
+        const sheet = step.kind === 'sheet' ? this.sheetOf(step) : this.loftOf(step)
         if (!k.isSurface(sheet)) {
           k.release(sheet)
           fail(step.id, 'The sheet did not come out as a surface.')
@@ -3962,12 +4187,8 @@ export class Builder {
       // An offset that keeps its body is a body of its own beside it.
       if (step.kind === 'offsetBody' && step.keep) {
         const source = this.bodyFor(step)
-        if (source.surface) {
-          fail(step.id, 'A sheet has no inside to offset — offset a solid.')
-          return
-        }
-        const grown = k.offsetSolid(source.shape, step.distance)
-        const bodies = this.settle(this.freshId(step.id), step.name, grown, new Map(k.faceHashes(grown).map((h) => [h, step.id])), step.id)
+        const grown = source.surface ? k.offsetSheet(source.shape, step.distance) : k.offsetSolid(source.shape, step.distance)
+        const bodies = this.settle(this.freshId(step.id), step.name, grown, new Map(k.faceHashes(grown).map((h) => [h, step.id])), step.id, source.surface)
         results.push({ id: step.id, status: 'ok', bodies })
         return
       }
@@ -3990,13 +4211,8 @@ export class Builder {
       const before = new Map(body.origins)
       const intoPieces = step.kind === 'boolean' ? this.bodyFamily(step).slice(1) : []
       for (const id of step.kind === 'boolean' ? [...this.toolFamily(step), ...intoPieces] : []) for (const [h, o] of this.bodies.get(id)?.origins ?? []) before.set(h, o)
-      // A sheet is a cutter, not a body to fillet or shell — but it can be
-      // patterned: the four cutters round a wheel are one sheet and its
-      // copies; and trimmed before it is thickened: split by sheets or
-      // solids, cut or intersected by a solid, sewn to another sheet. The
-      // result stays a sheet.
-      if (body.surface && step.kind !== 'pattern' && step.kind !== 'split' && step.kind !== 'boolean') {
-        fail(step.id, 'A sheet is not worked on as a solid — split a body with it, or thicken it first. A sheet takes a Pattern, a Split (by sheets or solids) and a Combine (trimmed by a solid, or sewn to a sheet).')
+      if (body.surface && !['offsetBody', 'pattern', 'split', 'boolean', 'fillet', 'chamfer'].includes(step.kind)) {
+        fail(step.id, 'This operation requires a solid. Thicken the sheet or join and close its boundaries first.')
         return
       }
       // A Combine is held to its volume identity: the volumes before it,
@@ -4109,7 +4325,7 @@ export class Builder {
       if (trimmed && result.fit) trimmed.fit = result.fit
       // No longer the whole patch it was fitted as (fittedFor); once
       // joined, never again one surface.
-      if (trimmed && (step.kind === 'split' || step.kind === 'boolean')) trimmed.reshaped = body.reshaped === 'joined' || (step.kind === 'boolean' && step.op === 'join') ? 'joined' : 'trimmed'
+      if (trimmed && (step.kind === 'split' || step.kind === 'boolean' || step.kind === 'fillet' || step.kind === 'chamfer')) trimmed.reshaped = body.reshaped === 'joined' || (step.kind === 'boolean' && step.op === 'join') ? 'joined' : 'trimmed'
       if (split) this.saySplit(step.kind === 'cutPlane' ? `The cut ${planeWords(step.plane.origin, step.plane.normal)}` : 'The combine', body.name, settled, step.id)
       results.push({ id: step.id, status: 'ok', ...(result.note ? { note: result.note } : {}), ...(result.edges ? { edges: result.edges } : {}), ...(step.kind === 'boolean' ? { took: tools.length } : {}), ...(result.offScan ? { offScan: result.offScan } : {}) })
     } catch (e) {
@@ -4434,6 +4650,55 @@ export class Builder {
    *  diagnosis naming them is handed back in place of a solid. */
   private thickenOf(step: Extract<BuildStep, { kind: 'thicken' }>): { made: Thickened; sheet: Body } | Diagnosis {
     const sheet = this.sheetFor(step)
+    if (step.constraint) {
+      const k = this.kernel
+      const { mode, plane, end } = step.constraint
+      const dir = plane.normal
+      let lo = step.side === 'out' ? 0 : step.side === 'in' ? -step.thickness : -step.thickness / 2
+      let hi = lo + step.thickness
+      const caps: { origin: Vec3; outward: Vec3 }[] = []
+      if (mode !== 'direction') {
+        const span = reachAlong(k, [sheet.shape], plane.origin, dir)
+        // Bound the sweep with the entire CAD bounding box, including curved extrema.
+        const box = k.bounds(sheet.shape)
+        const corners = [box.min[0], box.max[0]].flatMap(x => [box.min[1], box.max[1]].flatMap(y =>
+          [box.min[2], box.max[2]].map(z => dot(sub([x, y, z], plane.origin), dir))))
+        if (mode === 'toPlane') {
+          if (span.min < -1e-6 && span.max > 1e-6) throw new Error('The end plane crosses the sheet. Select a plane on one side.')
+          const sign = span.max > 1e-6 ? -1 : 1
+          lo = sign < 0 ? -Math.max(...corners) - 1 : 0
+          hi = sign > 0 ? -Math.min(...corners) + 1 : 0
+          caps.push({ origin: plane.origin, outward: scale(dir, sign) })
+        } else {
+          if (!end || Math.abs(dot(end.normal, dir)) < 1 - 1e-9) throw new Error('Choose two parallel limit planes.')
+          const gap = dot(sub(end.origin, plane.origin), dir)
+          if (Math.abs(gap) < 1e-6) throw new Error('The limit planes coincide.')
+          lo = Math.min(0, gap) - Math.max(...corners) - 1
+          hi = Math.max(0, gap) - Math.min(...corners) + 1
+          caps.push({ origin: plane.origin, outward: scale(dir, -Math.sign(gap)) }, { origin: end.origin, outward: scale(dir, Math.sign(gap)) })
+        }
+      }
+      const faces = k.facesOf(sheet.shape)
+      const prisms: Shape[] = []
+      try {
+        for (const face of faces) prisms.push(k.extrude(face, dir, lo, hi))
+        let solid = fuseAll(k, prisms.splice(0))
+        try {
+          for (const cap of caps) {
+            const half = k.halfSpace(cap.origin, cap.outward)
+            try {
+              const clipped = k.cut(solid, half)
+              k.release(solid)
+              solid = clipped
+            } finally { k.release(half) }
+          }
+          if (!k.isClosedSolid(solid) || k.solidCount(solid) !== 1 || !(k.volume(solid) > 1e-9)) {
+            throw new Error('The constrained sweep did not form one closed solid. Choose a direction across the sheet.')
+          }
+          return { sheet, made: { shape: solid, skin: new Map(), wall: null, history: new Map() } }
+        } catch (e) { k.release(solid); throw e }
+      } finally { k.release(...faces, ...prisms) }
+    }
     // A patch network's sheet both ways: offset back by half the thickness
     // it comes out with a face more than it had — its faces meet within a
     // micron, not on one curve — and the kernel's thickening of that never
@@ -4492,6 +4757,30 @@ export class Builder {
   /** A sheet of a sketch's pieces, from the sketch as the build placed it. */
   private sheetOf(step: Extract<BuildStep, { kind: 'sheet' }>): Shape {
     const placed = this.sheetPlaced(step)
+    if (placed.profile) {
+      const k = this.kernel
+      const face = k.face(placed.profile)
+      if (placed.projectOnto === undefined) return face
+      try {
+        const target = this.bodyBefore(step.id, placed.projectOnto)
+        if (!target?.surface) throw new Error('Select a sheet to receive the projection. Duplicate a CAD face to project onto it.')
+        const origin = k.bounds(face).min
+        // A point on the plane supplies the prism origin, even on an oblique sketch.
+        const base = k.facePoints(face)[0]?.at ?? origin
+        const box = k.bounds(target.shape)
+        const ds = [box.min[0], box.max[0]].flatMap(x => [box.min[1], box.max[1]].flatMap(y =>
+          [box.min[2], box.max[2]].map(z => dot(sub([x,y,z], base), placed.dir))))
+        const prism = k.extrude(face, placed.dir, Math.min(...ds) - 1, Math.max(...ds) + 1)
+        try {
+          const patch = k.common(target.shape, prism)
+          if (!k.isSurface(patch) || !k.isValid(patch) || !(k.surfaceArea(patch) > 1e-9)) {
+            k.release(patch)
+            throw new Error('The sketch does not project onto the selected sheet along its normal.')
+          }
+          return patch
+        } finally { k.release(prism) }
+      } finally { k.release(face) }
+    }
     return this.kernel.sheet(placed.pieces, placed.dir, placed.from, placed.to)
   }
 
@@ -4501,6 +4790,15 @@ export class Builder {
    *  boolean after it comes out empty or wrong. */
   private loftOf(step: Extract<BuildStep, { kind: 'loft' }>): Shape {
     const placed = this.loftPlaced(step)
+    if (placed.surface) {
+      if (placed.profiles.some(profile => profile.holes.length)) throw new Error('A surface loft needs one outer contour per station. Remove interior loops.')
+      const skin = this.kernel.loft(placed.profiles, placed.ruled, false)
+      if (!this.kernel.isSurface(skin) || !this.kernel.isValid(skin)) {
+        this.kernel.release(skin)
+        throw new Error('The profiles did not form a valid loft surface.')
+      }
+      return skin
+    }
     const solid = this.kernel.loft(placed.profiles, placed.ruled)
     if (placed.ruled) {
       this.smoothLofts.delete(step.id)

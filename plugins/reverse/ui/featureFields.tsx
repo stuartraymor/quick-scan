@@ -18,6 +18,7 @@ import { MOVE_AXIS_COLORS } from '../core/preview'
 import { findRegions } from '../core/regions'
 import { useRePrefs } from '../state/rePrefs'
 import { type PreviewInfo, useReverse } from '../state/reStore'
+import { finishingSizeError } from '../state/finishingInput'
 import { ExprInput } from './ExprInput'
 import { lenShort } from './reLength'
 import { type ReactNode, useMemo, useRef } from 'react'
@@ -147,15 +148,16 @@ export function ProfilesField({ picked, found, testPrefix }: { picked: number; f
 }
 
 /** What the ghost in the viewport says about the feature so far. */
-export function PreviewLine({ preview, testPrefix }: { preview: PreviewInfo; testPrefix: string }) {
+export function PreviewLine({ preview, testPrefix, manualTrim = false }: { preview: PreviewInfo; testPrefix: string; manualTrim?: boolean }) {
+  const edgeDrag = useReverse(s => s.gripHeld && (s.featureDraft?.kind === 'fillet' || s.featureDraft?.kind === 'chamfer'))
   const len = useLength()
   const vol = preview.status === 'ok' ? len.vol(preview.volume, 1) : ''
   return (
     <p className={'hint' + (preview.status === 'failed' ? ' warn' : '')} data-test={`${testPrefix}-preview`}>
       {preview.status === 'idle' &&
         (testPrefix === 'surface'
-          ? 'Click the scan to gather the region; the surface follows.'
-          : testPrefix === 'network'
+          ? 'Mark the scan and choose a surface type to preview the fit.'
+          : testPrefix === 'trim' ? 'Select the surfaces to trim.' : testPrefix === 'network'
             ? 'Click the corners of a patch on the scan; the first again closes it.'
           : testPrefix === 'move-body'
             ? 'Drag an arrow or a ring of the gizmo on the part, or type the distances and angles.'
@@ -164,15 +166,15 @@ export function PreviewLine({ preview, testPrefix }: { preview: PreviewInfo; tes
               : 'Pick a profile to see the body.')}
       {preview.status === 'building' && (
         <>
-          <span className="spinner" /> {testPrefix === 'import' ? 'Reading the file…' : 'Building the preview…'}
+          {!edgeDrag && <span className="spinner" />} {edgeDrag ? 'Drag to adjust. Release to verify the size.' : testPrefix === 'import' ? 'Reading the file…' : 'Building the preview…'}
         </>
       )}
-      {preview.status === 'ok' && preview.trim && (preview.trim.closed ? `Closed: ${preview.trim.kept} of the ${preview.trim.faces} faces the surfaces cut lie on the scan and sew into a solid of ${vol}.` : `⚠ Not closed: ${preview.trim.kept} of ${preview.trim.faces} faces lie on the scan, and they leave ${preview.trim.openEdges.length} open edge${preview.trim.openEdges.length === 1 ? '' : 's'} — drawn red on the part. Fit the surface that is missing there, or widen the tolerance; Create keeps the faces as a surface body meanwhile.`)}
+      {preview.status === 'ok' && preview.trim && (preview.trim.closed ? `Closed: ${preview.trim.kept} of the ${preview.trim.faces} faces kept and sewn into a solid of ${vol}.` : manualTrim ? `Open sheet · ${preview.trim.kept} of ${preview.trim.faces} pieces kept · ${preview.trim.openEdges.length} boundary edges.` : `⚠ Not closed: ${preview.trim.kept} of ${preview.trim.faces} faces kept, leaving ${preview.trim.openEdges.length} open edge${preview.trim.openEdges.length === 1 ? '' : 's'} — drawn red on the part. Fit the surface that is missing there, or widen the tolerance; Create keeps the faces as a surface body meanwhile.`)}
       {preview.status === 'ok' && preview.surface?.shape && (
         <span data-test="surface-held">
-          {preview.surface.shape === 'plane' ? 'A plane' : `A cylinder of R ${len.fmt(preview.surface.radius ?? NaN, 3)}`}: σ {len.fmt(preview.surface.rms, 3)} over {preview.surface.points.toLocaleString('en-US')} points
+          {preview.surface.shape === 'plane' ? 'A plane' : `A ${preview.surface.shape} of R ${len.fmt(preview.surface.radius ?? NaN, 3)}`}: σ {len.fmt(preview.surface.rms, 3)} over {preview.surface.points.toLocaleString('en-US')} points
           {preview.surface.relations && preview.surface.relations.length > 0
-            ? ` (${len.fmt(preview.surface.rmsFree ?? 0, 3)} before it was held). ${preview.surface.relations.map((r) => `${relationWords(preview.surface!.shape!, r.relation, r.refKind)} ${r.name} — the fit was ${r.relation === 'on' && r.shiftMm !== undefined ? `${len.fmt(r.shiftMm, 2)} and ` : ''}${r.tiltDeg.toFixed(2)}° off`).join('; ')}.`
+            ? ` (${len.fmt(preview.surface.rmsFree ?? 0, 3)} before it was held). ${preview.surface.relations.map((r) => `${relationWords(preview.surface!.shape === 'plane' ? 'plane' : 'cylinder', r.relation, r.refKind)} ${r.name} — the fit was ${r.relation === 'on' && r.shiftMm !== undefined ? `${len.fmt(r.shiftMm, 2)} and ` : ''}${r.tiltDeg.toFixed(2)}° off`).join('; ')}.`
             : '. Held to nothing.'}
         </span>
       )}
@@ -180,6 +182,7 @@ export function PreviewLine({ preview, testPrefix }: { preview: PreviewInfo; tes
       {preview.status === 'ok' && preview.sheetFaces !== undefined && `A sheet of ${preview.sheetFaces} face${preview.sheetFaces === 1 ? '' : 's'} — a cutter to split a body with, or a skin to thicken.`}
       {preview.status === 'ok' && preview.network && (preview.failure ? `⚠ ${preview.failure.message}` : preview.network.closed ? `A solid of ${vol}: the network closes.` : 'A sheet: the network is open — Trim, Thicken or Split take it as they take a fitted surface.')}
       {preview.status === 'ok' && !preview.surface && !preview.trim && !preview.network && preview.sheetFaces === undefined && (testPrefix === 'import' ? `The file holds ${vol} of solid${preview.closed ? '' : ', and faces without an inside — a surface body'}.` : `Preview: ${vol}${preview.closed ? '' : ` · ⚠ not a closed solid${preview.failure ? `. ${preview.failure.message}` : ''}`} — drag the grips in the viewport, or type below.`)}
+      {preview.status === 'ok' && preview.note && ` ${preview.note}`}
       {preview.status === 'failed' && `⚠ ${preview.message}`}
     </p>
   )
@@ -190,13 +193,15 @@ export function PreviewLine({ preview, testPrefix }: { preview: PreviewInfo; tes
  *  range, and the row reads how much of that scan lies within it. The
  *  setting is the operator's, kept between sessions. */
 export function AnalysisRow({ testPrefix }: { testPrefix: string }) {
-  const on = useRePrefs((s) => s.liveMap)
+  const on = useRePrefs(s => testPrefix === 'surface' ? s.surfaceMap : s.liveMap)
   const range = useRePrefs((s) => s.liveMapRange)
-  const setOn = useRePrefs((s) => s.setLiveMap)
+  const setOn = useRePrefs(s => testPrefix === 'surface' ? s.setSurfaceMap : s.setLiveMap)
   const setRange = useRePrefs((s) => s.setLiveMapRange)
   const report = useReverse((s) => s.mapReport)
+  const hasScan = useStore(s => s.vertexCount > 0)
   const ghost = useReverse((s) => s.preview.status === 'ok')
-  const reading = on && ghost && report?.source === 'ghost' ? report : null
+  const dragging = useReverse(s => s.gripHeld) && !!report?.localBlend
+  const reading = on && (ghost || dragging) && report?.source === 'ghost' && (!report.localBlend || dragging) ? report : null
   const len = useLength()
   return (
     <div className="analysis" data-test={`${testPrefix}-analysis`}>
@@ -214,9 +219,11 @@ export function AnalysisRow({ testPrefix }: { testPrefix: string }) {
       {on && <NumberField label="Range ±" value={range} step="any" min={LIVE_MAP_MIN_RANGE_MM} kind="length" onCommit={setRange} testId="re-analysis" />}
       {on && (
         <p className="hint" data-test={`${testPrefix}-map`}>
-          {!ghost && 'The map appears with the ghost.'}
-          {ghost && !reading && 'Reading the scan against the ghost…'}
-          {reading && (reading.points === 0 ? 'No scan near the ghost.' : `${reading.within.toLocaleString()} of ${reading.points.toLocaleString()} scan points near the ghost lie within ±${lenShort(reading.range, len.units, 3)} of it.`)}
+          {!hasScan && 'Load a reference scan to measure deviation.'}
+          {hasScan && !ghost && !dragging && 'The map appears when the preview is ready.'}
+          {hasScan && ghost && !reading && 'Reading the scan against the ghost…'}
+          {hasScan && dragging && 'Live edge estimate. '}
+          {hasScan && reading && (reading.points === 0 ? 'No scan near the ghost.' : `${reading.within.toLocaleString()} of ${reading.points.toLocaleString()} scan points near the ghost lie within ±${lenShort(reading.range, len.units, 3)} of it.`)}
         </p>
       )}
     </div>
@@ -255,7 +262,7 @@ export function OpFields({ op, canCut, testPrefix, onOp }: { op: 'new' | 'join' 
  *  click to take — not while an expression drives it. `kind` is what the
  *  field wants, read off the unit when not given: no unit is a length,
  *  held in millimetres and shown in the display units. */
-export function Num({ label, value, unit, testId, nominal, slot, kind, passKeys, onCommit, hint, mapExpression, min }: { label: string; value: number; unit?: string; testId: string; nominal?: NominalKind; slot?: string; kind?: ParameterKind; mapExpression?: (expr: string) => string; min?: number; passKeys?: { enter: () => void }; onCommit: (v: number) => void; hint?: string }) {
+export function Num({ label, value, unit, testId, nominal, slot, kind, passKeys, onCommit, hint, mapExpression, min, live, finishingLength }: { label: string; value: number; unit?: string; testId: string; nominal?: NominalKind; slot?: string; kind?: ParameterKind; mapExpression?: (expr: string) => string; live?: boolean; finishingLength?: boolean; min?: number; passKeys?: { enter: () => void }; onCommit: (v: number) => void; hint?: string }) {
   const storedExpr = useReverse((s) => (slot ? (s.extrudeDraft ?? s.revolveDraft ?? s.featureDraft)?.exprs?.[slot] : undefined))
   const units = useLength().units
   const expr = storedExpr && mapExpression ? mapExpression(storedExpr) : storedExpr
@@ -271,13 +278,15 @@ export function Num({ label, value, unit, testId, nominal, slot, kind, passKeys,
           </InfoDot>
         )}
       </span>
-      {round !== null && nominal && (
+      {round !== null && nominal && (!finishingLength || !finishingSizeError(round, units)) && (
         <button className="chip nominal" data-test={`${testId}-nominal`} tabIndex={-1} title="The round number this was probably meant as — click to take it" onClick={() => onCommit(round)}>
           → {nominalText(round, nominal, units)}
         </button>
       )}
       <ExprInput
         value={value}
+        live={live}
+        finishingLength={finishingLength}
         expr={expr}
         kind={fieldKind}
         unit={unit}

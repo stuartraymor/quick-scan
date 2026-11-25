@@ -8,9 +8,9 @@
 
 import type { Vec2 } from '../../../src/core/flat/types'
 import { len2, sub2 } from '../../../src/core/flat/vec2'
-import { anchorPoint, endsOf, entityOf, nearestOnEntity, type Anchor, type Sketch, type SketchEntity } from './sketch'
+import { entityOf, nearestOnEntity, type Sketch, type SketchEntity } from './sketch'
 import { datumName, traceNear, type DatumTrace } from './datums'
-import { dimPickAt, originPick, relPickAt, type DimPick, type PickAllow } from './draw'
+import { dimPickAt, originPick, relPickAt, visitPickAnchors, type DimPick, type PickAllow } from './draw'
 
 /** What the tool in hand picks with: the arrow and most relations take whole
  *  pieces; Concentric takes a round piece by its rim or its centre;
@@ -55,7 +55,7 @@ export function samePick(a: DimPick, b: DimPick): boolean {
  *  store's own rule, kept here so the list can put it first. */
 export function defaultPick(sketch: Sketch, spot: Vec2, radius: number, datums: readonly DatumTrace[], mode: PickMode, allow: PickAllow): DimPick | null {
   if (mode === 'coincident') return relPickAt(sketch, spot, radius, datums, allow)
-  if (mode === 'dimension') return dimPickAt(sketch, spot, radius, datums, allow)
+  if (mode === 'dimension') return dimPickAt(sketch, spot, radius, datums, allow, true)
   const piece = nearestPiece(sketch, spot, radius)
   if (piece) return { kind: 'piece', id: piece.id }
   const round = mode === 'concentric' || mode === 'select' ? roundAtCentre(sketch, spot, radius) : null
@@ -92,8 +92,7 @@ function roundAtCentre(sketch: Sketch, spot: Vec2, radius: number): SketchEntity
 /**
  * Everything a click at `spot` could take with the tool in hand, the one a
  * plain click takes first and the rest nearest first. Two or more is what
- * "Select other" offers. Points reach as far as a click's end does (three
- * quarters of the reach), pieces the whole reach; in the arrow's mode a
+ * "Select other" offers. Geometry pickers offer anchors and pieces within the click radius; in the arrow's mode a
  * round piece is also taken by its centre, where there is no rim to click.
  */
 export function picksAt(sketch: Sketch, spot: Vec2, radius: number, datums: readonly DatumTrace[], mode: PickMode, allow: PickAllow): PickChoice[] {
@@ -105,26 +104,12 @@ export function picksAt(sketch: Sketch, spot: Vec2, radius: number, datums: read
   }
   const points = mode === 'coincident' || mode === 'dimension'
   const pointReach = radius * 0.75
+  if (points) visitPickAnchors(sketch, allow, (entity, at, p) => {
+    const distance = len2(sub2(p, spot))
+    if (distance <= radius) add({ kind: 'point', anchor: { entity, at } }, distance)
+  })
   for (const e of sketch.entities) {
-    if (points) {
-      const centre = (e.kind === 'circle' || e.kind === 'arc') && (mode === 'coincident' || allow.center)
-      if (centre) {
-        const d = len2(sub2((e as { c: Vec2 }).c, spot))
-        if (d <= pointReach) add({ kind: 'point', anchor: { entity: e.id, at: 'center' } }, d)
-      }
-      if (e.kind === 'point') {
-        const d = len2(sub2(e.p, spot))
-        if (d <= pointReach) add({ kind: 'point', anchor: { entity: e.id, at: 'center' } }, d)
-      }
-      if (allow.endpoint) {
-        for (const at of endsOf(e)) {
-          const anchor: Anchor = { entity: e.id, at }
-          const d = len2(sub2(anchorPoint(e, at), spot))
-          if (d <= pointReach) add({ kind: 'point', anchor }, d)
-        }
-      }
-    }
-    const wholePiece = mode !== 'dimension' || allow.curve
+    const wholePiece = !points || allow.curve
     if (wholePiece && e.kind !== 'point') {
       const { dist } = nearestOnEntity(e, spot)
       if (dist <= radius) add({ kind: 'piece', id: e.id }, dist)

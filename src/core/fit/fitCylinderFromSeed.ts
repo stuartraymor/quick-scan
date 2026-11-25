@@ -384,6 +384,12 @@ export function fitCylinderOnSelection(
   settings: FitSettings,
   window?: AxialWindow,
 ): CylinderResult {
+  const result = fitSelectedCylinder(g, selection, settings.sigma)
+  return window ? fitInsideWindow(g, result, window, settings) : result
+}
+
+/** The same unconstrained carrier for measurement and CAD, before an optional axial window. */
+export function fitSelectedCylinder(g: Pick<MeshGraph, 'positions' | 'normals'>, selection: Uint32Array, sigma: FitSettings['sigma']): CylinderResult {
   requireSelection(selection, 'cylindrical surface')
 
   const axis = axisFromNormals(g.normals, selection)
@@ -395,11 +401,11 @@ export function fitCylinderOnSelection(
     )
   }
 
-  const fin = fitCylinderClipped(g.positions, selection, init, settings.sigma)
+  const fin = fitCylinderClipped(g.positions, selection, init, sigma)
   if (!fin || !Number.isFinite(fin.cylinder.r) || fin.cylinder.r <= 0) {
     throw new FitError("Couldn't fit a cylinder to the marked surface.")
   }
   const result = cylinderResult(g.positions, fin, selection, selection)
   if (!result) throw new FitError("Couldn't measure the length of the marked surface.")
-  return window ? fitInsideWindow(g, result, window, settings) : result
+  return result
 }

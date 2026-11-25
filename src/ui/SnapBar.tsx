@@ -5,7 +5,7 @@
 // it shows follows the tool (see snapFilterStore).
 
 import { useLayoutEffect, useRef } from 'react'
-import { SNAP_KEYS, useSnapFilter, type SnapKey } from '../state/snapFilterStore'
+import { SNAP_KEYS, snapProfile, useSnapFilter, type SnapKey } from '../state/snapFilterStore'
 
 /** One mark per kind, drawn as the sketch marks a snap of that kind. */
 const ICONS: Record<SnapKey, string> = {
@@ -30,7 +30,9 @@ export function SnapBar() {
     const stage = bar?.parentElement
     const corner = stage?.querySelector<HTMLElement>(':scope > .stagecorner')
     if (!bar || !stage || !corner) return
+    const shell = stage.closest<HTMLElement>('.desktop-mid')
     const fit = () => {
+      shell?.style.setProperty('--snapbar-clearance', (bar.offsetHeight + 20) + 'px')
       const keys = corner.firstElementChild?.getBoundingClientRect()
       const crowded = !!keys && keys.width > 0 && keys.left < bar.getBoundingClientRect().right + 8
       corner.style.bottom = crowded ? `${bar.offsetHeight + 20}px` : ''
@@ -42,12 +44,15 @@ export function SnapBar() {
     watch.observe(corner)
     return () => {
       watch.disconnect()
+      shell?.style.removeProperty('--snapbar-clearance')
       corner.style.bottom = ''
     }
   }, [context])
   if (!context) return null
-  const smart = all[context]
-  const title = context === 'draw' ? 'Snap to' : context === 'pick' ? 'Pick' : 'Measure on'
+  const profile = snapProfile(context)
+  const keys = SNAP_KEYS[context === 'sketchPick' ? 'pick' : context]
+  const smart = all[profile]
+  const title = profile === 'draw' ? 'Snap to' : context === 'pick' ? 'Pick' : 'Measure on'
   return (
     <div ref={ref} className="snapbar" data-test="snap-bar" data-context={context} role="toolbar" aria-label={`${title}: what a click may land on`}
       // The bar is the bar's: a press on it is no click on the sheet under it.
@@ -55,14 +60,14 @@ export function SnapBar() {
       <span className="snapbar-title">{title}</span>
       <button type="button" className={smart ? 'snapkey all on' : 'snapkey all'} data-test="snap-all" aria-pressed={smart}
         title="All — smart snap: every kind at once, and whichever is closest to the cursor is taken"
-        onClick={() => useSnapFilter.getState().setAll(context, !smart)}>
+        onClick={() => useSnapFilter.getState().setAll(profile, !smart)}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6" /></svg>
         <span>All</span>
       </button>
       <span className="snapbar-rule" aria-hidden="true" />
-      {SNAP_KEYS[context].map(({ key, label, tip }) => (
-        <button key={key} type="button" className={smart ? 'snapkey implied' : flags[context][key] ? 'snapkey on' : 'snapkey'} data-test={`snap-${key}`} aria-pressed={smart || flags[context][key]} title={smart ? `${tip} (on with All; press to choose kinds one by one)` : tip}
-          onClick={() => useSnapFilter.getState().toggle(context, key)}>
+      {keys.map(({ key, label, tip }) => (
+        <button key={key} type="button" className={smart ? 'snapkey implied' : flags[profile][key] ? 'snapkey on' : 'snapkey'} data-test={`snap-${key}`} aria-pressed={smart || flags[profile][key]} title={smart ? `${tip} (on with All; press to choose kinds one by one)` : tip}
+          onClick={() => useSnapFilter.getState().toggle(profile, key)}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d={ICONS[key]} /></svg>
           <span>{label}</span>
         </button>

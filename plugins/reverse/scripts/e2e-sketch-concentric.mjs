@@ -78,7 +78,16 @@ try {
 
   // ---- C02: Coincident in hand, the centres clicked --------------------------
   await page.keyboard.press('Escape'); await sleep(150)
+  await click(page, '[data-test=sketch-tool-line]')
+  await click(page, '[data-test=snap-center]')
   await click(page, '[data-test=sketch-rel-coincident]'); await sleep(200)
+  check(!(await keyState('snap-center')).pressed, 'Coincident inherits Centre off from drawing')
+  await pointClick(B0.c)
+  check(!(await draft()).relPicks.length, 'Centre off excludes a circle center from Coincident')
+  await click(page, '[data-test=snap-center]')
+  await click(page, '[data-test=sketch-tool-line]')
+  check((await keyState('snap-center')).pressed, 'Drawing sees Centre enabled from Coincident')
+  await click(page, '[data-test=sketch-rel-coincident]')
   d = await draft()
   check(d.tool === 'relation' && d.armed === 'coincident' && (await keyState('sketch-rel-coincident')).pressed, 'nothing selected: Coincident is taken in hand, its key pressed')
   await page.evaluate(() => { const v = window.__re.sheet(); const orig = v.setFlatDots.bind(v); v.setFlatDots = (dots) => { window.__dots = dots.map((x) => ({ at: x.at, color: x.color })); return orig(dots) } })

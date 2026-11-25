@@ -202,6 +202,9 @@
 .interactive-align fieldset .field select { height: 20px; min-height: 20px; }
 .interactive-align footer { min-height: 22px; }
 .interactive-align footer > span { display: grid; place-items: center; flex: 0 0 19px; width: 19px; height: 19px; border: 1px solid var(--line-strong); border-radius: 50%; margin-right: auto; }
+.tool-inspector .qs-dialog.surface-selection { position: static; box-sizing: border-box; width: 100%; max-height: none; overflow: visible; padding: 0; border: 0; box-shadow: none; background: transparent; gap: 4px; font: 11px/1.4 var(--ui); }
+.tool-inspector .surface-selection .qs-typerow button[aria-pressed='true'] { border-color: var(--accent); background: var(--accent-soft); }
+
 /* Edit Scan's selection block: the same compact icon rows as Extract primitives. */
 .edit-scan-selection .qs-iconrow { display: flex; flex-wrap: wrap; gap: 1px; }
 .edit-scan-selection .qs-iconrow button { width: 26px; min-width: 0; height: 26px; min-height: 26px; padding: 0; background: transparent; border-color: transparent; }
@@ -223,3 +226,10 @@
    their own, the panels' colours and type. */
 .qs-overlay { display: contents; font: 11px/1.4 var(--ui); }
 :root[data-theme='dark'] .qs-overlay { background: none; }
+
+.qs-quick.surface-quick { display: grid; gap: 4px; height: auto; padding: 5px; }
+.surface-quick .qs-quick-types { justify-content: space-between; }
+.surface-quick .qs-quick-types button[aria-pressed=true] { background: var(--accent-soft); border-color: var(--accent); }
+.surface-quick-field { display: flex; align-items: center; gap: 4px; }
+.surface-quick-field input[type=number] { width: 54px; }
+.surface-quick-field input[type=range] { flex: 1; min-width: 0; }

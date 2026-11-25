@@ -34,6 +34,10 @@ export const NET_MIN = 3
 export const NET_MAX = 20
 /** The defaults a new Fit Surface opens with — the interview's numbers. */
 export const DEFAULT_SURFACE_FIT: SurfaceFitParams = { net: null, degree: 3, expandPct: 35, smoothness: 0.01 }
+export const INTERACTIVE_SURFACE_FIT: SurfaceFitParams = {
+  ...DEFAULT_SURFACE_FIT, primitiveSolver: 'extract', method: 'refined', net: { u: 5, v: 5 }, maxDegree: true,
+  expandPct: 40, smoothingLevel: 1, orientation: 'bounds',
+}
 /** How many grid samples per net span go to the kernel. Three per span
  *  puts the grid well inside what a cubic through it can carry without
  *  wobbling between the samples. */
@@ -226,6 +230,7 @@ export function fitSurface(xyz: Float32Array | Float64Array, params: SurfaceFitP
   if (params.smoothingLevel !== undefined && (!Number.isInteger(params.smoothingLevel) || params.smoothingLevel < 0 || params.smoothingLevel > 5)) throw new Error('Surface smoothing level must be an integer from 0 to 5.')
   const n = Math.floor(xyz.length / 3)
   if (n < 4) throw new Error('Too few points to fit a surface through.')
+  if (xyz.length % 3 || !xyz.every(Number.isFinite)) throw new Error('The selected region contains incomplete or non-finite coordinates.')
   const frame = principalFrame(xyz)
   const [au, av, an] = heightFrame(frame.axes, params.normal ?? orientationNormal(params.orientation, frame.axes[2]))
   const c = frame.centroid
@@ -247,6 +252,12 @@ export function fitSurface(xyz: Float32Array | Float64Array, params: SurfaceFitP
     if (u[i] > uMax) uMax = u[i]
     if (v[i] < vMin) vMin = v[i]
     if (v[i] > vMax) vMax = v[i]
+  }
+  // The projected covariance also catches a diagonal line with nonzero U and V ranges.
+  let uu = 0, vv = 0, uv = 0
+  for (let i = 0; i < n; i++) { uu += u[i] * u[i]; vv += v[i] * v[i]; uv += u[i] * v[i] }
+  if (!(uu * vv - uv * uv > 1e-14 * (uu + vv) ** 2)) {
+    throw new Error('The selection projects to a line or point. Choose a wider region or a different surface orientation.')
   }
   const extentU = Math.max(uMax - uMin, 1e-6)
   const extentV = Math.max(vMax - vMin, 1e-6)

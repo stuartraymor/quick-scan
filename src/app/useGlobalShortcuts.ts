@@ -126,6 +126,9 @@ export function useGlobalShortcuts({
       buttons.sort((a, b) => Number(a.dataset.confirm) - Number(b.dataset.confirm))
       return buttons[0]
     }
+    // Extraction owns a fitted draft as well as its preview. Confirm through
+    // its button so keyboard and wheel clicks run the same cleanup as Create.
+    const extractConfirm = () => document.querySelector<HTMLButtonElement>('[data-test="extract-dialog"] button[data-confirm]:not(:disabled)')
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null
       // A number field that opened by itself — a fillet's radius, a new
@@ -235,6 +238,15 @@ export function useGlobalShortcuts({
         return
       }
       const store = useStore.getState()
+      if (useShell.getState().extractOpen) {
+        if (e.key === 'Enter') { e.preventDefault(); extractConfirm()?.click() }
+        else if (e.key === 'Escape') {
+          e.preventDefault()
+          if (useMark.getState().gesture !== null) useMark.getState().setGesture(null)
+          else document.querySelector<HTMLButtonElement>('[data-test="extract-dialog"] button[data-command-close]:not(:disabled)')?.click()
+        }
+        return
+      }
       if (useDeviation.getState().marking) {
         // Escape backs out one step at a time: the first hands the camera back
         // by standing the gesture down, the second closes the local fine fit
@@ -297,6 +309,10 @@ export function useGlobalShortcuts({
     const confirmable = (): 'draft' | 'dimension' | 'section' | 'flat' | 'plugin' | 'button' | null => {
       if (useDocumentOrder.getState().rollbackAt !== null) return null
       const button = () => (confirmButton() ? 'button' : null)
+      if (useShell.getState().extractOpen) {
+        if (document.querySelector('[role="alertdialog"]')) return null
+        return extractConfirm() ? 'button' : null
+      }
       if (useShell.getState().workspace === 'flat') return flatConfirmable() ? 'flat' : button()
       // A plugin's workspace confirms by the middle button like everything
       // else, when it has something ready of its own.

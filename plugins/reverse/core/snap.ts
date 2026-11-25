@@ -22,6 +22,8 @@ import type { DimPick } from './draw'
 
 /** What there is to snap to besides the sketch itself. */
 export interface SnapContext {
+  /** Visible reference anchors projected into this draft's plane. */
+  referencePoints?: readonly { point: Vec2; type: 'midpoint' | 'center' }[]
   /** The slice chains under the sketch, sheet millimetres. */
   chains?: readonly (readonly Vec2[])[] | null
   /** The grid's spacing at the current zoom, or none. */
@@ -72,8 +74,8 @@ export type SnapKind = 'anchor' | 'origin' | 'midpoint' | 'quadrant' | 'datum' |
 /** Preview only the axis relation the Line tool actually infers on commit.
  *  Use the snapped destination, as the tool does, rather than the raw cursor.
  *  This is feedback, not an extra snap or a change to constraint solving. */
-export function lineIntent(from: Vec2, to: Vec2): 'horizontal' | 'vertical' | null {
-  return axisRelationOf(from, to)
+export function lineIntent(from: Vec2, to: Vec2, referenceSnapped = false): 'horizontal' | 'vertical' | null {
+  return axisRelationOf(from, to, referenceSnapped ? 0 : undefined)
 }
 
 /** The original line is a temporary drawing aid, not a self-referencing
@@ -114,6 +116,8 @@ export function lineDragCrossings(original: SketchLine, sketch: Sketch): Vec2[] 
 
 export interface SnapResult {
   point: Vec2
+  /** This position came from a visible sketch on another plane. */
+  reference?: boolean
   /** The anchor the point landed on, when it landed on one that can hold
    *  a coincidence — a line's or an arc's end, an arc's or a circle's
    *  centre. */
@@ -182,8 +186,18 @@ export function snapSketchPoint(
 ): SnapResult {
   if (ctx.off) return { point: spot, anchor: null, kind: null }
   const allow = ctx.allow ?? SNAP_ALL
+  let reference: SnapResult | null = null
+  let referenceDistance = radius
+  for (const target of ctx.referencePoints ?? []) {
+    if (!allow[target.type]) continue
+    const distance = len2(sub2(target.point, spot))
+    if (distance >= referenceDistance) continue
+    referenceDistance = distance
+    reference = { point: target.point, kind: target.type === 'midpoint' ? 'midpoint' : 'anchor', anchor: null, reference: true }
+  }
   if (allow.nearest) {
     const near = nearestPoint(sketch, spot, radius, ctx, exclude)
+    if (reference && (!near || referenceDistance < len2(sub2(near.point, spot)))) return reference
     if (near) return near
   }
 
@@ -266,6 +280,7 @@ export function snapSketchPoint(
     if (trace) return { point: traceFoot(trace, spot), anchor: null, datum: trace.plane, kind: 'datum' }
   }
 
+  if (reference) return reference
   // The body of a piece: what lands on it is held on it — a line drawn
   // from the side of another starts a T, and stays one. A piece drawn by
   // hand or projected from the part is taken before the slice: it is what

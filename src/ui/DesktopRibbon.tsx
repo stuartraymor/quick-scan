@@ -249,7 +249,7 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
     {tool('Fine-align reference mesh …', 'compare', () => { go('deviation'); onFineAlign() }, needsScan || !hasReference, 'Requires a loaded scan and reference model; run the existing best fit')}
   </div></details>
   const surfacingMenu = <details className="ribbon-dropdown"><summary className="desktop-ribbon-tool" title="Surface creation and editing"><Icon name="loft" size={25}/><span>Surfacing ▾</span></summary><div className="ribbon-menu">
-    {/* QUICKSURFACE 8.0.128's Main → Surfacing ▾, in its order (recorded live, 2026-11-03); Fit Surface, From 2D sketch and Thicken are on the Surfacing tab. */}{cad('network','3D Sketch …','sketch3',true)}{cad('thread','Helix …','rotateCw')}{cad('loft','Loft …','loft')}{cad('sweep','Sweep …','spline')}{cad('pipe','Pipe …','elCylinder')}{tool('Fill Surface …', 'fillHoles', () => {}, true, 'Fill Surface is not built in Quick Scan yet')}{tool('Extend Surface …', 'extrude', () => {}, true, 'Extend Surface is not built in Quick Scan yet')}{tool('Flatten …', 'sheet', () => {}, true, 'Flatten is not built in Quick Scan yet')}
+    {/* QUICKSURFACE 8.0.128's Main → Surfacing ▾, in its order (recorded live, 2026-11-03); Fit Surface, From 2D sketch and Thicken are on the Surfacing tab. */}{cad('network','3D Sketch …','sketch3',true)}{cad('thread','Helix …','rotateCw')}{cad('surfaceLoft','Loft …','loft')}{cad('sweep','Sweep …','spline')}{cad('pipe','Pipe …','elCylinder')}{tool('Fill Surface …', 'fillHoles', () => {}, true, 'Fill Surface is not built in Quick Scan yet')}{cad('extendSurface', 'Extend Surface …', 'extrude')}{cad('flatten', 'Flatten …', 'sheet')}
   </div></details>
   const patternMenu = <details className="ribbon-dropdown"><summary className="desktop-ribbon-tool" title="Patterns and mirror"><Icon name="pattern" size={25}/><span>Pattern ▾</span></summary><div className="ribbon-menu">{cad('pattern','Linear / circular pattern','pattern')}{cad('mirror','Mirror','mirror')}</div></details>
   const [localExamples, setLocalExamples] = useState<typeof BUNDLED_EXAMPLES>([])
@@ -324,7 +324,7 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
     <Group label="Cross sections">{cad('sketch', '2D Sketch', 'sketch')}{tool('Multiple sections', 'section', () => { useShell.setState({ workspace: 'elements' }); useShell.getState().setMultipleSectionsOpen(true) }, needsScan, 'Multiple sections: parallel cross sections through the scan at a spacing')}</Group>
     <Group label="Surfacing">{cad('surface', 'Fit Surface', 'surface', true)}{surfacingMenu}</Group>
     <Group label="Freeform">{cad('newFreeform', 'New Freeform', 'freeform', true)}{cad('autoFreeform', 'Auto Freeform', 'autoFreeform', true)}</Group>
-    <Group label="Part Design"><div className="ribbon-text-stack">{cadText('extrude', 'Extrude', 'extrude')}{cadText('revolve', 'Revolve', 'revolve')}{cadText('moveFace', 'Move face', 'moveFace')}</div>{cad('trim', 'Trim', 'trim', true)}<div className="ribbon-text-stack">{cadText('booleanJoin', 'Combine', 'opJoin')}{cadText('booleanCut', 'Cut', 'opCut')}{cadText('booleanIntersect', 'Intersect', 'opIntersect')}</div>{patternMenu}{cad('fillet', 'Fillet / Chamfer', 'fillet')}</Group>
+    <Group label="Part Design"><div className="ribbon-text-stack">{cadText('extrude', 'Extrude', 'extrude')}{cadText('revolve', 'Revolve', 'revolve')}{cadText('moveFace', 'Move face', 'moveFace')}</div>{cad('trim', 'Trim', 'trim')}<div className="ribbon-text-stack">{cadText('booleanJoin', 'Combine', 'opJoin')}{cadText('booleanCut', 'Cut', 'opCut')}{cadText('booleanIntersect', 'Intersect', 'opIntersect')}</div>{patternMenu}{cad('fillet', 'Fillet / Chamfer', 'fillet')}</Group>
     {analysis}{exportGroup}
   </>
   // A command QUICKSURFACE has in this place that Quick Scan has not built yet:
@@ -382,15 +382,15 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
     <Group label="Tools"><div className="ribbon-text-stack">{cadText('thicken', 'Thicken', 'shell', false, 'Freeform:Thicken')}{cadText('offsetBody', 'Offset', 'sheet', false, 'Freeform:Offset')}{cadText('convertFreeform', 'Convert to CAD body', 'exportStep')}</div></Group>
   </>
   const surfacingTab = <>
-    <Group label="Create">{cad('surface', 'Fit Surface', 'surface', true)}{cad('loft', 'Loft', 'loft')}
+    <Group label="Create">{cad('surface', 'Fit Surface', 'surface', true)}{cad('surfaceLoft', 'Loft', 'loft')}
       <div className="ribbon-text-stack">{soonText('Fill Surface', 'fillHoles')}{cadText('sweep', 'Sweep', 'spline')}{cadText('pipe', 'Pipe', 'elCylinder')}</div>
-      <div className="ribbon-text-stack">{cadText('sheet', 'From 2D sketch', 'sheet')}</div>
+      <div className="ribbon-text-stack">{cadText('planarSheet', 'From 2D sketch', 'sheet')}</div>
       {cad('network', '3D Sketch', 'sketch3', true)}
       <div className="ribbon-text-stack">{cadText('thread', 'Helix', 'rotateCw')}{soonText('Roll Sketch', 'revolve')}</div></Group>
     <Group label="Tools">
-      <div className="ribbon-text-stack">{soonText('Duplicate Face', 'deleteSurface')}{cadText('offsetBody', 'Offset', 'sheet', false, 'Surfacing:Offset')}{cadText('thicken', 'Thicken', 'shell', false, 'Surfacing:Thicken')}</div>
-      <div className="ribbon-text-stack">{soonText('Extend Surface', 'extrude')}{soonText('Sew surfaces', 'opJoin')}{soonText('Project sketch', 'project')}</div>
-      <div className="ribbon-text-stack">{soonText('Flatten', 'sheet')}</div></Group>
+      <div className="ribbon-text-stack">{cadText('duplicateFace', 'Duplicate Face', 'deleteSurface')}{cadText('offsetBody', 'Offset', 'sheet', false, 'Surfacing:Offset')}{cadText('thicken', 'Thicken', 'shell', false, 'Surfacing:Thicken')}</div>
+      <div className="ribbon-text-stack">{cadText('extendSurface', 'Extend Surface', 'extrude')}{cadText('sewSurfaces', 'Sew surfaces', 'opJoin')}{cadText('projectSketch', 'Project sketch', 'project')}</div>
+      <div className="ribbon-text-stack">{cadText('flatten', 'Flatten', 'sheet')}{cadText('trim', 'Trim', 'trim')}{cadText('sheet', 'Extrude Surface', 'extrude')}</div></Group>
   </>
   // The CAD tab as QUICKSURFACE lays it out: Create is columns of small
   // labelled keys around a large Trim, and Patterns a stack.
@@ -398,7 +398,7 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
     <Group label="Cross sections">{cad('sketch', '2D Sketch', 'sketch')}{tool('Multiple sections', 'section', () => { useShell.setState({ workspace: 'elements' }); useShell.getState().setMultipleSectionsOpen(true) }, needsScan, 'Multiple sections: parallel cross sections through the scan at a spacing')}</Group>
     <Group label="Create">
       <div className="ribbon-text-stack">{cadText('extrude', 'Extrude', 'extrude')}{cadText('revolve', 'Revolve', 'revolve')}</div>
-      {cad('trim', 'Trim', 'trim', true)}
+      {cad('trim', 'Trim', 'trim')}
       <div className="ribbon-text-stack">{cadText('booleanJoin', 'Combine', 'opJoin')}{cadText('booleanCut', 'Cut', 'opCut')}{cadText('booleanIntersect', 'Intersect', 'opIntersect')}</div>
       <div className="ribbon-text-stack">{cadText('shell', 'Shell', 'shell')}{cadText('draft', 'Draft', 'draft', false, 'CAD:Draft')}{cadText('deleteFace', 'Delete faces', 'deleteSurface')}</div>
       <div className="ribbon-text-stack">{cadText('moveBody', 'Move body', 'navigate')}{cadText('moveFace', 'Move face', 'moveFace')}{soonText('Separate bodies', 'islands')}</div>
@@ -413,7 +413,7 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
     <Group label="Software Options">{tool('Options', 'settings', () => usePrefs.getState().openSettings(true), false, 'Navigation, display, files and agent options')}{tool('Mouse controls', 'navigate', () => usePrefs.getState().openSettings(true), false, 'Navigation scheme and display options')}</Group></>
   const analysisTab = <>
     <Group label="Tools">
-      {tool('Measure', 'wsMeasure', () => useMeasureTool.getState().setOpen(true), locked || (!file && !measureReady), 'Measure on the mesh (3D Distance, Extended Distance, Point) and, in the CAD workspace, sketch geometry (Sketch)')}
+      {tool('Measure', 'wsMeasure', () => useMeasureTool.getState().setOpen(true), locked || (!file && !measureReady), 'Measure sketch points, solid edges and faces, or points on a scan')}
       <div className="ribbon-text-stack">{smallText('Surface Area', 'surface', onSurfaceArea, !file, 'Surface area of the scan mesh')}{smallText('Volume', 'model', onVolume, !file, 'Volume enclosed by the scan mesh')}</div>
       <div className="ribbon-text-stack">{cadText('zebra', 'Zebra Stripes', 'curvature')}{cadText('envMap', 'Environment Map', 'scanColours')}{cadText('draftAnalysis', 'Draft', 'draft', false, 'Analysis:Draft')}</div>
       {tool('Snapshot', 'splitView', onSnapshot, !file, 'Snapshot to clipboard — copy the view as a picture')}

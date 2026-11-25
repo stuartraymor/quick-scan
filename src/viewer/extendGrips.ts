@@ -157,7 +157,7 @@ export interface ExtendGripsContext {
   /** The number field on a feature grip: the text typed and entered — a
    *  number, or whatever the owner's numbers are written as — or the field
    *  closed with Escape. */
-  onFieldCommit(side: GripSide, text: string): void
+  onFieldCommit(side: GripSide, text: string, quiet?: boolean, restoring?: boolean): boolean | void
   onFieldClose(): void
 }
 
@@ -183,7 +183,7 @@ export class ExtendGrips {
    *  rebuilt on every change of the number: the field moves with its grip
    *  and keeps what is being typed. */
   private fieldGroup = new THREE.Group()
-  private field: { side: GripSide; label: CSS2DObject; input: HTMLInputElement; unit: HTMLElement; value: number; typed: boolean } | null = null
+  private field: { side: GripSide; label: CSS2DObject; input: HTMLInputElement; unit: HTMLElement; value: number; expression?: string; typed: boolean; live: boolean } | null = null
   private hoveredHandle: GripSide | null = null
   /** The view the grips held on the screen were last fitted to: what a
    *  pixel was worth, and which way the camera looked. */
@@ -329,7 +329,7 @@ export class ExtendGrips {
    * lost to the very number they are changing; one only focused — as it
    * is after every drag — follows the number set anywhere else.
    */
-  setField(field: { side: GripSide; value: number; unit: string; text?: string } | null): void {
+  setField(field: { side: GripSide; value: number; unit: string; text?: string; live?: boolean } | null): void {
     if (!field) {
       this.dropField()
       return
@@ -354,34 +354,57 @@ export class ExtendGrips {
       div.addEventListener('pointerdown', stop)
       div.addEventListener('pointerup', stop)
       div.addEventListener('wheel', stop)
+      let original = ''
+      let lastApplied: string | null = null
+      const commit = (quiet = false) => {
+        const text = input.value.trim()
+        if (!this.field || this.field.input !== input || (!text && !this.field.live)) return
+        if (text === lastApplied && !input.validity.customError) return
+        const accepted = this.ctx.onFieldCommit(this.field.side, text, quiet) !== false
+        input.setCustomValidity(accepted ? '' : 'Check this dimension.')
+        if (accepted) lastApplied = text
+        return accepted
+      }
       input.addEventListener('input', () => {
-        if (this.field?.input === input) this.field.typed = true
+        if (this.field?.input !== input) return
+        this.field.typed = true
+        if (this.field.live) commit(true)
       })
       input.addEventListener('focus', () => {
+        original = this.field?.live ? this.field.expression ?? String(this.field.value) : input.value
+        lastApplied = null
         if (this.field?.input === input) this.field.typed = false
+      })
+      input.addEventListener('blur', () => {
+        if (this.field?.input === input && this.field.live && this.field.typed) commit()
       })
       input.addEventListener('keydown', (e) => {
         e.stopPropagation()
         if (e.key === 'Enter') {
-          if (input.value.trim() !== '' && this.field) this.ctx.onFieldCommit(this.field.side, input.value.trim())
+          if ((!this.field?.live || this.field.typed) && commit() === false) return
           if (this.field?.input === input) this.field.typed = false
           input.blur()
         } else if (e.key === 'Escape') {
+          if (this.field?.live && lastApplied !== null) this.ctx.onFieldCommit(this.field.side, original, false, true)
+          if (this.field?.input === input) this.field.typed = false
           this.ctx.onFieldClose()
         }
       })
       const label = new CSS2DObject(div)
       this.fieldGroup.add(label)
-      this.field = { side: field.side, label, input, unit, value: Number.NaN, typed: false }
+      this.field = { side: field.side, label, input, unit, value: Number.NaN, typed: false, live: false }
     }
     const f = this.field
+    f.live = !!field.live
+    f.expression = field.text
     f.unit.textContent = field.unit
     f.input.readOnly = this.handleDrag !== null
     // Only a settled value is shown: not the one under a hand still typing.
     // Given text — what the number is written as — the field shows that,
     // with the value it comes to as its tooltip.
     // Two decimals in millimetres; in inches one more, as every length reads.
-    const places = field.unit === 'in' ? lengthDecimals(2, 'in') : 2
+    const mmPlaces = field.live && field.side === 'radius' ? 5 : 2
+    const places = field.unit === 'in' ? lengthDecimals(mmPlaces, 'in') : mmPlaces
     const round = (v: number): number => Math.round(v * 10 ** places) / 10 ** places
     const shown = field.text ?? String(round(field.value))
     const focused = document.activeElement === f.input
@@ -391,7 +414,7 @@ export class ExtendGrips {
       // what is typed next replaces it.
       if (focused) f.input.select()
     }
-    f.input.title = field.text ? `${field.text} = ${round(field.value)} ${field.unit}` : 'The number this grip drags — type a value and press Enter; Escape closes the field'
+    f.input.title = f.live ? 'Type a size to preview it on the part' : field.text ? `${field.text} = ${round(field.value)} ${field.unit}` : 'The number this grip drags — type a value and press Enter; Escape closes the field'
     f.value = field.value
     this.placeField()
   }

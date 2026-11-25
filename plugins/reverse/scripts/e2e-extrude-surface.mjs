@@ -79,7 +79,10 @@ try {
   check(!(await page.$('[data-test=extrude-taper]')) && !(await page.$('[data-test=extrude-op]')) && (await page.$eval('[data-test=extrude-extent] option[value=toPlane]', (el) => el.disabled)), 'taper, result and the up-to ends are not offered for a surface')
   // The view shows the wall and an arrow at each end, as QUICKSURFACE does.
   await previewDone(); await sleep(400)
-  const preview = await re(() => window.__re.store.getState().preview)
+  const preview = await re(() => {
+    const { status, message } = window.__re.store.getState().preview
+    return { status, message }
+  })
   check(preview.status === 'ok', `the wall is previewed by the kernel while the box is open (${preview.status}${preview.message ? ': ' + preview.message : ''})`)
   const top = await gripAt('extrudeTo'), bottom = await gripAt('extrudeFrom')
   check(!!top && !!bottom && Math.abs(top[2] - 12) < 1e-6 && Math.abs(bottom[2]) < 1e-6 && Math.abs(top[0] + 1) < 0.01 && Math.abs(top[1] - 0.5) < 0.01, `an arrow at each end, through the middle of the profile (${JSON.stringify({ top, bottom })})`)

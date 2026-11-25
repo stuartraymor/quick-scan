@@ -224,6 +224,9 @@ export function createReverseSession({
     useReverse.getState().setKernel('loading')
     before?.dispose()
     const next = kernel()
+    next.onPreviewRestart = () => {
+      if (client === next) useReverse.setState(s => ({ buildVersion: s.buildVersion + 1 }))
+    }
     for (const [key, why] of before?.crashed ?? []) next.crashed.set(key, why)
     next.onFailure = (why) => {
       if (client !== next) return

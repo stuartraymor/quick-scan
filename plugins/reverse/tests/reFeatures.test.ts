@@ -146,7 +146,7 @@ describe('features on a body', () => {
     expect(tops).toHaveLength(2)
     const rounded = await build(builder, [s, extrudeAll(2, s, 0, 10), { id: 3, kind: 'fillet', name: 'Fillet 1', body: 2, edges: tops, radius: 2.5, chain: false, visible: true }])
     expect(rounded.results.map((r) => r.status)).toEqual(['ok', 'ok'])
-    expect(rounded.results[1].note).toBeUndefined()
+    expect(rounded.results[1].note).toBe('Full-width limit: requested 2.5 mm. The solver used 2.4999999749999997 mm before closing the transition.')
     const body = rounded.bodies[0]
     expect(body.closed).toBe(true)
     // The top a half round of 2.5 over 40: the box less 40·(5·2.5 − π·2.5²/2).
@@ -174,7 +174,7 @@ describe('features on a body', () => {
     expect(pill.results[1].edges![0]).toMatchObject({ kind: 'line', length: 10 })
     expect(pill.results.map((r) => r.status)).toEqual(['ok', 'ok'])
     expect(pill.bodies[0].volume).toBeCloseTo((35 * 5 + Math.PI * 2.5 * 2.5) * 10, 3)
-    expect(pill.results[1].note).toBeUndefined()
+    expect(pill.results[1].note).toBe('Full-width limit: requested 2.5 mm. The solver used 2.4999999749999997 mm before closing the transition.')
     expect(pill.bodies[0].faces).toBe(6)
 
     const tops = first.bodies[0].topology.edges.filter((e) => e.fingerprint.kind === 'line' && e.fingerprint.mid[2] > 9.9 && Math.abs(e.fingerprint.dir[0]) > 0.9).map((e) => e.fingerprint)

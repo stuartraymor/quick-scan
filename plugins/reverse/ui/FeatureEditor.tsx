@@ -4,6 +4,7 @@
 // the bodies — with the footer the kinds share. Lengths are shown in the
 // display units; what the draft holds is millimetres.
 
+import { useTrimDisplay, resetTrimDisplay, type TrimView } from '../state/trimDisplay'
 import { useLength } from '../../../src/app/useUnits'
 import { round3 } from '../../../src/core/round'
 import { WORLD_AXES } from '../../../src/core/section/frame'
@@ -11,11 +12,15 @@ import type { Vec3 } from '../../../src/core/types'
 import { useStore } from '../../../src/state/store'
 import { Icon } from '../../../src/ui/icons'
 import { InfoDot } from '../../../src/ui/InfoDot'
-import { MarkTools } from '../../../src/ui/MarkTools'
+import { INTERACTIVE_SURFACE_FIT } from '../core/surfaceFit'
+import { fittedSheetsToTrim, trimFittedSheets } from '../app/startSurfaceFit'
+import { RadiusStations } from './RadiusStations'
+import { emptyRoundGroups, roundRoles } from '../core/roundInputs'
+import { SurfaceSelection } from './SurfaceSelection'
 import { RefPicker } from '../../../src/ui/RefPicker'
 import { NameField } from '../../../src/ui/RefSelect'
-import { COINCIDENCE_MM, type Relation, relationsFor, relationWords, TILT_TOLERANCE_DEG } from '../core/autoConstrain'
-import { type AxisRef, type ChamferMode, constrainRefs, type SketchFeature, type SplitKeep, type SurfaceShape, type ThickenSide, type TrimTool } from '../core/features'
+import { type Relation, relationsFor, relationWords } from '../core/autoConstrain'
+import { type AxisRef, type ChamferMode, constrainRefs, type SketchFeature, type SplitKeep, type ThickenSide, type TrimTool } from '../core/features'
 import { INSERT_SIZES, insertHole, insertSize } from '../core/inserts'
 import { snapFitKind } from '../core/snapFace'
 import { symmetryPlaneRef } from '../core/symmetryPlane'
@@ -30,7 +35,9 @@ import { PlaneSelect } from './PlaneSelect'
 import { SurfaceFitFields } from './SurfaceFitFields'
 import { SweepFields } from './SweepFields'
 import { NetworkFields } from './NetworkEditor'
-import type { ReactElement } from 'react'
+import { useFinishingInput, setFinishingFieldError } from '../state/finishingInput'
+import { FinishingAnalysis } from './FinishingAnalysis'
+import { useEffect, useState, type ReactElement } from 'react'
 
 /** The box of a feature on a body, or of a body from an element: one
  *  component for the eight kinds, since each is a body, a pick or a
@@ -38,14 +45,38 @@ import type { ReactElement } from 'react'
  *  extrude has. */
 export function FeatureEditor() {
   const d = useReverse((s) => s.featureDraft)
+  const trimCount = useReverse(s => fittedSheetsToTrim(s).length)
+  const building = useReverse(s => s.building)
   const bodies = useReverse((s) => s.bodies)
   const features = useReverse((s) => s.features)
   const preview = useReverse((s) => s.preview)
   const results = useReverse((s) => s.results)
+  const display = useTrimDisplay()
+  const scanLoaded = useStore(s => !!s.fileName)
   const elements = useStore((s) => s.elements)
   const sections = useStore((s) => s.sections)
   const len = useLength()
   const re = useReverse
+  const errors = useFinishingInput(s => s.errors)
+  const invalidSize = Object.keys(errors).length > 0
+  const gripField = useReverse(s => s.gripField)
+  useEffect(() => {
+    if (!gripField) setFinishingFieldError('grip', null)
+    return () => setFinishingFieldError('grip', null)
+  }, [gripField, d?.kind, len.units])
+  const [appliedDraft, setAppliedDraft] = useState<FeatureDraft | null>(null)
+  const [pending, setPending] = useState<{ draft: FeatureDraft; stay: boolean } | null>(null)
+  useEffect(() => {
+    if (!pending) return
+    if (invalidSize) { setPending(null); return }
+    const current = re.getState()
+    if (pending.draft === current.featureDraft && current.preview.status === 'building') return
+    setPending(null)
+    if (pending.draft === current.featureDraft && !current.building && current.preview.status === 'ok' && !current.preview.failure &&
+        (current.preview.closed || current.bodies.some(b => 'body' in pending.draft && b.id === pending.draft.body && b.surface))) {
+      current.commitFeature(pending.stay ? 'nextFillet' : undefined)
+    }
+  }, [pending, d, preview, building, re, invalidSize])
   if (!d) return null
   /** A length as a row reads it, to the hundredth of a millimetre. */
   const mm = (v: number) => lenShort(v, len.units)
@@ -55,6 +86,17 @@ export function FeatureEditor() {
   const describeEdge = describeEdgeIn(len.units)
   const set = (patch: Partial<FeatureDraft>) => re.getState().setFeatureDraft(patch)
   const ready = featureDraftReady(d)
+  const betweenFits = d.kind === 'surface' && !d.region.length && !!d.createdSheets?.length
+  const offerTrim = betweenFits && trimCount >= 2
+  const edgeTool = d.kind === 'fillet' || d.kind === 'chamfer'
+  const edgePreviewReady = !edgeTool || (preview.status === 'ok' && !preview.failure && (preview.closed || bodies.some(b => b.id === d.body && b.surface)))
+  const canCommit = ready && edgePreviewReady && (d.kind !== 'surface' || (preview.status === 'ok' && !!preview.surface)) && (d.kind !== 'trim' || (preview.status === 'ok' && !!preview.trim && (!d.removed || d.removed.length > 0)))
+  const canRequest = (!edgeTool || !invalidSize) && (canCommit || (edgeTool && ready && preview.status === 'building'))
+  const confirm = (stay = false) => {
+    if (edgeTool && Object.keys(useFinishingInput.getState().errors).length) return
+    if (edgeTool && re.getState().preview.status === 'building') setPending({ draft: d, stay })
+    else re.getState().commitFeature(stay ? 'nextFillet' : undefined)
+  }
   const title: Record<FeatureDraftKind, string> = { network: 'Patch network', import: 'Import STEP', moveBody: 'Move body', offsetBody: 'Offset body', draft: 'Draft', moveFace: 'Move face', deleteFace: 'Delete face', duplicateFace: 'Duplicate face', shell: 'Shell', fillet: 'Fillet', chamfer: 'Chamfer', hole: 'Hole', thread: 'Thread', extract: 'Extract', cutPlane: 'Cut by plane', mirror: 'Mirror', boolean: 'Combine bodies', sheet: 'Sheet', split: 'Split', loft: 'Loft', sweep: 'Sweep', thicken: 'Thicken', pattern: 'Pattern', surface: 'Fit surface', trim: 'Trim' }
   const sketches = features.filter((f): f is SketchFeature => f.kind === 'sketch')
   const testKind = d.kind === 'cutPlane' ? 'cut-plane' : d.kind === 'moveFace' ? 'move-face' : d.kind === 'deleteFace' ? 'delete-face' : d.kind === 'offsetBody' ? 'offset-body' : d.kind === 'moveBody' ? 'move-body' : d.kind
@@ -135,27 +177,46 @@ export function FeatureEditor() {
       // at its start and at its end.
       const varying = d.kind === 'fillet' && d.mode === 'variable'
       const rows = d.kind === 'fillet' ? (d.variable ?? []) : []
+      const faceRound = d.kind === 'fillet' && d.mode === 'faceRound'
       const picked = varying ? rows.length : d.edges.length
       const setRadii = (i: number, radius: [number, number]) => set({ variable: rows.map((v, j) => (j === i ? { ...v, radius } : v)) })
+      const modes = [
+        ['constant', 'Constant radius fillet', 'fillet'],
+        ['variable', 'Variable radius fillet', 'variableFillet'],
+        ['faceRound', 'Face round fillet', 'faceRoundFillet'],
+        ['chamfer', 'Chamfer', 'chamfer'],
+      ] as const
+      const activeMode = d.kind === 'chamfer' ? 'chamfer' : d.mode
+      const choices = modes.filter(([mode]) => d.featureId === undefined || (mode === 'chamfer') === (d.kind === 'chamfer'))
+      const chooseMode = (mode: typeof modes[number][0]) => {
+        if (mode === activeMode) return
+        if (d.kind === 'fillet' && mode !== 'chamfer') set(filletModeSwitch(d, mode))
+        else if (d.featureId === undefined) {
+          const edges = d.kind === 'fillet' && d.mode === 'variable' ? (d.variable ?? []).map(v => v.edge) : d.edges
+          re.getState().startFeature(mode === 'chamfer' ? 'chamfer' : 'fillet')
+          const next = re.getState().featureDraft
+          if (next?.kind === 'fillet' && mode !== 'chamfer')
+            set({ body: d.body, edges, chain: d.chain, ...filletModeSwitch({ ...next, edges }, mode) })
+          else set({ body: d.body, edges, chain: d.chain })
+        }
+      }
       fields = (
         <>
-          {bodySelect(d.body, (body) => set({ body, edges: [], ...(d.kind === 'fillet' ? { variable: undefined } : {}) }))}
-          {d.kind === 'fillet' ? (
-            <label className="field">
-              <span>
-                Radius
-                <InfoDot title="Constant or variable radius">
-                  <p>
-                    <b>Constant</b> rounds every edge picked at the one radius, read off the scan across the first. <b>Variable</b> rounds each edge from a start radius at one end to an end radius at the other, evenly along it — a round that swells along a casting's edge. The part names each edge's Start and End by its ends; ⇄ swaps its two radii.
-                  </p>
-                </InfoDot>
-              </span>
-              <select data-test="fillet-mode" value={d.mode} onChange={(e) => set(filletModeSwitch(d, e.target.value as 'constant' | 'variable'))}>
-                <option value="constant">Constant</option>
-                <option value="variable">Variable — start to end</option>
-              </select>
-            </label>
-          ) : (
+          <div className="edge-mode-bar" role="group" aria-label="Fillet and chamfer modes">
+            {choices.map(([mode, label, icon]) => (
+              <button type="button" key={mode} aria-label={label} title={label} aria-pressed={activeMode === mode}
+                data-test={`fillet-mode-${mode}`} onClick={() => chooseMode(mode)}>
+                <Icon name={icon} size={25} />
+              </button>
+            ))}
+          </div>
+          <label className="field"><span>Type</span>
+            <select data-test="fillet-mode" value={activeMode} onChange={e => chooseMode(e.target.value as typeof activeMode)}>
+              {choices.map(([mode, label]) => <option key={mode} value={mode}>{label}</option>)}
+            </select>
+          </label>
+          {bodySelect(d.body, body => set({ body, edges: [], ...(d.kind === 'fillet' ? { variable: undefined, roundFaces: undefined } : {}) }))}
+          {d.kind === 'chamfer' && (
             <label className="field">
               <span>
                 Type
@@ -172,13 +233,20 @@ export function FeatureEditor() {
               </select>
             </label>
           )}
-          <div className="field">
+          {faceRound && d.kind === 'fillet' ? <>
+            {roundRoles.map(role => <button type="button" key={role} className="block" data-test={`face-round-${role}`}
+              aria-pressed={(d.roundRole ?? 'left') === role} onClick={() => set({ roundRole: role })}>
+              {{left: 'Left side faces', center: 'Center faces', right: 'Right side faces'}[role]} · {d.roundFaces?.[role].length || 'Pick…'}
+            </button>)}
+            <p className="hint">Pick the two sides and the center strip that the round will replace. Click a selected face again to remove it.</p>
+            <button type="button" onClick={() => set({ roundFaces: emptyRoundGroups(), roundRole: 'left' })}>Reset faces</button>
+          </> : <div className="field">
             <span>Edges</span>
             <span className="picked" data-test={`${d.kind}-edges`}>
-              {picked === 0 ? (varying ? 'Click the edges of the body to round, each from a start radius to an end radius. Click a picked edge again to let it go' : 'Click the edges of the body — a round runs on along the edges tangent to it. Click a picked edge again to let it go') : `${picked} edge${picked === 1 ? '' : 's'} picked`}
+              {picked === 0 ? (varying ? 'Click the edges of the body to round, then set the radii along each edge. Click a picked edge again to let it go' : 'Click an edge to preview the feature. Click a selected edge again to remove it.') : `${picked} edge${picked === 1 ? '' : 's'} picked`}
               {picked > 0 && <ClearPicks kind={d.kind} />}
             </span>
-          </div>
+          </div>}
           {d.kind === 'fillet' && varying && (
             <>
               {rows.map((v, i) => (
@@ -188,23 +256,32 @@ export function FeatureEditor() {
                       {rows.length > 1 ? `${i + 1} · ` : ''}
                       {describeEdge(v.edge.fingerprint)}
                     </span>
-                    <button data-test={`fillet-varying-swap-${i}`} title="Swap the two radii — the start radius at the other end" onClick={() => setRadii(i, [v.radius[1], v.radius[0]])}>
+                    <button data-test={`fillet-varying-swap-${i}`} title="Swap the two radii — the start radius at the other end" onClick={() => set({ variable: rows.map((row, j) => j !== i ? row : { ...row, radius: [row.radius[1], row.radius[0]], points: row.points?.map(p => ({ ...p, position: 1 - p.position })).reverse() }) })}>
                       ⇄
                     </button>
                   </div>
-                  <Num label="Start" testId={`fillet-varying-start-${i}`} value={v.radius[0]} nominal="radius" onCommit={(r) => setRadii(i, [Math.abs(r), v.radius[1]])} hint="The radius at the edge's start — the end named Start on the part" />
-                  <Num label="End" testId={`fillet-varying-end-${i}`} value={v.radius[1]} nominal="radius" onCommit={(r) => setRadii(i, [v.radius[0], Math.abs(r)])} hint="The radius at the edge's other end; the round runs evenly from the one to the other" />
+                  <Num finishingLength label="Start" testId={`fillet-varying-start-${i}`} value={v.radius[0]} nominal="radius" onCommit={(r) => setRadii(i, [Math.abs(r), v.radius[1]])} hint="The radius at the edge's start — the end named Start on the part" />
+                  <Num finishingLength label="End" testId={`fillet-varying-end-${i}`} value={v.radius[1]} nominal="radius" onCommit={(r) => setRadii(i, [v.radius[0], Math.abs(r)])} hint="The radius at the end of the selected path" />
+                  <label className="field"><span>Radius transition</span>
+                    <select data-test={`fillet-varying-transition-${i}`} value={v.transition ?? 'smooth'}
+                      onChange={event => set({ variable: rows.map((row, j) => j === i ? { ...row, transition: event.target.value as 'linear' | 'smooth' } : row) })}>
+                      <option value="smooth">Smooth</option>
+                      <option value="linear">Linear between stations</option>
+                    </select>
+                  </label>
+                  <RadiusStations edgeIndex={i} ends={v.radius} points={v.points ?? []}
+                    onChange={(points, ends) => set({ variable: rows.map((row, j) => j === i ? { ...row, points, radius: ends } : row) })} />
                 </div>
               ))}
               <p className="hint" data-test="fillet-varying-hint">
-                {rows.length === 0 ? 'Each edge clicked starts at the radius the last one has; type its two radii over.' : `The part names each edge's Start and End, with the radius there${rows.length > 1 ? ' — numbered as listed here' : ''}. Each edge is rounded on its own, after the others.`}
+                {rows.length === 0 ? 'Pick an edge and insert a control point to set a radius along its length.' : `The part names each edge's Start and End, with the radius there${rows.length > 1 ? ' — numbered as listed here' : ''}. Insert a midpoint to control the radius between the ends.`}
                 {d.edges.length > 0 && ` And ${d.edges.length === 1 ? 'an edge' : `${d.edges.length} edges`} at R ${mm(d.radius)}, kept — Constant shows ${d.edges.length === 1 ? 'it' : 'them'}.`}
               </p>
             </>
           )}
-          {d.kind === 'fillet' && !varying ? (
+          {d.kind === 'fillet' && d.mode === 'constant' ? (
             <>
-              <Num label="Radius" testId="fillet-radius" slot="radius" value={d.radius} nominal="radius" onCommit={(v) => set({ radius: Math.abs(v), radiusTyped: true })} hint="Read off the scan across the first picked edge; type your own to keep it. The arrow on the edge drags it." />
+              <Num finishingLength label="Radius" live testId="fillet-radius" slot="radius" value={d.radius} nominal="radius" onCommit={(v) => set({ radius: Math.abs(v), radiusTyped: true })} hint="Read off the scan across the first picked edge; type your own to keep it. The arrow on the edge drags it." />
               <p className={'hint' + (d.estimate.status === 'none' ? ' warn' : '')} data-test="fillet-estimate">
                 {d.radiusTyped && 'Radius as typed.'}
                 {!d.radiusTyped && d.estimate.status === 'idle' && 'Pick an edge and the radius is read off the scan there.'}
@@ -222,15 +299,15 @@ export function FeatureEditor() {
           {d.kind === 'chamfer' && (
             <>
               <Num
-                label={d.mode === 'equal' ? 'Distance' : 'Distance 1'}
-                testId="chamfer-distance"
+                label={d.mode === 'twoDistances' ? 'Distance 1' : 'Size'}
+                finishingLength live testId="chamfer-distance"
                 slot="distance"
                 value={d.distance}
                 nominal="length"
                 onCommit={(v) => set({ distance: Math.abs(v) })}
                 hint={d.mode === 'equal' ? 'How far back from the edge each face is cut. The arrow on the edge drags it.' : 'How far back from the edge the reference face is cut. The arrow on the edge drags it.'}
               />
-              {d.mode === 'twoDistances' && <Num label="Distance 2" testId="chamfer-distance2" slot="distance2" value={d.distance2} nominal="length" onCommit={(v) => set({ distance2: Math.abs(v) })} hint="How far back from the edge the face across from the reference is cut." />}
+              {d.mode === 'twoDistances' && <Num finishingLength label="Distance 2" testId="chamfer-distance2" slot="distance2" value={d.distance2} nominal="length" onCommit={(v) => set({ distance2: Math.abs(v) })} hint="How far back from the edge the face across from the reference is cut." />}
               {d.mode === 'distanceAngle' && <Num label="Angle" unit="°" testId="chamfer-angle" slot="angleDeg" value={d.angleDeg} nominal="angle" onCommit={(v) => set({ angleDeg: Math.min(89.9, Math.max(0.1, Math.abs(v))) })} hint="Degrees between the chamfer and the reference face, under 90 — 45° on a square edge is the equal chamfer." />}
               {d.mode !== 'equal' && (
                 <label className="checkrow" title="Measure from the other face of each edge: the distances swap sides, the angle is read off the other face">
@@ -240,11 +317,12 @@ export function FeatureEditor() {
               )}
             </>
           )}
-          {!varying && (
+          {( !varying || rows.some(v => v.points?.length || v.chain !== undefined) || rows.length === 0) && (
             <label className="checkrow">
-              <input type="checkbox" data-test={`${d.kind}-chain`} checked={d.chain} onChange={(e) => set({ chain: e.target.checked })} />
+              <input type="checkbox" data-test={`${d.kind}-chain`} checked={varying && rows.length ? rows.every(v => v.chain ?? d.chain) : d.chain}
+                onChange={(e) => set({ chain: e.target.checked, ...(varying ? { variable: rows.map(v => ({ ...v, chain: e.target.checked })) } : {}) })} />
               <span>
-                Tangent propagation
+                {faceRound ? 'Add tangent faces' : 'Add tangent edges'}
                 <InfoDot title="Tangent propagation">
                   <p>
                     The {d.kind} runs on along every edge that leaves a picked one smoothly — all the way round a rounded rectangle from one click on its rim. The edges it reaches are lit in a lighter green on the part. Off, only the edges clicked are taken.
@@ -738,9 +816,14 @@ export function FeatureEditor() {
               ))}
             </select>
           </label>
-          <Num label="From" testId="sheet-from" slot="from" value={d.from} nominal="length" onCommit={(v) => set({ from: v })} hint="How far along the sketch plane's normal the surface starts" />
+          {d.projectOnto !== undefined ? <label className="field"><span>Project onto sheet</span>
+            <select data-test="sheet-project-target" value={d.projectOnto} onChange={e => set({ projectOnto: Number(e.target.value) })}>
+              {bodies.filter(b => b.surface && b.id !== d.featureId).map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select></label> : <label className="checkrow"><input type="checkbox" data-test="sheet-planar" checked={!!d.planar} onChange={e => set({ planar: e.target.checked })} />Planar surface from closed contour</label>}
+          {!d.planar && <><Num label="From" testId="sheet-from" slot="from" value={d.from} nominal="length" onCommit={(v) => set({ from: v })} hint="How far along the sketch plane's normal the surface starts" />
           <Num label="To" testId="sheet-to" slot="to" value={d.to} nominal="length" onCommit={(v) => set({ to: v })} hint="How far along the normal it ends — past the body on both sides, so the split goes right through" />
-          <p className="hint">Every drawn piece of the sketch, open or closed, becomes the surface. It is a body in the list, marked as a surface, and never exported on its own.</p>
+          </>}
+          <p className="hint">{d.projectOnto !== undefined ? 'Project the largest closed region along the sketch normal. The portion of the target inside the outline becomes a new trimmed sheet.' : d.planar ? 'Use the largest closed region, including its holes.' : 'Extrude the sketch edges along the sketch normal.'}</p>
         </>
       )
       break
@@ -804,7 +887,8 @@ export function FeatureEditor() {
             <input type="checkbox" data-test="loft-ruled" checked={d.ruled} onChange={(e) => set({ ruled: e.target.checked })} />
             <span>Straight between the profiles</span>
           </label>
-          <OpFields op={d.op} canCut={bodies.some((b) => !b.surface)} testPrefix="loft" onOp={(op) => set({ op })} />
+          <label className="checkrow"><input type="checkbox" data-test="loft-surface" checked={!!d.surface} onChange={e => set({ surface: e.target.checked })} />Surface loft</label>
+          {!d.surface && <OpFields op={d.op} canCut={bodies.some((b) => !b.surface)} testPrefix="loft" onOp={(op) => set({ op })} />}
           <p className="hint">In the order ticked, each sketch's one region — or its largest.</p>
         </>
       )
@@ -824,15 +908,39 @@ export function FeatureEditor() {
               ))}
             </select>
           </label>
-          <Num label="Thickness" testId="thicken-thickness" slot="thickness" value={d.thickness} nominal="length" onCommit={(v) => set({ thickness: Math.abs(v) })} hint="The wall, through the solid — every point of the sheet that far from the far skin" />
+          <label className="field"><span>Constraint</span>
+            <select data-test="thicken-constraint" value={d.constraint?.mode ?? 'normal'} onChange={e => {
+              const mode = e.target.value
+              const plane = d.constraint?.plane ?? { kind: 'world' as const, axis: 'z' as const, offset: 0 }
+              set({ constraint: mode === 'normal' ? undefined : mode === 'betweenPlanes'
+                ? { mode, plane, end: { kind: 'world', axis: 'z', offset: d.thickness } }
+                : { mode: mode === 'toPlane' ? 'toPlane' : 'direction', plane } })
+            }}>
+              <option value="normal">Sheet normal</option><option value="direction">Along plane normal</option>
+              <option value="toPlane">Up to plane</option><option value="betweenPlanes">Between parallel planes</option>
+            </select>
+          </label>
+          {d.constraint && <label className="field"><span>{d.constraint.mode === 'direction' ? 'Direction plane' : 'Limit plane'}</span>
+            <PlaneSelect value={d.constraint.plane} testId="thicken-plane" placeholder="Choose plane…" onChange={plane => d.constraint && set({ constraint: { ...d.constraint, plane } })} />
+          </label>}
+          {d.constraint && d.constraint.mode !== 'direction' && d.constraint.plane.kind === 'world' &&
+            <Num label="Limit coordinate" testId="thicken-limit-coordinate" slot="constraint.plane.offset" value={d.constraint.plane.offset} nominal="length" onCommit={offset => d.constraint?.plane.kind === 'world' && set({ constraint: { ...d.constraint, plane: { ...d.constraint.plane, offset } } })} />}
+          {d.constraint?.mode === 'betweenPlanes' && <label className="field"><span>Second limit</span>
+            <PlaneSelect value={d.constraint.end} testId="thicken-end" placeholder="Choose plane…" onChange={end => d.constraint?.mode === 'betweenPlanes' && set({ constraint: { ...d.constraint, end } })} />
+          </label>}
+          {d.constraint?.mode === 'betweenPlanes' && d.constraint.end.kind === 'world' &&
+            <Num label="Second coordinate" testId="thicken-end-coordinate" slot="constraint.end.offset" value={d.constraint.end.offset} nominal="length" onCommit={offset => d.constraint?.mode === 'betweenPlanes' && d.constraint.end.kind === 'world' && set({ constraint: { ...d.constraint, end: { ...d.constraint.end, offset } } })} />}
+          {(!d.constraint || d.constraint.mode === 'direction') && <>
+          <Num label={d.constraint ? 'Sweep distance' : 'Thickness'} testId="thicken-thickness" slot="thickness" value={d.thickness} nominal="length" onCommit={(v) => set({ thickness: Math.abs(v) })} hint="The wall, through the solid — every point of the sheet that far from the far skin" />
           <label className="field">
             <span>Grows</span>
             <select data-test="thicken-side" value={d.side} onChange={(e) => set({ side: e.target.value as ThickenSide })}>
-              <option value="in">Against the sheet's normal</option>
-              <option value="out">Along the sheet's normal</option>
+              <option value="in">{d.constraint ? 'Negative direction' : "Against the sheet's normal"}</option>
+              <option value="out">{d.constraint ? 'Positive direction' : "Along the sheet's normal"}</option>
               <option value="both">Half each way</option>
             </select>
           </label>
+          </>}
           <OpFields op={d.op} canCut={bodies.some((b) => !b.surface)} testPrefix="thicken" onOp={(op) => set({ op })} />
           <p className="hint">A freeform thin shell's wall from its one skin — the sheet stays a body of its own, put out of view. A face that bends tighter than the thickness towards the side it grows to is named, and the thickness it takes.</p>
         </>
@@ -1036,32 +1144,20 @@ export function FeatureEditor() {
       const at = d.featureId === undefined ? features.length : features.findIndex((f) => f.id === d.featureId)
       const holds: { key: string; name: string; kind: 'plane' | 'axis' }[] = [
         ...constrainRefs(elements).map((r) => ({ key: r.key, name: r.name, kind: r.kind })),
-        ...features.slice(0, at < 0 ? features.length : at).flatMap((f) => (f.kind === 'surface' && (f.shape ?? 'freeform') !== 'freeform' ? [{ key: `surface:${f.id}`, name: f.name, kind: f.shape === 'plane' ? ('plane' as const) : ('axis' as const) }] : [])),
+        ...features.slice(0, at < 0 ? features.length : at).flatMap((f) => (f.kind === 'surface' && (f.shape === 'plane' || f.shape === 'cylinder') ? [{ key: `surface:${f.id}`, name: f.name, kind: f.shape === 'plane' ? ('plane' as const) : ('axis' as const) }] : [])),
       ]
       const holdValue = d.constrain.mode === 'force' ? `${d.constrain.relation}|${d.constrain.ref}` : d.constrain.mode
       fields = (
         <>
-          <label className="field">
-            <span>
-              Shape
-              <InfoDot title="What is fitted">
-                <p>
-                  <b>Freeform</b> is a smooth B-spline surface through the region — a blend, a crowned lid.{' '}
-                  <b>Plane</b> and <b>Cylinder</b> are the exact faces a designed part is made of, and they
-                  are held to what the part already has: a fit that lands within {TILT_TOLERANCE_DEG}° of parallel
-                  or square to a coordinate plane, a measured element or a surface fitted before it is
-                  fitted again with that held, and within {mm(COINCIDENCE_MM)} of a parallel plane or axis it is
-                  put on it. A trim cuts with the whole plane or cylinder, not only the patch drawn.
-                </p>
-              </InfoDot>
-            </span>
-            <select data-test="surface-shape" value={d.shape} onChange={(e) => set({ shape: e.target.value as SurfaceShape, constrain: { mode: 'auto' } })}>
-              <option value="freeform">Freeform</option>
-              <option value="plane">Plane</option>
-              <option value="cylinder">Cylinder</option>
-            </select>
-          </label>
-          {d.shape !== 'freeform' && (
+          <SurfaceSelection region={d.region} shape={d.awaitingType ? null : d.shape} choose={shape => {
+            if (shape === d.shape && !d.awaitingType) return
+            set({
+              shape, awaitingType: false,
+              ...(d.useShapeExpansion ? { fit: { ...d.fit, expandPct: shape === 'cylinder' ? 55 : INTERACTIVE_SURFACE_FIT.expandPct } } : {}),
+              constrain: shape !== d.shape && d.constrain.mode === 'force' ? { mode: 'free' } : d.constrain,
+            })
+          }} />
+          {!d.awaitingType && (d.shape === 'plane' || d.shape === 'cylinder') && (
             <label className="field">
               <span>Hold to</span>
               <select
@@ -1085,40 +1181,11 @@ export function FeatureEditor() {
               </select>
             </label>
           )}
-          <div className="field">
-            <span>
-              Region
-              <InfoDot title="The region">
-                <p>
-                  The patch of the scan the surface is fitted through. <b>Click the scan</b> to add the
-                  face under the click — a flood from there over every edge whose normals turn by less
-                  than the angle, one flat face of a CAD-like part at 1°, a patch of a scan up to its
-                  first crease; Ctrl-click takes a flood away. Or mark it with the tools — brush, window,
-                  lasso — like a surface in 3D Measure. The region is the surface's own: it takes nothing
-                  from a 3D Measure element and may overlap a neighbour's at a seam.
-                </p>
-              </InfoDot>
-            </span>
-            <span className="unitfield">
-              <b data-test="surface-region" style={{ fontSize: 12 }}>
-                {d.region.length === 0 ? 'None — click the scan' : `${d.region.length.toLocaleString('en-US')} points`}
-              </b>
-              <button data-test="surface-region-clear" disabled={d.region.length === 0} title="Start the region over" onClick={() => re.getState().setRegion(new Uint32Array(0))}>
-                Clear
-              </button>
-            </span>
-          </div>
-          <Num label="Flood angle" unit="°" testId="surface-flood" value={d.floodDeg} onCommit={(v) => set({ floodDeg: Math.min(89, Math.max(0.1, Math.abs(v))) })} hint="How far the normals may turn over one edge for a click's flood to cross it" />
-          <label className="checkrow">
-            <input type="checkbox" data-test="surface-paint" checked={d.paint} onChange={(e) => set({ paint: e.target.checked })} />
-            <span>Mark with the tools</span>
-          </label>
-          {d.paint && <MarkTools escapeNote="Esc puts the tools away" showCount={false} onClear={() => re.getState().setRegion(new Uint32Array(0))} />}
-          {d.shape === 'freeform' ? (
+          {!d.awaitingType && (d.shape === 'freeform' ? (
             <SurfaceFitFields d={d} set={set} />
           ) : (
-            <Num label="Expand by" unit="%" testId="surface-expand" value={d.fit.expandPct} onCommit={(v) => set({ fit: { ...d.fit, expandPct: Math.min(200, Math.max(0, Math.abs(v))) } })} hint="How far past the region the surface reaches, as a share of its extent — it has to meet its neighbours for the trim" />
-          )}
+            <Num label="Expand by" unit="%" testId="surface-expand" value={d.fit.expandPct} onCommit={(v) => set({ useShapeExpansion: false, fit: { ...d.fit, expandPct: Math.min(200, Math.max(0, Math.abs(v))) } })} hint="How far past the region the surface reaches, as a share of its extent — it has to meet its neighbours for the trim" />
+          ))}
         </>
       )
       break
@@ -1130,33 +1197,40 @@ export function FeatureEditor() {
       const has = (t: TrimTool) => d.tools.some((x) => x.kind === t.kind && x.id === t.id)
       const toggle = (t: TrimTool) => {
         const tools = has(t) ? d.tools.filter((x) => !(x.kind === t.kind && x.id === t.id)) : [...d.tools, t]
-        set({ tools, ...(d.toleranceTyped ? {} : { tolerance: trimToleranceFor(tools, results) }) })
+        resetTrimDisplay()
+        set({ tools, corrections: undefined, ...(d.removed ? { removed: d.removed.filter(p => tools.some(t => t.kind === 'body' && t.id === p.body)) } : {}), ...(d.toleranceTyped ? {} : { tolerance: trimToleranceFor(tools, results) }) })
       }
-      const surfaces = bodies.filter((b) => b.id !== d.featureId)
-      const solids = elements.filter((e) => e.fit && (e.fit.kind === 'plane' || e.fit.kind === 'cylinder' || e.fit.kind === 'cone' || e.fit.kind === 'sphere' || e.fit.kind === 'torus'))
+      const surfaces = bodies.filter((b) => b.id !== d.featureId && (!d.removed || b.surface))
+      const solids = d.removed ? [] : elements.filter((e) => e.fit && (e.fit.kind === 'plane' || e.fit.kind === 'cylinder' || e.fit.kind === 'cone' || e.fit.kind === 'sphere' || e.fit.kind === 'torus'))
       fields = (
         <>
-          <div className="field">
-            <span>
-              Surfaces
-              <InfoDot title="The surfaces">
-                <p>
-                  The set that closes into the solid: fitted surfaces and sheets from this workspace, and
-                  measured planes, cylinders, cones and spheres from 3D Measure, each reaching past the
-                  part. A box round the scan is cut by all of them, and of the faces that makes, the
-                  ones lying on the scan — within the tolerance, over the overlap share of their
-                  samples — are kept and sewn. A solid body's faces count too.
-                </p>
-                <p>
-                  A set that does not close leaves a surface body of the kept faces with its open edges
-                  drawn red on the part: fit the surface missing there and edit the trim to take it in.
-                </p>
-              </InfoDot>
-            </span>
-            <b data-test="trim-count" style={{ fontSize: 12 }}>
-              {d.tools.length} of {surfaces.length + solids.length}
-            </b>
-          </div>
+          <fieldset>
+            <legend>Automatic Trimming</legend>
+            <Num label="Tolerance (±)" testId="trim-tolerance" slot="tolerance" value={d.tolerance} onCommit={(v) => set({ tolerance: Math.abs(v), toleranceTyped: true })} hint="How far a face's sampled point may lie from the scan and still count as on it — three times the scan's scatter, read off the surfaces' own fits" />
+          <p className="hint" data-test="trim-tolerance-source">
+            {d.toleranceTyped ? 'Tolerance as typed.' : d.tools.some((t) => t.kind === 'body' && results[t.id]?.surface) ? 'Three times the median σ of the fitted surfaces in the set.' : `No fitted surface in the set — ${mm(DEFAULT_SPLIT_TOLERANCE_MM)} to start.`}
+          </p>
+          <Num label="Overlap" unit="%" testId="trim-overlap" slot="overlap" value={Math.round(d.overlap * 100)} onCommit={(v) => set({ overlap: Math.min(1, Math.max(0.05, Math.abs(v) / 100)) })} hint="The share of a face's samples that must lie on the scan for the face to be kept" />
+            <input type="range" aria-label="Overlap with reference mesh" min="5" max="100" step="1" value={Math.round(d.overlap * 100)} onChange={e => set({ overlap: Number(e.target.value) / 100 })} />
+            <button type="button" className="block" data-test="trim-auto" disabled={!scanLoaded || !d.tools.length} onClick={() => { resetTrimDisplay(); set({ removed: undefined, corrections: undefined }) }}>Apply Automatic Trimming</button>
+          </fieldset>
+          <label className="field"><span>Trim method</span><select data-test="trim-method" value={d.removed ? 'manual' : 'scan'} onChange={e => { resetTrimDisplay(); set(e.target.value === 'manual'
+            ? { removed: [], corrections: undefined, tools: d.tools.filter(t => t.kind === 'body' && bodies.some(b => b.id === t.id && b.surface)) }
+            : { removed: undefined, corrections: undefined }) }}>
+            <option value="scan" disabled={!scanLoaded}>Automatic · keep on scan</option><option value="manual">Manual · remove pieces</option>
+          </select></label>
+          <label className="field"><span>Display</span><select data-test="trim-view" value={display.view} disabled={preview.status !== 'ok' || !preview.trim?.pieces} onChange={e => useTrimDisplay.setState({ view: e.target.value as TrimView })}>
+            <option value="remaining">Show Remaining Surfaces</option><option value="removed">Show Removed Surfaces</option><option value="all">Show All Surfaces</option>
+          </select></label>
+          <label className="checkrow"><input type="checkbox" data-test="trim-wireframe" checked={display.wireframe} disabled={preview.status !== 'ok' || !preview.trim?.pieces} onChange={e => useTrimDisplay.setState({ wireframe: e.target.checked })} />Show shapes wireframes</label>
+          <fieldset><legend>Visibility</legend>
+            {d.tools.filter(t => t.kind === 'body').map(t => <button className="block" type="button" key={t.id} aria-pressed={!display.hidden.includes(t.id)} data-test={`trim-visible-${t.id}`} disabled={preview.status !== 'ok' || !preview.trim?.pieces}
+              onClick={() => useTrimDisplay.setState({ hidden: display.hidden.includes(t.id) ? display.hidden.filter(id => id !== t.id) : [...display.hidden, t.id] })}>
+              {display.hidden.includes(t.id) ? '○' : '●'} {bodies.find(b => b.id === t.id)?.name}
+            </button>)}
+            <button type="button" data-test="trim-swap" disabled={preview.status !== 'ok' || !preview.trim?.pieces} onClick={() => useTrimDisplay.setState({ hidden: d.tools.filter(t => t.kind === 'body' && !display.hidden.includes(t.id)).map(t => t.id) })}>Swap visible</button>
+          </fieldset>
+          <details open><summary>Input surfaces <b data-test="trim-count">{d.tools.length} of {surfaces.length + solids.length}</b></summary>
           <div className="checklist" data-test="trim-tools">
             {surfaces.map((b) => (
               <label key={`b${b.id}`} className="checkrow">
@@ -1177,11 +1251,20 @@ export function FeatureEditor() {
             ))}
             {surfaces.length + solids.length === 0 && <p className="hint">No surface to close yet — fit surfaces here, or planes and cylinders in 3D Measure.</p>}
           </div>
-          <Num label="Tolerance" testId="trim-tolerance" slot="tolerance" value={d.tolerance} onCommit={(v) => set({ tolerance: Math.abs(v), toleranceTyped: true })} hint="How far a face's sampled point may lie from the scan and still count as on it — three times the scan's scatter, read off the surfaces' own fits" />
-          <p className="hint" data-test="trim-tolerance-source">
-            {d.toleranceTyped ? 'Tolerance as typed.' : d.tools.some((t) => t.kind === 'body' && results[t.id]?.surface) ? 'Three times the median σ of the fitted surfaces in the set.' : `No fitted surface in the set — ${mm(DEFAULT_SPLIT_TOLERANCE_MM)} to start.`}
-          </p>
-          <Num label="Overlap" unit="%" testId="trim-overlap" slot="overlap" value={Math.round(d.overlap * 100)} onCommit={(v) => set({ overlap: Math.min(1, Math.max(0.05, Math.abs(v) / 100)) })} hint="The share of a face's samples that must lie on the scan for the face to be kept" />
+          </details>
+          <div className="toolrow">
+            <label className="checkrow" title="Merge adjacent same-domain faces when forming a solid"><input data-test="trim-merge" type="checkbox" checked={d.mergeFaces !== false} onChange={e => set({mergeFaces: e.target.checked})} />Merge faces</label>
+            <label className="checkrow" title="Keep disconnected components in one result body"><input data-test="trim-group" type="checkbox" checked={d.groupFaces !== false} onChange={e => set({groupFaces: e.target.checked})} />Group faces</label>
+          </div>
+          <p className="hint" role="status">{d.tools.length < 2 ? 'Choose the surfaces to trim in the viewport or input list.' : display.view === 'removed' ? 'Click a removed piece to restore it.' : display.view === 'all' ? 'Click a remaining piece to remove it or a removed piece to restore it.' : 'Click a piece to remove it. Hover to highlight the piece.'}</p>
+          <div className="toolrow">
+            <button type="button" data-test="trim-undo-pick" disabled={!display.history.length && !d.removed?.length && !d.corrections?.length} onClick={() => {
+              const previous = display.history.at(-1)
+              useTrimDisplay.setState({ history: display.history.slice(0, -1) })
+              set(previous ?? (d.removed ? { removed: d.removed.slice(0, -1) } : { corrections: d.corrections?.slice(0, -1) }))
+            }}>Undo last pick</button>
+            <button type="button" data-test="trim-reset" disabled={!d.tools.every(t => t.kind === 'body' && bodies.some(b => b.id === t.id && b.surface))} onClick={() => { resetTrimDisplay(); set({ removed: [], corrections: undefined }) }}>Reset Trim</button>
+          </div>
         </>
       )
       break
@@ -1190,13 +1273,51 @@ export function FeatureEditor() {
   const bodyNamed = 'body' in d && d.body !== null ? (bodies.find((b) => b.id === d.body)?.name ?? features.find((f) => f.id === d.body)?.name) : null
   return (
     <div className="draftbox" data-test={`${testKind}-editor`}>
-      <div className="sec-head">{d.featureId !== undefined ? `Edit ${d.name ?? title[d.kind]}` : d.kind === 'import' || d.kind === 'moveBody' ? title[d.kind] : `New ${title[d.kind].toLowerCase()}`}</div>
+      <div className="sec-head">{d.kind === 'trim' ? 'Trim selected objects' : d.featureId !== undefined ? `Edit ${d.name ?? title[d.kind]}` : d.kind === 'fillet' || d.kind === 'chamfer' ? 'Fillet / Chamfer' : d.kind === 'import' || d.kind === 'moveBody' ? title[d.kind] : `New ${title[d.kind].toLowerCase()}`}</div>
       {d.featureId !== undefined && <NameField value={d.name ?? ''} testId={`${testKind}-name`} onChange={(name) => set({ name })} />}
       {fields}
-      {!planned && !leaning && <PreviewLine preview={ready ? preview : { status: 'idle' }} testPrefix={testKind} />}
-      {!planned && !leaning && <AnalysisRow testPrefix={testKind} />}
-      <button className="primary block" data-test={`${testKind}-create`} disabled={!ready} title="Enter does the same" onClick={() => re.getState().commitFeature()}>
-        {d.featureId !== undefined
+      {edgeTool && errors.grip && <p className="hint warn" role="status" data-test="grip-size-error">{errors.grip}</p>}
+      {edgeTool && <div className="toolrow">
+        <button type="button" data-test={`${d.kind}-reset`} onClick={() => { re.getState().clearDraftPicks(); setAppliedDraft(null) }}>Reset</button>
+        <button type="button" data-test={`${d.kind}-apply`}
+        title="Show the preview at the displayed size" disabled={invalidSize || !ready || building || preview.status === 'building'}
+        onClick={() => {
+          if (!edgePreviewReady) re.getState().setFeatureDraft({})
+          setAppliedDraft(re.getState().featureDraft)
+        }}>Apply</button></div>}
+      {edgeTool && <FinishingAnalysis key={d.kind} kind={d.kind} />}
+      {edgeTool && appliedDraft === d && preview.status === 'ok' && edgePreviewReady && (
+        <p role="status" className="hint" data-test={`${d.kind}-applied`}>
+          Preview applied. Choose OK to {d.featureId === undefined ? 'add the feature' : 'save changes'}.
+        </p>
+      )}
+      {edgeTool && d.chain && d.edges.length > 0 && preview.status === 'failed' && (
+        <button type="button" className="block" data-test={`${d.kind}-picked-only`} onClick={() => set({ chain: false })}>
+          Retry with selected edges only
+        </button>
+      )}
+      {!planned && !leaning && <PreviewLine preview={ready ? preview : { status: 'idle' }} testPrefix={testKind} manualTrim={d.kind === 'trim' && !!d.removed} />}
+      {!edgeTool && d.kind !== 'trim' && (d.kind !== 'surface' || ready) && !planned && !leaning && <AnalysisRow testPrefix={testKind} />}
+      {d.kind === 'surface' && d.featureId === undefined && !offerTrim && (
+        <button type="button" className="block" data-test="surface-create-stay" data-confirm="0"
+          disabled={!ready || preview.status !== 'ok' || !preview.surface}
+          onClick={() => re.getState().commitFeature('nextSurface')}>
+          Create &amp; Stay
+        </button>
+      )}
+      {(d.kind === 'fillet' || d.kind === 'chamfer') && d.featureId === undefined && (
+        <button type="button" className="block" data-test={`${d.kind}-create-stay`}
+          disabled={!canRequest || building || !!pending}
+          onClick={() => confirm(true)}>Create &amp; Stay</button>
+      )}
+      {pending?.draft === d && <p role="status" className="hint">Creating when the preview is ready…</p>}
+      {offerTrim ? (
+        <button type="button" className="primary block" data-test="surface-trim-fitted"
+          disabled={building} onClick={trimFittedSheets}>
+          Trim fitted surfaces ({trimCount})
+        </button>
+      ) : <button className="primary block" data-test={`${testKind}-create`} disabled={!canRequest || (edgeTool && (building || !!pending))} title="Enter does the same" onClick={() => confirm()}>
+        {d.kind === 'trim' || edgeTool ? 'OK' : d.featureId !== undefined
           ? 'Save changes'
           : planned
             ? d.kind === 'moveFace' && d.faces.length > 1
@@ -1209,10 +1330,10 @@ export function FeatureEditor() {
                 : d.kind === 'deleteFace'
                   ? `Delete the ${d.faces.length === 1 ? 'face' : 'faces'}${bodyNamed ? ` of ${bodyNamed}` : ''}`
                   : `Create ${title[d.kind].toLowerCase()}${bodyNamed ? ` on ${bodyNamed}` : ''}`}
-      </button>
+      </button>}
       <div className="toolrow">
         <button data-test={`${testKind}-cancel`} onClick={() => re.getState().cancelFeature()}>
-          Cancel
+          {betweenFits ? 'Done' : 'Cancel'}
         </button>
       </div>
     </div>
