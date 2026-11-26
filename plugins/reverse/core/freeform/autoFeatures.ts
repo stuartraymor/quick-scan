@@ -14,10 +14,11 @@
 //
 // Pure typed-array code, for the worker.
 
-import type { DirectionConstraint, WorkMesh } from './autoPrepare'
+import { scanTopology, type DirectionConstraint, type WorkMesh } from './autoPrepare'
 
 /** How much more one direction must bend than the other, as |k1 − k2| / (|k1| + |k2|), for it to be given. */
 const ANISOTROPY = 0.6
+export const BALANCED_DETAIL_FACTOR = 2.19
 /** The bend that counts: the stronger curvature times the quad's edge. 0.15 is a radius of about seven quads. */
 const BEND = 0.15
 /** The most evening passes, whatever the quad's size against the scan's triangles. */
@@ -239,17 +240,50 @@ function visitBentEdges(m: WorkMesh, degrees: number, visit: (a: number, b: numb
   }
 }
 
-/** Integrated excess bend per characteristic length. A planar or gently curved
- * scan needs no extra feature rows. Scale and subdivision along a ridge leave
- * its contribution unchanged. Saturate the allowance on heavily textured scans. */
-export function featureDetailWeight(mesh: WorkMesh, area: number): number {
-  const threshold = 20
-  const radians = threshold * Math.PI / 180
-  let bend = 0
-  visitBentEdges(mesh, threshold, (_a, _b, length, cosine) => {
-    bend += length * (Math.acos(cosine) - radians)
+/** Estimate extra cells from integrated bends and open rims. Both lengths are
+ * normalized by the square root of area, independent of the mesh's units. */
+export function featureDetailWeight(mesh: WorkMesh, area: number, target = 2000, topology = scanTopology(mesh)): number {
+  const lengthScale = Math.sqrt(area)
+  const threshold = Math.PI / 9
+  let bend = 0, excess = 0, sharpLength = 0
+  visitBentEdges(mesh, 0, (_a, _b, length, cosine) => {
+    const angle = Math.acos(cosine)
+    bend += length * angle
+    excess += length * Math.max(0, angle - threshold)
+    if (angle > Math.PI / 4) sharpLength += length
   })
-  return Math.min(1.5, Math.sqrt(bend / Math.sqrt(area)))
+  const ridge = Math.sqrt(excess / lengthScale)
+  if (sharpLength < lengthScale * 1e-4) {
+    // On smooth forms a specified curvature sampling density becomes redundant
+    // as the ordinary grid resolves the bends. Combine the two resolutions.
+    // The integral of edge length times exterior angle on a sphere, divided
+    // by sqrt(area), tends to 4 sqrt(pi). A fine STL or OBJ seam can remain
+    // open at floating-point precision even on an otherwise smooth sphere.
+    const gentle = bend / lengthScale <= 1.05 * 4 * Math.sqrt(Math.PI)
+    if (ridge < 0.1 && (gentle || (topology.closed && topology.euler === 2))) return 0
+    const rows = 1.6 * bend / lengthScale + 9 * ridge
+    const curvatureCells = rows * rows
+    return Math.hypot(target, curvatureCells) / target - 1
+  }
+  const detail = Math.min(1.5, ridge)
+  if (topology.closed && topology.euler === 2) {
+    // Localized details of a simply connected shell have a finite cell budget.
+    return detail * 800 / (target + 150)
+  }
+  const rim = Math.max(0, topology.boundaryLength / lengthScale - 4)
+  const cycles = Math.max(0, 1 - topology.euler)
+  const rimCells = rim > 0 && cycles > 0
+    ? 5 * rim * Math.sqrt(Math.min(2000, target)) + 16 * cycles * Math.sqrt(target / 1000)
+    : 0
+  // Few long rims (e.g. thin blades) need extra rows at coarse resolution.
+  // At fine resolution the ordinary rows already follow most of these rims.
+  const sparseRim = cycles > 0 && cycles < Math.sqrt(target) ? Math.max(0, rim - 1) : 0
+  const coarseRimCells = 12 * Math.sqrt(2000) * sparseRim * Math.max(-0.75, (2000-target)/2000) / 3
+  const extra = detail * 4000 / (2000 + target) + (rimCells + coarseRimCells) / target
+  // On highly perforated sheets, dropping below the topology allowance can
+  // omit fine strips even when the requested number of cells has been met.
+  const topologyFloor = cycles > target / 12 ? Math.max(0, 44 * cycles / target - 1) / (BALANCED_DETAIL_FACTOR - 1) : 0
+  return Math.max(0, extra, topologyFloor)
 }
 
 export function hardEdgeConstraints(m: WorkMesh, degrees: number): DirectionConstraint[] {

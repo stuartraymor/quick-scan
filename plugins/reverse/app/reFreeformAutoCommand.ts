@@ -80,7 +80,7 @@ export const freeformAuto: Command<{
     const made = await prepareAutoCage(s, settings).result.catch((e) => refuse(e))
     const cage = made.cage
     const before = bodyRows(s)
-    const id = await change(() => re().addFreeform({ positions: Array.from(cage.positions), faces: cage.faces, creases: cage.creases, steps: steps ?? boundedBuildSteps(cage.faces.length, AUTO_BUILD_STEPS), snap, ...(resnap ? {} : { fitToScan: false }) }, name))
+    const id = await change(() => re().addFreeform({ positions: Array.from(cage.positions), faces: cage.faces, creases: cage.creases, steps: steps ?? boundedBuildSteps(cage.faces.length, AUTO_BUILD_STEPS), snap, autoFreeform: true, ...(resnap ? {} : { fitToScan: false }) }, name))
     const f = featureNamed(id) as FreeformFeature
     return { ...madeOut(f), ...autoAnswer(made), bodies: bodiesChanged(s, before) }
   },
@@ -114,6 +114,7 @@ export function autoAnswer(made: AutoOutcome) {
       symmetric: made.mirror ? { vertices: made.mirror.partner.length, onPlane: made.mirror.onPlane } : null,
     },
     coverage: made.coverage,
+    faults: made.faults,
     fitted: { signedScanFromSurface: signed && { min: signed.min, max: signed.max, mean: signed.mean }, iterations: made.fit.iterations, tolerance: d.tolerance, points: d.points, missed: d.missed, rms: round3(d.rms), max: round3(d.max), within: d.within, fraction: d.points > 0 ? round3(d.within / d.points) : 0 },
     ms: Object.fromEntries(Object.entries(made.ms).map(([k, v]) => [k, Math.round(v)])),
   }
@@ -124,7 +125,7 @@ function scanArrays(s: Awaited<ReturnType<typeof ready>>): { positions: Float32A
   if (!useStore.getState().fileName) throw new CommandError('no_scan', 'Auto Freeform is made of a scan, and none is open.')
   const scene = s.sceneRef.current
   const positions = scene?.scanPositions() ?? null
-  const indices = scene?.scanIndices() ?? null
+  const indices = scene?.scanIndices(true) ?? null
   if (!scene || !positions || !indices) throw new CommandError('unavailable', 'Auto Freeform is made of the scan as the viewport holds it — this needs the page with the scan shown.')
   return { positions: positions instanceof Float32Array ? positions : Float32Array.from(positions), indices }
 }

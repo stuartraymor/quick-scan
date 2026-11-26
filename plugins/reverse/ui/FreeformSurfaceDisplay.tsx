@@ -14,10 +14,10 @@ import { reSceneOf } from '../viewer/reScene'
 import { previewDeviationColours, type PreviewColouring } from '../core/freeform/previewDeviation'
 
 /** Display-only controls. The reference scan and committed bodies are untouched. */
-export function FreeformSurfaceDisplay({ positions, measured }: { positions: Float32Array; measured?: Float32Array }) {
+export function FreeformSurfaceDisplay({ positions, measured, edge }: { positions: Float32Array; measured?: Float32Array; edge?: number }) {
   const len = useLength()
   const [shadedOnly, setShadedOnly] = useState(false)
-  const [analysisOnly, setAnalysisOnly] = useState(true)
+  const [analysisOnly, setAnalysisOnly] = useState(false)
   const [deviation, setDeviation] = useState(false)
   // The registered scan can sit in front of a good fit by just a few microns.
   // Give the analysis its own visibility setting, and restore the shaded view on exit.
@@ -79,6 +79,14 @@ export function FreeformSurfaceDisplay({ positions, measured }: { positions: Flo
     document.addEventListener('keydown', key, true)
     return () => { unsubscribe(); document.removeEventListener('keydown', key, true); scene.setScanVisible(!useStore.getState().scanHidden) }
   }, [surfaceOnly, setSurfaceOnly, options])
+  useEffect(() => {
+    const scene = reverseSession()?.sceneRef.current
+    if (!scene || !edge || surfaceOnly) return
+    // Push only the reference scan's rendered depth behind the fitted skin.
+    // Exposed scan areas stay visible and all distance and pick coordinates stay exact.
+    scene.setScanDepthOffset(Math.min(0.2 * edge, 0.01 * scene.layerHost().modelRadius()))
+    return () => scene.setScanDepthOffset(0)
+  }, [positions, edge, surfaceOnly])
   return <section data-test="freeform-surface-display" style={{ display: 'grid', gap: 8 }}>
     <fieldset className="ff-display"><legend>Surface Display</legend>
       <button type="button" aria-label="Shaded" title="Shaded" aria-pressed={!deviation} onClick={() => { setDeviation(false); setOptions(false) }}><FreeformIcon name="shaded" /><span className="ff-accessible-label">Shaded</span></button>

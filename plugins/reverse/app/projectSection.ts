@@ -254,6 +254,7 @@ export function validateFeatureJson(e: Record<string, unknown>): void {
     fields(e, 'snap', 'boolean', 'freeform')
     if (e.snapType !== undefined && e.snapType !== 'ray') invalid('freeform.snapType')
     if (e.fitToScan !== undefined) fields(e, 'fitToScan', 'boolean', 'freeform')
+    if (e.autoFreeform !== undefined) fields(e, 'autoFreeform', 'boolean', 'freeform')
     if (e.refitTolerance !== undefined && (typeof e.refitTolerance !== 'number' || !Number.isFinite(e.refitTolerance) || e.refitTolerance <= 0)) throw new Error('Invalid freeform refit tolerance.')
     if (e.snapRegion !== undefined) {
       const r = object(e.snapRegion, 'freeform.snapRegion')

@@ -1,3 +1,4 @@
+import { defaultScanTransparency } from '../state/reFeatureHelpers'
 import { FreeformEditor, useFreeformEditor } from '../ui/FreeformEditor'
 // SPDX-License-Identifier: AGPL-3.0-only
 // The Reverse engineer workspace's part in the app, for one render: the CAD
@@ -574,8 +575,7 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
   const bodyMap = useReverse((s) => s.bodyMap)
   const curvatureMap = useReverse((s) => s.curvatureMap)
   const hasBodies = useReverse((s) => s.bodies.length > 0)
-  const visibleBody = useReverse(s => s.bodies.some(b => b.visible))
-  const anyBodyShown = !bodiesHidden && visibleBody
+  const defaultTransparent = useReverse(defaultScanTransparency)
   const sketchSliced = useReverse((s) => s.sketchSliced)
   const hasElements = useStore((s) => s.elements.length > 0 || s.sections.length > 0)
   const tangentEdges = useReverse((s) => s.tangentEdges)
@@ -605,9 +605,9 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
           : 'Build a body first — until then there is only the scan to look at',
     },
     seeThrough: {
-      on: scanSeeThrough ?? anyBodyShown,
+      on: scanSeeThrough ?? defaultTransparent,
       set: (on: boolean) => re().setScanSeeThrough(on),
-      normal: anyBodyShown,
+      normal: defaultTransparent,
     },
     menu: sketchStage ? undefined : (
       <PartOption

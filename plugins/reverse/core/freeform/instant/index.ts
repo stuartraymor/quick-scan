@@ -294,7 +294,7 @@ function solveField(input: InstantInput, options: InstantOptions, allowRestart: 
     }
   }
   const cycles = options.openCycles ?? 0
-  if (allowRestart && best?.clean.faces.length && !closedInput && target <= 2000 && cycles > Math.sqrt(target)) {
+  if (allowRestart && best?.clean.faces.length && !closedInput && target <= 2000 && cycles > Math.max(Math.sqrt(target), target / 12)) {
     // Allow up to three rings of cells around an unresolved opening
     // (7x7 minus its centre) and retain a retry only when coverage improves.
     const resolution = Math.min(10000, 8 * target, 48 * cycles)

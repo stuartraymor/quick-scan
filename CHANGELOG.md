@@ -1,3 +1,19 @@
+## Quick Scan 1.2.97 | Committed Auto Freeform surface over the scan
+
+A newly committed Auto Freeform has a neutral CAD finish. The scan shows where it protrudes through the fitted skin. The body color and scan transparency controls remain available.
+
+## Quick Scan 1.2.96 | Auto Freeform import order and measured openings
+
+Auto Freeform uses source triangle order when available, including for painted selections. Concave scan apertures can now be retained when the original centre falls outside the rim. The local agent receives the same preview fault counts shown in the dialog.
+
+## Quick Scan 1.2.95 | Auto Freeform overlay and direct STEP export
+
+The input mesh remains visible beneath the fitted surface and its deviation map. Export Model is available on the Freeform ribbon as soon as the CAD body is built.
+
+## Quick Scan 1.2.94 | Auto Freeform scan coverage and surface inspection
+
+Auto Freeform checks both directions of fit before accepting an alternate coarse layout. Feature density accounts for the length of open rims and integrated curvature. Shaded and deviation previews share a depth-tested grid over the input scan. Preview statistics report unsupported samples and mesh faults.
+
 ## Quick Scan 1.2.93 | Auto Freeform symmetry, open scans and quad targets
 
 Mirrored cages are checked against the original closed mesh. Densely perforated open scans can retry at a finer field resolution when the scan coverage improves. Feature Details follows the measured response across Low, Medium, Fine and Custom targets. The shaded preview uses the reference teal with the existing dark workspace and signed deviation colors.

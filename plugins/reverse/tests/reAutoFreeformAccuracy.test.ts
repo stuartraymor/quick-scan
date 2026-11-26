@@ -3,8 +3,9 @@ import { expect, it } from 'vitest'
 import type { Vec3 } from '../../../src/core/types'
 import { coverageProbes, scanCoverage } from '../core/freeform/scanCoverage'
 import { measuredDeviationStats } from '../core/freeform/analysisRamp'
-import { AUTO_ALGORITHMS, AUTO_BUILD_STEPS, runAutoFreeform } from '../core/freeform/autoFreeform'
+import { AUTO_ALGORITHMS, AUTO_BUILD_STEPS, cageCounts, runAutoFreeform } from '../core/freeform/autoFreeform'
 import { rims } from '../core/freeform/autoPrepare'
+import { restoreScanRims } from '../core/freeform/scanRims'
 import { fitCageToScan, surfaceDeviation, type ScanProject } from '../core/freeform/limitFit'
 import { boundedBuildSteps, freeformBody } from '../core/freeform/make'
 import { cagePatches, type PatchGrid } from '../core/freeform/patches'
@@ -14,6 +15,20 @@ import { ReKernel } from '../core/kernel'
 it('keeps default CAD conversion within the sampling budget at the observed Highest density', () => {
   expect(boundedBuildSteps(4431, AUTO_BUILD_STEPS)).toBe(3)
   expect(boundedBuildSteps(11529, AUTO_BUILD_STEPS)).toBe(2)
+})
+
+it('opens a verified scan aperture inside a quad and leaves a continuous scan face intact', () => {
+  const cage = {
+    positions: Float64Array.of(0,0,0, 4,0,0, 4,4,0, 0,4,0, 0,0,-4, 4,0,-4, 4,4,-4, 0,4,-4),
+    faces: [[0,1,2,3],[7,6,5,4],[0,4,5,1],[1,5,6,2],[2,6,7,3],[3,7,4,0]], creases: [],
+  }
+  const positions = Float32Array.of(0,0,0, 4,0,0, 4,4,0, 0,4,0, 1.5,1.5,0, 2.5,1.5,0, 2.5,2.5,0, 1.5,2.5,0)
+  const indices = Uint32Array.of(0,1,5,0,5,4, 1,2,6,1,6,5, 2,3,7,2,7,6, 3,0,4,3,4,7)
+  const result = restoreScanRims(cage, { positions, indices }, 4)
+  expect(cageCounts(result)).toMatchObject({ boundaryEdges: 4, nonmanifoldEdges: 0 })
+  expect(result.faces).toHaveLength(9)
+  expect(cageCounts(cage).closed).toBe(true)
+  expect(restoreScanRims(cage, { positions, indices: Uint32Array.of(0,1,2,0,2,3) }, 4)).toBe(cage)
 })
 
 const ringCases = [

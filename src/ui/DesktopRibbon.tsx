@@ -380,6 +380,7 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
     <Group label="Create New Freeform">{cad('newFreeform', 'New Freeform', 'freeform', true)}{cad('autoFreeform', 'Auto Freeform', 'autoFreeform', true)}
       <div className="ribbon-text-stack">{cadText('wrapSurface', 'Wrap Surface', 'elCylinder', true)}{cadText('freeformSketch', 'From 3D Sketch', 'sketch3', true)}{cadText('freeformObj', 'From quad OBJ ...', 'load')}</div></Group>
     <Group label="Tools"><div className="ribbon-text-stack">{cadText('thicken', 'Thicken', 'shell', false, 'Freeform:Thicken')}{cadText('offsetBody', 'Offset', 'sheet', false, 'Freeform:Offset')}{cadText('convertFreeform', 'Convert to CAD body', 'exportStep')}</div></Group>
+    {exportGroup}
   </>
   const surfacingTab = <>
     <Group label="Create">{cad('surface', 'Fit Surface', 'surface', true)}{cad('surfaceLoft', 'Loft', 'loft')}

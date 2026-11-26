@@ -82,7 +82,7 @@ function triangleArea(p: Float32Array, a: number, b: number, c: number): number 
   return 0.5 * Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx)
 }
 
-export function scanTopology(mesh: WorkMesh): { euler: number; closed: boolean; boundaryEdges: number } {
+export function scanTopology(mesh: WorkMesh): { euler: number; closed: boolean; boundaryEdges: number; boundaryLength: number } {
   const nv = mesh.positions.length / 3, used = new Uint8Array(nv)
   const incidences = new Map<number, number>()
   let vertices = 0, boundaryEdges = 0, nonManifold = 0
@@ -96,7 +96,13 @@ export function scanTopology(mesh: WorkMesh): { euler: number; closed: boolean; 
     else if (previous === 1) boundaryEdges--
     else if (previous === 2) nonManifold++
   }
-  return { euler: vertices-incidences.size+mesh.indices.length/3, closed: boundaryEdges===0 && nonManifold===0, boundaryEdges }
+  let boundaryLength = 0
+  for (const [key, uses] of incidences) {
+    if (uses !== 1) continue
+    const a = 3 * Math.floor(key / nv), b = 3 * (key % nv), p = mesh.positions
+    boundaryLength += Math.hypot(p[a] - p[b], p[a+1] - p[b+1], p[a+2] - p[b+2])
+  }
+  return { euler: vertices-incidences.size+mesh.indices.length/3, closed: boundaryEdges===0 && nonManifold===0, boundaryEdges, boundaryLength }
 }
 
 export function meshArea(m: WorkMesh): number {

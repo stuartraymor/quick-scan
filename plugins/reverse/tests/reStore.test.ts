@@ -8,6 +8,7 @@ import { datumTraces } from '../core/datums'
 import { addEntity, emptySketch, fixedEntityOf, fixedPieces, fixId } from '../core/sketch'
 import type { SectionFrame } from '../../../src/core/section/frame'
 import { coordinatePlaneShown, editingFeatureId, featuresToBuild, gripFieldValue, nameBodies, sketchHoverAt, useReverse, withKeyParameter } from '../state/reStore'
+import { defaultScanTransparency } from '../state/reFeatureHelpers'
 import { islandId } from '../core/features'
 import { useStore } from '../../../src/state/store'
 import { XY } from './reKit'
@@ -830,6 +831,20 @@ describe('a sketch on a body’s face after a build', () => {
 })
 
 describe('the body list', () => {
+  it('shows a generated skin against the solid scan and respects the body color override', () => {
+    const patch = { positions: [0,0,0, 1,0,0, 1,1,0, 0,1,0], faces: [[0,1,2,3]], creases: [], steps: 2, snap: true, fitToScan: false }
+    const generated = s().addFreeform({ ...patch, autoFreeform: true })
+    const manual = s().addFreeform(patch)
+    const body = (id: number) => ({ id, name: '', visible: true, volume: 0, faces: 1, closed: false, triangles: 2, surface: true })
+    s().finishBuild([], [body(generated)])
+    expect(s().bodies[0].color).toBe('#c2b7a3')
+    expect(defaultScanTransparency(s())).toBe(false)
+    expect(nameBodies([body(generated)], s().features, { [generated]: { color: '#0055cc' } })[0].color).toBe('#0055cc')
+    s().finishBuild([], [body(manual), body(generated)])
+    expect(s().bodies[0].color).not.toBe('#c2b7a3')
+    expect(defaultScanTransparency(s())).toBe(true)
+  })
+
   it('names the bodies Solid and Shell in the order of the features that made them', () => {
     const body = (id: number, surface = false) => ({ id, name: `feature ${id}`, visible: true, volume: 1, faces: 6, closed: !surface, triangles: 12, surface })
     useReverse.setState({

@@ -17,6 +17,7 @@
 // NOT claimed: the same quads (the layout's start is random), or Feature
 // aligned's share of irregular points (its layout engine is proprietary; ours
 // has about 2 % where it has 1.2 %).
+import { setTimeout as yieldToRunner } from 'node:timers/promises'
 import { readFileSync } from 'node:fs'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { strFromU8, unzipSync } from 'fflate'
@@ -139,8 +140,9 @@ describe.skipIf(!SCAN.exists)('Auto Freeform on basic_part against QUICKSURFACE'
     expect(ours.missed).toBe(0)
   })
 
-  it('Feature aligned: Feature Details gives native’s counts, and the cage stays closed', () => {
+  it('Feature aligned: Feature Details gives native’s counts, and the cage stays closed', async () => {
     for (const [details, theirs] of [['low', 2079], ['balanced', 4375]] as const) {
+      await yieldToRunner(0)
       const r = runAutoFreeform(data.mesh, { algorithm: 'feature', quads: 2000, details })
       const t = euler(r.cage)
       console.info(`Auto Feature aligned Medium ${details}: ours ${r.quads} quads, ${((100 * r.irregular) / t.V).toFixed(2)} % irregular, rms ${r.deviation.rms.toFixed(3)}; native ${theirs} quads`)
@@ -164,7 +166,9 @@ describe.skipIf(!SCAN.exists)('Auto Freeform on basic_part against QUICKSURFACE'
   it('converts to a closed, valid CAD solid of far fewer faces than quads', async () => {
     const k = await ReKernel.load()
     for (const [label, settings] of [['Basic Medium', { algorithm: 'basic', quads: 2000 }], ['Feature aligned Medium Balanced', { algorithm: 'feature', quads: 2000 }]] as const) {
+      await yieldToRunner(0)
       const r = runAutoFreeform(data.mesh, settings)
+      await yieldToRunner(0)
       const started = performance.now()
       const made = freeformBody(k, r.cage, { steps: AUTO_BUILD_STEPS, snap: false })
       try {
