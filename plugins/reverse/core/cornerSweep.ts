@@ -184,7 +184,7 @@ export function sweptEnd(e: SketchEntity, piece: SweptPiece, corner: Vec2 | null
   return mean <= 0.5 ? 'a' : 'b'
 }
 
-export interface SweptPair { ids: [number, number]; ends: [Anchor, Anchor]; cost: number }
+export interface SweptPair { ids: [number, number]; ends: [Anchor, Anchor]; cost: number; corner?: Vec2 }
 
 /** The point a given share of the way along a piece, by length. */
 function pointAtShare(e: SketchEntity, share: number): Vec2 {
@@ -207,7 +207,16 @@ function pointAtShare(e: SketchEntity, share: number): Vec2 {
  *  swept: it moves the end towards the swept part of the other piece.
  *  Before 1.2.7 such a piece always moved its first end, and a short line
  *  swept whole was run off the wrong way to the far side of the arc. */
-function sweptEndTowards(e: SketchEntity, piece: SweptPiece, other: SketchEntity, otherPiece: SweptPiece): 'a' | 'b' {
+function sweptEndTowards(e: SketchEntity, piece: SweptPiece, other: SketchEntity, otherPiece: SweptPiece, area?: SweepArea): 'a' | 'b' {
+  // One end painted and the other not: that end, as QUICKSURFACE moves the
+  // end painted over. Before 1.2.29 a stroke from an arc's near end through
+  // the corner point to the line covered the arc near both its ends, read as
+  // "swept evenly", and moved the arc's other end to the line's second
+  // crossing with the circle (an R 0.0002 fillet off the scan).
+  if (area) {
+    const pa = area.distance(anchorPoint(e, 'a')) <= 0, pb = area.distance(anchorPoint(e, 'b')) <= 0
+    if (pa !== pb) return pa ? 'a' : 'b'
+  }
   const mean = piece.covered.length ? piece.covered.reduce((sum, f) => sum + f, 0) / piece.covered.length : 0.5
   const share = piece.covered.length / Math.max(1, piece.samples)
   if (share < 0.8 && Math.abs(mean - 0.5) > 0.1) return mean <= 0.5 ? 'a' : 'b'
@@ -230,14 +239,99 @@ export function rankSweptPairs(sketch: Pick<Sketch, 'entities'>, sweep: Sweep | 
     if (e.kind === 'line' && f.kind === 'line') {
       corner = lineIntersection(e, f)
       if (!corner) continue
+    } else if ((e.kind === 'line' || e.kind === 'arc') && (f.kind === 'line' || f.kind === 'arc')) {
+      // A carrier can cross another twice. A painted turn/vertex names the
+      // intended crossing more precisely than the filled interior of a stroke.
+      const named = carrierCrossings(e, f).map(x=>({x,d:Math.min(...area.path.map(p=>dist(p,x)))})).filter(v=>v.d<=area.radius).sort((a,b)=>a.d-b.d)
+      corner = named[0]?.x ?? null
     }
-    const ea = corner ? sweptEnd(e, swept[i], corner, area) : sweptEndTowards(e, swept[i], f, swept[j]), fa = corner ? sweptEnd(f, swept[j], corner, area) : sweptEndTowards(f, swept[j], e, swept[i])
+    const near = (piece: SketchEntity, hit: SweptPiece) => {
+      if (!corner || piece.kind === 'line') return sweptEnd(piece,hit,corner,area)
+      const a=anchorPoint(piece,'a'),b=anchorPoint(piece,'b')
+      const pa=area.contains(a),pb=area.contains(b)
+      return pa!==pb ? (pa?'a':'b') : dist(a,corner)<=dist(b,corner)?'a':'b'
+    }
+    const ea = corner ? near(e,swept[i]) : sweptEndTowards(e, swept[i], f, swept[j], area), fa = corner ? near(f,swept[j]) : sweptEndTowards(f, swept[j], e, swept[i], area)
     const pe = anchorPoint(e, ea), pf = anchorPoint(f, fa)
     const meet: Vec2 = corner ?? [(pe[0] + pf[0]) / 2, (pe[1] + pf[1]) / 2]
     const spread = corner ? dist(pe, corner) + dist(pf, corner) : dist(pe, pf)
     // Construction pieces only pair with each other.
     const mixed = Boolean(e.construction) !== Boolean(f.construction) ? 1e6 : 0
-    pairs.push({ ids: [e.id, f.id], ends: [{ entity: e.id, at: ea }, { entity: f.id, at: fa }], cost: spread + 3 * area.distance(meet) + mixed })
+    pairs.push({ ids: [e.id, f.id], ends: [{ entity: e.id, at: ea }, { entity: f.id, at: fa }], cost: spread + 3 * area.distance(meet) + mixed, ...(corner ? {corner} : {}) })
   }
   return pairs.sort((p, q) => p.cost - q.cost)
+}
+
+/** How far, in brush radii, a line's end may stop short of a painted corner
+ *  point and still be reached: 200 rings of 7 px is 1400 px, about the
+ *  whole view, so a corner point painted on screen always reaches lines
+ *  that end on screen. */
+export const REACH_RINGS = 200
+
+type Carried = Extract<SketchEntity, { kind: 'line' }> | Extract<SketchEntity, { kind: 'arc' }>
+
+/** Where two pieces' carriers (a line's whole line, an arc's whole circle) cross. */
+function carrierCrossings(e: Carried, f: Carried): Vec2[] {
+  if (e.kind === 'line' && f.kind === 'line') { const x = lineIntersection(e, f); return x ? [x] : [] }
+  const lineCircle = (l: Extract<SketchEntity, { kind: 'line' }>, c: Vec2, r: number): Vec2[] => {
+    const d: Vec2 = [l.b[0] - l.a[0], l.b[1] - l.a[1]], n = Math.hypot(d[0], d[1])
+    if (!(n > 0)) return []
+    const u: Vec2 = [d[0] / n, d[1] / n], t = (c[0] - l.a[0]) * u[0] + (c[1] - l.a[1]) * u[1]
+    const foot: Vec2 = [l.a[0] + u[0] * t, l.a[1] + u[1] * t], h2 = r * r - dist(foot, c) ** 2
+    if (h2 < 0) return []
+    const h = Math.sqrt(h2)
+    return [[foot[0] + u[0] * h, foot[1] + u[1] * h], [foot[0] - u[0] * h, foot[1] - u[1] * h]]
+  }
+  if (e.kind === 'line' && f.kind === 'arc') return lineCircle(e, f.c, f.r)
+  if (e.kind === 'arc' && f.kind === 'line') return lineCircle(f, e.c, e.r)
+  const a = e as Extract<SketchEntity, { kind: 'arc' }>, b = f as Extract<SketchEntity, { kind: 'arc' }>
+  const d = dist(a.c, b.c)
+  if (!(d > 1e-12) || d > a.r + b.r || d < Math.abs(a.r - b.r)) return []
+  const x = (a.r * a.r - b.r * b.r + d * d) / (2 * d), h = Math.sqrt(Math.max(0, a.r * a.r - x * x))
+  const u: Vec2 = [(b.c[0] - a.c[0]) / d, (b.c[1] - a.c[1]) / d], m: Vec2 = [a.c[0] + u[0] * x, a.c[1] + u[1] * x]
+  return [[m[0] - u[1] * h, m[1] + u[0] * h], [m[0] + u[1] * h, m[1] - u[0] * h]]
+}
+
+/** Pairs of lines and arcs whose corner point (where their carriers cross)
+ *  lies in the area although the area misses one piece or both.
+ *  QUICKSURFACE's hint is "paint over corner point"; pieces fitted to the
+ *  scan stop where its round begins, often well short of that point, and
+ *  before 1.2.29 a sweep on the corner point alone was refused ("Sweep
+ *  across the two pieces that meet at the corner") unless it also reached
+ *  both pieces. A piece is reached only from its end nearer the corner
+ *  point, by no more than `REACH_RINGS` brush radii; fixed and projected
+ *  pieces are never reached. Where several pairs cross under the paint, the
+ *  one whose ends lie nearest its corner point ranks first. */
+export function reachedPairs(sketch: Pick<Sketch, 'entities'>, sweep: Sweep | SweepArea, pieces?: readonly SweptPiece[]): SweptPair[] {
+  const area = sweep instanceof SweepArea ? sweep : new SweepArea(sweep)
+  if (area.empty) return []
+  const swept = pieces ?? piecesInSweep(sketch, area)
+  const touched = new Map(swept.map((p) => [p.id, p]))
+  const carried = sketch.entities.filter((e): e is Carried => (e.kind === 'line' || e.kind === 'arc') && !e.fixed && !e.projected)
+  // With only one eligible pair, painting its carrier intersection identifies
+  // the corner unambiguously. A finer brush must not make that pair unreachable.
+  // Keep the proximity bound when other pieces could offer competing corners.
+  const limit = carried.length === 2 ? Infinity : REACH_RINGS * (area.radius > 0 ? area.radius : Infinity)
+  const out: SweptPair[] = []
+  for (let i = 0; i < carried.length; i++) for (let j = i + 1; j < carried.length; j++) {
+    const e = carried[i], f = carried[j]
+    if (touched.has(e.id) && touched.has(f.id)) continue
+    if (Boolean(e.construction) !== Boolean(f.construction)) continue
+    let best: SweptPair | null = null
+    for (const corner of carrierCrossings(e, f)) {
+      if (area.distance(corner) > 0) continue
+      const endOf = (l: Carried): 'a' | 'b' | null => {
+        const piece = touched.get(l.id)
+        if (piece && l.kind === 'line') return sweptEnd(l, piece, corner, area)
+        const at = dist(anchorPoint(l, 'a'), corner) <= dist(anchorPoint(l, 'b'), corner) ? 'a' : 'b'
+        return piece || dist(anchorPoint(l, at), corner) <= limit ? at : null
+      }
+      const ea = endOf(e), fa = endOf(f)
+      if (!ea || !fa) continue
+      const cost = dist(anchorPoint(e, ea), corner) + dist(anchorPoint(f, fa), corner)
+      if (!best || cost < best.cost) best = { ids: [e.id, f.id], ends: [{ entity: e.id, at: ea }, { entity: f.id, at: fa }], cost }
+    }
+    if (best) out.push(best)
+  }
+  return out.sort((p, q) => p.cost - q.cost)
 }

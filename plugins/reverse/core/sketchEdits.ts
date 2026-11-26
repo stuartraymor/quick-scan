@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Independent sketch edits. Inputs are immutable; failed edits return no partial sketch.
 import type { Vec2 } from '../../../src/core/flat/types'
+import { finiteSplineCrossings } from './cornerJoin'
+import { nearestOnSpline, splineCurve, splineEnd, splineStretch } from './sketchSpline'
 import { tangentArc } from './draw'
 import { mirrorPoint } from './mirrorRelation'
-import { addConstraint, addEntity, anchorPoint, arcPoint, cloneSketch, damagedPiece, entityOf, patternPieces, removeEntities, type Anchor, type Constraint, type ConstraintInput, type EntityInput, type Sketch, type SketchEntity, type SketchLine } from './sketch'
+import { addConstraint, addEntity, anchorPoint, arcPoint, cloneSketch, damagedPiece, entityOf, nearestOnEntity, patternPieces, removeEntities, type Anchor, type Constraint, type ConstraintInput, type EntityInput, type Sketch, type SketchEntity, type SketchLine } from './sketch'
 
 export type SketchEditResult = { ok: true; sketch: Sketch; ids: number[] } | { ok: false; error: string }
 const fail = (error: string): SketchEditResult => ({ ok: false, error })
@@ -175,8 +177,13 @@ export function middleLineSelected(input: Sketch, ids: readonly number[]): Sketc
   return good(sketch, [addEntity(sketch, { kind: 'line', a: p, b: q })])
 }
 
-type Curve = Extract<SketchEntity, { kind: 'line' | 'arc' | 'circle' }>
+type Curve = Exclude<SketchEntity, { kind: 'point' }>
+const closedCurve = (e: Curve) => e.kind === 'circle' || (e.kind === 'spline' && Boolean(e.closed))
 function parameter(e: Curve, p: Vec2): number | null {
+  if (e.kind === 'spline') {
+    const fit = splineCurve(e), end = splineEnd(fit)
+    return end > 0 ? nearestOnSpline(fit, p).t / end : null
+  }
   if (e.kind === 'line') {
     const d = sub(e.b, e.a), t = dot(sub(p, e.a), d) / dot(d, d)
     return Number.isFinite(t) && t >= -EPS && t <= 1 + EPS ? Math.max(0, Math.min(1, t)) : null
@@ -186,6 +193,7 @@ function parameter(e: Curve, p: Vec2): number | null {
   return theta <= e.sweep + EPS ? Math.min(1, theta / e.sweep) : null
 }
 function intersections(a: Curve, b: Curve): Vec2[] {
+  if (a.kind === 'spline' || b.kind === 'spline') return finiteSplineCrossings(a, b)
   if (a.kind === 'line' && b.kind === 'line') {
     const p = lineIntersection(a, b)
     return p && parameter(a, p) !== null && parameter(b, p) !== null ? [p] : []
@@ -213,24 +221,33 @@ function intersections(a: Curve, b: Curve): Vec2[] {
  * parallel, perpendicular, collinear, concentric, an arc's radius, Fix), and
  * each new end lies on the piece that cut it. A length, a distance or an
  * angle given to the whole piece is dropped: it no longer describes it. */
-export function trimAt(input: Sketch, entityId: number, point: Vec2): SketchEditResult {
+export function trimAt(input: Sketch, entityId: number, point: Vec2, deleteUncut = false): SketchEditResult {
+  return trimSpan(input, entityId, point, deleteUncut, input.entities, entityId)
+}
+
+function trimSpan(input: Sketch, entityId: number, point: Vec2, deleteUncut: boolean, cutters: readonly SketchEntity[], sourceId: number, survivors?: Map<number, number[]>): SketchEditResult {
   const e = entityOf(input, entityId)
-  if (!e || (e.kind !== 'line' && e.kind !== 'arc' && e.kind !== 'circle')) return fail('Trim supports a line, arc or circle at an intersection.')
+  if (!e || e.kind === 'point') return fail('Select a sketch curve to trim.')
   if (e.projected) return fail('Projected geometry must be detached before trimming.')
   if (!point.every(Number.isFinite)) return fail('The trim point must be finite.')
   const damaged = damagedPiece(input, [entityId])
   if (damaged) return fail(damaged)
   const t = parameter(e, point)
   if (t === null) return fail('Click on the span to trim.')
-  const crossings = input.entities.flatMap(other => other.id !== e.id && (other.kind === 'line' || other.kind === 'arc' || other.kind === 'circle') ? intersections(e, other).map(p => ({ t: parameter(e, p)!, by: other as Curve, p })) : [])
+  const crossings = cutters.flatMap(other => other.id !== sourceId && other.kind !== 'point' ? intersections(e, other).map(p => ({ t: parameter(e, p)!, by: other, p })) : [])
   const cuts = crossings.map(c => c.t)
-    .filter(x => e.kind === 'circle' || (x > EPS && x < 1 - EPS)).sort((a, b) => a - b).filter((x, i, a) => !i || Math.abs(x - a[i - 1]) > EPS)
-  if (!cuts.length || (e.kind === 'circle' && cuts.length < 2)) return fail('The selected span needs intersections with other sketch pieces.')
+    .filter(x => closedCurve(e) || (x > EPS && x < 1 - EPS)).sort((a, b) => a - b).filter((x, i, a) => !i || Math.abs(x - a[i - 1]) > EPS)
+  if (!cuts.length || (closedCurve(e) && cuts.length < 2)) {
+    if (!deleteUncut) return fail('The selected span needs intersections with other sketch pieces.')
+    const sketch = cloneSketch(input)
+    removeEntities(sketch, [entityId])
+    return good(sketch, [])
+  }
   const sketch = cloneSketch(input)
   const held = sketch.constraints.filter(c => constraintTouches(c, e.id))
   removeEntities(sketch, [e.id])
   const spans: [number, number][] = []
-  if (e.kind === 'circle') {
+  if (closedCurve(e)) {
     const lower = [...cuts].reverse().find(x => x < t - EPS) ?? cuts[cuts.length - 1] - 1
     const upper = cuts.find(x => x > t + EPS) ?? cuts[0] + 1
     if (cuts.some(x => Math.abs(x - t) < EPS)) return fail('Click inside the span, away from an intersection.')
@@ -241,11 +258,74 @@ export function trimAt(input: Sketch, entityId: number, point: Vec2): SketchEdit
     if (limits[i] > EPS) spans.push([0, limits[i]])
     if (limits[i + 1] < 1 - EPS) spans.push([limits[i + 1], 1])
   }
-  const made = spans.filter(([a, b]) => b - a > EPS).map(([a, b]) => addEntity(sketch, e.kind === 'line'
-    ? { kind: 'line', a: lerp(e.a, e.b, a), b: lerp(e.a, e.b, b), ...(e.fixed ? { fixed: true } : {}), ...(e.construction ? { construction: true } : {}) }
-    : { kind: 'arc', c: [...e.c], r: e.r, start: mod((e.kind === 'arc' ? e.start : 0) + a * (e.kind === 'arc' ? e.sweep : TAU)), sweep: (b - a) * (e.kind === 'arc' ? e.sweep : TAU), ...(e.fixed ? { fixed: true } : {}), ...(e.construction ? { construction: true } : {}) }))
-  keepTrimRelations(sketch, e, held, made, spans.filter(([x, y]) => y - x > EPS), crossings)
+  const kept = spans.filter(([a, b]) => b - a > EPS)
+  const flags = { ...(e.fixed ? { fixed: true } : {}), ...(e.construction ? { construction: true } : {}) }
+  const made: number[] = []
+  for (const [a, b] of kept) {
+    if (e.kind === 'spline') {
+      const fit = splineCurve(e), end = splineEnd(fit)
+      const curve = splineStretch(fit, a * end, b * end)
+      if (!curve || curve.knots.length !== curve.poles.length - 2) return fail('The trimmed spline cannot be represented exactly.')
+      made.push(addEntity(sketch, { kind: 'spline', pts: curve.poles, controlKnots: curve.knots, ...flags }))
+    } else if (e.kind === 'line') {
+      made.push(addEntity(sketch, { kind: 'line', a: lerp(e.a, e.b, a), b: lerp(e.a, e.b, b), ...flags }))
+    } else {
+      const angle = e.kind === 'arc' ? e.sweep : TAU, start = e.kind === 'arc' ? e.start : 0
+      made.push(addEntity(sketch, { kind: 'arc', c: [...e.c], r: e.r, start: mod(start + a * angle), sweep: (b - a) * angle, ...flags }))
+    }
+  }
+  keepTrimRelations(sketch, e, held, made, kept, crossings, survivors)
   return good(sketch, made)
+}
+
+/** Intersections use the complete segments between pointer samples, so a
+ * fast sweep still cuts a narrow curve. Keep the source IDs until release
+ * and map a later crossing onto the surviving span of the same piece. */
+export function trimStroke(input: Sketch, path: readonly Vec2[], reach: number): SketchEditResult {
+  if (!path.length) return fail('Drag across a sketch curve.')
+  const hits: { id: number; p: Vec2 }[] = []
+  const curves = input.entities.filter((e): e is Curve => e.kind !== 'point')
+  const points = input.entities.filter(e => e.kind === 'point')
+  const nearest = (p: Vec2) => {
+    let best = reach
+    let hit: typeof hits[number] | null = null
+    for (const e of input.entities) {
+      const q = nearestOnEntity(e, p)
+      if (q.dist <= best) { hit = { id: e.id, p: q.point }; best = q.dist }
+    }
+    if (hit) hits.push(hit)
+  }
+  nearest(path[0])
+  for (let i = 1; i < path.length; i++) {
+    const a = path[i - 1], b = path[i]
+    if (near(a, b)) continue
+    const stroke: SketchLine = { id: -1, kind: 'line', a, b }
+    const segment = curves.flatMap(e => intersections(stroke, e).map(p => ({ id: e.id, p })))
+    for (const e of points) {
+      if (nearestOnEntity(stroke, e.p).dist <= reach) segment.push({ id: e.id, p: e.p })
+    }
+    hits.push(...segment.sort((u,v) => norm(sub(a,u.p)) - norm(sub(a,v.p))))
+  }
+  if (path.length > 1) nearest(path[path.length-1])
+  let sketch = input, message = 'The stroke missed the sketch geometry.'
+  const survivors = new Map<number, number[]>()
+  for (const hit of hits) {
+    const ids = survivors.get(hit.id) ?? [hit.id]
+    const piece = ids.map(id => entityOf(sketch,id)).find(e => e && nearestOnEntity(e,hit.p).dist <= EPS * 10)
+    if (!piece) continue
+    if (piece.projected) { message = 'Projected geometry must be detached before trimming.'; continue }
+    if (piece.kind === 'point') {
+      sketch = cloneSketch(sketch)
+      removeEntities(sketch, [piece.id])
+      survivors.set(hit.id, [])
+      continue
+    }
+    const result = trimSpan(sketch, piece.id, hit.p, true, input.entities, hit.id, survivors)
+    if (!result.ok) { message = result.error; continue }
+    sketch = result.sketch
+    survivors.set(hit.id, [...ids.filter(id => id !== piece.id), ...result.ids])
+  }
+  return sketch === input ? fail(message) : good(sketch, [])
 }
 
 /** Whether a constraint names the piece. */
@@ -265,23 +345,23 @@ function trimRefs(c: Constraint): number[] {
 }
 
 /** The relations a trimmed piece's kept spans carry on — see trimAt. */
-function keepTrimRelations(sketch: Sketch, e: Curve, held: readonly Constraint[], made: readonly number[], spans: readonly [number, number][], crossings: readonly { t: number; by: Curve; p: Vec2 }[]): void {
+function keepTrimRelations(sketch: Sketch, e: Curve, held: readonly Constraint[], made: readonly number[], spans: readonly [number, number][], crossings: readonly { t: number; by: Curve; p: Vec2 }[], survivors?: Map<number, number[]>): void {
   if (!made.length) return
-  const first = spans[0][0] < EPS && e.kind !== 'circle' ? made[0] : null
-  const last = spans[spans.length - 1][1] > 1 - EPS && e.kind !== 'circle' ? made[made.length - 1] : null
+  const first = spans[0][0] < EPS && !closedCurve(e) ? made[0] : null
+  const last = spans[spans.length - 1][1] > 1 - EPS && !closedCurve(e) ? made[made.length - 1] : null
   /** The kept end an anchor of the old piece is now, or null if it was cut away. */
   const moved = (p: Anchor): Anchor | null => {
     if (p.entity !== e.id) return p
     if (p.at === 'a') return first === null ? null : { entity: first, at: 'a' }
     if (p.at === 'b') return last === null ? null : { entity: last, at: 'b' }
     // A round piece's centre is every kept span's centre; a line's middle is gone.
-    return e.kind === 'line' ? null : { entity: made[0], at: 'center' }
+    return (e.kind === 'circle' || e.kind === 'arc') && p.at === 'center' ? { entity: made[0], at: 'center' } : null
   }
   /** The kept span a point of the old piece lies on. */
   const spanAt = (p: Vec2): number | null => {
     const t = parameter(e, p)
     if (t === null) return null
-    const i = spans.findIndex(([a, b]) => (t >= a - EPS && t <= b + EPS) || (e.kind === 'circle' && t + 1 >= a - EPS && t + 1 <= b + EPS))
+    const i = spans.findIndex(([a, b]) => (t >= a - EPS && t <= b + EPS) || (closedCurve(e) && t + 1 >= a - EPS && t + 1 <= b + EPS))
     return i < 0 ? null : made[i]
   }
   const add = (c: ConstraintInput) => { addConstraint(sketch, c) }
@@ -301,7 +381,7 @@ function keepTrimRelations(sketch: Sketch, e: Curve, held: readonly Constraint[]
         break
       case 'equal':
         // Radii stay equal; a line's length is no longer what it was.
-        if (e.kind !== 'line') add({ ...strip(c), a: c.a === e.id ? made[0] : c.a, b: c.b === e.id ? made[0] : c.b } as ConstraintInput)
+        if (e.kind === 'circle' || e.kind === 'arc') add({ ...strip(c), a: c.a === e.id ? made[0] : c.a, b: c.b === e.id ? made[0] : c.b } as ConstraintInput)
         break
       case 'radius': case 'diameter':
         add({ ...strip(c), entity: made[0] } as ConstraintInput)
@@ -342,20 +422,22 @@ function keepTrimRelations(sketch: Sketch, e: Curve, held: readonly Constraint[]
     for (const id of made) if (joinedTo.get(id)?.has(other)) add({ ...strip(c), a: c.a === e.id ? id : c.a, b: c.b === e.id ? id : c.b } as ConstraintInput)
   }
   // The spans of one round piece stay one circle.
-  if (e.kind !== 'line') for (const id of made.slice(1)) { add({ kind: 'concentric', a: made[0], b: id }); add({ kind: 'equal', a: made[0], b: id }) }
+  if (e.kind === 'circle' || e.kind === 'arc') for (const id of made.slice(1)) { add({ kind: 'concentric', a: made[0], b: id }); add({ kind: 'equal', a: made[0], b: id }) }
   // Each new end lies on what cut it: joined to the cutter's end where the
   // cut is at one, held on the cutter otherwise.
-  const full = e.kind === 'circle'
+  const full = closedCurve(e)
   spans.forEach(([a, b], i) => {
     const ends: [number, 'a' | 'b'][] = []
     if (full || a > EPS) ends.push([a, 'a'])
     if (full || b < 1 - EPS) ends.push([b, 'b'])
     for (const [t, at] of ends) {
       const cut = crossings.find(c => Math.abs(c.t - t) < 1e-6 || Math.abs(c.t - (t - 1)) < 1e-6 || Math.abs(c.t - (t + 1)) < 1e-6)
-      const by = cut ? entityOf(sketch, cut.by.id) : undefined
-      if (!cut || !by || by.kind === 'spline' || by.kind === 'point') continue
+      if (!cut) continue
+      const candidates = survivors?.get(cut.by.id) ?? [cut.by.id]
+      const by = candidates.map(id => entityOf(sketch, id)).find(piece => piece && nearestOnEntity(piece, cut.p).dist < EPS * 10)
+      if (!by || by.kind === 'point') continue
       const p: Anchor = { entity: made[i], at }
-      const end = by.kind === 'circle' ? null : (['a', 'b'] as const).find(k => near(anchorPoint(by, k), cut.p))
+      const end = closedCurve(by) ? null : (['a', 'b'] as const).find(k => near(anchorPoint(by, k), cut.p))
       if (end) add({ kind: 'coincident', p, q: { entity: by.id, at: end } })
       else add({ kind: 'pointOn', p, on: by.kind === 'line' ? { line: by.id } : { curve: by.id } })
     }
@@ -386,15 +468,25 @@ export function tangentArcSketch(input: Sketch, lineId: number, at: 'a' | 'b', p
   const d = sub(line.b, line.a), length = norm(d)
   if (length < EPS || !point.every(Number.isFinite)) return fail('The tangent line must have a length and the endpoint must be finite.')
   const start = line[at], sign = at === 'b' ? 1 : -1
-  const shape = tangentArc(start, [sign * d[0] / length, sign * d[1] / length], point)
+  return directedArcSketch(input, start, [sign * d[0] / length, sign * d[1] / length], point, end, { entity: lineId, at })
+}
+
+/** A free tangent direction defines the initial arc without adding a
+ * construction entity. An existing start line also supplies a tangency. */
+export function directedArcSketch(input: Sketch, start: Vec2, direction: Vec2, point: Vec2, end?: Anchor, source?: Anchor): SketchEditResult {
+  const length = norm(direction)
+  if (!(length > EPS) || ![...direction, ...start, ...point].every(Number.isFinite)) return fail('Pick a distinct point for the tangent direction.')
+  const shape = tangentArc(start, [direction[0] / length, direction[1] / length], point)
   if (!shape) return fail('Move the endpoint away from the straight tangent direction to form an arc.')
-  if (end && end.entity === lineId) return fail('The second endpoint must belong to a different piece.')
+  if (source && end?.entity === source.entity) return fail('The second endpoint must belong to a different piece.')
   const endpoint = end ? entityOf(input, end.entity) : null
-  if (end && (!endpoint || endpoint.kind !== 'line' || !near(endpoint[end.at], point))) return fail('The endpoint reference no longer matches the picked line end.')
+  if (end && (!endpoint || !near(anchorPoint(endpoint, end.at), point))) return fail('The endpoint reference no longer matches the picked line end.')
   const sketch = cloneSketch(input), { startsAtP, ...arc } = shape
   const id = addEntity(sketch, { kind: 'arc', ...arc })
-  addConstraint(sketch, { kind: 'coincident', p: { entity: id, at: startsAtP ? 'a' : 'b' }, q: { entity: lineId, at } })
-  addConstraint(sketch, { kind: 'tangent', a: id, b: lineId })
+  if (source) {
+    addConstraint(sketch, { kind: 'coincident', p: { entity: id, at: startsAtP ? 'a' : 'b' }, q: source })
+    addConstraint(sketch, { kind: 'tangent', a: id, b: source.entity })
+  }
   if (end) addConstraint(sketch, { kind: 'coincident', p: { entity: id, at: startsAtP ? 'b' : 'a' }, q: end })
   return good(sketch, [id])
 }

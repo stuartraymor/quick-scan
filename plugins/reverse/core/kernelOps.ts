@@ -257,7 +257,7 @@ export function tracedHistory(occt: OcctLike, before: readonly number[], after: 
  *  has it, else the first of ever finer grids over the box that it has —
  *  the middle of a ring is its hole. Null for a face too thin for the
  *  finest grid. */
-function pointInside(occt: OcctLike, face: number): XYZ | null {
+export function pointInside(occt: OcctLike, face: number): XYZ | null {
   const { uMin, uMax, vMin, vMax } = occt.uvBounds(face)
   for (const n of [1, 4, 16]) {
     for (let i = 0; i < n; i++) {

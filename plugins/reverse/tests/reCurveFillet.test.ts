@@ -86,6 +86,23 @@ describe('Fillet a line and an arc', () => {
     expect(result.ok && result.joined).toBeTruthy()
   })
 
+  it.each([[0.4, 0.7], [3, -1.2]])('reads the section radius at scale %s and rotation %s with a displaced fitted side', (scale, angle) => {
+    const transform = ([x, y]: Vec2): Vec2 => [
+      37 + scale * (x * Math.cos(angle) - y * Math.sin(angle)),
+      -52 + scale * (x * Math.sin(angle) + y * Math.cos(angle)),
+    ]
+    const s = emptySketch()
+    const line = addEntity(s, { kind: 'line', a: transform([-8, 0.35]), b: transform([18, 0.35]) })
+    const arc = addEntity(s, { kind: 'arc', c: transform(C), r: scale * R, start: -Math.PI / 3 + angle, sweep: Math.PI / 3 + Math.PI / 9 })
+    const section = chain.map((p): Vec2 => {
+      const [x,y] = transform(p)
+      return [Math.fround(x), Math.fround(y)]
+    }).reverse()
+    const { result } = sweepCornerTrim(s, { path: stroke.map(transform), radius: scale }, auto, [], [section])
+    const fillet = check(s, result, [line, arc])
+    expect(Math.abs(fillet.r - r * scale)).toBeLessThan(1e-4)
+  })
+
   it('reads it through scan noise', () => {
     const { s, line, arc } = sketch()
     const noisy = polyline([{ line: [[-10, 0], tLine] }, { arc: { c: P, r, from: Math.PI / 2, to: ang(P, tArc) } }, { arc: { c: C, r: R, from: ang(C, tArc), to: -Math.PI / 3 } }], 0.25, 0.02)

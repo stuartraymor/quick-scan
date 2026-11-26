@@ -4,6 +4,8 @@
 
 import type { StoreApi } from 'zustand'
 import type { Vec3 } from '../../../src/core/types'
+import { usePrefs } from '../../../src/state/prefsStore'
+import { finishingIncrement, snapFinishingSize } from './finishingInput'
 import { extentEndsOnPart, type ExtrudeExtent, revolveMaxDeg } from '../core/features'
 import { dragExtrudeExtent, dragLength, extentThroughPoint, dragRevolveAngle, dragTaper, isMoveGripSide, MAX_TAPER_DEG, moveGripSlot, taperSpan } from '../core/preview'
 import { extrudeHeightAt, moveSlotPath, revolveAngle } from './reDrafts'
@@ -112,7 +114,10 @@ export const gripSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'preview'
         gripStart = { length: current }
         set({ gripField: side })
       } else if (phase === 'move' && gripStart && 'length' in gripStart) {
-        const v = Math.round(dragLength(gripStart.length, delta) * 100) / 100
+        const units = usePrefs.getState().units
+        const v = d.kind === 'shell' ? Math.round(dragLength(gripStart.length, delta) * 100) / 100
+          : delta === 0 ? gripStart.length : Math.max(finishingIncrement(units), snapFinishingSize(gripStart.length + delta, units))
+        if (v === current) return
         if (d.kind === 'fillet') set({ featureDraft: unlinkSlots({ ...d, radius: v, radiusTyped: true }, ['radius']) })
         else if (d.kind === 'chamfer') set({ featureDraft: unlinkSlots({ ...d, distance: v }, ['distance']) })
         else if (d.kind === 'shell') set({ featureDraft: unlinkSlots({ ...d, thickness: v, thicknessFrom: 'typed' as const }, ['thickness']) })

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import type { RadiusPoint, RoundGroups, RoundRole } from '../core/roundInputs'
 import type { PolynomialSurface } from '../core/surfaceStep'
 // The workspace's state as types: the kernel's status, the bodies and how
 // they are shown, a selection, the drafts the sketch, extrude, revolve and
@@ -100,6 +101,8 @@ export interface BodyPick {
  *  to. The names' counters travel with it, so a redone feature is the
  *  same feature, with the same id and name, that was undone. */
 export interface FeatureSnapshot {
+  /** Visible input sheets hidden by this Trim, restored on undo. */
+  trimInputs?: number[]
   features: Feature[]
   /** The features below the rollback bar, as they stood — see `rolledBack`. */
   rolledBack: Feature[]
@@ -180,6 +183,7 @@ export function bodyColorOf(given: string): string | null {
  *  the scan's vertices it covers and how many of those lie within the
  *  range. */
 export interface MapReport {
+  localBlend?: boolean
   source: 'ghost' | 'bodies'
   points: number
   within: number
@@ -194,7 +198,7 @@ export interface MapReport {
 export type PreviewInfo =
   | { status: 'idle' }
   | { status: 'building' }
-  | { status: 'ok'; volume: number; closed: boolean; surface?: SurfaceReport; trim?: TrimReport; network?: NetworkReport; sheetFaces?: number; failure?: Diagnosis }
+  | { status: 'ok'; volume: number; closed: boolean; note?: string; surface?: SurfaceReport; trim?: TrimReport; network?: NetworkReport; sheetFaces?: number; failure?: Diagnosis }
   /** `where`: the edges or face outlines a round, a chamfer or a shell
    *  failed on, drawn red on the part — see Builder.diagnose. */
   | { status: 'failed'; message: string; where?: Float32Array[] }
@@ -241,6 +245,8 @@ export interface SketchDraft {
   /** What each of those clicks snapped to — the end of another piece, or
    *  a coordinate plane's line, the new one is then held to — or null. */
   snaps?: (SnapHold | null)[]
+  /** A pending drawing point was positioned on another sketch. */
+  pendingOnReference?: boolean
   /** The end the Line tool carries on from: a line drawn leaves its far
    *  end as the start of the next, and a press held on it and dragged
    *  draws an arc tangent to the piece it ends. */
@@ -403,7 +409,7 @@ export type FeatureDraft = { exprs?: ExprMap } & (
    *  along each (FilletFeature.variable), from its start — the end the
    *  part marks. `mode` says which of the two an edge clicked goes into:
    *  `edges` at the one radius, or `variable` at a start and an end radius. */
-  | { kind: 'fillet'; featureId?: number; name?: string; body: number | null; edges: DraftEdge[]; radius: number; chain: boolean; skipFailing?: boolean; radiusTyped: boolean; estimate: FilletEstimate; variable?: { edge: DraftEdge; radius: [number, number] }[]; mode: 'constant' | 'variable' }
+  | { kind: 'fillet'; featureId?: number; name?: string; body: number | null; edges: DraftEdge[]; radius: number; chain: boolean; skipFailing?: boolean; radiusTyped: boolean; estimate: FilletEstimate; variable?: { edge: DraftEdge; radius: [number, number]; transition?: 'smooth' | 'linear'; chain?: boolean; points?: RadiusPoint[] }[]; mode: 'constant' | 'variable' | 'faceRound'; roundFaces?: RoundGroups<DraftFace>; roundRole?: RoundRole }
   /** `distance2` and `angleDeg` stand while their mode is not chosen, for
    *  the box to come back to — ChamferFeature keeps the one in use. */
   | { kind: 'chamfer'; featureId?: number; name?: string; body: number | null; edges: DraftEdge[]; distance: number; chain: boolean; skipFailing?: boolean; mode: ChamferMode; distance2: number; angleDeg: number; flip: boolean }
@@ -421,13 +427,13 @@ export type FeatureDraft = { exprs?: ExprMap } & (
   | { kind: 'mirror'; featureId?: number; name?: string; body: number | null; plane: MirrorPlane | null; join: boolean; symmetry: SymmetryFinding }
   /** `keep`: the tool stays a body of its own (BooleanFeature). */
   | { kind: 'boolean'; featureId?: number; name?: string; op: BooleanOp; body: number | null; tool: number | null; keep: boolean }
-  | { kind: 'sheet'; featureId?: number; name?: string; sketchId: number | null; from: number; to: number }
+  | { kind: 'sheet'; planar?: boolean; projectOnto?: number; featureId?: number; name?: string; sketchId: number | null; from: number; to: number }
   | { kind: 'split'; featureId?: number; name?: string; body: number | null; tools: number[]; keep: SplitKeep; tolerance: number; overlap: number; within?: number }
-  | { kind: 'loft'; featureId?: number; name?: string; sketches: number[]; ruled: boolean; op: BodyOp }
+  | { kind: 'loft'; surface?: boolean; featureId?: number; name?: string; sketches: number[]; ruled: boolean; op: BodyOp }
   | { kind: 'sweep'; featureId?: number; name?: string; profile: number | null; path: number | null; route?: SweepRoute; exprs?: Record<string, string>; op: BodyOp }
   /** A sheet made a solid (ThickenFeature): the sheet, the thickness and
    *  the side it grows to, and what the solid does with the bodies. */
-  | { kind: 'thicken'; featureId?: number; name?: string; sheet: number | null; thickness: number; side: ThickenSide; op: BodyOp }
+  | { kind: 'thicken'; featureId?: number; name?: string; sheet: number | null; thickness: number; side: ThickenSide; constraint?: import('../core/features').ThickenConstraint; op: BodyOp }
   /** `axis2`, `count2`, `step2`: a linear pattern's second direction —
    *  a grid — none while `axis2` is null. */
   | { kind: 'pattern'; featureId?: number; name?: string; body: number | null; mode: 'circular' | 'linear'; axis: AxisRef | null; count: number; step: number; axis2: AxisRef | null; count2: number; step2: number }
@@ -465,10 +471,10 @@ export type FeatureDraft = { exprs?: ExprMap } & (
   /** A surface fitted through a region of the scan: the region gathered
    *  by clicks that flood by normal angle, or with the marking tools while
    *  `paint` is on; the fit's parameters as the feature holds them. */
-  | { kind: 'surface'; featureId?: number; name?: string; region: Uint32Array; floodDeg: number; paint: boolean; fit: SurfaceFitParams; controlSurface?: PolynomialSurface; shape: SurfaceShape; constrain: ConstrainMode; regionBox?: RegionBox; regionStale?: true | string }
+  | { kind: 'surface'; createdSheets?: number[]; awaitingType?: boolean; adjustingRegion?: boolean; useShapeExpansion?: boolean; featureId?: number; name?: string; region: Uint32Array; floodDeg: number; paint: boolean; fit: SurfaceFitParams; controlSurface?: PolynomialSurface; shape: SurfaceShape; constrain: ConstrainMode; regionBox?: RegionBox; regionStale?: true | string }
   /** The automatic trim: the surfaces and elements to close into a solid,
    *  the tolerance read off the surfaces' own fits until typed. */
-  | { kind: 'trim'; featureId?: number; name?: string; tools: TrimTool[]; tolerance: number; toleranceTyped: boolean; overlap: number }
+  | { kind: 'trim'; mergeFaces?: boolean; groupFaces?: boolean; corrections?: { at: Vec3; keep: boolean }[]; removed?: { body: number; at: Vec3 }[]; featureId?: number; name?: string; tools: TrimTool[]; tolerance: number; toleranceTyped: boolean; overlap: number }
   /** A patch network being drawn: the network as the feature holds it, the
    *  curve being drawn, the editor's own undo, and the patch picked in the
    *  readout. */

@@ -6,7 +6,7 @@
 
 import type { Vec2 } from '../../../src/core/flat/types'
 import { add2, cross2, dot2, len2, perp2, scale2, sub2 } from '../../../src/core/flat/vec2'
-import { anchorPoint, anchorsOf, entityOf, lineDir, nearestOnEntity, type Anchor, type AnchorAt, type ConstraintInput, type PolygonFit, type Sketch, type SketchEntity, quadrantsOf } from './sketch'
+import { MIN_SKETCH_EDGE, usableSketchLoop, anchorPoint, anchorsOf, entityOf, lineDir, nearestOnEntity, type Anchor, type AnchorAt, type ConstraintInput, type PolygonFit, type Sketch, type SketchEntity, quadrantsOf } from './sketch'
 import { traceNear, traceOf, type DatumPlane, type DatumTrace } from './datums'
 import { measureDimension } from './solver'
 
@@ -44,6 +44,7 @@ export function tangentArc(p: Vec2, t: Vec2, q: Vec2): { c: Vec2; r: number; sta
   if (Math.abs(h) < 1e-6 * l) return null
   // The centre lies square to the tangent, as far off as puts q on the rim.
   const signed = (l * l) / (2 * h)
+  if (!Number.isFinite(signed) || Math.abs(signed) <= MIN_SKETCH_EDGE) return null
   const c = add2(p, scale2(n, signed))
   const two = 2 * Math.PI
   const thetaP = Math.atan2(p[1] - c[1], p[0] - c[0])
@@ -95,47 +96,66 @@ const BODY_POINT_REACH = 0.6
 /** Ends and whole pieces: what the tool takes when nothing says otherwise. */
 export const PICK_ENDS: PickAllow = { endpoint: true, midpoint: false, center: false, quadrant: false, curve: true }
 
-/** The pick at a spot on the sheet: an end within reach wins over the piece
- *  it ends, as the smaller target; a centre is taken through its piece; a
- *  coordinate plane's line is taken last, where nothing of the sketch is. */
-export function dimPickAt(sketch: Sketch, spot: Vec2, radius: number, datums: readonly DatumTrace[] = [], allow: PickAllow = PICK_ENDS): DimPick | null {
+/** Named points offered to hover, click and Select Other under the same switches. */
+export function visitPickAnchors(sketch: Sketch, allow: PickAllow, take: (id: number, at: AnchorAt, p: Vec2, onBody?: boolean) => void) {
+  for (const e of sketch.entities) {
+    if (e.kind === 'circle' || e.kind === 'arc') {
+      if (allow.center) take(e.id, 'center', e.c)
+      if (allow.quadrant) for (const q of quadrantsOf(e)) take(e.id, q.at, q.point, true)
+    }
+    if (e.kind === 'circle') continue
+    if (e.kind === 'line' && allow.midpoint) take(e.id, 'center', anchorPoint(e, 'center'), true)
+    if (!allow.endpoint) continue
+    for (const at of anchorsOf(e)) take(e.id, at, anchorPoint(e, at))
+  }
+}
+
+/** Share the sketch's named point targets and snap filters between sheet
+ * picks and viewport picks on a sketch seen edge-on. */
+export function dimAnchorAt(sketch: Sketch, radius: number, allow: PickAllow, distance: (p: Vec2) => number, samePixel?: (a: Vec2, b: Vec2) => boolean, fullPointReach = false): Extract<DimPick, { kind: 'point' | 'piece' }> | null {
   let point: Anchor | null = null
+  let position: Vec2 | null = null
   let onBody = false
-  let pointD = radius * 0.75
-  const take = (entity: number, at: Anchor['at'], p: Vec2, reach = 1, body = false) => {
-    const d = len2(sub2(p, spot))
+  const pointReach = fullPointReach ? radius : radius * 0.75
+  let pointD = pointReach
+  const take = (entity: number, at: Anchor['at'], p: Vec2, body = false) => {
+    const d = distance(p)
     // A point on a piece's own body reaches less far than an end: the
     // piece round it is a pick too.
-    if (d <= pointD && d <= radius * 0.75 * reach) {
+    if (d <= pointD && d <= pointReach * (body ? bodyReach : 1)) {
+      // A center and quadrant less than one pixel apart cannot be reliably
+      // distinguished by mouse. The center filter lets the user choose.
+      if (body && point?.entity === entity && point.at === 'center' && position && samePixel?.(position, p)) return
       pointD = d
       point = { entity, at }
+      position = p
       onBody = body
     }
   }
   // The square of a middle or a quadrant point is what is clicked for it:
   // its reach is the square's own (BODY_POINT_REACH), or an end's with All.
-  const bodyReach = allow.nearest ? 1 : BODY_POINT_REACH
-  for (const e of sketch.entities) {
-    if (e.kind === 'circle' || e.kind === 'arc') {
-      if (allow.center) take(e.id, 'center', e.c)
-      if (allow.quadrant) for (const q of quadrantsOf(e)) take(e.id, q.at, q.point, bodyReach, true)
-    }
-    if (e.kind === 'circle') continue
-    if (e.kind === 'line' && allow.midpoint) take(e.id, 'center', anchorPoint(e, 'center'), bodyReach, true)
-    if (!allow.endpoint) continue
-    for (const at of anchorsOf(e)) take(e.id, at, anchorPoint(e, at))
-  }
+  const bodyReach = allow.nearest || fullPointReach ? 1 : BODY_POINT_REACH
+  visitPickAnchors(sketch, allow, take)
   if (point) {
     const anchor: Anchor = point
     // On the piece's own body the pick is the piece, with the point kept
     // for a second pick to pair with — see pickAsPoint.
     return onBody && allow.curve ? { kind: 'piece', id: anchor.entity, via: anchor } : { kind: 'point', anchor }
   }
+  return null
+}
+
+/** The pick at a spot on the sheet: an end within reach wins over the piece
+ *  it ends, as the smaller target; a centre is taken through its piece; a
+ *  coordinate plane's line is taken last, where nothing of the sketch is. */
+export function dimPickAt(sketch: Sketch, spot: Vec2, radius: number, datums: readonly DatumTrace[] = [], allow: PickAllow = PICK_ENDS, fullPointReach = false): DimPick | null {
+  const anchor = dimAnchorAt(sketch, radius, allow, p => len2(sub2(p, spot)), undefined, fullPointReach)
+  if (anchor) return anchor
   let piece: SketchEntity | null = null
   let pieceD = radius
   for (const e of sketch.entities) {
-    // With whole pieces switched off only a point piece is still a pick.
-    if (!allow.curve && e.kind !== 'point') continue
+    // Standalone points were considered with the endpoint switch above.
+    if (!allow.curve || e.kind === 'point') continue
     const { dist } = nearestOnEntity(e, spot)
     if (dist <= pieceD) {
       pieceD = dist
@@ -147,27 +167,8 @@ export function dimPickAt(sketch: Sketch, spot: Vec2, radius: number, datums: re
   return datum ? { kind: 'datum', plane: datum.plane } : null
 }
 
-/** What the Coincident relation has under a click: as the Dimension tool's
- *  pick, with a circle's centre a point too — a centre is what a circle
- *  is held by. */
-export function relPickAt(sketch: Sketch, spot: Vec2, radius: number, datums: readonly DatumTrace[] = [], allow: PickAllow = PICK_ENDS): DimPick | null {
-  let centre: Anchor | null = null
-  let centreD = radius * 0.75
-  for (const e of sketch.entities) {
-    // A circle's centre and an arc's are points to hold, whether or not
-    // the snap bar's Centre is on: the centre is what a round piece is
-    // held by, and it has no rim of its own to click there.
-    if (e.kind !== 'circle' && e.kind !== 'arc') continue
-    const d = len2(sub2(e.c, spot))
-    if (d <= centreD) {
-      centreD = d
-      centre = { entity: e.id, at: 'center' }
-    }
-  }
-  const pick = dimPickAt(sketch, spot, radius, datums, allow)
-  // A centre within reach wins over the rim it is inside of, as an end
-  // wins over its line.
-  if (centre && (!pick || pick.kind !== 'point')) return { kind: 'point', anchor: centre }
+export function relPickAt(sketch: Sketch, spot: Vec2, radius: number, datums: readonly DatumTrace[] = [], allow: PickAllow = { ...PICK_ENDS, center: true }): DimPick | null {
+  const pick = dimPickAt(sketch, spot, radius, datums, allow, true)
   // The sheet's zero, where nothing of the sketch is nearer: the origin a
   // centre or an end is held at — not just one of the axis lines crossing
   // there, which held only one coordinate.
@@ -175,7 +176,7 @@ export function relPickAt(sketch: Sketch, spot: Vec2, radius: number, datums: re
     const origin = originPick(datums)
     if (origin) return origin
   }
-  return pick
+  return pick && pickAsPoint(pick)
 }
 
 /**
@@ -186,14 +187,10 @@ export function relPickAt(sketch: Sketch, spot: Vec2, radius: number, datums: re
  * round piece and a line — says why in a sentence.
  */
 export function coincidentFor(sketch: Sketch, first: DimPick, second: DimPick): ConstraintInput | string {
-  // A piece clicked on a square (see pickAsPoint): between two lines, or a
-  // line and a plane's line, the lines are what is meant — they are laid
-  // along each other; against anything else the square is its point.
-  const lineLike = (q: DimPick) => q.kind === 'datum' || (q.kind === 'piece' && entityOf(sketch, q.id)?.kind === 'line')
-  if (!(lineLike(first) && lineLike(second))) {
-    first = pickAsPoint(first)
-    second = pickAsPoint(second)
-  }
+  // A clicked midpoint/quadrant square explicitly names that point. Whole
+  // lines clicked away from their squares still make their carriers collinear.
+  first = pickAsPoint(first)
+  second = pickAsPoint(second)
   const piece = (p: DimPick) => (p.kind === 'piece' ? (entityOf(sketch, p.id) ?? null) : null)
   const round = (e: SketchEntity | null) => e !== null && (e.kind === 'arc' || e.kind === 'circle')
   if (first.kind === 'origin' || second.kind === 'origin') return 'The origin takes a point — an end, a centre or a point piece.'
@@ -408,18 +405,19 @@ export function rectangleCorners(mode: RectangleMode, clicks: readonly Vec2[]): 
   if (mode === 'threePoint') {
     const side = sub2(q, p)
     const l = len2(side)
-    if (!r || l < SAME) return null
+    if (!r || l < MIN_SKETCH_EDGE) return null
     const n = perp2(scale2(side, 1 / l))
-    const h = dot2(sub2(r, p), n)
-    if (Math.abs(h) < SAME) return null
+    const h = dot2(sub2(r, q), n)
+    if (Math.abs(h) < MIN_SKETCH_EDGE) return null
     const across = scale2(n, h)
-    return [p, q, add2(q, across), add2(p, across)]
+    const corners = [p, q, add2(q, across), add2(p, across)]
+    return usableSketchLoop(corners) ? corners : null
   }
   // The centre way mirrors the clicked corner through the centre.
   const a = mode === 'center' ? sub2(scale2(p, 2), q) : p
   const b = q
-  if (Math.abs(a[0] - b[0]) < SAME || Math.abs(a[1] - b[1]) < SAME) return null
-  return [a, [b[0], a[1]], b, [a[0], b[1]]]
+  const corners: Vec2[] = [a, [b[0], a[1]], b, [a[0], b[1]]]
+  return usableSketchLoop(corners) ? corners : null
 }
 
 /** A circle from the clicks of its mode, or null when three points lie on a

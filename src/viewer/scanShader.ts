@@ -14,6 +14,7 @@ import { spliceWireframe, type WireUniforms } from './surfaceModes'
  *  lifetime; their values change, the objects do not. */
 export interface ScanShaderUniforms {
   backface: BackfaceUniforms
+  fieldOverPaint?: { value: number }
   paintColor: PaintUniform
   surfaceColor: SurfaceUniform
   surfaceOwn: SurfaceOwnUniform
@@ -47,6 +48,7 @@ export function patchScanShader(material: THREE.Material, u: ScanShaderUniforms)
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uBackfaceTint = u.backface.uBackfaceTint
     shader.uniforms.uBackfaceColor = u.backface.uBackfaceColor
+    shader.uniforms.uFieldOverPaint = u.fieldOverPaint ?? { value: 0 }
     shader.uniforms.uPaintColor = u.paintColor
     shader.uniforms.uSurfaceColor = u.surfaceColor
     shader.uniforms.uSurfaceOwn = u.surfaceOwn
@@ -77,7 +79,7 @@ export function patchScanShader(material: THREE.Material, u: ScanShaderUniforms)
           }
         `)
     shader.fragmentShader =
-      BACKFACE_GLSL_PREAMBLE +
+      'uniform float uFieldOverPaint;\n' + BACKFACE_GLSL_PREAMBLE +
       PAINT_GLSL_PREAMBLE +
       TINT_GLSL_PREAMBLE +
       FIELD_GLSL_PREAMBLE +
@@ -87,7 +89,7 @@ export function patchScanShader(material: THREE.Material, u: ScanShaderUniforms)
         ${TINT_GLSL_FRAGMENT}
         ${FIELD_GLSL_FRAGMENT}
         ${BACKFACE_GLSL_FRAGMENT}
-        ${PAINT_GLSL_FRAGMENT}`,
+        if (uFieldOverPaint < 0.5 || vFieldW < 0.002) { ${PAINT_GLSL_FRAGMENT} }`,
       )
     spliceWireframe(shader, u.wire)
   }

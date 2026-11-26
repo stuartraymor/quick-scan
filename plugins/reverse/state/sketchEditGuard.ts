@@ -29,9 +29,9 @@ function placement(e: SketchEntity): number[] {
   }
 }
 
-function moved(a: SketchEntity, b: SketchEntity): boolean {
+function moved(a: SketchEntity, b: SketchEntity, tolerance = MOVED): boolean {
   const p = placement(a), q = placement(b)
-  return p.length !== q.length || p.some((v, i) => Math.abs(v - q[i]) > MOVED)
+  return p.length !== q.length || p.some((v, i) => Math.abs(v - q[i]) > tolerance)
 }
 
 /** A line's carrier: its unit direction and its signed offset. */
@@ -84,20 +84,38 @@ function laidOnEachOther(before: Sketch, now: Map<number, SketchEntity>): [Sketc
   return null
 }
 
-/** Why the change from before to after is not to be kept, or null. With
- *  `carriers`, the pieces there before must also stay on their lines and
- *  circles (an edit that only trims them, rounds or cuts their corner). */
-export function editDamage(before: Sketch, after: Sketch, carriers = false): string | null {
+/** Linear-time checks suitable for every drag frame. Small pieces that
+ * were explicitly dimensioned at their new size are intentional. */
+export function pieceDamage(before: Sketch, after: Sketch, carriers = false, held?: ReadonlySet<number>): string | null {
   const now = new Map(after.entities.map((e) => [e.id, e]))
+  const axisHeld = held && new Set(before.constraints.flatMap(c => c.kind === 'horizontal' || c.kind === 'vertical' ? [c.entity] : []))
   for (const e of before.entities) {
     const f = now.get(e.id)
     if (!f) continue
+    // A cursor can jump across the zero-length frame between two samples.
+    // An axis-constrained side cannot reverse without passing through it.
+    if (axisHeld?.has(e.id) && e.kind === 'line' && f.kind === 'line' &&
+        (e.b[0]-e.a[0])*(f.b[0]-f.a[0]) + (e.b[1]-e.a[1])*(f.b[1]-f.a[1]) < 0) {
+      return `it would reverse the endpoints of constrained line ${e.id}.`
+    }
     if (e.fixed && f.fixed && moved(e, f)) return `it would move the fixed ${label(e)}.`
+    if (held?.has(e.id) && moved(e, f, 1e-6)) return `it would move the fully constrained ${label(e)}.`
     const l0 = lengthOf(e), l1 = lengthOf(f)
-    if (l0 !== null && l1 !== null && l0 > 1e-3 && l1 < Math.min(1e-2, l0 * 0.01)) return `it would shrink ${label(e)} to a point.`
+    if (l0 !== null && l1 !== null && l0 >= 1e-3 && l1 < Math.min(0.05, l0 * 0.01)) {
+      const sized = after.constraints.some(c => (c.kind === 'length' || c.kind === 'radius' || c.kind === 'diameter') &&
+        !c.driven && c.entity === e.id && c.value > 0 && Math.abs((c.kind === 'diameter' ? c.value / 2 : c.value) - l1) <= 1e-6)
+      if (!sized) return `it would shrink ${label(e)} to a point.`
+    }
     if (carriers && carrierMoved(e, f)) return `it would move ${label(e)} off where it lies; a dimension or relation on it holds it. Remove that first.`
   }
-  const laid = laidOnEachOther(before, now)
+  return null
+}
+
+/** Complete edit checks include overlapping pairs and newly created pieces. */
+export function editDamage(before: Sketch, after: Sketch, carriers = false, held?: ReadonlySet<number>): string | null {
+  const damage = pieceDamage(before, after, carriers, held)
+  if (damage) return damage
+  const laid = laidOnEachOther(before, new Map(after.entities.map(e => [e.id, e])))
   if (laid) return `it would lay ${label(laid[0])} on top of ${label(laid[1])}.`
   const had = new Set(before.entities.map((e) => e.id))
   for (const e of after.entities) {

@@ -4,9 +4,8 @@
 // wanted in one and in the way in the other — the middle of a line is a
 // good place to start a new line from, and a bad thing to take when the
 // line itself is clicked for its length:
-//   draw    — where a drawn or dragged point snaps (the sketch's tools);
-//   pick    — what a tool that takes existing geometry picks (Dimension,
-//             Coincident);
+//   draw    — where a drawn or dragged point snaps, and what Edit Sketch tools pick;
+//   pick    — what a tool that takes existing geometry picks outside Edit Sketch;
 //   measure — what Analysis → Measure takes on the scan.
 // The tool in hand says which set the bar shows (`context`); with none the
 // bar is not shown. Remembered on this computer.
@@ -20,6 +19,10 @@ export type SnapFlags = Record<SnapKey, boolean>
  *  than by rank. */
 export type SnapRead = SnapFlags & { nearest: boolean }
 export type SnapContextName = 'draw' | 'pick' | 'measure'
+type SnapBarContext = SnapContextName | 'sketchPick'
+
+/** Sketch geometry pickers offer compatible targets from the drawing preferences. */
+export const snapProfile = (context: SnapBarContext): SnapContextName => context === 'sketchPick' ? 'draw' : context
 
 /** The switches each context offers, in the order the bar shows them, with
  *  the words on each. */
@@ -93,8 +96,8 @@ interface SnapFilterState {
   all: Record<SnapContextName, boolean>
   setAll: (context: SnapContextName, on: boolean) => void
   /** The set the tool in hand uses, or null when no tool snaps. */
-  context: SnapContextName | null
-  setContext: (context: SnapContextName | null) => void
+  context: SnapBarContext | null
+  setContext: (context: SnapBarContext | null) => void
   toggle: (context: SnapContextName, key: SnapKey) => void
   set: (context: SnapContextName, key: SnapKey, on: boolean) => void
   reset: (context: SnapContextName) => void
@@ -135,7 +138,8 @@ export const useSnapFilter = create<SnapFilterState>((set, get) => ({
 }))
 
 /** The switches of a context as they stand. */
-export const snapFlags = (context: SnapContextName): SnapRead => {
+export const snapFlags = (tool: SnapBarContext): SnapRead => {
+  const context = snapProfile(tool)
   const s = useSnapFilter.getState()
   return s.all[context]
     ? { endpoint: true, midpoint: true, center: true, quadrant: true, curve: true, scan: true, nearest: true }

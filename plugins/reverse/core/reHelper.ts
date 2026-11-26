@@ -60,6 +60,7 @@ export function createHelperService(loadKernel: () => Promise<ReKernel>, tell?: 
         if (!builder) builders.set(msg.group, (builder = new Builder(k)))
         teller?.hook(builder)
         builder.addStepFiles(msg.stepFiles ?? [])
+        await k.prepareStations(msg.steps)
         const sketches = new Map(msg.sketches)
         builder.build(msg.steps, (id) => sketches.get(id), true, false)
         const part = builder.exportPart(tokens, new Set(msg.have))

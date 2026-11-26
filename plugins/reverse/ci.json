@@ -44,6 +44,8 @@
     "scripts/e2e-sketch-concentric.mjs",
     "scripts/e2e-sketch-measure.mjs",
     "scripts/e2e-sketch-measure-preview.mjs",
+    "scripts/e2e-measure-adaptive.mjs",
+    "scripts/e2e-measure-body.mjs",
     "scripts/e2e-sketch-driven.mjs",
     "scripts/e2e-sketch-piece-menu.mjs",
     "scripts/e2e-combine-boolean.mjs",

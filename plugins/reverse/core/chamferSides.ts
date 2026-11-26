@@ -55,14 +55,14 @@ export function angledAsk(want: SidedChamfer, refIsFirst: boolean, normals: read
     angle = Math.atan2(b * Math.sin(phi), a - b * Math.cos(phi))
   } else {
     const theta = want.angleDeg / DEG
+    const far = Math.PI - phi - theta
+    if (!(far > 1e-6)) return `at ${Math.round(want.angleDeg * 10) / 10}° the chamfer does not reach the other face, which meets this one at ${Math.round(phi * DEG * 10) / 10}°.`
     if (refIsFirst) {
       distance = want.distance * scale
       angle = theta
     } else {
       // The setback on the other face, and the chamfer's angle to it: what
       // is left of the half turn.
-      const far = Math.PI - phi - theta
-      if (!(far > 1e-6)) return `at ${Math.round(want.angleDeg * 10) / 10}° the chamfer does not reach the other face, which meets this one at ${Math.round(phi * DEG * 10) / 10}°.`
       distance = (want.distance * scale * Math.sin(theta)) / Math.sin(phi + theta)
       angle = far
     }
@@ -85,4 +85,23 @@ export function referenceFaces(sides: readonly (readonly [number, number])[], fl
     const ref = (count.get(b) ?? 0) > (count.get(a) ?? 0) ? b : a
     return flip ? (ref === a ? b : a) : ref
   })
+}
+
+/** The seed edge's reference face uses the same contour vote and face order as
+ * the exact chamfer. Topology adjacency can arrive in a different order.
+ * A seam or a missing pick has no unambiguous reference to show. */
+export function firstChamferReference(topology: { faces: readonly { hash: number }[]; edges: readonly { hash: number; faces: number[] }[] },
+  selection: readonly number[], flip: boolean): number | undefined {
+  const ordinal = new Map(topology.faces.map((face, index) => [face.hash, index]))
+  const edges = new Map(topology.edges.map(edge => [edge.hash, edge.faces]))
+  const supports: [number, number][] = []
+  for (const hash of selection) {
+    const adjacent = [...new Set(edges.get(hash))]
+    if (adjacent.length !== 2) return
+    const [a, b] = adjacent
+    const i = ordinal.get(a), j = ordinal.get(b)
+    if (i === undefined || j === undefined) return
+    supports.push(i < j ? [a,b] : [b,a])
+  }
+  return referenceFaces(supports, flip)[0]
 }

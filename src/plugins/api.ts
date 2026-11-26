@@ -13,6 +13,7 @@
 import type { ComponentType, ReactNode, RefObject } from 'react'
 import type { ReferenceOptions } from '../app/deviationWorkspace'
 import type { MeasurePreview } from '../state/measureToolStore'
+import type { Vec3 } from '../core/types'
 import type { ImportQueue } from '../app/importQueue'
 import type { SourceFiles } from '../app/project'
 import type { ScanSource } from '../app/scanSwap'
@@ -201,8 +202,10 @@ export interface PluginRuntime {
      *  plugin's workspace forward, say, where what it measures is shown.
      *  `snap`: the snap bar's set of switches the way picks by, shown and
      *  pressed on the bar while it is chosen (the mesh's own otherwise). */
-    modes: readonly { id: `plugin:${string}`; label: string; title: string; disabled?: boolean; choose?: () => void; snap?: 'pick' | 'draw' }[]
+    modes: readonly { id: `plugin:${string}`; label: string; title: string; disabled?: boolean; choose?: () => void; snap?: 'pick' | 'draw' | 'sketchPick'; adaptive?: boolean }[]
     pick(mode: string, clientX: number, clientY: number, mods: { ctrl: boolean; shift: boolean }): boolean
+    /** Share an Automatic selection with the scan surface when a plugin also measures model geometry. */
+    meshPoint?(point: Vec3, commit: boolean): MeasurePreview
     /** What a click at this point would take, drawn before it: null for
      *  nothing. Asked at most once a frame as the cursor moves. */
     hover?(mode: string, clientX: number, clientY: number): MeasurePreview | null

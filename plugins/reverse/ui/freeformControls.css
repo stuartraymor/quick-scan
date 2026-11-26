@@ -144,3 +144,41 @@
 :root[data-theme='light'] .ff-deviation-options { color-scheme: light; }
 .ff-irregular-warning { position: fixed; right: 8px; bottom: 92px; z-index: 1000; pointer-events: auto; max-width: calc(100vw - 16px); border: 0; border-radius: 1px; padding: 6px 8px; background: #d64524; color: white; text-align: left; font: 14px/1.25 "Segoe UI", sans-serif; cursor: pointer; }
 .ff-irregular-warning:disabled { opacity: .65; cursor: wait; }
+/* Auto Freeform: the ticks, the curve keys, the progress strip, the result's numbers and More. */
+.ff-auto fieldset > label.ff-auto-check { display: flex; justify-content: flex-start; align-items: center; gap: 5px; grid-template-columns: none; }
+.ff-auto fieldset > label.ff-auto-check > input { width: auto; margin: 0; accent-color: #087bc4; }
+.ff-auto-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ff-auto-progress { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4px 8px; }
+.ff-auto-progress button { min-width: 52px; }
+.ff-auto-bar { grid-column: 1 / -1; height: 5px; background: var(--well-deep); border: 1px solid var(--line-strong); }
+.ff-auto-bar > i { display: block; height: 100%; background: var(--accent); transition: width .12s linear; }
+.ff-auto-stats { display: grid; gap: 1px; color: var(--dim); }
+.ff-auto-more > summary { cursor: pointer; color: var(--dim); user-select: none; }
+.ff-auto fieldset > label.ff-auto-value { display: grid; grid-template-columns: 1fr 64px 26px; align-items: center; gap: 5px; }
+.ff-auto fieldset > label.ff-auto-value > span > input { width: auto; margin: 0 3px 0 0; vertical-align: middle; accent-color: #087bc4; }
+.ff-auto-help { color: var(--dim); }
+.ff-auto footer .ff-auto-helpkey { min-width: 21px; width: 21px; height: 21px; min-height: 21px; padding: 0; border-radius: 50%; font-weight: 600; margin-right: auto; }
+
+.finishing-statistics { width: 100%; margin-block: 4px; border-collapse: collapse; font-size: .92em; }
+.finishing-statistics caption { text-align: left; font-weight: 600; padding-block: 3px; }
+.finishing-statistics th { text-align: left; font-weight: 400; padding-right: 6px; }
+.finishing-statistics td { text-align: right; font-variant-numeric: tabular-nums; }
+
+.chamfer-reference-control {
+  pointer-events: auto;
+  margin: 0 0 6px 8px;
+  padding: 3px 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  background: var(--panel);
+  color: var(--ink);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+:is([data-test='fillet-editor'], [data-test='chamfer-editor']) .field:has(.exprerror) { flex-wrap: wrap; }
+:is([data-test='fillet-editor'], [data-test='chamfer-editor']) .field > .exprerror {
+  flex: 0 0 100%;
+  min-width: 0;
+  white-space: normal;
+}

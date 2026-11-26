@@ -90,6 +90,26 @@ describe('a thickened sheet out of view', () => {
   })
 })
 
+it('undoes only the input eyes changed by an automatic trim, and redoes them with the trim', () => {
+  // Sheet 2 was already hidden by the thicken above. The solid and that
+  // sheet must keep their own visibility when Trim is undone.
+  const other: Feature = { ...sheet, id: 4, name: 'Cross pipe' }
+  useReverse.setState({ features: [...s().features, other], nextFeatureId: 5 })
+  const inputs = [body(2, true), body(3), body(4, true)]
+  s().finishBuild([], inputs)
+  s().startFeature('trim')
+  expect(s().commitFeature()).toBe(5)
+  s().finishBuild([], [...inputs, body(5, true)])
+  expect(eyes()).toEqual([[2, false], [3, true], [4, false], [5, true]])
+  s().setBodiesVisible([3], false)
+  s().undoFeatures()
+  s().finishBuild([], inputs)
+  expect(eyes()).toEqual([[2, false], [3, false], [4, true]])
+  s().redoFeatures()
+  s().finishBuild([], [...inputs, body(5, true)])
+  expect(eyes()).toEqual([[2, false], [3, false], [4, false], [5, true]])
+})
+
 describe('Compare in Deviation’s patches', () => {
   /** One triangle at height z, all of one face. */
   const flat = (z: number, hash: number) => ({

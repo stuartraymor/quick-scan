@@ -39,6 +39,8 @@ import { edgeShares, restSegments, type EdgeShares, type OneSurface, type Tangen
 import { silhouetteSegments } from '../core/silhouette'
 import { onOneSurface } from '../core/topo'
 import type { EdgeInfo, FaceInfo } from '../core/build'
+import type { Vec3 } from '../../../src/core/types'
+import type { SnapFlags } from '../../../src/state/snapFilterStore'
 import { SECTION_LINE_DEFAULT } from '../../../src/viewer/lineWidths'
 import { distToSegment2 } from '../../../src/core/flat/vec2'
 
@@ -46,12 +48,18 @@ import { distToSegment2 } from '../../../src/core/flat/vec2'
  *  editor open — everything there is to select: faces, edges and corners. */
 export type BodyPickMode = 'faces' | 'edges' | 'all'
 
+export type BodyMeasureHit =
+  | { kind: 'point'; label: string; bodyId: number; point: Vec3 }
+  | { kind: 'edge'; hit: BodyEdgeHit }
+  | { kind: 'face'; hit: BodyFaceHit }
+
 export interface BodyTopology {
   faces: FaceInfo[]
   edges: EdgeInfo[]
 }
 
 export interface BodyFaceHit {
+  point?: Vec3
   bodyId: number
   face: FaceInfo
   /** The edges bounding the face — its outline. */
@@ -209,6 +217,13 @@ export class BodyPicks {
   private mode: BodyPickMode | null = null
   private inPlay: ReadonlySet<number> | null = null
   private pickedFaces = new Set<string>()
+  private suggestedEdges: { bodyId: number; hash: number }[] = []
+
+  setSuggestedEdges(edges: { bodyId: number; hash: number }[]): void {
+    this.suggestedEdges = edges
+    this.rebuildLights()
+  }
+
   private pickedEdges = new Set<string>()
   /** Edges a feature reaches along a tangent chain from the picked ones. */
   private chainEdges = new Set<string>()
@@ -549,13 +564,25 @@ export class BodyPicks {
     return this.facesAlong(clientX, clientY, true)[0] ?? null
   }
 
+  /** Distance to the first drawn opaque body, independent of the selection filter. */
+  opaqueDepthAt(clientX: number, clientY: number, seeThrough: ReadonlySet<number>): number {
+    const meshes: THREE.Mesh[] = []
+    for (const e of this.entries.values()) if (e.mesh.visible && !seeThrough.has(e.id)) meshes.push(e.mesh)
+    if (!meshes.length) return Infinity
+    this.ctx.setPickRay(clientX, clientY)
+    this.ctx.partGroup.updateWorldMatrix(true, true)
+    const hits = this.cast(meshes, Boolean(this.clipping?.length))
+    const visible = hits.find(hit => !this.clipping?.some(plane => plane.distanceToPoint(hit.point) < 0))
+    return visible?.distance ?? Infinity
+  }
+
   /** The faces the pick ray through a client point meets, if faces are
    *  armed — the nearest first, each face once however often the ray
    *  passes through it; with `first`, only the nearest. */
-  private facesAlong(clientX: number, clientY: number, first = false): BodyFaceHit[] {
-    if (this.mode !== 'faces' && this.mode !== 'all') return []
+  private facesAlong(clientX: number, clientY: number, first = false, measuring = false): BodyFaceHit[] {
+    if (!measuring && this.mode !== 'faces' && this.mode !== 'all') return []
     const meshes: THREE.Mesh[] = []
-    for (const e of this.entries.values()) if (this.playing(e.id)) meshes.push(e.mesh)
+    for (const e of this.entries.values()) if (measuring ? this.measurable(e) : this.playing(e.id)) meshes.push(e.mesh)
     if (meshes.length === 0) return []
     this.ctx.setPickRay(clientX, clientY)
     this.ctx.partGroup.updateWorldMatrix(true, true)
@@ -570,7 +597,8 @@ export class BodyPicks {
       const face = hash === null ? undefined : entry.faceByHash.get(hash)
       if (!face || seen.has(key(entry.id, face.hash))) continue
       seen.add(key(entry.id, face.hash))
-      out.push({ bodyId: entry.id, face, edges: entry.topology.edges.filter((e) => e.faces.includes(face.hash)), distance: hit.distance })
+      const point = this.ctx.partGroup.worldToLocal(hit.point.clone())
+      out.push({ bodyId: entry.id, face, point: [point.x, point.y, point.z], edges: entry.topology.edges.filter((e) => e.faces.includes(face.hash)), distance: hit.distance })
       if (first) break
     }
     return out
@@ -594,10 +622,10 @@ export class BodyPicks {
 
   /** Every edge within reach of a client point, with the point on it
    *  nearest the cursor — the nearest first. */
-  private edgesNear(clientX: number, clientY: number, toScreen: (x: number, y: number, z: number) => [number, number]): { hit: BodyEdgeHit; d: number; at: THREE.Vector3 }[] {
+  private edgesNear(clientX: number, clientY: number, toScreen: (x: number, y: number, z: number) => [number, number], measuring = false): { hit: BodyEdgeHit; d: number; at: THREE.Vector3 }[] {
     const near: { hit: BodyEdgeHit; d: number; at: THREE.Vector3 }[] = []
     for (const e of this.entries.values()) {
-      if (!this.playing(e.id)) continue
+      if (!(measuring ? this.measurable(e) : this.playing(e.id))) continue
       for (const edge of e.topology.edges) {
         const p = edge.polyline
         if (p.length < 6 || !this.shows(e.id, edge)) continue
@@ -618,6 +646,49 @@ export class BodyPicks {
       }
     }
     return near.sort((x, y) => x.d - y.d)
+  }
+
+  private measurable(entry: Entry): boolean {
+    return entry.mesh.visible && !this.replaced.has(entry.id)
+  }
+
+  /** Inspect visible topology without arming the editor or changing selection. */
+  measureAt(x: number, y: number, allow: SnapFlags): BodyMeasureHit | null {
+    const project = this.screenProjection()
+    const near: { hit: Extract<BodyMeasureHit, {kind: 'point'}>; px: number; depth: number }[] = []
+    const camera = this.ctx.camera()
+    const depth = (p: THREE.Vector3) => -p.clone().applyMatrix4(this.ctx.partGroup.matrixWorld).applyMatrix4(camera.matrixWorldInverse).z
+    const take = (bodyId: number, label: string, point: Vec3) => {
+      const [sx, sy] = project(...point)
+      const px = Math.hypot(sx - x, sy - y)
+      if (px > VERTEX_REACH_PX) return
+      const world = new THREE.Vector3(...point).applyMatrix4(this.ctx.partGroup.matrixWorld)
+      if (this.clipping?.some(plane => plane.distanceToPoint(world) < 0)) return
+      near.push({ hit: { kind: 'point', bodyId, label, point }, px, depth: depth(new THREE.Vector3(...point)) })
+    }
+    for (const entry of this.entries.values()) {
+      if (!this.measurable(entry)) continue
+      if (allow.endpoint) for (const p of entry.vertices) take(entry.id, 'Vertex', p)
+      for (const edge of entry.topology.edges) {
+        if (!this.shows(entry.id, edge)) continue
+        if (allow.midpoint && (edge.fingerprint.kind === 'line' || (edge.fingerprint.kind === 'circle' && !edge.quadrants))) take(entry.id, 'Edge midpoint', edge.fingerprint.mid)
+        if (allow.center && edge.center) take(entry.id, 'Circle center', edge.center)
+        if (allow.quadrant && edge.quadrants) for (const point of edge.quadrants) take(entry.id, 'Circle quadrant', point)
+      }
+    }
+    near.sort((a, b) => Math.round(a.px * 4) - Math.round(b.px * 4) || a.depth - b.depth)
+    const solid = this.ctx.bodiesSolid()
+    for (const {hit} of near) {
+      if (!solid || !this.hidden(new THREE.Vector3(...hit.point), project)) return hit
+    }
+    if (!allow.curve) return null
+    const edges = this.edgesNear(x, y, project, true)
+    edges.sort((a, b) => Math.round(a.d * 4) - Math.round(b.d * 4) || depth(a.at) - depth(b.at))
+    for (const edge of edges) {
+      if (!solid || !this.hidden(edge.at, project)) return { kind: 'edge', hit: edge.hit }
+    }
+    const face = this.facesAlong(x, y, true, true)[0]
+    return face ? { kind: 'face', hit: face } : null
   }
 
   /** A point of the part, in its coordinates, as client pixels. */
@@ -1123,6 +1194,7 @@ export class BodyPicks {
         const k = key(this.hoveredEdge.bodyId, this.hoveredEdge.edge.hash)
         if (!this.pickedEdges.has(k)) edges.set(k, { bodyId: this.hoveredEdge.bodyId, hash: this.hoveredEdge.edge.hash, hover: true })
       }
+      for (const e of this.suggestedEdges) edges.set(key(e.bodyId, e.hash), { ...e, hover: true })
       for (const [k, e] of edges) {
         const entry = this.entries.get(e.bodyId)
         const segments = entry ? this.edgeLine(entry, e.hash) : undefined

@@ -502,11 +502,14 @@ function sweepCorner(spec: CornerSpec, ch: SweepChoice): SweepOutcome {
   const pre = cloneSketch(sketchNow()), preKey = keyOf(pre), h0 = hist()
   const a0 = pieceOf(pre, spec.A)!, b0 = pieceOf(pre, spec.B)!
   const cross = crossingsOf(a0, b0).sort((p, q) => dist(p, spec.P0) - dist(q, spec.P0))
-  const P = cross[0] ?? null
+  const area = new SweepArea({ path: ch.path, radius: ch.ring })
+  // A line and circle or two circles can cross twice. When the stroke
+  // covers just one crossing, that is the corner the user selected.
+  const painted = cross.filter(p => area.distance(p) <= 0)
+  const P = painted.length === 1 ? painted[0] : cross[0] ?? null
   const isLL = a0.kind === 'line' && b0.kind === 'line'
   const turnDeg = isLL ? Math.acos(Math.abs(dot(unit(sub(a0.b, a0.a)), unit(sub(b0.b, b0.a))))) * 180 / Math.PI : 90
   const nearParallel = isLL && turnDeg < 5.2
-  const area = new SweepArea({ path: ch.path, radius: ch.ring })
   const coverP = P !== null && area.distance(P) <= 0
   const farOf = (e: Piece) => P ? ends(e).sort((p, q) => dist(q, P) - dist(p, P))[0] : anchorPoint(e, 'b')
   const fA = farOf(a0), fB = farOf(b0)
@@ -593,7 +596,12 @@ function sweepCorner(spec: CornerSpec, ch: SweepChoice): SweepOutcome {
   const truthFits = !isLL || spec.truthR === undefined || P === null ? true : (() => { const da = unit(sub(fA, P)), db = unit(sub(fB, P)), half = Math.acos(Math.max(-1, Math.min(1, dot(da, db)))) / 2; return spec.truthR! / Math.tan(half) < 0.9 * Math.min(dist(fA, P), dist(fB, P)) })()
   const lf = ct.getState().lastFillet, lfit = ct.getState().lastFit
   if (!fillet) {
-    if (P && (Math.min(...ends(a1).map((p) => dist(p, P))) > 1e-7 || Math.min(...ends(b1).map((p) => dist(p, P))) > 1e-7)) bad('a sharp join does not meet at the corner point')
+    // A fan can include both intersections of two carriers. Whichever
+    // corner is chosen, the two trimmed ends must meet at that same point.
+    const allowed = painted.length ? painted : P ? [P] : []
+    if (allowed.length && !allowed.some(p => ends(a1).some(q => dist(p, q) <= 1e-7) && ends(b1).some(q => dist(p, q) <= 1e-7))) {
+      bad('a sharp join does not meet at the corner point')
+    }
     if (steps !== 1) bad(`a sharp join took ${steps} undo steps`)
     if (ch.mode === 'fixedFillet' && wantFillet) bad('Fixed Size Fillet over the corner point made no fillet', msg ?? '')
     if (ch.mode === 'autoFillet' && wantFillet && (spec.truthR ?? 0) > 0.5 && spec.truthExact && truthFits) bad(`Auto Fillet left a clean round of R${spec.truthR!.toFixed(3)} sharp`, msg ?? '')

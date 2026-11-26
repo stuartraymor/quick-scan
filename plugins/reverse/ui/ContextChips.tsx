@@ -183,8 +183,8 @@ function chipsFor(sel: ReSelection): { key: string; label: string; title: string
     }
     case 'bodyEdge':
       return [
-        { key: 'fillet', label: 'Fillet', title: 'Round this edge — the radius is read off the scan', run: () => re().startFeature('fillet', { body: sel.bodyId, edges: [sel.edge] }) },
-        { key: 'chamfer', label: 'Chamfer', title: 'Chamfer this edge', run: () => re().startFeature('chamfer', { body: sel.bodyId, edges: [sel.edge] }) },
+        { key: 'fillet', label: 'Fillet', title: 'Round this edge — the radius is read off the scan', run: () => re().startFeature('fillet', { body: sel.bodyId, edges: [sel.edge], chain: false }) },
+        { key: 'chamfer', label: 'Chamfer', title: 'Chamfer this edge', run: () => re().startFeature('chamfer', { body: sel.bodyId, edges: [sel.edge], chain: false }) },
         moveChip([sel.bodyId]),
       ]
     case 'bodyVertex':
@@ -200,8 +200,8 @@ function chipsFor(sel: ReSelection): { key: string; label: string; title: string
       if (oneBody && edges.length === sel.items.length) {
         const picked = edges.map((i) => i.edge)
         return [
-          { key: 'fillet', label: 'Fillet', title: `Round these ${picked.length} edges`, run: () => re().startFeature('fillet', { body, edges: picked }) },
-          { key: 'chamfer', label: 'Chamfer', title: `Chamfer these ${picked.length} edges`, run: () => re().startFeature('chamfer', { body, edges: picked }) },
+          { key: 'fillet', label: 'Fillet', title: `Round these ${picked.length} edges`, run: () => re().startFeature('fillet', { body, edges: picked, chain: false }) },
+          { key: 'chamfer', label: 'Chamfer', title: `Chamfer these ${picked.length} edges`, run: () => re().startFeature('chamfer', { body, edges: picked, chain: false }) },
         ]
       }
       // Picks on two bodies: how they stand to each other — and, on two or

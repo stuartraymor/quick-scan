@@ -122,7 +122,10 @@ describe('Surface orientation', () => {
 
   it('OYZ and OXZ fit along x and along y', () => {
     expect(fitSurface(slope, { ...net(5, 5), orientation: 'oyz' }, 0.01).normal[0]).toBeCloseTo(1, 12)
-    expect(fitSurface(slope, { ...net(5, 5), orientation: 'oxz' }, 0.01).normal[1]).toBeCloseTo(1, 12)
+    // z = 0.3x is seen edge-on along Y. Use a sheet with area in XZ for this fit.
+    expect(() => fitSurface(slope, { ...net(5, 5), orientation: 'oxz' }, 0.01)).toThrow(/projects to a line/)
+    const tilted = patch((x, y) => 0.3*x + 0.2*y, 40, 30, 1)
+    expect(fitSurface(tilted, { ...net(5, 5), orientation: 'oxz' }, 0.01).normal[1]).toBeCloseTo(1, 12)
   })
 
   it('a normal given outright wins over the list', () => {

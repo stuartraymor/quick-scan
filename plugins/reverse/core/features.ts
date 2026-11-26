@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import type { RadiusPoint, RoundGroups } from './roundInputs'
 import type { PolynomialSurface } from './surfaceStep'
 // The features of the Reverse engineer workspace, as they are stored, and
 // how they are resolved into what the kernel builds. A feature list is
@@ -403,6 +404,7 @@ export interface FilletFeature extends FeatureFlags {
    *  along each — the first at the edge's first end as body.describe lists
    *  it — beside `edges` at `radius`; each its own, after those, no chain. */
   variable?: VariableEdge[]
+  roundFaces?: RoundGroups<FaceRef>
   /** The expressions driving the numbers above, by the field as the box
    *  shows it — see parameters.ts; the numbers hold what they last came
    *  to. Absent when every number was typed as one. */
@@ -413,6 +415,9 @@ export interface FilletFeature extends FeatureFlags {
 /** An edge a fillet rounds at a varying radius: from `radius[0]` at its
  *  first end to `radius[1]` at its other. */
 export interface VariableEdge {
+  transition?: 'smooth' | 'linear'
+  chain?: boolean
+  points?: RadiusPoint[]
   edge: EdgeRef
   radius: [number, number]
 }
@@ -769,6 +774,8 @@ export interface BooleanFeature extends FeatureFlags {
 export interface SheetFeature extends FeatureFlags {
   id: number
   kind: 'sheet'
+  planar?: boolean
+  projectOnto?: number
   name: string
   sketchId: number
   /** Millimetres along the sketch plane's normal, either way. */
@@ -797,6 +804,10 @@ export type ThickenSide = 'in' | 'out' | 'both'
  *  shell or an offset of a lofted body will not go. The sheet stays a body
  *  of its own; the solid is a new body, or joined to or cut from what it
  *  meets as a loft's is. */
+export type ThickenConstraint =
+  | { mode: 'direction' | 'toPlane'; plane: PlaneRef }
+  | { mode: 'betweenPlanes'; plane: PlaneRef; end: PlaneRef }
+
 export interface ThickenFeature extends FeatureFlags {
   id: number
   kind: 'thicken'
@@ -806,6 +817,7 @@ export interface ThickenFeature extends FeatureFlags {
   /** Millimetres, through the wall. */
   thickness: number
   side: ThickenSide
+  constraint?: ThickenConstraint
   op: BodyOp
   target?: number
   /** The expressions driving the numbers above, by the field as the box
@@ -846,6 +858,7 @@ export interface SplitFeature extends FeatureFlags {
 export interface LoftFeature extends FeatureFlags {
   id: number
   kind: 'loft'
+  surface?: boolean
   name: string
   /** In order; each sketch's one region, or its largest. */
   sketches: number[]
@@ -911,6 +924,9 @@ export interface PatternFeature extends FeatureFlags {
 /** The parameters a freeform surface is fitted with — see
  *  core/re/surfaceFit. */
 export interface SurfaceFitParams {
+  /** New analytical surfaces use the Extract Primitives selection fitter. */
+  primitiveSolver?: 'extract'
+  constraintTolerances?: { tiltDeg: number; coincidenceMm: number }
   /** The control net, U × V, or null for the fit to choose from the
    *  region's extent and scatter. */
   net: { u: number; v: number } | null
@@ -1156,7 +1172,7 @@ export type ExtendData = Pick<ExtendFeature, 'sheet' | 'offset' | 'type' | 'side
  *  — exact faces, held square and parallel to what the part already has
  *  (core/re/autoConstrain), and cutting a trim as the whole plane or
  *  cylinder rather than as the patch that is drawn. */
-export type SurfaceShape = 'freeform' | 'plane' | 'cylinder'
+export type SurfaceShape = 'freeform' | 'plane' | 'cylinder' | 'cone' | 'sphere'
 
 /** What a plane or cylinder fitted in the workspace can be held to, as far
  *  as the feature list's own context knows it: the part's coordinate planes
@@ -1168,8 +1184,9 @@ export function constrainRefs(elements: ResolveContext['elements']): ConstrainRe
     const fit = e.fit
     if (!fit) continue
     const name = e.name ?? `Element ${e.id}`
-    if (fit.kind === 'plane') refs.push({ key: `element:${e.id}`, kind: 'plane', name, origin: fit.center, normal: fit.normal })
-    else if (fit.kind === 'cylinder' || fit.kind === 'cone') refs.push({ key: `element:${e.id}`, kind: 'axis', name, origin: fit.center, dir: fit.axis })
+    if (fit.kind === 'plane') refs.push({ key: `element:${e.id}`, kind: 'plane', name, origin: fit.center, normal: fit.normal, measured: fit })
+    else if (fit.kind === 'line') refs.push({ key: `element:${e.id}`, kind: 'axis', name, origin: fit.center, dir: fit.dir, measured: fit })
+    else if (fit.kind === 'cylinder' || fit.kind === 'cone') refs.push({ key: `element:${e.id}`, kind: 'axis', name, origin: fit.center, dir: fit.axis, measured: fit })
   }
   return refs
 }
@@ -1184,8 +1201,12 @@ export type TrimTool = { kind: 'body'; id: number } | { kind: 'element'; id: num
  *  kept and sewn. A set that does not close leaves a surface body of the
  *  kept faces, its open edges reported. */
 export interface TrimFeature extends FeatureFlags {
+  mergeFaces?: boolean
+  groupFaces?: boolean
+  corrections?: { at: Vec3; keep: boolean }[]
   id: number
   kind: 'trim'
+  removed?: { body: number; at: Vec3 }[]
   name: string
   tools: TrimTool[]
   /** How far a sampled point of a face may lie from the scan and still
@@ -1276,7 +1297,7 @@ export function referencesOf(f: Feature): number[] {
     case 'boolean':
       return [f.body, f.tool]
     case 'sheet':
-      return [f.sketchId]
+      return f.projectOnto === undefined ? [f.sketchId] : [f.sketchId, f.projectOnto]
     case 'surface': {
       // Held by hand to a surface fitted before it; what Auto finds is not a
       // reference — with that surface gone the fit is simply free of it.

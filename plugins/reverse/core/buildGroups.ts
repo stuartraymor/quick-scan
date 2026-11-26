@@ -63,7 +63,7 @@ function touches(step: BuildStep, sketchOf: (id: number) => Sketch | undefined):
           else reads.push(...until.against)
         }
       }
-      if (step.op === 'new') makes = true
+      if (step.op === 'new' || (step.kind === 'loft' && step.surface)) makes = true
       else if (step.target !== undefined) {
         reads.push(step.target)
         changes.push(step.target)
@@ -74,6 +74,7 @@ function touches(step: BuildStep, sketchOf: (id: number) => Sketch | undefined):
       }
       break
     case 'sheet':
+      if (step.projectOnto !== undefined) reads.push(step.projectOnto)
       sketches.push(step.sketchId)
       makes = true
       break

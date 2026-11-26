@@ -1,13 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// An overdefined sketch, as QUICKSURFACE 8.0.128 shows one (read live
-// 2026-11-21): a dimension typed against another stays, its number turns
-// yellow, the sketch says it is overdefined, and "Select overdefining
-// constraints" asks "N constraints overdefine the sketch. Do you want to
-// delete them?" — Yes deletes them, No leaves everything. By mouse and
-// keyboard on the rendered controls.
+// New contradictory inputs keep the solved sketch. Existing conflicts
+// retain the QUICKSURFACE yellow markers, selection and repair actions.
+// Exercise the user's keyboard and mouse paths for both states.
 import { writeFileSync } from 'node:fs'
 import { check, click, finish, launchApp, loadScan, shotPath, sleep } from '../../../scripts/e2e-lib.mjs'
-import { openReverse, reverseHelpers } from './lib.mjs'
+import { loadDimensionConflict, openReverse, reverseHelpers } from './lib.mjs'
 
 const fixture = shotPath('overdefined-cylinder-r10.obj'), n = 96, obj = []
 for (const z of [-5, 5]) for (let i = 0; i < n; i++) obj.push(`v ${10 * Math.cos(i * Math.PI * 2 / n)} ${10 * Math.sin(i * Math.PI * 2 / n)} ${z}`)
@@ -24,7 +21,7 @@ const typeInto = async (selector, text) => { await page.waitForSelector(selector
 const state = () => re(() => {
   const d = window.__re.store.getState().sketchDraft
   const line = d.sketch.entities.find((e) => e.kind === 'line')
-  return { a: line.a, b: line.b, dims: d.sketch.constraints.filter((c) => 'value' in c).map((c) => ({ id: c.id, kind: c.kind, value: c.value })), ok: d.report?.ok, unmet: d.report?.unmet.map((u) => u.id) ?? [], selected: d.selectedConstraint }
+  return { a: line.a, b: line.b, dims: d.sketch.constraints.filter((c) => 'value' in c).map((c) => ({ id: c.id, kind: c.kind, value: c.value })), ok: d.report?.ok, unmet: d.report?.unmet.map((u) => u.id) ?? [], selected: d.selectedConstraint, error: d.error, history: d.history.length }
 })
 const onScreen = (selector) => page.evaluate((s) => { const el = document.querySelector(s); if (!el) return false; const r = el.getBoundingClientRect(); const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return r.width > 0 && !!top && (el === top || el.contains(top)) }, selector)
 const yellow = () => page.$$eval('.viewport-label.sketch-dim.overdefined .label-value', (els) => els.map((el) => ({ text: el.textContent.trim(), bg: getComputedStyle(el).backgroundColor })))
@@ -63,7 +60,11 @@ try {
   // The contradiction: the vertical typed to 9.
   await typeInto(`[data-test="flat-dimension-${dyId}"] input`, '9')
   s = await state()
-  check(!s.ok && s.dims.find((d) => d.id === dyId)?.value === 9, `typing 9 is kept and the sketch no longer solves (unmet ${JSON.stringify(s.unmet)})`)
+  check(s.ok && near(s.dims.find(d => d.id === dyId)?.value, 6) && s.history === before.history &&
+    /conflicts with the existing/.test(s.error ?? ''), 'a conflicting 9 is refused, with the solved 6 and undo history intact')
+  await loadDimensionConflict(page, dyId, 9)
+  s = await state()
+  check(!s.ok && s.dims.find(d => d.id === dyId)?.value === 9, 'the editor detects an existing conflict when loading the sketch')
   check(/overdefined/i.test(await page.$eval('[data-test=sketch-status]', (el) => el.textContent)), 'the status reads "The sketch is overdefined"')
   check(await onScreen('[data-test=sketch-hint]') && /^The sketch is overdefined/.test(await page.$eval('[data-test=sketch-hint]', (el) => el.textContent.trim())), 'and the panel says so on screen, in the line above the status')
   const marks = await yellow()

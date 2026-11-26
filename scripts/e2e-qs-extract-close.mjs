@@ -89,6 +89,41 @@ try {
   await page.click('[data-test=ribbon-extract-primitives]')
   await page.click('[data-test=extract-close]')
   check(!(await state()).open && await page.$('[role=alertdialog]') === null, 'closing without a preview needs no confirmation')
+  for (const how of ['Enter', 'middle']) {
+    await preview()
+    const before = (await state()).elements
+    await page.evaluate(() => document.activeElement?.blur())
+    if (how === 'Enter') await page.keyboard.press('Enter')
+    else {
+      const r = await page.$eval('.viewport canvas', e => { const r = e.getBoundingClientRect(); return { x: r.right - 80, y: r.top + 110 } })
+      await page.mouse.click(r.x, r.y, { button: 'middle' })
+    }
+    await page.waitForFunction(async n => (await import('/src/state/store.ts')).useStore.getState().elements.length === n + 1, {}, before)
+    const committed = await state()
+    check(committed.elements === before + 1 && !committed.draft && committed.open && committed.selected === 0, `${how} creates once, clears the draft and selection, and stays ready for another extraction`)
+    check(await page.$('[data-test=extract-preview]') === null && await page.$('[data-test=extract-create]') === null, `${how} removes stale preview and Create controls`)
+    await page.click('[data-test=extract-close]')
+    if (await page.$('[data-test=extract-close-no]')) await page.click('[data-test=extract-close-no]')
+    check(!(await state()).open && !(await state()).draft, `${how}: Close releases extraction and its editor`)
+    check(await page.$eval('[data-test=ribbon-2d-sketch]', e => !e.disabled), `${how}: 2D Sketch becomes available after Close`)
+  }
+  await preview()
+  const beforeEscape = (await state()).elements
+  await page.evaluate(() => document.activeElement?.blur())
+  await page.keyboard.press('Escape')
+  check((await state()).draft && (await state()).open, 'first Escape leaves the fit intact and releases the selection tool')
+  await page.keyboard.press('Escape')
+  check(await page.$('[role=alertdialog]') !== null && (await state()).draft, 'second Escape follows Close: asks before discarding a preview')
+  if (await page.$('[role=alertdialog]')) {
+    const r=await page.$eval('.viewport canvas',e=>{const r=e.getBoundingClientRect();return{x:r.right-80,y:r.top+110}})
+    await page.mouse.click(r.x,r.y,{button:'middle'})
+    check((await state()).elements===beforeEscape && (await state()).draft && await page.$('[role=alertdialog]')!==null, 'middle click cannot commit the fit behind the close question')
+  }
+  if (await page.$('[data-test=extract-close-cancel]')) await page.click('[data-test=extract-close-cancel]')
+  check((await state()).draft && (await state()).elements === beforeEscape, 'cancelling the Escape close question preserves the uncommitted fit')
+  await page.click('[data-test=hide-tool-inspector]')
+  await page.click('[data-test=extract-close-no]')
+  check(!(await state()).draft && !(await state()).open && (await state()).elements === beforeEscape, 'X then No discards exactly the pending fit and leaves a usable application')
 } catch (error) {
   fail(error.stack ?? String(error))
 } finally {

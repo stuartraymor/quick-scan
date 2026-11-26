@@ -10,7 +10,7 @@
 // Env: CHROME (chrome.exe path), APP_URL, SHOT_DIR.
 import { writeFileSync } from 'node:fs'
 import { check, click, finish, launchApp, shotPath, sleep } from '../../../scripts/e2e-lib.mjs'
-import { reverseHelpers } from './lib.mjs'
+import { loadDimensionConflict, reverseHelpers } from './lib.mjs'
 
 const { browser, page, consoleErrors } = await launchApp({ width: 1600, height: 1000, protocolTimeout: 600_000 })
 const { re } = reverseHelpers(page)
@@ -110,9 +110,14 @@ await click(page, `${row(ids.len)} [data-test=sketch-dimension-driven]`)
 await sleep(300)
 s = await state()
 check(!dimOf(s, ids.len).driven && near(dimOf(s, ids.len).value, 25, 1e-6), `pressed again it drives, at what it read (${JSON.stringify(dimOf(s, ids.len))})`)
+const retainedLength = dimOf(s, ids.len).value
 await typeInto(`${row(ids.len)} [data-test=sketch-dimension-input]`, '30')
 s = await state()
-check(!s.ok && dimOf(s, ids.len).value === 30, `typing 30 against the 25 overdefines the sketch, and the 30 stays (unmet ${JSON.stringify(s.unmet)})`)
+check(s.ok && dimOf(s, ids.len).value === retainedLength && /conflicts with the existing/.test(s.error ?? ''),
+  'typing 30 against a driving 25 keeps the solved dimension and explains the rejection')
+await loadDimensionConflict(page, ids.len, 30)
+s = await state()
+check(!s.ok && dimOf(s, ids.len).value === 30, 'a loaded sketch with conflicting 30 and 25 dimensions exposes the repair controls')
 const yellow = await page.$$eval('.viewport-label.sketch-dim.overdefined .label-value', (els) => els.map((el) => el.textContent.trim()))
 check(yellow.length >= 1, `the fighting number is yellow on the sheet (${JSON.stringify(yellow)})`)
 const offers = await page.$$eval('[data-test=sketch-dimension-make-driven]', (els) => els.map((el) => el.closest('[data-test=sketch-dimension-row]').dataset.constraint))

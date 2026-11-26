@@ -95,6 +95,7 @@ const HEAVY_MS = 300_000
 export class ReClient {
   private rpc: ReTransport
   onFailure: ((message: string) => void) | null = null
+  onPreviewRestart: (() => void) | null = null
   private nextId = 1
   private latestBuild = 0
   private latestPreview = 0
@@ -268,6 +269,11 @@ export class ReClient {
       sketch: sketch ?? null,
       ...(files.length > 0 ? { stepFiles: files } : {}),
     }, [], HEAVY_MS)
+    if (res.type === 'preview-failed' && res.restarted) {
+      // The viewport's topological hashes belonged to the previous kernel.
+      this.held.clear()
+      this.onPreviewRestart?.()
+    }
     if (res.type === 'skipped' || requestId !== this.latestPreview) return null
     if (res.type === 'preview-failed') throw new PreviewFailure(res.message, res.where)
     return res.preview
@@ -296,19 +302,19 @@ export class ReClient {
   }
 
   /** Signed distances from surface vertices to the reference scan. */
-  async previewSurfaceDeviation(positions: Float32Array): Promise<Float32Array> {
+  async previewSurfaceDeviation(positions: Float32Array, supportedOnly = false): Promise<Float32Array> {
     const requestId = this.nextId++
     // Transfer a copy: the viewport still owns the original mesh vertices.
     const copy = positions.slice()
-    const result = await this.request<Extract<ReWorkerResponse, { type: 'preview-deviation-ok' }>>({ type: 'preview-deviation', requestId, positions: copy }, [copy.buffer], HEAVY_MS)
+    const result = await this.request<Extract<ReWorkerResponse, { type: 'preview-deviation-ok' }>>({ type: 'preview-deviation', requestId, positions: copy, supportedOnly }, [copy.buffer], HEAVY_MS)
     return result.values
   }
 
   /** Refine actual CAD-facet measurements without blocking viewport input. */
-  async refineSurfaceDeviation(data: MeasuredTriangles, tolerance: number): Promise<MeasuredTriangles> {
+  async refineSurfaceDeviation(data: MeasuredTriangles, tolerance: number, supportedOnly = false): Promise<MeasuredTriangles> {
     const copy = { positions: data.positions.slice(), triangles: data.triangles.slice(), values: data.values.slice() }
     const result = await this.request<Extract<ReWorkerResponse, { type: 'refine-deviation-ok' }>>(
-      { type: 'refine-deviation', requestId: this.nextId++, data: copy, tolerance },
+      { type: 'refine-deviation', requestId: this.nextId++, data: copy, tolerance, supportedOnly },
       [copy.positions.buffer, copy.triangles.buffer, copy.values.buffer], HEAVY_MS)
     return result.data
   }

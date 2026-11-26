@@ -159,7 +159,7 @@ export function SketchPieceMenu({ scene }: { scene: FlatScene | null }) {
       const spot = scene.sheetPoint(e.clientX, e.clientY)
       if (!spot) return
       const reach = 8 * scene.unitsPerScreenPx()
-      const others = picksAt(d.sketch, spot, reach, datumTraces(d.frame), mode, snapFlags('pick'))
+      const others = picksAt(d.sketch, spot, reach, datumTraces(d.frame), mode, snapFlags(mode === 'dimension' || mode === 'coincident' ? 'sketchPick' : 'pick'))
       const first = others[0] ?? null
       const piece = first?.piece != null ? entityOf(d.sketch, first.piece) : undefined
       if (piece?.kind === 'spline') return

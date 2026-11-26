@@ -10,7 +10,7 @@ import { joinCurveEnds } from './cornerJoin'
 import { solveSketch } from './solver'
 import { pathDistance } from './cornerGesture'
 import { analyseCornerProfile, type CornerProfile } from './cornerProfile'
-import { piecesInSweep, rankSweptPairs, SweepArea, type Sweep, type SweptPair } from './cornerSweep'
+import { piecesInSweep, rankSweptPairs, reachedPairs, SweepArea, type Sweep, type SweptPair } from './cornerSweep'
 
 export type CornerTrimMode = 'trim' | 'autoFillet' | 'fixedFillet'
 export interface CornerTrimOptions { mode: CornerTrimMode; radiusMm: number; addDimension: boolean }
@@ -390,7 +390,12 @@ export interface SweptCorner { touched: number[]; pair: SweptPair | null; result
 export function sweptCandidates(source: Sketch, sweep: Sweep | SweepArea): { area: SweepArea; touched: number[]; pairs: SweptPair[]; key: string } {
   const area = sweep instanceof SweepArea ? sweep : new SweepArea(sweep)
   const pieces = piecesInSweep(source, area)
-  const pairs = rankSweptPairs(source, area, pieces).slice(0, 8)
+  // Pairs the area touches, and line pairs whose corner point it covers
+  // although it misses a line's end: painting over the corner point is
+  // enough, as QUICKSURFACE's hint says. A pair the area touches comes first:
+  // a piece the paint never reached is changed only when no touched pair
+  // makes the corner.
+  const pairs = [...rankSweptPairs(source, area, pieces), ...reachedPairs(source, area, pieces)].slice(0, 8)
   const cornerIn = (pair: SweptPair) => {
     const [a, b] = pair.ids.map((id) => entityOf(source, id))
     if (!a || !b) return ''
@@ -413,7 +418,7 @@ export function sweptCandidates(source: Sketch, sweep: Sweep | SweepArea): { are
 export function sweepCornerTrim(source: Sketch, sweep: Sweep | SweepArea, options: CornerTrimOptions, points: readonly Vec2[] = [], chains?: readonly (readonly Vec2[])[]): SweptCorner {
   const { area, touched, pairs, key } = sweptCandidates(source, sweep)
   const fail = (error: string, pair: SweptPair | null = null): SweptCorner => ({ touched, pair, result: { ok: false, error }, key })
-  if (touched.length < 2) return fail(touched.length ? 'Sweep on across the second piece of the corner.' : 'Sweep across the two pieces that meet at the corner.')
+  if (!pairs.length && touched.length < 2) return fail(touched.length ? 'Sweep on across the second piece of the corner, or over the corner point.' : 'Sweep over the corner point, or across the two pieces that meet at the corner.')
   if (!pairs.length) return fail('The swept pieces are parallel; no corner exists between them.')
   const inside = chains?.length ? [] : points.filter((p) => area.contains(p))
   let first: SweptCorner | null = null
@@ -423,7 +428,7 @@ export function sweepCornerTrim(source: Sketch, sweep: Sweep | SweepArea, option
   let refusedAt = Infinity
   for (const pair of pairs) {
     if (pair.cost > refusedAt + 1e-6 + 0.05 * Math.abs(refusedAt)) break
-    const result = buildCornerTrim(source, pair.ids, options, inside, pair.ends, chains, (p) => area.distance(p) <= 0)
+    const result = buildCornerTrim(source, pair.ids, options, inside, pair.ends, chains, (p) => area.distance(p) <= 0 && (!pair.corner || Math.hypot(p[0]-pair.corner[0],p[1]-pair.corner[1]) <= 1e-6 * Math.max(1,Math.abs(p[0]),Math.abs(p[1]))))
     if (result.ok && sameGeometry(result.sketch, source)) { first ??= fail('These pieces already meet at this corner.', pair); continue }
     if (result.ok) return { touched, pair, result, key }
     first ??= { touched, pair, result, key }

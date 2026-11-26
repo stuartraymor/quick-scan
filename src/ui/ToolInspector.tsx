@@ -9,6 +9,12 @@ import { Icon } from './icons'
 import './tool-inspector.css'
 import './command-widgets.css'
 
+// Keep a floating inspector above the active snap switches, including
+// after the bar wraps on a narrow sheet or the panel is dragged.
+function inspectorBottom(parent: HTMLElement): number {
+  return parseFloat(parent.style.getPropertyValue('--snapbar-clearance')) || 0
+}
+
 /** Modeless controls: docking changes CSS, never the editor or viewport tree. */
 export function ToolInspector({ context, children }: { context?: PluginRuntime['toolContext']; children: ReactNode }) {
   const modelRolled = useDocumentOrder(s => s.rollbackAt !== null)
@@ -44,13 +50,16 @@ export function ToolInspector({ context, children }: { context?: PluginRuntime['
     const fit = () => setPosition(old => {
       if (!old || !node.current) return old
       const x = Math.max(0, Math.min(old.x, Math.max(0, parent.clientWidth - node.current.offsetWidth)))
-      const y = Math.max(0, Math.min(old.y, Math.max(0, parent.clientHeight - node.current.offsetHeight)))
+      const y = Math.max(0, Math.min(old.y, Math.max(0, parent.clientHeight - inspectorBottom(parent) - node.current.offsetHeight)))
       return x === old.x && y === old.y ? old : { x, y }
     })
     const observer = new ResizeObserver(fit)
     observer.observe(parent)
+    if (node.current) observer.observe(node.current)
+    const clearance = new MutationObserver(fit)
+    clearance.observe(parent, { attributes: true, attributeFilter: ['style'] })
     fit()
-    return () => observer.disconnect()
+    return () => { observer.disconnect(); clearance.disconnect() }
   }, [open, mode])
 
   return <>
@@ -68,7 +77,7 @@ export function ToolInspector({ context, children }: { context?: PluginRuntime['
         onPointerMove={event => {
           const start = drag.current, el = node.current, parent = el?.parentElement
           if (!start || !el || !parent) return
-          setPosition({ x: Math.max(0, Math.min(parent.clientWidth - el.offsetWidth, start.startX + event.clientX - start.x)), y: Math.max(0, Math.min(parent.clientHeight - el.offsetHeight, start.startY + event.clientY - start.y)) })
+          setPosition({ x: Math.max(0, Math.min(parent.clientWidth - el.offsetWidth, start.startX + event.clientX - start.x)), y: Math.max(0, Math.min(parent.clientHeight - inspectorBottom(parent) - el.offsetHeight, start.startY + event.clientY - start.y)) })
         }}
         onPointerUp={() => { drag.current = null }} onLostPointerCapture={() => { drag.current = null }}>
         <Icon name="settings" size={14}/><strong>{title}</strong>

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Independently drawn compact glyphs for the observed extraction tool rows.
 import type {ReactNode} from 'react'
-export type ExtractIconName='navigate'|'wand'|'brush'|'lasso'|'line'|'window'|'circle'|'through'|'enlarge'|'shrink'|'isolate'|'hide'|'show'|'deselect'|'all'|'plane'|'cylinder'|'axis'|'cone'|'sphere'
+export type ExtractIconName='navigate'|'wand'|'brush'|'lasso'|'line'|'window'|'circle'|'through'|'enlarge'|'shrink'|'isolate'|'hide'|'show'|'deselect'|'all'|'plane'|'cylinder'|'axis'|'cone'|'sphere'|'freeform'
 const glyphs:Record<ExtractIconName,ReactNode>={
  navigate:<><path fill="var(--extract-blue)" d="m3 7 9-5 9 5v10l-9 5-9-5Z"/><path d="m3 7 9 5 9-5M12 12v10" stroke="var(--extract-pale)"/><path fill="var(--extract-pale)" d="m3 7 9-5 9 5-9 5Z"/></>,
  wand:<><path fill="var(--extract-blue)" stroke="none" d="m10 1 2 5 5-3-1 6 6 1-5 3 4 5-6-1-1 6-3-6-5 4 1-6-6-1 5-3-3-5 6 1Z"/><path stroke="var(--extract-edge)" strokeWidth="2.2" d="m14 14 8 8"/></>,
@@ -22,6 +22,7 @@ const glyphs:Record<ExtractIconName,ReactNode>={
  cylinder:<><path fill="var(--extract-pale)" stroke="var(--extract-edge)" d="M5 5v14c0 4 14 4 14 0V5"/><ellipse cx="12" cy="5" rx="7" ry="3" fill="var(--extract-pale)" stroke="var(--extract-edge)"/></>,
  axis:<><path stroke="var(--extract-edge)" d="m4 20 16-16"/><circle cx="5" cy="19" r="1.8" fill="var(--extract-well)" stroke="var(--extract-edge)"/><circle cx="19" cy="5" r="1.8" fill="var(--extract-well)" stroke="var(--extract-edge)"/></>,
  cone:<><path fill="var(--extract-pale)" stroke="var(--extract-edge)" d="m12 3 9 17c-5 4-13 4-18 0Z"/><path d="M3 20q9 3 18 0" stroke="var(--extract-edge)"/></>,
+ freeform:<><path fill="var(--extract-pale)" stroke="var(--extract-edge)" d="M2 9q5-7 10-3t10-2l-3 13q-5 5-10 2t-8 1Z"/><path d="M2 14q5-5 10-2t8-2M9 5 6 18m10-11-3 13"/></>,
  sphere:<><circle cx="12" cy="12" r="9" fill="var(--extract-pale)" stroke="var(--extract-edge)"/><path d="M6 6q3-3 6-3" stroke="var(--extract-well)"/></>,
 }
 export function ExtractIcon({name,size=20}:{name:ExtractIconName;size?:number}){

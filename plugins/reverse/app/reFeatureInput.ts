@@ -152,13 +152,14 @@ function boxFields(s: ReverseSession, kind: FeatureDraftKind, input: Json, box: 
     case 'chamfer':
       if (has('edges')) {
         // An edge at a varying radius is { edge, radius: [start, end] }.
-        const all = input.edges as (EdgePickIn | { edge: EdgePickIn; radius: [number, number] })[]
-        const varying = all.filter((p): p is { edge: EdgePickIn; radius: [number, number] } => typeof p === 'object' && p !== null && 'edge' in p && Array.isArray((p as { radius?: unknown }).radius))
+        type VaryingPick = { edge: EdgePickIn; radius: [number, number]; transition?: 'linear' | 'smooth' }
+        const all = input.edges as (EdgePickIn | VaryingPick)[]
+        const varying = all.filter((p): p is VaryingPick => typeof p === 'object' && p !== null && 'edge' in p && Array.isArray((p as { radius?: unknown }).radius))
         const plain = all.filter((p) => !varying.includes(p as never)) as EdgePickIn[]
         out.edges = plain.length > 0 ? edgesPicked(s, bodyOf(), plain, kind === 'fillet' ? 'round' : 'bevel') : []
         if (plain.length > 0 && (out.edges as unknown[]).length === 0 && varying.length === 0)
           throw new CommandError('not_found', `None of the ${plain.length} edge picks names an edge of ${bodyOf().name} — every one is optional and missed (reverse.body.describe { where } shows what there is).`)
-        if (kind === 'fillet') out.variable = varying.length > 0 ? varying.map((v) => ({ edge: edgePicked(s, bodyOf(), v.edge), radius: v.radius })) : undefined
+        if (kind === 'fillet') out.variable = varying.length > 0 ? varying.map(v => ({ edge: edgePicked(s, bodyOf(), v.edge), radius: v.radius, ...(v.transition ? { transition: v.transition } : {}) })) : undefined
         if (kind === 'fillet' && plain.length > 0 && !editing && !has('radius')) invalid('radius: the edges given plainly need one — or give each { edge, radius: [start, end] }.')
       }
       // A box given its edges at a varying radius alone opens on them.
@@ -243,8 +244,9 @@ function boxFields(s: ReverseSession, kind: FeatureDraftKind, input: Json, box: 
       if (has('keep')) out.keep = input.keep
       break
     case 'sheet':
+      if (has('projectOnto')) out.projectOnto = bodyNamed(input.projectOnto as Ref).id
       if (has('sketchId')) out.sketchId = sketchNamed(input.sketchId as Ref).id
-      for (const k of ['from', 'to']) if (has(k)) out[k] = input[k]
+      for (const k of ['from', 'to', 'planar']) if (has(k)) out[k] = input[k]
       break
     case 'split':
       if (has('tools')) out.tools = (input.tools as Ref[]).map((t) => bodyNamed(t).id)
@@ -254,7 +256,7 @@ function boxFields(s: ReverseSession, kind: FeatureDraftKind, input: Json, box: 
       break
     case 'loft':
       if (has('sketches')) out.sketches = (input.sketches as Ref[]).map((t) => sketchNamed(t).id)
-      for (const k of ['ruled', 'op']) if (has(k)) out[k] = input[k]
+      for (const k of ['ruled', 'op', 'surface']) if (has(k)) out[k] = input[k]
       break
     case 'sweep':
       if (has('profile')) out.profile = sketchNamed(input.profile as Ref).id
@@ -269,6 +271,10 @@ function boxFields(s: ReverseSession, kind: FeatureDraftKind, input: Json, box: 
         const sheet = bodyNamed(input.sheet as Ref)
         if (!sheet.surface) invalid(`sheet: ${sheet.name} is a solid — thicken takes a sheet or a fitted surface; a solid is grown by offsetBody or hollowed by shell.`)
         out.sheet = sheet.id
+      }
+      if (has('constraint')) {
+        const c = input.constraint as Json | null
+        out.constraint = c ? { mode: c.mode, plane: planeOf(s, c.plane as Json), ...(c.mode === 'betweenPlanes' ? { end: planeOf(s, c.end as Json) } : {}) } : undefined
       }
       for (const k of ['thickness', 'side', 'op']) if (has(k)) out[k] = input[k]
       // A body named to join it to joins it, unless told to cut.
@@ -336,7 +342,7 @@ function boxFields(s: ReverseSession, kind: FeatureDraftKind, input: Json, box: 
         const region = input.region as number[]
         const out_ = region.find((v) => v >= n)
         if (out_ !== undefined) invalid(`The scan has ${n} vertices; ${out_} is not one of them.`)
-        out.region = Uint32Array.from(region)
+        out.region = Uint32Array.from(new Set(region))
         // The box it was read in, when it was read in one (reFit), for
         // the box's expressions; read afresh, it is not stale.
         out.regionBox = (input.regionBox as Json | null | undefined) ?? undefined
@@ -354,7 +360,7 @@ function boxFields(s: ReverseSession, kind: FeatureDraftKind, input: Json, box: 
         if (fitIn.orientation !== undefined && !['bounds', 'axis', 'oxy', 'oyz', 'oxz'].includes(String(fitIn.orientation))) invalid(`fit.orientation: "${String(fitIn.orientation)}" — bounds, axis, oxy, oyz or oxz.`)
         if (fitIn.tolerance !== undefined && !(typeof fitIn.tolerance === 'number' && fitIn.tolerance > 0)) invalid('fit.tolerance: a number of millimetres above zero.')
         if (fitIn.degree !== undefined && !(typeof fitIn.degree === 'number' && fitIn.degree >= 1 && fitIn.degree <= MAX_DEGREE)) invalid(`fit.degree: 1 to ${MAX_DEGREE}.`)
-        out.fit = { ...DEFAULT_SURFACE_FIT, ...fitIn }
+        out.fit = { ...DEFAULT_SURFACE_FIT, primitiveSolver: 'extract', ...fitIn }
       }
       for (const k of ['shape', 'constrain']) if (has(k)) out[k] = input[k]
       break
@@ -390,6 +396,7 @@ function boxFields(s: ReverseSession, kind: FeatureDraftKind, input: Json, box: 
       break
     }
     case 'trim':
+      if (has('removed')) out.removed = input.removed === null ? undefined : (input.removed as Json[]).map(p => ({ body: bodyNamed(p.body as Ref).id, at: p.at }))
       if (has('tools')) out.tools = (input.tools as Json[]).map((t): TrimTool => (t.kind === 'body' ? { kind: 'body', id: bodyNamed(t.id as Ref).id } : { kind: 'element', id: elementNamed(t, 'tools').id }))
       if (has('tolerance')) Object.assign(out, { tolerance: input.tolerance, toleranceTyped: true })
       else if (has('tools') && !d) out.tolerance = trimToleranceFor(out.tools as TrimTool[], re().results)

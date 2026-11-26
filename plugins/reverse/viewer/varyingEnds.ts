@@ -8,6 +8,9 @@
 import * as THREE from 'three'
 import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js'
 import type { Vec3 } from '../../../src/core/types'
+import { addScaled, len, sub } from '../../../src/core/vec'
+import type { EdgeInfo } from '../core/buildTypes'
+import { orientedChain, type RadiusPoint } from '../core/roundInputs'
 import { pinLabel } from '../../../src/viewer/overlays'
 import { lengthDecimals, toDisplay, unitWord, type DisplayUnits } from '../../../src/core/units'
 
@@ -19,6 +22,42 @@ export interface VaryingEdgeEnds {
   ends: [Vec3, Vec3]
   endTangents: [Vec3, Vec3]
   radius: [number, number]
+  stations?: { point: Vec3; radius: number; position: number }[]
+}
+
+/** Locate labels on the displayed polyline using the same chain order and
+ * arc-length fractions as the exact fillet. */
+export function stationLabels(edges: EdgeInfo[], points: RadiusPoint[]) {
+  const distance = (a: Vec3, b: Vec3) => len(sub(a, b))
+  const total = edges.reduce((sum, e) => sum + e.fingerprint.length, 0)
+  const path = orientedChain(edges.map(e => ({ e, from: e.ends[0], to: e.ends[1] })), distance, Math.max(1e-7, total * 1e-8))
+  const segments: { a: Vec3; b: Vec3; start: number; end: number }[] = []
+  let offset = 0
+  for (const { e, reverse } of path) {
+    const vertices: Vec3[] = []
+    for (let i = 0; i < e.polyline.length; i += 3) vertices.push([e.polyline[i], e.polyline[i + 1], e.polyline[i + 2]])
+    if (vertices.length < 2) return
+    const backwards = distance(vertices[0], e.ends[0]) > distance(vertices[vertices.length - 1], e.ends[0])
+    if (backwards !== reverse) vertices.reverse()
+    const lengths = vertices.slice(1).map((b, i) => distance(vertices[i], b))
+    const polyLength = lengths.reduce((a, b) => a + b, 0)
+    if (!polyLength) return
+    for (const [i, length] of lengths.entries()) {
+      const end = offset + length / polyLength * e.fingerprint.length
+      if (end > offset) segments.push({ a: vertices[i], b: vertices[i + 1], start: offset, end })
+      offset = end
+    }
+  }
+  if (!segments.length) return
+  const first = path[0], last = path[path.length - 1]
+  const ends: [Vec3, Vec3] = [first.reverse ? first.to : first.from, last.reverse ? last.from : last.to]
+  const endTangents: [Vec3, Vec3] = [sub(segments[0].b, segments[0].a), sub(segments[segments.length - 1].b, segments[segments.length - 1].a)]
+  const stations = points.map(p => {
+    const at = p.position * total
+    const segment = segments.find(s => s.end >= at) ?? segments[segments.length - 1]
+    return { ...p, point: addScaled(segment.a, sub(segment.b, segment.a), (at - segment.start) / (segment.end - segment.start)) }
+  })
+  return { ends, endTangents, stations }
 }
 
 export interface VaryingEndsContext {
@@ -57,6 +96,15 @@ export class VaryingEnds {
     this.clear()
     const several = edges.length > 1
     for (const e of edges) {
+      for (const [i, station] of (e.stations ?? []).entries()) {
+        const chip = pinLabel('varying-end', `P${i + 2} · ${+(station.position * 100).toFixed(2)}%`, radiusText(station.radius, units)).element
+        chip.style.position = ''
+        chip.dataset.test = 'fillet-varying-station-label'
+        const label = new CSS2DObject(chip)
+        label.position.set(...station.point)
+        this.labels.push({ label, out: new THREE.Vector3() })
+        this.group.add(label)
+      }
       for (const k of [0, 1] as const) {
         const word = k === 0 ? 'Start' : 'End'
         // The chip in a padded frame: the frame's corner is put on the end,

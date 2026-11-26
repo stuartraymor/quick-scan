@@ -672,12 +672,12 @@ export function addRectangle(sketch: Sketch, p: Vec2, q: Vec2): number[] {
  *  first two square — five freedoms, a rectangle's. Its first side is
  *  inferred level or upright when drawn nearly so. The ids run round from
  *  the side between the first two corners given. */
-export function addTurnedRectangle(sketch: Sketch, corners: readonly Vec2[]): number[] {
+export function addTurnedRectangle(sketch: Sketch, corners: readonly Vec2[], inferNearAxis = true): number[] {
   const ids = corners.map((c, i) => addEntity(sketch, { kind: 'line', a: c, b: corners[(i + 1) % 4] }))
   for (let i = 0; i < 4; i++) {
     addConstraint(sketch, { kind: 'coincident', p: { entity: ids[i], at: 'b' }, q: { entity: ids[(i + 1) % 4], at: 'a' } })
   }
-  const axis = axisRelationOf(corners[0], corners[1])
+  const axis = axisRelationOf(corners[0], corners[1], inferNearAxis ? undefined : 0)
   if (axis) {
     // Level or upright, it is the rectangle the two-corner way draws.
     for (let i = 0; i < 4; i++) {
@@ -752,6 +752,18 @@ export function arcThrough(
  *  circle's diameter then the width across flats, a hex nut's size. */
 export type PolygonFit = 'inscribed' | 'circumscribed'
 
+/** Minimum length of a newly drawn edge in sheet millimetres. */
+export const MIN_SKETCH_EDGE = 1e-6
+
+/** Test the represented corners, including the closing side. Rounding on an
+ * offset sheet can shorten an edge even when the nominal size is valid. */
+export function usableSketchLoop(corners: Vec2[]): boolean {
+  return corners.every((point, i) => {
+    const length = len2(sub2(corners[(i + 1) % corners.length], point))
+    return Number.isFinite(length) && length >= MIN_SKETCH_EDGE
+  })
+}
+
 /** The most sides a polygon is drawn with. */
 export const POLYGON_MAX_SIDES = 64
 
@@ -763,7 +775,7 @@ export function polygonCorners(centre: Vec2, at: Vec2, sides: number, fit: Polyg
   if (!(n >= 3 && n <= POLYGON_MAX_SIDES)) return null
   const d = sub2(at, centre)
   const r = len2(d)
-  if (!(r > 1e-9)) return null
+  if (!(r > MIN_SKETCH_EDGE) || !Number.isFinite(r)) return null
   const half = Math.PI / n
   // A circumscribed polygon's corner lies half a side's turn round from the
   // middle of the side clicked, further out by 1 / cos of that turn.
@@ -774,7 +786,7 @@ export function polygonCorners(centre: Vec2, at: Vec2, sides: number, fit: Polyg
     const t = start + (2 * Math.PI * i) / n
     out.push([centre[0] + radius * Math.cos(t), centre[1] + radius * Math.sin(t)])
   }
-  return out
+  return usableSketchLoop(out) ? out : null
 }
 
 /** A regular polygon as CAD draws one: its corners on a construction

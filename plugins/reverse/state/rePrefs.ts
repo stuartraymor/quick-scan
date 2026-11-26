@@ -111,6 +111,8 @@ interface RePrefsState {
    *  its deviation, and the range the ramp reads at, ± millimetres. On by
    *  default: the map is how the operator sees a feature settle onto the
    *  scan. */
+  surfaceMap: boolean
+  setSurfaceMap: (on: boolean) => void
   liveMap: boolean
   liveMapRange: number
   /** Snapping on an extrude (QUICKSURFACE's checkbox, off by default): an
@@ -155,6 +157,11 @@ export const useRePrefs = create<RePrefsState>()((set) => ({
   fitOptions: storedFitOptions(),
   // Off until asked for, as QUICKSURFACE's Analysis box starts unticked;
   // an operator who turned it on keeps it on.
+  surfaceMap: read('scanruler.surfaceAnalysis') !== '0',
+  setSurfaceMap: (surfaceMap) => {
+    write('scanruler.surfaceAnalysis', surfaceMap ? '1' : '0')
+    set({ surfaceMap })
+  },
   liveMap: read(LIVE_MAP_KEY) === '1',
   extrudeSnap: read(EXTRUDE_SNAP_KEY) === '1',
   liveMapRange: clampLiveMapRange(Number(read(LIVE_MAP_RANGE_KEY))),

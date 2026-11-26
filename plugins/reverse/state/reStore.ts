@@ -34,7 +34,7 @@ import { evaluateParameters, featureReads, nameProblem, renameInParameters, unli
 import { frameKey, type SectionFrame, type WorldAxis } from '../../../src/core/section/frame'
 import { type BodyHover, type BodyInfo, type BodyPick, type BodyStyle, type BodyStyles, type ExtrudeDraft, type FeatureDraft, type FeatureDraftKind, type FeatureSnapshot, type ImagePickMode, type KernelStatus, type MapReport, type Playback, type PreviewInfo, type ReSelection, type RevolveDraft, selectionItems, selectionOf, type SketchDraft, type SketchTool, type ViewHint } from './reTypes'
 import { reEditorOpen, withKeyParameter } from './reDrafts'
-import { CLOSE_OTHERS, followParameters, keyParameterPaths, nameBodies, remember, restored, snapshotOf, unlinkSlots } from './reFeatureHelpers'
+import { CLOSE_OTHERS, followParameters, keyParameterPaths, nameBodies, remember, restored, eyesSet, snapshotOf, unlinkSlots } from './reFeatureHelpers'
 import { featureSlice } from './reFeatureSlice'
 import { gripSlice } from './reGripSlice'
 import { solidSlice } from './reSolidSlice'
@@ -516,7 +516,7 @@ export interface ReState {
   editFeature: (id: number) => void
   setFeatureDraft: (patch: Partial<FeatureDraft>) => void
   cancelFeature: () => void
-  commitFeature: () => number | null
+  commitFeature: (after?: 'nextSurface' | 'nextFillet') => number | null
   /** A click on a body's face or edge while a feature is asking: picked or
    *  let go. A face on another body moves the feature to that body. A
    *  Delete face takes `group` with the face — what the click on it takes
@@ -910,11 +910,11 @@ export const useReverse = create<ReState>()((set, get) => ({
       if (!prev) return {}
       return {
         past: s.past.slice(0, -1),
-        future: [...s.future, snapshotOf(s)],
+        future: [...s.future, snapshotOf(s, prev.trimInputs)],
         ...restored(prev),
         // A feature the undo takes away lets its id go to the next one made:
         // its bodies' eyes go with it.
-        hiddenBodies: hiddenOf(s.hiddenBodies, [...prev.features, ...prev.rolledBack]),
+        ...restoreBodyEyes(s, prev, true),
         // An editor open on the list that just changed under it closes; a
         // sketch being drawn stays unless the feature it edits is gone.
         extrudeDraft: null,
@@ -934,9 +934,9 @@ export const useReverse = create<ReState>()((set, get) => ({
       if (!next) return {}
       return {
         future: s.future.slice(0, -1),
-        past: [...s.past, snapshotOf(s)],
+        past: [...s.past, snapshotOf(s, next.trimInputs)],
         ...restored(next),
-        hiddenBodies: hiddenOf(s.hiddenBodies, [...next.features, ...next.rolledBack]),
+        ...restoreBodyEyes(s, next, false),
         extrudeDraft: null,
         revolveDraft: null,
         featureDraft: null,
@@ -1073,19 +1073,9 @@ function hiddenOf(hidden: number[], features: readonly { id: number }[]): number
   return kept.length === hidden.length ? hidden : kept
 }
 
-/** The eyes of these bodies set, in the lasting set and on the bodies
- *  built — an id the build lacks is written all the same — or no change
- *  where none is. */
-function eyesSet(s: Pick<ReState, 'bodies' | 'hiddenBodies'>, ids: readonly number[], visible: boolean): Partial<ReState> {
-  const these = new Set(ids)
-  const was = new Set(s.hiddenBodies)
-  const hiddenBodies = visible ? s.hiddenBodies.filter((id) => !these.has(id)) : [...s.hiddenBodies, ...[...these].filter((id) => !was.has(id))]
-  const bodiesChange = s.bodies.some((b) => these.has(b.id) && b.visible !== visible)
-  const hiddenChange = hiddenBodies.length !== s.hiddenBodies.length
-  return {
-    ...(hiddenChange ? { hiddenBodies } : {}),
-    ...(bodiesChange ? { bodies: s.bodies.map((b) => (these.has(b.id) && b.visible !== visible ? { ...b, visible } : b)) } : {}),
-  }
+function restoreBodyEyes(s: ReState, snap: FeatureSnapshot, undo: boolean): Partial<ReState> {
+  const changed = snap.trimInputs ? eyesSet(s, snap.trimInputs, undo) : {}
+  return { ...changed, hiddenBodies: hiddenOf(changed.hiddenBodies ?? s.hiddenBodies, [...snap.features, ...snap.rolledBack]) }
 }
 
 /** Open a feature's editor, whatever its kind: a sketch's, an extrude's or

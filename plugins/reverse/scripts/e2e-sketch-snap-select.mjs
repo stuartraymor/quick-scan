@@ -104,11 +104,12 @@ try {
   await page.keyboard.down('Control'); await page.keyboard.press('z'); await page.keyboard.up('Control'); await sleep(400)
 
   // ---- the Dimension tool and the bar's Quadrant switch ----------------------
+  // Disable a point on the sketch toolbar before entering Dimension.
+  await click(page, '[data-test=snap-quadrant]'); await sleep(200)
+  const sketchSwitches = (await bar()).keys
   await click(page, '[data-test=sketch-dimension]'); await sleep(200)
   b = await bar()
-  check(b && b.context === 'pick' && !b.keys['snap-all'] && b.keys['snap-quadrant'] && b.keys['snap-midpoint'] && b.keys['snap-center'], `Dimension: the bar shows the Pick switches, every point on (${JSON.stringify(b?.keys)})`)
-  check((await page.evaluate(() => (window.__dots ?? []).filter((d) => d.color === '#62aae4').length)) >= 8, 'and the quadrant points and the middles wear their squares without anything being switched on')
-  await click(page, '[data-test=snap-quadrant]'); await sleep(200)
+  check(b && b.context === 'sketchPick' && !('snap-scan' in b.keys) && Object.entries(b.keys).every(([key, value]) => value === sketchSwitches[key]) && !b.keys['snap-quadrant'], `Dimension inherits every applicable sketch switch with Quadrant off (${JSON.stringify(b?.keys)})`)
   // Quadrant off: the circle's left-most point is the circle — its diameter.
   await pointClick([7, 0])
   let d = await draft()
@@ -116,6 +117,11 @@ try {
   await page.keyboard.press('Escape'); await sleep(200)
   await click(page, '[data-test=snap-quadrant]'); await sleep(200)
   check((await bar()).keys['snap-quadrant'] === true && (await draft()).tool === 'dimension', 'Quadrant switched on in the bar; the tool stays in hand')
+  await click(page, '[data-test=sketch-tool-line]')
+  check((await bar()).keys['snap-quadrant'], 'Drawing reflects a snap changed in Dimension')
+  await click(page, '[data-test=snap-all]')
+  await click(page, '[data-test=sketch-dimension]')
+  check((await bar()).keys['snap-all'], 'Dimension inherits All from drawing without a second click')
   check((await page.evaluate(() => (window.__dots ?? []).filter((d) => d.color === '#62aae4').length)) >= 8, 'and the circle wears its four quadrant squares again, beside the middles')
   const q = await at([7, 0])
   await page.mouse.move(q.x + 2, q.y + 1); await sleep(200)

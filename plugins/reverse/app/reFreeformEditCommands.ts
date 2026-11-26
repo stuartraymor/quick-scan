@@ -233,14 +233,14 @@ function checkSize(c: Cage): void {
 
 // ---- the commands ---------------------------------------------------------------------
 
-export const freeformCreate: Command<{ name?: string; obj?: string; rectangle?: { origin?: Vec3; u: Vec3; v: Vec3; nu?: number; nv?: number }; steps?: number; snap?: boolean }> = {
+export const freeformCreate: Command<{ name?: string; obj?: string; rectangle?: { origin?: Vec3; u: Vec3; v: Vec3; nu?: number; nv?: number }; steps?: number; snap?: boolean; fitToScan?: boolean }> = {
   name: 'create',
   title: 'Make a freeform cage',
   description:
     'Add a freeform cage to the part: the control polygon of a subdivision surface, from a quad OBJ (as QUICKSURFACE exports its Freeform surfaces, or reverse.freeform.read writes one) or a rectangle of quads to start from. The build makes it a body of B-spline faces — a solid where the cage is closed, else a sheet — refined `steps` times (2 unless given) and, with snap true, taken onto the scan as QUICKSURFACE’s Snap Mode does. One undo step. Edit it with reverse.freeform.edit, move_points, refine and snap; set what is made of it with reverse.freeform.convert. Returns the feature and its result, the body (faces, solid, valid, area, volume), the cage measured and the bodies changed.',
-  input: obj({ name: nameIn, obj: objIn, rectangle: rectangleIn, steps: stepsIn, snap: snapIn }, []),
+  input: obj({ name: nameIn, obj: objIn, rectangle: rectangleIn, steps: stepsIn, snap: snapIn, fitToScan: bool('With snap: false makes the body of the cage’s own surface (a cage already fitted, as Auto Freeform’s) and keeps the snap for editing; the surface is taken onto the scan sample by sample unless given.') }, []),
   label: ({ name }) => `add freeform cage${typeof name === 'string' ? ` “${name}”` : ''}`,
-  run: async ({ name, obj: objText, rectangle, steps = 2, snap = false }) => {
+  run: async ({ name, obj: objText, rectangle, steps = 2, snap = false, fitToScan }) => {
     if ((objText === undefined) === (rectangle === undefined)) return invalid('Give either obj (the cage as a quad OBJ) or rectangle (u, v, and how many quads).')
     requireFreeName(name)
     const cage = guarded('The cage', () => {
@@ -250,7 +250,7 @@ export const freeformCreate: Command<{ name?: string; obj?: string; rectangle?: 
     })
     checkSize(cage)
     if (cage.faces.length === 0) return invalid('The cage has no faces.')
-    const out = await commit(() => re().addFreeform({ ...dataOf(cage), steps, snap }, name), snap)
+    const out = await commit(() => re().addFreeform({ ...dataOf(cage), steps, snap, ...(fitToScan === undefined ? {} : { fitToScan }) }, name), snap && fitToScan !== false)
     return { ...out, cage: cageOut(cage) }
   },
 }

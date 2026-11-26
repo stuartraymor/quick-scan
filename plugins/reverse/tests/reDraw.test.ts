@@ -6,7 +6,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { arcAbout, circleFrom, DEFAULT_DRAW_MODES, dimensionFor, dimPickAt, drawClicks, outwardTangent, rectangleCorners, tangentArc } from '../core/draw'
-import { addEntity, anchorPoint, emptySketch, entityOf } from '../core/sketch'
+import { addEntity, addPolygon, anchorPoint, emptySketch, entityOf } from '../core/sketch'
 import { useReverse } from '../state/reStore'
 import { useRePrefs } from '../state/rePrefs'
 import { rigidCluster } from '../core/drag'
@@ -15,6 +15,56 @@ import { XY } from './reKit'
 
 const s = () => useReverse.getState()
 const RAW = { off: true }
+
+describe('drawing at the sketch size limit', () => {
+  it.each(['inscribed', 'circumscribed'] as const)('checks every represented edge of a 64-sided %s polygon', fit => {
+    const sketch = emptySketch()
+    const boundary = 1e-6 / (2 * (fit === 'inscribed' ? Math.sin(Math.PI / 64) : Math.tan(Math.PI / 64)))
+    const initial = structuredClone(sketch)
+    expect(addPolygon(sketch, [137, 106], [137 + boundary * 0.99, 106], 64, fit)).toBeNull()
+    expect(sketch).toStrictEqual(initial)
+    const polygon = addPolygon(sketch, [137, 106], [137 + boundary * 1.01, 106], 64, fit)!
+    expect(polygon.lines).toHaveLength(64)
+    for (const id of polygon.lines) {
+      const edge = entityOf(sketch, id)!
+      expect(edge.kind === 'line' && Math.hypot(edge.b[0] - edge.a[0], edge.b[1] - edge.a[1])).toBeCloseTo(1.01e-6, 12)
+    }
+  })
+
+  it('rejects a collapsed rectangle and keeps the snapped direction and far-side point through OK and reopen', () => {
+    const p: [number, number] = [21.884904243052006,147.3423931747675]
+    const q: [number, number] = [21.88509086070075,147.33239491622646]
+    const tip: [number, number] = [69.01957353520218,-225.10130300779184]
+    s().setSketchTool('line')
+    s().sketchClick([78.8,-193], 0.05, false, RAW)
+    s().sketchClick(tip, 0.05, false, RAW)
+    const original = structuredClone(s().sketchDraft!.sketch)
+    useRePrefs.getState().setDrawMode('rectangle', 'threePoint')
+    s().setSketchTool('rectangle')
+    for (const point of [p,q,q]) s().sketchClick(point, 0.05, false, RAW)
+    expect(s().sketchDraft!.error).toMatch(/too short/i)
+    expect(s().sketchDraft!.sketch).toStrictEqual(original)
+    s().sketchClick(tip, 0.05, false, {})
+    const drawn = structuredClone(s().sketchDraft!.sketch)
+    const id = s().commitSketch()!
+    s().editSketch(id)
+    const reopened = s().sketchDraft!
+    expect(reopened.report?.ok).toBe(true)
+    expect(reopened.sketch).toStrictEqual(drawn)
+    expect(reopened.sketch.entities[0]).toStrictEqual(original.entities[0])
+    const sides = reopened.sketch.entities.slice(1).filter(e => e.kind === 'line')
+    expect(sides).toHaveLength(4)
+    const [base, cross, far] = sides
+    const direction = (line: typeof base) => [line.b[0]-line.a[0],line.b[1]-line.a[1]]
+    const [x,y] = direction(base), [u,v] = direction(cross)
+    expect(base.a[0]).toBeCloseTo(p[0], 10)
+    expect(base.b[1]).toBeCloseTo(q[1], 10)
+    expect((x*u+y*v)/(Math.hypot(x,y)*Math.hypot(u,v))).toBeCloseTo(0, 9)
+    const [dx,dy] = direction(far)
+    expect(((tip[0]-far.a[0])*dy-(tip[1]-far.a[1])*dx)/Math.hypot(dx,dy)).toBeCloseTo(0, 7)
+    expect(reopened.sketch.constraints.map(c => c.kind)).toEqual(expect.arrayContaining(['parallel','perpendicular','pointOn']))
+  })
+})
 
 beforeEach(() => {
   useReverse.setState({ features: [], nextFeatureId: 1, nextOfKind: {}, results: {}, bodies: [], sketchDraft: null, extrudeDraft: null, revolveDraft: null, past: [], future: [], selection: null, gripField: null, buildVersion: 0 })

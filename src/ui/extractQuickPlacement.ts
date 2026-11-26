@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 export interface QuickBounds { left: number; top: number; right: number; bottom: number }
 /** Reference: 186 x 70, centred 132 px above the pick; keep controls usable at edges. */
-export function extractQuickPlacement(point: { x: number; y: number }, viewport: QuickBounds, panel?: QuickBounds) {
-  const gap = 8, height = 70, width = Math.min(186, Math.max(0, viewport.right - viewport.left - gap * 2))
+export function extractQuickPlacement(point: { x: number; y: number }, viewport: QuickBounds, panel?: QuickBounds, size = { width: 186, height: 70 }) {
+  const gap = 8, height = size.height, width = Math.min(size.width, Math.max(0, viewport.right - viewport.left - gap * 2))
   const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(v, Math.max(lo, hi)))
   const leftMin = viewport.left + gap, leftMax = viewport.right - width - gap
   const topMin = viewport.top + gap, topMax = viewport.bottom - height - gap
   let left = clamp(point.x - width / 2, leftMin, leftMax)
-  let top = clamp(point.y - 132 < topMin ? point.y + 62 : point.y - 132, topMin, topMax)
+  let top = clamp(point.y - height - 62 < topMin ? point.y + 62 : point.y - height - 62, topMin, topMax)
   const overlaps = () => panel && left < panel.right + gap && left + width > panel.left - gap && top < panel.bottom + gap && top + height > panel.top - gap
   if (overlaps() && panel) {
     const candidates = [

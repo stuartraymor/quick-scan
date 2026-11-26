@@ -1,0 +1,24 @@
+.edge-selection-palette {
+  position: fixed;
+  z-index: 90;
+  display: grid;
+  width: 190px;
+  max-height: 95vh;
+  overflow: auto;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  box-shadow: 0 3px 12px #0003;
+}
+.edge-selection-palette button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 30px;
+  padding: 3px 8px;
+  text-align: left;
+}
+.edge-selection-palette small { color: var(--dim); }
+.edge-selection-palette button:is(:hover, :focus-visible) { background: var(--accent-soft); }

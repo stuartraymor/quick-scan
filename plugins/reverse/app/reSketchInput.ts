@@ -35,7 +35,7 @@ import { curveMoved, projectEdge, projectFaceOutline, projectSketchEntity, retak
 import { arcsOfChain, chainsOfEdges, segmentChain } from '../core/segment'
 import { splineCurve, splineSamples } from '../core/sketchSpline'
 import { validControlSpline } from '../core/controlSpline'
-import { addConstraint, addEntity, addPolygon, anchorPoint, arcPoint, arcThrough, addRectangle, addRectangleCentre, addTurnedRectangle, type AnchorAt, anchorsOf, cloneSketch, type Constraint, constraintEntities, type ConstraintInput, type ConstraintKind, DIMENSION_KINDS, emptySketch, endsOf, type EntityInput, entityOf, inferRelations, patternPieces, POLYGON_MAX_SIDES, type PolygonFit, relationTakes, renumbered, type Sketch, type SketchArc, type SketchEntity, type SketchPatternSpec, type SketchSpline, splineJoint, splinePointIndex, TOUCH_MM } from '../core/sketch'
+import { MIN_SKETCH_EDGE, addConstraint, addEntity, addPolygon, anchorPoint, arcPoint, arcThrough, addRectangle, addRectangleCentre, addTurnedRectangle, type AnchorAt, anchorsOf, cloneSketch, type Constraint, constraintEntities, type ConstraintInput, type ConstraintKind, DIMENSION_KINDS, emptySketch, endsOf, type EntityInput, entityOf, inferRelations, patternPieces, POLYGON_MAX_SIDES, type PolygonFit, relationTakes, renumbered, type Sketch, type SketchArc, type SketchEntity, type SketchPatternSpec, type SketchSpline, splineJoint, splinePointIndex, TOUCH_MM } from '../core/sketch'
 import { insetChains, insetKeeps, likeStation, runFactsWords, STATION_FOLD_HELP, stationFaults, type StationLoop, stationLoop } from '../core/stations'
 import { measureDimension, type Pull } from '../core/solver'
 import { bodyNamed, type EdgePickIn, edgesPicked, facePicked, type FacePickIn, type Json, re, type Ref, sketchNamed, topologyOf } from './reCommandCore'
@@ -282,6 +282,7 @@ function drawShape(scratch: Sketch, sh: Json, where: string): Record<string, num
         lo = [Math.min(from[0], to[0]), Math.min(from[1], to[1])]
         hi = [Math.max(from[0], to[0]), Math.max(from[1], to[1])]
       } else return invalid(`${where}: a rectangle takes from and to, or center and size.`)
+      if (Math.min(hi[0] - lo[0], hi[1] - lo[1]) < MIN_SKETCH_EDGE) invalid(`${where}: the rectangle sides are too short.`)
       const about: Vec2 = center ?? from!
       const radius = sh.radius as number | undefined
       // The most a round takes is half the shorter side, measured before
@@ -291,7 +292,7 @@ function drawShape(scratch: Sketch, sh: Json, where: string): Record<string, num
       if (radius !== undefined && radius > half + ROUND_FITS_MM) invalid(`${where}: the corners do not round at ${radius} mm — half the shorter side, ${round4(half)} mm, is the most a round takes (a slot).`) // units-ok: a command's error — the commands take and answer mm
       if (radius !== undefined && radius > half - ROUND_FITS_MM) return slotOfRectangle(scratch, lo, hi, (p) => turned(p, about), where)
       const corners: Vec2[] = [lo, [hi[0], lo[1]], hi, [lo[0], hi[1]]]
-      const sides = turn === 0 ? addRectangle(scratch, lo, hi) : addTurnedRectangle(scratch, corners.map((c) => turned(c, about)))
+      const sides = turn === 0 ? addRectangle(scratch, lo, hi) : addTurnedRectangle(scratch, corners.map((c) => turned(c, about)), false)
       const roles: Record<string, number | number[]> = center ? { sides, center: addRectangleCentre(scratch, sides) } : { sides }
       if (radius !== undefined) {
         // Each corner rounded as the sketch's own Round does it: the sides

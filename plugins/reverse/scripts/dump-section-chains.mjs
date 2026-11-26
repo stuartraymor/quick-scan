@@ -8,7 +8,7 @@ import {launchApp,loadScan,sleep,shotPath} from '../../../scripts/e2e-lib.mjs';
 import {openReverse} from './lib.mjs';
 const [mesh,outFile,...planes]=process.argv.slice(2);
 const out=shotPath('section-chains');fs.mkdirSync(out,{recursive:true});
-const {browser,page}=await launchApp({width:1600,height:1000});
+const {browser,page}=await launchApp({width:1600,height:1000,protocolTimeout:900_000});
 const result={mesh,sections:[]};
 try{
  await loadScan(page,mesh);await openReverse(page);

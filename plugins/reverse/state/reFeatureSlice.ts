@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { emptyRoundGroups, mapRoundGroups, roundRoles } from '../core/roundInputs'
 // The feature box's actions: a feature of any kind past the extrude and
 // the revolve started, edited, its draft changed and its picks made, and
 // committed to the list; the bodies a Move carries.
 
+import { usePrefs } from '../../../src/state/prefsStore'
+import { snapFinishingSize } from './finishingInput'
 import type { StoreApi } from 'zustand'
 import { bodyMaker, builtOn, type Feature, movableFace, partialRound, type SketchFeature, type TrimTool, withKeptQueries } from '../core/features'
 import { combineFreeforms } from '../core/freeform/combine'
@@ -11,10 +14,11 @@ import { findRegions } from '../core/regions'
 import { DEFAULT_SURFACE_FIT } from '../core/surfaceFit'
 import { emptyNetworkDraft, networkDraftOf } from './reNetworkDraft'
 import { DEFAULT_DRAFT_DEG, DEFAULT_FILLET_MM, DEFAULT_SPLIT_OVERLAP, DEFAULT_SPLIT_TOLERANCE_MM, DEFAULT_WALL_MM, featureDraftReady, featureOfDraft, historyEditOf, movePivot, reEditorOpen, roundFaceLength, trimToleranceFor, withMoveBodies } from './reDrafts'
-import { CLOSE_OTHERS, hideElement, hideSection, hideSketches, KIND_LABELS, lastSolid, leanAfterSnap, nameFor, remember, sketchesUsedBy, withExprs } from './reFeatureHelpers'
+import { CLOSE_OTHERS, eyesSet, hideElement, hideSection, hideSketches, KIND_LABELS, lastSolid, leanAfterSnap, nameFor, remember, sketchesUsedBy, withExprs } from './reFeatureHelpers'
 import { unplacedEdge } from './reSketchDraft'
 import type { ReState } from './reStore'
-import { DEFAULT_FLOOD_DEG, type FeatureDraft } from './reTypes'
+import { bodiesOfPick } from '../core/bodyFolders'
+import { DEFAULT_FLOOD_DEG, selectionItems, type FeatureDraft } from './reTypes'
 
 /** A surface's box let go, with the expressions on its numbers: the region
  *  painted by hand is not the box's any more. */
@@ -47,17 +51,19 @@ export const featureSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'featu
       // the default only when there is nothing else.
       const solid = lastSolid(s.bodies)
       const body = solid ?? s.bodies[s.bodies.length - 1]?.id ?? null
-      const base = { body, ...CLOSE_OTHERS }
+      const visible = s.bodies.filter(b => b.visible)
+      const finishingBody = visible.length === 1 ? visible[0].id : null
+      const startingFinishSize = snapFinishingSize(DEFAULT_FILLET_MM, usePrefs.getState().units)
       let draft: FeatureDraft
       switch (kind) {
         case 'shell':
           draft = { kind, body, faces: [], thickness: DEFAULT_WALL_MM, thicknessFrom: 'default' }
           break
         case 'fillet':
-          draft = { kind, body, edges: [], radius: DEFAULT_FILLET_MM, chain: true, radiusTyped: false, estimate: { status: 'idle' }, mode: 'constant' }
+          draft = { kind, body: finishingBody, edges: [], radius: startingFinishSize, chain: false, radiusTyped: false, estimate: { status: 'idle' }, mode: 'constant' }
           break
         case 'chamfer':
-          draft = { kind, body, edges: [], distance: DEFAULT_FILLET_MM, chain: true, mode: 'equal', distance2: DEFAULT_FILLET_MM, angleDeg: 45, flip: false }
+          draft = { kind, body: finishingBody, edges: [], distance: startingFinishSize, chain: true, mode: 'equal', distance2: startingFinishSize, angleDeg: 45, flip: false }
           break
         case 'hole':
           draft = { kind, body, axis: null, radius: 3, depth: null, insert: null }
@@ -137,19 +143,28 @@ export const featureSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'featu
           break
         }
         case 'surface':
-          draft = { kind, region: new Uint32Array(0), floodDeg: DEFAULT_FLOOD_DEG, paint: false, fit: { ...DEFAULT_SURFACE_FIT }, shape: 'freeform', constrain: { mode: 'auto' } }
+          draft = { kind, region: new Uint32Array(0), floodDeg: DEFAULT_FLOOD_DEG, paint: false, fit: { ...DEFAULT_SURFACE_FIT, primitiveSolver: 'extract' }, shape: 'freeform', constrain: { mode: 'auto' } }
           break
         case 'network':
           draft = { kind, ...emptyNetworkDraft() }
           break
         case 'trim': {
-          // Every surface body there is: the set a part's surfaces make.
-          const tools: TrimTool[] = s.bodies.filter((b) => b.surface).map((b) => ({ kind: 'body', id: b.id }))
-          draft = { kind, tools, tolerance: trimToleranceFor(tools, s.results), toleranceTyped: false, overlap: DEFAULT_SPLIT_OVERLAP }
+          const selected = new Set(selectionItems(s.selection).map(item => item.bodyId))
+          if (!selected.size) for (const id of bodiesOfPick(s.bodyFolders, s.listSelection)) selected.add(id)
+          const sheets = s.bodies.filter(b => b.surface)
+          const picked = sheets.filter(b => selected.has(b.id))
+          const tools: TrimTool[] = (picked.length ? picked : sheets).map(b => ({ kind: 'body', id: b.id }))
+          draft = { kind, tools, ...(picked.length ? { removed: [] } : {}), tolerance: trimToleranceFor(tools, s.results), toleranceTyped: false, overlap: DEFAULT_SPLIT_OVERLAP }
           break
         }
       }
-      void base
+      if ((draft.kind === 'fillet' || draft.kind === 'chamfer') && !init) {
+        const picked = selectionItems(s.selection).filter(item => item.type === 'edge')
+        const first = picked[0]
+        if (first && picked.every(item => item.bodyId === first.bodyId) && s.bodies.some(b => b.id === first.bodyId)) {
+          draft = { ...draft, body: first.bodyId, edges: picked.map(item => item.edge), chain: false }
+        }
+      }
       // A Move's bodies were taken as asked above, its pivot with them.
       const given = kind === 'moveBody' && init ? (({ bodies: _b, ...rest }) => (void _b, rest))(init as { bodies?: number[] }) : init
       return { ...CLOSE_OTHERS, featureDraft: { ...draft, ...(given as object) } as FeatureDraft }
@@ -171,7 +186,7 @@ export const featureSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'featu
           break
         case 'fillet':
           // Opened on the varying edges when it has nothing else.
-          draft = { kind: 'fillet', ...head, body: f.body, edges: f.edges.map((fp) => unplacedEdge(fp)), radius: f.radius, chain: f.chain, ...(f.skipFailing ? { skipFailing: true } : {}), radiusTyped: true, estimate: { status: 'idle' }, ...(f.variable ? { variable: f.variable.map((v) => ({ edge: unplacedEdge(v.edge), radius: [v.radius[0], v.radius[1]] as [number, number] })) } : {}), mode: f.edges.length === 0 && (f.variable?.length ?? 0) > 0 ? 'variable' : 'constant' }
+          draft = { kind: 'fillet', ...head, body: f.body, edges: f.edges.map((fp) => unplacedEdge(fp)), radius: f.radius, chain: f.chain, ...(f.skipFailing ? { skipFailing: true } : {}), radiusTyped: true, estimate: { status: 'idle' }, ...(f.variable ? { variable: f.variable.map((v) => ({ ...v, edge: unplacedEdge(v.edge), radius: [v.radius[0], v.radius[1]] as [number, number] })) } : {}), ...(f.roundFaces ? { roundFaces: mapRoundGroups(f.roundFaces, fingerprint => ({ hash: -1, fingerprint })), roundRole: 'left' as const } : {}), mode: f.roundFaces ? 'faceRound' : f.edges.length === 0 && (f.variable?.length ?? 0) > 0 ? 'variable' : 'constant' }
           break
         case 'chamfer':
           draft = { kind: 'chamfer', ...head, body: f.body, edges: f.edges.map((fp) => unplacedEdge(fp)), distance: f.distance, chain: f.chain, ...(f.skipFailing ? { skipFailing: true } : {}), mode: f.mode ?? 'equal', distance2: f.distance2 ?? f.distance, angleDeg: f.angleDeg ?? 45, flip: f.flip ?? false }
@@ -195,19 +210,19 @@ export const featureSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'featu
           draft = { kind: 'boolean', ...head, op: f.op, body: f.body, tool: f.tool, keep: f.keep ?? false }
           break
         case 'sheet':
-          draft = { kind: 'sheet', ...head, sketchId: f.sketchId, from: f.from, to: f.to }
+          draft = { kind: 'sheet', ...head, planar: f.planar, projectOnto: f.projectOnto, sketchId: f.sketchId, from: f.from, to: f.to }
           break
         case 'split':
           draft = { kind: 'split', ...head, body: f.body, tools: [...f.tools], keep: f.keep, tolerance: f.tolerance, overlap: f.overlap, ...(f.within !== undefined ? { within: f.within } : {}) }
           break
         case 'loft':
-          draft = { kind: 'loft', ...head, sketches: [...f.sketches], ruled: f.ruled, op: f.op }
+          draft = { kind: 'loft', ...head, surface: f.surface, sketches: [...f.sketches], ruled: f.ruled, op: f.op }
           break
         case 'sweep':
           draft = { kind: 'sweep', ...head, profile: f.profile, path: f.path ?? null, ...(f.route ? { route: f.route } : {}), op: f.op }
           break
         case 'thicken':
-          draft = { kind: 'thicken', ...head, sheet: f.sheet, thickness: f.thickness, side: f.side, op: f.op }
+          draft = { kind: 'thicken', ...head, sheet: f.sheet, thickness: f.thickness, side: f.side, ...(f.constraint ? { constraint: f.constraint } : {}), op: f.op }
           break
         case 'pattern':
           draft = { kind: 'pattern', ...head, body: f.body, mode: f.mode, axis: f.axis, count: f.count, step: f.step, axis2: f.axis2 ?? null, count2: f.count2 ?? 2, step2: f.step2 ?? 10 }
@@ -237,7 +252,7 @@ export const featureSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'featu
           draft = { kind: 'surface', ...head, region: f.region, floodDeg: DEFAULT_FLOOD_DEG, paint: false, fit: { ...f.fit, net: f.fit.net ? { ...f.fit.net } : null }, ...(f.controlSurface ? { controlSurface: structuredClone(f.controlSurface) } : {}), shape: f.shape ?? 'freeform', constrain: f.constrain ? { ...f.constrain } : { mode: 'auto' }, ...(f.regionBox ? { regionBox: f.regionBox } : {}), ...(f.regionStale ? { regionStale: f.regionStale } : {}) }
           break
         case 'trim':
-          draft = { kind: 'trim', ...head, tools: f.tools.map((t) => ({ ...t })), tolerance: f.tolerance, toleranceTyped: true, overlap: f.overlap }
+          draft = { kind: 'trim', ...head, ...(f.mergeFaces === false ? { mergeFaces: false } : {}), ...(f.groupFaces === false ? { groupFaces: false } : {}), ...(f.removed ? { removed: f.removed } : {}), ...(f.corrections?.length ? { corrections: f.corrections } : {}), tools: f.tools.map((t) => ({ ...t })), tolerance: f.tolerance, toleranceTyped: true, overlap: f.overlap }
           break
         case 'network':
           draft = { kind: 'network', ...head, ...networkDraftOf(f) }
@@ -250,13 +265,17 @@ export const featureSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'featu
       const d = s.featureDraft
       if (!d) return {}
       const changedFit = d.kind === 'surface' && ('fit' in patch || 'region' in patch || ('shape' in patch && patch.shape !== d.shape))
-      return { featureDraft: { ...d, ...(changedFit ? { controlSurface: undefined } : {}), ...(patch as object) } as FeatureDraft }
+      return { ...(d.kind === 'trim' ? { preview: { status: 'idle' as const } } : d.kind === 'fillet' || d.kind === 'chamfer' ? { preview: { status: 'building' as const } } : {}), featureDraft: { ...d, ...(changedFit ? { controlSurface: undefined } : {}), ...(d.kind === 'surface' && 'shape' in patch ? { awaitingType: false } : {}), ...(patch as object) } as FeatureDraft }
     }),
   cancelFeature: () => set((s) => ({ featureDraft: null, preview: { status: 'idle' }, gripField: null, bodyPick: null, hint: null, ...(s.featureDraft?.featureId !== undefined ? { buildVersion: s.buildVersion + 1 } : {}) })),
-  commitFeature: () => {
+  commitFeature: (after) => {
     const s = get()
     const d = s.featureDraft
     if (!d || !featureDraftReady(d)) return null
+    if ((d.kind === 'fillet' || d.kind === 'chamfer') && s.preview.status === 'failed') return null
+    if (after === 'nextSurface' && (d.kind !== 'surface' || d.featureId !== undefined || s.preview.status !== 'ok' || !s.preview.surface)) return null
+    if (after === 'nextFillet' && ((d.kind !== 'fillet' && d.kind !== 'chamfer') || d.featureId !== undefined || s.building || s.preview.status !== 'ok')) return null
+    if (d.kind === 'trim' && (s.preview.status === 'failed' || d.removed?.length === 0)) return null
     // A moved face goes into what made it where the box was ticked to:
     // the extrude's distance, the sketch's line or circle. No feature is
     // added — the list is edited, as the operator would have edited it by
@@ -288,10 +307,24 @@ export const featureSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'featu
     const { name, nextOfKind } = nameFor(s, d.kind)
     const next = withExprs(featureOfDraft(d, id, d.name?.trim() || name), d.exprs)
     if (!next) return null
+    const trimInputs = next.kind === 'trim'
+      ? s.bodies.filter(b => b.surface && b.visible && next.tools.some(t => t.kind === 'body' && t.id === b.id)).map(b => b.id)
+      : []
     set({
-      ...remember(s),
+      ...remember(s, trimInputs),
+      ...(trimInputs.length ? eyesSet(s, trimInputs, false) : {}),
       ...leanAfterSnap({ nextFeatureId: id + 1, nextOfKind }, [...hideSketches(s.features, sketchesUsedBy(next)), next], d),
-      featureDraft: null,
+      featureDraft: after === 'nextSurface' && d.kind === 'surface' ? {
+        kind: 'surface', createdSheets: [...(d.createdSheets ?? []), id], awaitingType: true, shape: d.shape, fit: d.fit, constrain: d.constrain,
+        paint: d.paint, floodDeg: d.floodDeg, useShapeExpansion: d.useShapeExpansion,
+        region: new Uint32Array(0),
+      } : after === 'nextFillet' && d.kind === 'fillet' ? {
+        kind: 'fillet', mode: d.mode, ...(d.mode === 'faceRound' ? { roundFaces: emptyRoundGroups(), roundRole: 'left' as const } : {}), body: d.body, edges: [], radius: d.radius,
+        chain: d.chain, radiusTyped: true, estimate: { status: 'idle' },
+        ...(d.exprs?.radius ? { exprs: { radius: d.exprs.radius } } : {}),
+      } : after === 'nextFillet' && d.kind === 'chamfer' ? {
+        ...d, edges: [],
+      } : null,
       preview: { status: 'idle' },
       gripField: null,
       bodyPick: null,
@@ -316,7 +349,7 @@ export const featureSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'featu
       }
       const have = new Set(d.region)
       const added: number[] = []
-      for (const v of vertices) if (!have.has(v)) added.push(v)
+      for (const v of vertices) if (!have.has(v)) { have.add(v); added.push(v) }
       if (added.length === 0) return {}
       const region = new Uint32Array(d.region.length + added.length)
       region.set(d.region)
@@ -329,7 +362,15 @@ export const featureSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'featu
     set((s) => {
       const d = s.featureDraft
       if (!d) return {}
-      if (d.kind === 'deleteFace') {
+      if (d.kind === 'fillet' && d.mode === 'faceRound') {
+        const groups = d.body === bodyId && d.roundFaces ? d.roundFaces : emptyRoundGroups<typeof face>()
+        const role = d.roundRole ?? 'left'
+        if (roundRoles.some(key => key !== role && groups[key].some(f => f.hash === face.hash))) return {}
+        const picks = groups[role]
+        const faces = picks.some(f => f.hash === face.hash) ? picks.filter(f => f.hash !== face.hash) : [...picks, face]
+        return { featureDraft: { ...d, body: bodyId, roundFaces: { ...groups, [role]: faces } } }
+      }
+      if (d.kind === 'deleteFace' || d.kind === 'duplicateFace') {
         // A click takes the whole round, hole or boss the face is part of,
         // and on a face picked lets go of all that one took.
         const faces = d.body === bodyId ? d.faces : []
@@ -398,6 +439,13 @@ export const featureSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'featu
   addDraftFaces: (bodyId, added) =>
     set((s) => {
       const d = s.featureDraft
+      if (d?.kind === 'fillet' && d.mode === 'faceRound') {
+        const groups = d.body === bodyId && d.roundFaces ? d.roundFaces : emptyRoundGroups<typeof added[number]>()
+        const role = d.roundRole ?? 'left'
+        const used = new Set(roundRoles.flatMap(key => groups[key].map(f => f.hash)))
+        const fresh = added.filter(f => !used.has(f.hash))
+        return fresh.length ? { featureDraft: { ...d, body: bodyId, roundFaces: { ...groups, [role]: [...groups[role], ...fresh] } } } : {}
+      }
       if (!d || (d.kind !== 'shell' && d.kind !== 'draft' && d.kind !== 'moveFace' && d.kind !== 'deleteFace') || added.length === 0) return {}
       const faces = d.body === bodyId ? d.faces : []
       const fresh = added.filter((f) => !faces.some((x) => x.hash === f.hash) && (d.kind !== 'moveFace' || (movableFace(f.fingerprint) && !partialRound(f))))

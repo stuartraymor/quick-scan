@@ -7,6 +7,7 @@ import { useEffect, useState, useSyncExternalStore } from 'react'
 import { create } from 'zustand'
 import { Icon } from '../../../src/ui/icons'
 import { useShell } from '../../../src/state/shellStore'
+import { useMeasureTool } from '../../../src/state/measureToolStore'
 import { commandRunning, pluginBusy, useCommandActivity, watchSession } from '../../../src/commands/activity'
 import { sessionBusy } from '../../../src/commands/host'
 import { useStore } from '../../../src/state/store'
@@ -42,29 +43,45 @@ function useExplorerLocked() {
   const coreEditor = useStore(s => Boolean(s.draft || s.sectionDraft || s.dimDraft || s.alignDraft))
   const extracting = useShell(s => s.extractOpen)
   const sessionWorking = useSyncExternalStore(subscribeTreeWork, observedTreeWorking, () => false)
-  return { state, locked: sessionWorking || busy || picking || coreEditor || extracting || state.building || state.playback !== null || reEditorOpen(state) }
+  const working = sessionWorking || busy || picking || coreEditor || extracting || state.building || state.playback !== null
+  const editing = reEditorOpen(state)
+  return { state, locked: working || editing, visibilityLocked: working || (editing && !state.sketchDraft) }
 }
 
 function objectsLockedNow(): boolean {
   const state = useReverse.getState()
-  return treeWorking() || coreDialogOpen() || useDeviation.getState().picking || state.building || state.playback !== null || reEditorOpen(state)
+  return treeWorking() || coreDialogOpen() || useStore.getState().busy || useDeviation.getState().picking || state.building || state.playback !== null || reEditorOpen(state)
 }
 const rolledNow = () => useDocumentOrder.getState().rollbackAt !== null
 const featureKey = (id: number) => `reverse:feature:${id}`
 
 function setSketchVisibility(ids: readonly number[], on: boolean): void {
-  if (objectsLockedNow()) return
+  if (objectsLockedNow() && !canInspectReferences()) return
   historyAction(`${on ? 'show' : 'hide'} sketches`, () => {
     const state = useReverse.getState()
     for (const f of state.features) if (f.kind === 'sketch' && ids.includes(f.id) && f.visible !== on) state.toggleFeatureVisible(f.id)
   })
 }
 
+/** Reference display and selection remain available while drawing or measuring. */
+function canInspectReferences(): boolean {
+  const state = useReverse.getState()
+  const inspecting = Boolean(state.sketchDraft) || (useMeasureTool.getState().open && !reEditorOpen(state))
+  return inspecting && !treeWorking() && !coreDialogOpen() && !useStore.getState().busy &&
+    !useDeviation.getState().picking && !state.building && state.playback === null
+}
+
 function setBodyVisibility(ids: readonly number[], on: boolean): void {
-  if (objectsLockedNow()) return
+  if (!ids.length || (objectsLockedNow() && !canInspectReferences())) return
   historyAction(`${on ? 'show' : 'hide'} bodies`, () => {
     const state = useReverse.getState()
-    if (on) state.setBodiesHidden(false)
+    if (on) {
+      state.setBodiesHidden(false)
+      if (state.sketchDraft && !state.sketchModelShown) {
+        state.setSketchModelShown(true)
+        state.setSketchSliced(false)
+      }
+    }
     state.setBodiesVisible(ids, on)
   })
 }
@@ -220,6 +237,9 @@ function recolorBodies(ids: readonly number[]) {
 }
 
 function FeatureTreeRow({ feature, locked, rolled = false, location, outputs = [], outputValues = [], parents = [], labelOf }: { feature: Feature; locked: boolean; rolled?: boolean; location: 'object' | 'history'; outputs?: readonly number[]; outputValues?: readonly boolean[]; parents?: readonly string[]; labelOf: (key: string) => string }) {
+  const measuring=useMeasureTool(s=>s.open)
+  const drafting = useReverse(s => Boolean(s.sketchDraft))
+  const presentationLocked = locked && !((measuring || drafting) && canInspectReferences() && (feature.kind === 'sketch' || outputs.length > 0))
   const selected = useTreeSelection(s => s.id === feature.id)
   const rolledDocument = useDocumentOrder(s => s.rollbackAt !== null)
   const renameKey = `${featureKey(feature.id)}@${location}`
@@ -232,6 +252,10 @@ function FeatureTreeRow({ feature, locked, rolled = false, location, outputs = [
   const shown = sketch ? feature.visible && !rolled : outputValues.length > 0 && outputValues.every(Boolean)
   const editSketch = sketchOf(feature)
   const select = () => {
+    if (!rolled && canInspectReferences()) {
+      if (sketch && !feature.visible) setSketchVisibility([feature.id], true)
+      if (!sketch && outputValues.some(value => !value)) setBodyVisibility(outputs, true)
+    }
     useTreeSelection.setState({ id: feature.id })
     useExplorer.getState().setFocus(key)
   }
@@ -284,9 +308,9 @@ function FeatureTreeRow({ feature, locked, rolled = false, location, outputs = [
       select()
       setMenu(explorerMenuAt(event, 13))
     }}>
-    {sketch && <ExplorerCheckbox values={[feature.visible && !rolled]} label={`${feature.name} visibility`} disabled={locked || rolled} onSet={on => setSketchVisibility([feature.id], on)} />}
-    {!sketch && location === 'history' && <ExplorerCheckbox values={outputValues} label={`${feature.name} output visibility`} disabled={locked || rolled} onSet={on => setBodyVisibility(outputs, on)} />}
-    {renaming ? <InlineRename value={feature.name} label={feature.name} onDone={text => renameFeature(feature.id, text)} /> : <button type="button" className="explorer-item" disabled={locked} data-test={`explorer-${location}-feature-${feature.id}`}
+    {sketch && <ExplorerCheckbox values={[feature.visible && !rolled]} label={`${feature.name} visibility`} disabled={presentationLocked || rolled} onSet={on => setSketchVisibility([feature.id], on)} />}
+    {!sketch && location === 'history' && <ExplorerCheckbox values={outputValues} label={`${feature.name} output visibility`} disabled={presentationLocked || rolled} onSet={on => setBodyVisibility(outputs, on)} />}
+    {renaming ? <InlineRename value={feature.name} label={feature.name} onDone={text => renameFeature(feature.id, text)} /> : <button type="button" className="explorer-item" disabled={presentationLocked} data-test={`explorer-${location}-feature-${feature.id}`}
       aria-pressed={selected} onClick={select} onDoubleClick={edit}
       title={rolled ? 'Below End of Model. Right-click → Enable To Here to bring it back.' : failed ? `${feature.name} failed: ${failed}` : `${feature.name} · right-click for actions, double-click to edit, F2 to rename`}>
       <span className="explorer-icon"><KeyIcon name={FEATURE_ICONS[feature.kind]} size={16} /></span>
@@ -300,7 +324,7 @@ function FeatureTreeRow({ feature, locked, rolled = false, location, outputs = [
 type BodyMenu = { at: ExplorerMenuAt; kind: 'body' } | { at: ExplorerMenuAt; kind: 'group'; label: 'Surfaces' | 'Solids'; ids: number[] } | { at: ExplorerMenuAt; kind: 'sketches' }
 
 export function ReverseObjects() {
-  const { state, locked } = useExplorerLocked()
+  const { state, locked, visibilityLocked } = useExplorerLocked()
   const fileName = useStore(s => s.fileName)
   const rolledDocument = useDocumentOrder(s => s.rollbackAt !== null)
   const renaming = useExplorer(s => s.renaming)
@@ -378,7 +402,9 @@ export function ReverseObjects() {
     { label: 'Delete ...', danger: true, testId: 'explorer-group-delete', disabled: rolledDocument || ids.length === 0, title: `Delete every body in ${label} (the features that make them)`, onSelect: () => deleteBodies(ids) },
   ]
   const sketches = state.features.filter(f => f.kind === 'sketch')
+  const partShown = !state.bodiesHidden && (!state.sketchDraft || state.sketchModelShown)
   const pickBody = (id: number, index: number, event: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }) => {
+    if (canInspectReferences() && (!state.bodies[index].visible || !partShown)) setBodyVisibility([id], true)
     let next = [id]
     const now = useReverse.getState().listSelection.bodies
     if (event.ctrlKey || event.metaKey) next = now.includes(id) ? now.filter((b) => b !== id) : [...now, id]
@@ -390,7 +416,7 @@ export function ReverseObjects() {
     useExplorer.getState().setFocus(featureKey(bodyMaker(id)))
   }
   return <>
-  {(['Surfaces', 'Solids'] as const).map(label => { const bodies = state.bodies.filter(body => Boolean(body.surface) === (label === 'Surfaces')); return <ExplorerGroup key={label} label={label} values={bodies.map(body => body.visible && !state.bodiesHidden)} disabled={locked} onSet={on => setBodyVisibility(bodies.map(body => body.id), on)} testId={`explorer-${label.toLowerCase()}`}
+  {(['Surfaces', 'Solids'] as const).map(label => { const bodies = state.bodies.filter(body => Boolean(body.surface) === (label === 'Surfaces')); return <ExplorerGroup key={label} label={label} values={bodies.map(body => body.visible && partShown)} disabled={visibilityLocked} onSet={on => setBodyVisibility(bodies.map(body => body.id), on)} testId={`explorer-${label.toLowerCase()}`}
     onContextMenu={event => { if (!locked) setMenu({ kind: 'group', at: explorerMenuAt(event, 7), label, ids: bodies.map(b => b.id) }) }}>
       {bodies.map(body => {
         const index = state.bodies.findIndex(item => item.id === body.id)
@@ -408,13 +434,13 @@ export function ReverseObjects() {
           onKeyDown={event => {
             if (renaming) return
             const now = useReverse.getState().listSelection.bodies
-            if (event.key === 'F2' && now.length === 1) { event.preventDefault(); event.stopPropagation(); useExplorer.getState().setRenaming(`reverse:body:${now[0]}`) }
+            if (event.key === 'F2' && !locked && now.length === 1) { event.preventDefault(); event.stopPropagation(); useExplorer.getState().setRenaming(`reverse:body:${now[0]}`) }
             if (event.key === 'Delete' && !locked && now.length > 0) { event.preventDefault(); event.stopPropagation(); deleteBodies(now) }
           }}
           onMouseEnter={() => state.setBodyHover({ ids: [body.id], from: 'list' })}
           onMouseLeave={() => { if (useReverse.getState().bodyHover?.from === 'list') useReverse.getState().setBodyHover(null) }}>
-          <ExplorerCheckbox values={[body.visible && !state.bodiesHidden]} label={`${body.name} visibility`} disabled={locked} onSet={on => setBodyVisibility([body.id], on)} />
-          {renaming === `reverse:body:${body.id}` ? <InlineRename value={body.name} label={body.name} onDone={text => renameBody(body.id, text)} /> : <button type="button" className="explorer-item" disabled={locked} data-test={`explorer-body-${body.id}`} aria-pressed={rowPicked(body.id)}
+          <ExplorerCheckbox values={[body.visible && partShown]} label={`${body.name} visibility`} disabled={visibilityLocked} onSet={on => setBodyVisibility([body.id], on)} />
+          {renaming === `reverse:body:${body.id}` ? <InlineRename value={body.name} label={body.name} onDone={text => renameBody(body.id, text)} /> : <button type="button" className="explorer-item" disabled={visibilityLocked} data-test={`explorer-body-${body.id}`} aria-pressed={rowPicked(body.id)}
             title={`${location ? `${location} / ` : ''}${body.name} · ${body.surface ? 'surface' : 'solid'} · click to select, right-click for actions, double-click to edit its feature, F2 to rename`}
             onClick={(event) => pickBody(body.id, index, event)}
             onDoubleClick={() => { if (!locked) editFromTree(bodyMaker(body.id)) }}>
@@ -424,7 +450,7 @@ export function ReverseObjects() {
         </div>
       })}
   </ExplorerGroup> })}
-  <ExplorerGroup label="Sketches" values={sketches.map(f => f.visible)} disabled={locked} onSet={on => setSketchVisibility(sketches.map(f => f.id), on)} testId="explorer-sketches"
+  <ExplorerGroup label="Sketches" values={sketches.map(f => f.visible)} disabled={visibilityLocked} onSet={on => setSketchVisibility(sketches.map(f => f.id), on)} testId="explorer-sketches"
     onContextMenu={event => { if (!locked) setMenu({ kind: 'sketches', at: explorerMenuAt(event, 2) }) }}>
       {sketches.map(feature => <FeatureTreeRow key={feature.id} feature={feature} locked={locked} location="object" parents={[...builtOn(feature).map(featureKey)]} labelOf={labelOf} />)}
   </ExplorerGroup>
@@ -475,7 +501,7 @@ export function useReverseExplorerHistoryEntries(): NonNullable<PluginRuntime['e
     const sketch = feature.kind === 'sketch'
     return {
       key: featureKey(feature.id), label: feature.name, parents,
-      node: <FeatureTreeRow feature={feature} locked={locked} rolled={index >= state.features.length} location="history" outputs={bodies.map(body => body.id)} outputValues={bodies.map(body => body.visible && !state.bodiesHidden)} parents={parents} labelOf={labelOf} />,
+      node: <FeatureTreeRow feature={feature} locked={locked} rolled={index >= state.features.length} location="history" outputs={bodies.map(body => body.id)} outputValues={bodies.map(body => body.visible && !state.bodiesHidden && (!state.sketchDraft || state.sketchModelShown))} parents={parents} labelOf={labelOf} />,
       // Dependents go first (the browser removes in reverse order), so the
       // store's own "built on by a later feature" refusal never fires here.
       remove: () => { if ([...useReverse.getState().features, ...useReverse.getState().rolledBack].some(f => f.id === feature.id)) useReverse.getState().removeFeature(feature.id) },

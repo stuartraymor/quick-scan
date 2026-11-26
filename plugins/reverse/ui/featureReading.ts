@@ -127,10 +127,13 @@ export function bodyFeatureReading(f: Exclude<Feature, { kind: 'sketch' | 'extru
     case 'boolean':
       return { text: `${f.op === 'join' ? 'Join' : f.op === 'cut' ? 'Cut' : 'Intersect'} ${names(f.tool)}${f.keep ? ' · kept' : ''}`, title: `${names(f.body)} ${f.op === 'join' ? 'joined with' : f.op === 'cut' ? 'cut by' : 'intersected with'} ${names(f.tool)}, ${f.keep ? 'which stays a body of its own' : 'which goes into it'}` }
     case 'sheet':
+      if (f.projectOnto !== undefined) return { text: 'Projected surface', title: `Closed outline of ${names(f.sketchId)} projected onto ${names(f.projectOnto)}` }
+      if (f.planar) return { text: 'Planar surface', title: `Closed region of ${names(f.sketchId)}` }
       return { text: `Surface · ${len(Math.abs(f.to - f.from))}`, title: `${names(f.sketchId)}'s pieces extruded as a surface from ${len(f.from)} to ${len(f.to)} along its normal — a cutter, not exported on its own` }
     case 'split':
       return { text: `by ${f.tools.map(names).join(', ')} · ${f.keep === 'scan' ? 'on the scan' : f.keep}`, title: `${names(f.body)} split by ${f.tools.map(names).join(', ')}, the fragments ${f.keep === 'scan' ? `lying on the scan within ${len(f.tolerance)} over ${Math.round(f.overlap * 100)} % of their faces` : f.keep === 'between' ? 'lying between the sheets' : `the ${f.keep}`} kept` }
     case 'loft':
+      if (f.surface) return { text: 'Surface loft', title: f.sketches.map(names).join(' → ') }
       return { text: `${f.op === 'new' ? 'New body' : f.op === 'join' ? 'Join' : 'Cut'} · ${f.sketches.length} sketches${f.ruled ? '' : ', smooth'}`, title: `A ${f.ruled ? 'ruled' : 'smooth'} loft through ${f.sketches.map(names).join(', ')}` }
     case 'sweep':
       if (f.route) {
@@ -139,6 +142,11 @@ export function bodyFeatureReading(f: Exclude<Feature, { kind: 'sketch' | 'extru
       }
       return { text: `${f.op === 'new' ? 'New body' : f.op === 'join' ? 'Join' : 'Cut'} · along ${names(f.path!)}`, title: `${names(f.profile)}'s largest region swept along ${names(f.path!)}` }
     case 'thicken':
+      if (f.constraint) {
+        const c = f.constraint, plane = describePlaneRef(c.plane, ctx, units)
+        const text = c.mode === 'betweenPlanes' ? `Between ${plane} and ${describePlaneRef(c.end, ctx, units)}` : c.mode === 'toPlane' ? `Up to ${plane}` : `${len(f.thickness)} along ${plane} normal · ${f.side}`
+        return { text, title: text }
+      }
       return { text: `${f.op === 'new' ? 'New body' : f.op === 'join' ? 'Join' : 'Cut'} · ${len(f.thickness)} ${f.side}`, title: `${names(f.sheet)} made a solid ${len(f.thickness)} thick, ${f.side === 'out' ? 'along its normal' : f.side === 'in' ? 'against its normal' : 'half each way'}${f.op === 'new' ? ', a body of its own' : f.op === 'join' ? ', joined to what it meets' : ', cut from what it meets'}` }
     case 'draft':
       return { text: `${Math.round(f.angleDeg * 100) / 100}° · ${f.faces.length} face${f.faces.length === 1 ? '' : 's'}`, title: `${f.faces.length} face${f.faces.length === 1 ? '' : 's'} of ${names(f.body)} leaned ${f.angleDeg}° about ${f.neutral.kind === 'face' ? faceText(f.neutral.face) : describePlaneRef(f.neutral, ctx, units)}: ${f.faces.map(faceText).join('; ')}` }
@@ -159,6 +167,7 @@ export function bodyFeatureReading(f: Exclude<Feature, { kind: 'sketch' | 'extru
     case 'offsetBody':
       return { text: `${f.distance >= 0 ? '+' : '−'}${len(Math.abs(f.distance))}${f.keep ? ' · new body' : ''}`, title: `${names(f.body)} ${f.distance >= 0 ? 'grown' : 'shrunk'} ${len(Math.abs(f.distance))} all round${f.keep ? ', the body kept as it was and the offset a body of its own' : ''}` }
     case 'trim':
+      if (f.removed) return { text: 'Manual trim', title: `${f.tools.length} sheets · ${f.removed.length} removal picks` }
       return { text: `${f.tools.length} surface${f.tools.length === 1 ? '' : 's'} · within ${len(f.tolerance)}`, title: `A box round the scan cut by ${f.tools.map((t) => (t.kind === 'body' ? names(t.id) : (ctx.elements.find((e) => e.id === t.id)?.name ?? 'a deleted element'))).join(', ')}; the faces lying on the scan within ${len(f.tolerance)} over ${Math.round(f.overlap * 100)} % of their samples kept and sewn` }
     case 'import':
       if (f.freeformSource !== undefined) return { text: 'Converted Freeform', title: `Rebuilds from ${names(f.freeformSource)}` }

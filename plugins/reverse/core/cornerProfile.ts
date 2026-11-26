@@ -114,6 +114,27 @@ function arcProfileDistance(f: CornerFrame, half: number, bis: Vec2, p: Vec2, r:
   return { d: dist(p, c) - r, onArc: true }
 }
 
+/** The smallest round read off a section, mm: below it the corner is sharp. */
+const MIN_READ_RADIUS = 1e-3
+
+/** The scan's noise across a line, read from point to point: each point's
+ *  offset against the straight line through its two neighbours (by distance
+ *  along the line), so a gentle bow or drift costs nothing. Null with fewer
+ *  than eight points. For independent noise of spread s the residual of the
+ *  middle of three evenly spaced points spreads by s·√1.5. */
+function jitter(points: readonly Vec2[], d: Vec2): number | null {
+  if (points.length < 8) return null
+  const sorted = points.map((p): [number, number] => [p[0] * d[0] + p[1] * d[1], d[0] * p[1] - d[1] * p[0]]).sort((u, v) => u[0] - v[0])
+  const res: number[] = []
+  for (let i = 1; i + 1 < sorted.length; i++) {
+    const [s0, o0] = sorted[i - 1], [s1, o1] = sorted[i], [s2, o2] = sorted[i + 1]
+    if (!(s2 - s0 > 1e-12)) continue
+    const w = (s1 - s0) / (s2 - s0)
+    res.push(Math.abs(o1 - (o0 + (o2 - o0) * w)) / Math.sqrt(1 + w * w + (1 - w) * (1 - w)))
+  }
+  return res.length >= 6 ? 1.4826 * median(res) : null
+}
+
 /** Read the corner between two lines off the slice chains. */
 export function analyseCornerProfile(f: CornerFrame, chains: readonly (readonly Vec2[])[]): CornerProfile {
   const x = f.corner
@@ -138,12 +159,13 @@ export function analyseCornerProfile(f: CornerFrame, chains: readonly (readonly 
   // drift off the flat towards the corner, and that drift is not noise.
   const along = (p: Vec2, d: Vec2) => dot(sub(p, x), d)
   const off = (p: Vec2, d: Vec2) => crossZ(d, sub(p, x))
-  const flank = (d: Vec2, start: number, far: number) => {
+  const flankPoints = (d: Vec2, start: number, far: number) => {
     const from = Math.max(start, 0.35 * reach, 0), band = 0.08 * reach
     const lo = from < far ? from : Math.max(0, start), hi = far
-    return runs.flat().filter((p) => { const s = along(p, d); return s >= lo && s <= hi && Math.abs(off(p, d)) <= band }).map((p) => off(p, d))
+    return runs.flat().filter((p) => { const s = along(p, d); return s >= lo && s <= hi && Math.abs(off(p, d)) <= band })
   }
-  const ra = flank(f.dirA, f.startA ?? 0, f.reachA), rb = flank(f.dirB, f.startB ?? 0, f.reachB)
+  const pa = flankPoints(f.dirA, f.startA ?? 0, f.reachA), pb = flankPoints(f.dirB, f.startB ?? 0, f.reachB)
+  const ra = pa.map((p) => off(p, f.dirA)), rb = pb.map((p) => off(p, f.dirB))
   const ma = median(ra), mb = median(rb)
   const sa = ra.length >= 5 ? 1.4826 * median(ra.map((v) => Math.abs(v - ma))) : 0
   const sb = rb.length >= 5 ? 1.4826 * median(rb.map((v) => Math.abs(v - mb))) : 0
@@ -196,9 +218,30 @@ export function analyseCornerProfile(f: CornerFrame, chains: readonly (readonly 
     }
   }
   }
+  // No clean step from one line to the other (a small round inside the
+  // lines' slack, a line brushed into the round, a section broken or doubled
+  // there): QUICKSURFACE still makes the arc that fits the section round the
+  // corner point, so the round is read from the run that passes nearest it,
+  // within half the shorter line's reach, rather than refused (before 1.2.29:
+  // "does not run continuously … Use Fixed Size Fillet").
+  let loose = false
   if (!best) {
+    const disc = 0.5 * reach
+    let nearest: { run: Vec2[]; d: number } | null = null
+    for (const run of runs) {
+      const inside = run.filter((p) => dist(p, x) <= disc)
+      if (inside.length < 5) continue
+      const d = Math.min(...inside.map((p) => dist(p, x)))
+      if (!nearest || d < nearest.d) nearest = { run: inside, d }
+    }
+    if (!nearest) {
       if (sawA && sawB) return { kind: 'none', reason: 'The scan section does not run continuously from one line to the other near this corner. Use Fixed Size Fillet.' }
-    return { kind: 'none', reason: 'The scan section near this corner does not follow these lines. Check that the lines were fitted to this section.' }
+      return { kind: 'none', reason: 'The scan section near this corner does not follow these lines. Check that the lines were fitted to this section.' }
+    }
+    const lean = (p: Vec2) => along(p, f.dirA) - along(p, f.dirB)
+    const r = nearest.run
+    best = { run: r, i: 0, j: r.length - 1, first: lean(r[0]) >= lean(r[r.length - 1]) ? 'A' : 'B', score: 0 }
+    loose = true
   }
   // Orient the transition from line A to line B.
   let seq = best.run.slice(best.i, best.j + 1)
@@ -277,8 +320,21 @@ export function analyseCornerProfile(f: CornerFrame, chains: readonly (readonly 
   // read on the cleaner flat: a line brushed partly over the round, or a flat
   // that bends, looks noisier than the scan is, and QUICKSURFACE rounds every
   // corner it can (it leaves an R 0.000134 mm fillet even on a sharp one).
-  const quiet = sa > 0 && sb > 0 ? Math.min(sa, sb) : sigma
-  if (profileRadius * (1 - Math.sin(half)) <= 2 * quiet) return { kind: 'sharp', used, sigma, confident: true }
+  // The noise for that test is read from point to point (`jitter`): a side
+  // that bows gently is not straight, and the spread of its offsets from the
+  // line (sa, sb) grows with the bow. Before 1.2.29 a side brushed along a
+  // 1.5 mm bow read 0.42 mm of "noise", and an R 5 round on a 49° corner,
+  // 0.45 mm deep, was joined sharp. It is never taken above the spread: where
+  // the sides nearly fold back on each other both lie in one flank's band,
+  // and point to point the section jumps from side to side.
+  // A round under a micron cannot be read off a section: a mesh section's
+  // flats are straight between facet joints, so its point-to-point noise is
+  // nil, and a sharp corner read as R 0.0002 mm would leave a degenerate arc.
+  const ja = jitter(pa, f.dirA), jb = jitter(pb, f.dirB)
+  const spread = sa > 0 && sb > 0 ? Math.min(sa, sb) : sigma
+  const jit = ja !== null && jb !== null ? Math.min(ja, jb) : ja ?? jb
+  const quiet = jit !== null ? Math.min(jit, spread) : spread
+  if (profileRadius < MIN_READ_RADIUS || profileRadius * (1 - Math.sin(half)) <= 2 * quiet) return { kind: 'sharp', used, sigma, confident: true }
   // QUICKSURFACE's radius uses every section point on the arc, wherever the
   // lines' slack put the split between flat and round: all of this run's
   // own points (strays aside) that the arc spans.
@@ -291,5 +347,6 @@ export function analyseCornerProfile(f: CornerFrame, chains: readonly (readonly 
   const rms = rmsOf(inliers.map((v) => v.q.d))
   const base = { used: inliers.map((v) => v.p), sigma }
   if (share < 0.85) return { kind: 'arc', radius, rms, ...base, confident: false, doubt: `${Math.round((1 - share) * 100)} % of the scan points on the round were set aside as stray` }
+  if (loose) return { kind: 'arc', radius, rms, ...base, confident: false, doubt: 'the scan section does not run cleanly from one line to the other here, so the round was read from the section round the corner point' }
   return { kind: 'arc', radius, rms, ...base, confident: true }
 }

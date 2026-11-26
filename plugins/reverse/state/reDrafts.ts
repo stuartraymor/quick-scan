@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { emptyRoundGroups, mapRoundGroups, roundRoles, validLaw } from '../core/roundInputs'
 // Pure reads of the workspace's state and the rules its drafts follow: which
 // features are built and which wait, whether an extrude, a revolve or a
 // feature box is ready, what a snap edits, the key number a feature shows,
@@ -53,7 +54,8 @@ export function featureDraftReady(d: FeatureDraft): boolean {
     case 'shell':
       return d.body !== null && d.thickness > 0
     case 'fillet':
-      return d.body !== null && ((d.edges.length > 0 && d.radius > 0) || (d.edges.length === 0 && (d.variable?.length ?? 0) > 0)) && (d.variable ?? []).every((v) => v.radius[0] > 0 && v.radius[1] > 0)
+      if (d.mode === 'faceRound') return d.body !== null && roundRoles.every(role => d.roundFaces?.[role].length)
+      return d.body !== null && ((d.edges.length > 0 && d.radius > 0) || (d.edges.length === 0 && (d.variable?.length ?? 0) > 0)) && (d.variable ?? []).every((v) => validLaw(v.radius, v.points))
     case 'chamfer':
       return d.body !== null && d.edges.length > 0 && d.distance > 0 && (d.mode !== 'twoDistances' || d.distance2 > 0) && (d.mode !== 'distanceAngle' || (d.angleDeg > 0 && d.angleDeg < 90))
     case 'hole':
@@ -69,7 +71,7 @@ export function featureDraftReady(d: FeatureDraft): boolean {
     case 'boolean':
       return d.body !== null && d.tool !== null && d.body !== d.tool
     case 'sheet':
-      return d.sketchId !== null && Math.abs(d.to - d.from) > 1e-9
+      return d.sketchId !== null && (d.projectOnto !== undefined || d.planar === true || Math.abs(d.to - d.from) > 1e-9)
     case 'split':
       return d.body !== null && d.tools.length > (d.keep === 'between' ? 1 : 0) && !d.tools.includes(d.body) && d.tolerance > 0 && d.overlap > 0 && d.overlap <= 1
     case 'thicken':
@@ -81,11 +83,11 @@ export function featureDraftReady(d: FeatureDraft): boolean {
     case 'pattern':
       return d.body !== null && d.axis !== null && d.count >= 2 && d.step > 0 && (d.mode === 'circular' || d.axis2 === null || d.count2 < 2 || d.step2 > 0)
     case 'surface':
-      return d.region.length >= SURFACE_MIN_REGION
+      return !d.awaitingType && !d.adjustingRegion && d.region.length >= SURFACE_MIN_REGION
     case 'network':
       return networkReady(d)
     case 'trim':
-      return d.tools.length > 0 && d.tolerance > 0 && d.overlap > 0 && d.overlap <= 1
+      return d.tools.length >= (d.removed ? 2 : 1) && d.tolerance > 0 && d.overlap > 0 && d.overlap <= 1
     case 'draft':
       return d.body !== null && d.neutral !== null && d.faces.length > 0 && [d.angleDeg, ...(d.groups ?? []).map((g) => g.angleDeg)].every((a) => Math.abs(a) > 1e-9 && Math.abs(a) < 89) && (d.groups ?? []).every((g) => g.faces.length > 0)
     case 'moveFace':
@@ -198,7 +200,11 @@ export function featureOfDraft(d: FeatureDraft, id: number, name: string): Featu
     case 'shell':
       return { id, kind: 'shell', name, body: d.body!, faces: d.faces.map((f) => f.fingerprint), thickness: d.thickness, visible: true }
     case 'fillet':
-      return { id, kind: 'fillet', name, body: d.body!, edges: d.edges.map((e) => e.fingerprint), radius: d.radius, chain: d.chain, ...(d.skipFailing ? { skipFailing: true } : {}), ...(d.variable?.length ? { variable: d.variable.map((v) => ({ edge: v.edge.fingerprint, radius: v.radius })) } : {}), visible: true }
+      if (d.mode === 'faceRound' && d.roundFaces) return {
+        id, name, kind: 'fillet', body: d.body!, radius: 0, edges: [], chain: d.chain,
+        roundFaces: mapRoundGroups(d.roundFaces, f => f.fingerprint), visible: true,
+      }
+      return { id, kind: 'fillet', name, body: d.body!, edges: d.edges.map((e) => e.fingerprint), radius: d.radius, chain: d.chain, ...(d.skipFailing ? { skipFailing: true } : {}), ...(d.variable?.length ? { variable: d.variable.map((v) => ({ edge: v.edge.fingerprint, radius: v.radius, ...(v.transition ? { transition: v.transition } : {}), ...(v.chain !== undefined ? { chain: v.chain } : {}), ...(v.points?.length ? { points: v.points } : {}) })) } : {}), visible: true }
     case 'chamfer':
       return {
         id,
@@ -226,21 +232,21 @@ export function featureOfDraft(d: FeatureDraft, id: number, name: string): Featu
     case 'boolean':
       return { id, kind: 'boolean', name, op: d.op, body: d.body!, tool: d.tool!, ...(d.keep ? { keep: true } : {}), visible: true }
     case 'sheet':
-      return { id, kind: 'sheet', name, sketchId: d.sketchId!, from: d.from, to: d.to, visible: true }
+      return { id, kind: 'sheet', name, ...(d.planar ? { planar: true } : {}), ...(d.projectOnto !== undefined ? { projectOnto: d.projectOnto } : {}), sketchId: d.sketchId!, from: d.from, to: d.to, visible: true }
     case 'split':
       return { id, kind: 'split', name, body: d.body!, tools: [...d.tools], keep: d.keep, tolerance: d.tolerance, overlap: d.overlap, ...(d.within !== undefined ? { within: d.within } : {}), visible: true }
     case 'loft':
-      return { id, kind: 'loft', name, sketches: [...d.sketches], ruled: d.ruled, op: d.op, visible: true }
+      return { id, kind: 'loft', name, ...(d.surface ? { surface: true } : {}), sketches: [...d.sketches], ruled: d.ruled, op: d.op, visible: true }
     case 'sweep':
       return { id, kind: 'sweep', name, profile: d.profile!, ...(d.route ? { route: d.route } : { path: d.path! }), op: d.op, visible: true }
     case 'thicken':
-      return { id, kind: 'thicken', name, sheet: d.sheet!, thickness: d.thickness, side: d.side, op: d.op, visible: true }
+      return { id, kind: 'thicken', name, sheet: d.sheet!, thickness: d.thickness, side: d.side, ...(d.constraint ? { constraint: d.constraint } : {}), op: d.op, visible: true }
     case 'pattern':
       return { id, kind: 'pattern', name, body: d.body!, mode: d.mode, axis: d.axis!, count: d.count, step: d.step, ...(d.mode === 'linear' && d.axis2 && d.count2 >= 2 ? { axis2: d.axis2, count2: d.count2, step2: d.step2 } : {}), visible: true }
     case 'surface':
       return { id, kind: 'surface', name, region: d.region, fit: { ...d.fit, net: d.fit.net ? { ...d.fit.net } : null }, ...(d.controlSurface ? { controlSurface: structuredClone(d.controlSurface) } : {}), shape: d.shape, constrain: { ...d.constrain }, ...(d.regionBox ? { regionBox: d.regionBox } : {}), ...(d.regionStale ? { regionStale: d.regionStale } : {}), visible: true }
     case 'trim':
-      return { id, kind: 'trim', name, tools: d.tools.map((t) => ({ ...t })), tolerance: d.tolerance, overlap: d.overlap, visible: true }
+      return { id, kind: 'trim', name, ...(d.mergeFaces === false ? { mergeFaces: false } : {}), ...(d.groupFaces === false ? { groupFaces: false } : {}), ...(d.removed ? { removed: d.removed } : {}), ...(d.corrections?.length && !d.removed ? { corrections: d.corrections } : {}), tools: d.tools.map((t) => ({ ...t })), tolerance: d.tolerance, overlap: d.overlap, visible: true }
     case 'draft':
       return { id, kind: 'draft', name, body: d.body!, neutral: d.neutral!, faces: d.faces.map((f) => f.fingerprint), angleDeg: d.angleDeg, ...(d.groups?.length ? { groups: d.groups.map((g) => ({ faces: g.faces.map((f) => f.fingerprint), angleDeg: g.angleDeg })) } : {}), visible: true }
     case 'moveFace':
@@ -287,8 +293,9 @@ export function roundFaceLength(face: FaceInfo['fingerprint']): number {
  *  picked the one way carried over to the other while the other has none —
  *  each edge going from the one radius at both ends, or the edges taking
  *  the first one's start radius — else only what new clicks go into. */
-export function filletModeSwitch(d: Extract<FeatureDraft, { kind: 'fillet' }>, mode: 'constant' | 'variable'): Partial<Extract<FeatureDraft, { kind: 'fillet' }>> {
+export function filletModeSwitch(d: Extract<FeatureDraft, { kind: 'fillet' }>, mode: 'constant' | 'variable' | 'faceRound'): Partial<Extract<FeatureDraft, { kind: 'fillet' }>> {
   if (mode === d.mode) return {}
+  if (mode === 'faceRound') return { mode, roundFaces: d.roundFaces ?? emptyRoundGroups(), roundRole: 'left' }
   const varying = d.variable ?? []
   if (mode === 'variable' && varying.length === 0 && d.edges.length > 0) return { mode, edges: [], variable: d.edges.map((edge) => ({ edge, radius: [d.radius, d.radius] })) }
   if (mode === 'constant' && d.edges.length === 0 && varying.length > 0) return { mode, edges: varying.map((v) => v.edge), variable: undefined, radius: varying[0].radius[0], radiusTyped: true }

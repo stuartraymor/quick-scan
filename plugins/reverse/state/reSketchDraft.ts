@@ -25,7 +25,7 @@ import { fitPointsAlong } from '../core/sketchSpline'
 import { addConstraint, addEntity, type Anchor, type AnchorAt, anchorPoint, anchorsOf, cloneSketch, endsOf, type ConstraintInput, emptySketch, type EntityInput, entityOf, isDimension, nearestOnEntity, removeConstraint, type Sketch, type SketchEntity, splineAnchor } from '../core/sketch'
 import type { SnapHold } from '../core/snap'
 import { snapFlags } from '../../../src/state/snapFilterStore'
-import { type Pull, type SolveReport, solveSketch } from '../core/solver'
+import { inspectSketch, type Pull, type SolveReport, solveSketch } from '../core/solver'
 import type { ExtrudeDraft, SketchDraft } from './reTypes'
 
 export const MAX_HISTORY = 40
@@ -41,7 +41,7 @@ export function dimensionDone(d: SketchDraft, id: number): Partial<SketchDraft> 
   return d.dimMade === id || d.selectedConstraint === id ? { dimPick: null, dimMade: null, dimFrom: null } : {}
 }
 
-export const toolIdle = () => ({ pending: [] as Vec2[], snaps: [] as (SnapHold | null)[], chain: null, chainClick: null, dimPick: null, dimMade: null, dimFrom: null, relPicks: [] as DimPick[] })
+export const toolIdle = () => ({ pending: [] as Vec2[], snaps: [] as (SnapHold | null)[], pendingOnReference: false, chain: null, chainClick: null, dimPick: null, dimMade: null, dimFrom: null, relPicks: [] as DimPick[] })
 
 /** The draft with a new dimension in hand, its number following the cursor
  *  until a click puts it down (see SketchDraft.dimMade). `pick` is the one
@@ -168,16 +168,19 @@ export function chainArcStart(d: SketchDraft | null, spot: Vec2, radius: number)
 
 /** What lies under a hand on the sheet with the Select tool: an end or a
  *  centre to drag, a piece to carry, or nothing. Exported for the cursor. */
-export function dragHandleAt(sketch: Sketch, spot: Vec2, radius: number): { entity: number; at: AnchorAt | 'body' } | null {
+export function dragHandleAt(sketch: Sketch, spot: Vec2, radius: number, selected: readonly number[] = []): { entity: number; at: AnchorAt | 'body' } | null {
   let best: { entity: number; at: AnchorAt | 'body' } | null = null
   let bestD = radius
+  let bestPriority = -1
   for (const e of sketch.entities) {
-      for (const {at, point} of sketchGrips(e)) {
-        const d = len2(sub2(point, spot))
-      if (d <= bestD) {
-        bestD = d
-        best = { entity: e.id, at }
-      }
+    const inHand = selected.includes(e.id)
+    for (const { at, point } of sketchGrips(e, inHand)) {
+      const d = len2(sub2(point, spot))
+      const priority = (at !== 'body' ? 4 : 0) + (!e.fixed && !e.projected ? 2 : 0) + Number(inHand)
+      if (d > bestD || (d === bestD && priority < bestPriority)) continue
+      bestD = d
+      bestPriority = priority
+      best = { entity: e.id, at }
     }
   }
   if (best) return best
@@ -211,10 +214,14 @@ export function settle(d: SketchDraft, before?: Sketch, pull?: readonly Pull[], 
  *  solving it again moved pieces whenever the solve had left a residual
  *  above its stop (an arc after a chamfer by up to 40 mm, a pattern by
  *  0.9 mm), so Undo did not give back what was there. The report and the
- *  regions are worked out on a copy. */
+ *  regions are read from the saved geometry, never a newly solved copy. */
 export function restoreSettled(d: SketchDraft): SketchDraft {
-  const probe = settle({ ...d, sketch: cloneSketch(d.sketch) }, undefined, undefined, false, true)
-  return { ...probe, sketch: d.sketch, found: probe.error ? d.found : findRegions(d.sketch) }
+  try {
+    const report = inspectSketch(d.sketch, { datums: datumTraces(d.frame) })
+    return { ...d, report, found: findRegions(d.sketch), error: null }
+  } catch (e) {
+    return { ...d, report: null, error: e instanceof Error ? e.message : String(e) }
+  }
 }
 
 /** Whether a click at `spot` with the Spline tool closes the curve: back on
@@ -459,11 +466,13 @@ export function sketchHoverAt(d: SketchDraft, spot: Vec2, radius: number): Sketc
   switch (d.tool) {
     case 'select': {
       if (d.pending.length > 0) return null
-      const hit = pieceNear(d.sketch, spot, radius)
-      return hit ? piece(hit.id) : null
+      const grip = dragHandleAt(d.sketch, spot, radius, d.selection)
+      if (!grip) return null
+      const e = entityOf(d.sketch, grip.entity)!
+      return { pieces: [e.id], point: grip.at === 'body' ? null : anchorPoint(e, grip.at), datum: null }
     }
     case 'dimension': {
-      const pick = dimPickAt(d.sketch, spot, radius, traces, snapFlags('pick'))
+      const pick = dimPickAt(d.sketch, spot, radius, traces, snapFlags('sketchPick'), true)
       // With a dimension in hand only what it would pair with is lit; a
       // click anywhere else puts it down.
       if (d.dimMade != null) return d.dimPick && dimensionPair(d, d.dimPick, pick) ? fromPick(pick) : null
@@ -471,7 +480,7 @@ export function sketchHoverAt(d: SketchDraft, spot: Vec2, radius: number): Sketc
     }
     case 'relation': {
       if (!d.armedRelation) return null
-      if (d.armedRelation === 'coincident') return fromPick(relPickAt(d.sketch, spot, radius, traces, snapFlags('pick')))
+      if (d.armedRelation === 'coincident') return fromPick(relPickAt(d.sketch, spot, radius, traces, snapFlags('sketchPick')))
       const hit = pieceNear(d.sketch, spot, radius)
       if (hit) return piece(hit.id)
       const trace = d.armedRelation === 'symmetric' && d.selection.length === 2 ? traceNear(traces, spot, radius) : null

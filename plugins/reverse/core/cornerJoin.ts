@@ -6,7 +6,7 @@
 // made coincident. The far ends and the kept parts never move.
 import type { Vec2 } from '../../../src/core/flat/types'
 import { arcPoint, entityOf, type Sketch, type SketchArc, type SketchEntity, type SketchLine, type SketchSpline } from './sketch'
-import { bezierChainToBSpline, isClosed, splineCurve, splineStretchBeziers, type Bezier } from './sketchSpline'
+import { bezierChainToBSpline, isClosed, splineAt, splineDerivAt, splineEnd, splineCurve, splineStretchBeziers, type Bezier } from './sketchSpline'
 import { validControlSpline } from './controlSpline'
 
 type End = 'a' | 'b'
@@ -126,7 +126,8 @@ function carrierOf(e: SketchEntity, painted: End): Carrier | null {
 }
 
 /** Refines a crossing A(s) = B(u) by Newton's method from a coarse guess. */
-function refine(A: Carrier, B: Carrier, s0: number, u0: number): [number, number] | null {
+type SearchCurve = Pick<Carrier, 'at' | 'd' | 'lo' | 'hi' | 'samples'>
+function refine(A: SearchCurve, B: SearchCurve, s0: number, u0: number): [number, number] | null {
   let s = s0, u = u0
   for (let i = 0; i < 60; i++) {
     const p = A.at(s), q = B.at(u), f = sub(p, q)
@@ -164,8 +165,8 @@ function bound(A: Carrier, B: Carrier) {
   A.lo = -2 * span - A.paint; A.hi = 2 * span + A.paint
 }
 
-function crossings(A: Carrier, B: Carrier): [number, number][] {
-  const sample = (C: Carrier) => Array.from({ length: C.samples + 1 }, (_, i) => C.lo + (C.hi - C.lo) * i / C.samples)
+function crossings(A: SearchCurve, B: SearchCurve): [number, number][] {
+  const sample = (C: SearchCurve) => Array.from({ length: C.samples + 1 }, (_, i) => C.lo + (C.hi - C.lo) * i / C.samples)
   const sa = sample(A), sb = sample(B)
   const pa = sa.map((s) => A.at(s)), pb = sb.map((s) => B.at(s))
   const out: [number, number][] = []
@@ -177,6 +178,22 @@ function crossings(A: Carrier, B: Carrier): [number, number][] {
     if (!out.some((o) => Math.abs(o[0] - r[0]) < 1e-9 && Math.abs(o[1] - r[1]) < 1e-9)) out.push(r)
   }
   return out
+}
+
+/** Crossings restricted to the drawn geometry, including closed splines. */
+export function finiteSplineCrossings(a: SketchEntity, b: SketchEntity): Vec2[] {
+  const finite = (e: SketchEntity): SearchCurve | null => {
+    if (e.kind === 'spline') {
+      if (e.pts.length < 2) return null
+      const fit = splineCurve(e), end = splineEnd(fit)
+      return { at: t => splineAt(fit, t), d: t => splineDerivAt(fit, t), lo: 0, hi: end, samples: 32 * end }
+    }
+    const c = e.kind === 'line' ? lineCarrier(e, 'b') : e.kind === 'arc' ? arcCarrier(e, 'b')
+      : e.kind === 'circle' ? arcCarrier({ ...e, kind: 'arc', start: 0, sweep: TAU }, 'b') : null
+    return c && { ...c, lo: 0, hi: c.paint }
+  }
+  const A = finite(a), B = finite(b)
+  return A && B ? crossings(A, B).map(([t]) => A.at(t)) : []
 }
 
 export type CurveJoin = { ok: true; a: SketchEntity; b: SketchEntity; corner: Vec2 } | { ok: false; error: string }

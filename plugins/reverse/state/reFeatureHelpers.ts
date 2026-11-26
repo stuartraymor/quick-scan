@@ -20,21 +20,22 @@ const MAX_FEATURE_HISTORY = 40
 
 /** The feature list as it stands, put on the past before a change — and
  *  the future let go, since a change after an undo is a new branch. */
-export function remember(s: Pick<ReState, 'features' | 'rolledBack' | 'nextFeatureId' | 'nextOfKind' | 'parameters' | 'nextParameterId' | 'bodyStyles' | 'bodyFolders' | 'past'>): { past: FeatureSnapshot[]; future: FeatureSnapshot[] } {
+export function remember(s: Pick<ReState, 'features' | 'rolledBack' | 'nextFeatureId' | 'nextOfKind' | 'parameters' | 'nextParameterId' | 'bodyStyles' | 'bodyFolders' | 'past'>, trimInputs?: number[]): { past: FeatureSnapshot[]; future: FeatureSnapshot[] } {
   return {
-    past: [...s.past.slice(-(MAX_FEATURE_HISTORY - 1)), snapshotOf(s)],
+    past: [...s.past.slice(-(MAX_FEATURE_HISTORY - 1)), snapshotOf(s, trimInputs)],
     future: [],
   }
 }
 
-export function snapshotOf(s: Pick<ReState, 'features' | 'rolledBack' | 'nextFeatureId' | 'nextOfKind' | 'parameters' | 'nextParameterId' | 'bodyStyles' | 'bodyFolders'>): FeatureSnapshot {
-  return { features: s.features, rolledBack: s.rolledBack, nextFeatureId: s.nextFeatureId, nextOfKind: s.nextOfKind, parameters: s.parameters, nextParameterId: s.nextParameterId, bodyStyles: s.bodyStyles, bodyFolders: s.bodyFolders }
+export function snapshotOf(s: Pick<ReState, 'features' | 'rolledBack' | 'nextFeatureId' | 'nextOfKind' | 'parameters' | 'nextParameterId' | 'bodyStyles' | 'bodyFolders'>, trimInputs?: number[]): FeatureSnapshot {
+  return { ...(trimInputs?.length ? { trimInputs } : {}), features: s.features, rolledBack: s.rolledBack, nextFeatureId: s.nextFeatureId, nextOfKind: s.nextOfKind, parameters: s.parameters, nextParameterId: s.nextParameterId, bodyStyles: s.bodyStyles, bodyFolders: s.bodyFolders }
 }
 
 /** A snapshot put back: the features and the parameters together, the
  *  table evaluated again from them. */
 export function restored(snap: FeatureSnapshot): Pick<ReState, 'features' | 'rolledBack' | 'nextFeatureId' | 'nextOfKind' | 'parameters' | 'nextParameterId' | 'bodyStyles' | 'bodyFolders' | 'parameterTable'> {
-  return { ...snap, parameterTable: evaluateParameters(snap.parameters) }
+  const { trimInputs: _trimInputs, ...model } = snap
+  return { ...model, parameterTable: evaluateParameters(snap.parameters) }
 }
 
 /** The slot paths a grip's drag — or the number typed into its field —
@@ -299,3 +300,19 @@ export function leanAfterSnap(s: Pick<ReState, 'nextFeatureId' | 'nextOfKind'>, 
 
 /** Every editor but the one opening put away, with what goes with them. */
 export const CLOSE_OTHERS = { sketchDraft: null, extrudeDraft: null, revolveDraft: null, featureDraft: null, preview: { status: 'idle' } as PreviewInfo, selection: null, listSelection: NO_PICK, gripField: null, gripHeld: false, hint: null, bodyPick: null }
+
+/** The eyes of these bodies set, in the lasting set and on the bodies
+ *  built — an id the build lacks is written all the same — or no change
+ *  where none is. */
+export function eyesSet(s: Pick<ReState, 'bodies' | 'hiddenBodies'>, ids: readonly number[], visible: boolean): Partial<ReState> {
+  const these = new Set(ids)
+  const was = new Set(s.hiddenBodies)
+  const hiddenBodies = visible ? s.hiddenBodies.filter((id) => !these.has(id)) : [...s.hiddenBodies, ...[...these].filter((id) => !was.has(id))]
+  const bodiesChange = s.bodies.some((b) => these.has(b.id) && b.visible !== visible)
+  const hiddenChange = hiddenBodies.length !== s.hiddenBodies.length
+  return {
+    ...(hiddenChange ? { hiddenBodies } : {}),
+    ...(bodiesChange ? { bodies: s.bodies.map((b) => (these.has(b.id) && b.visible !== visible ? { ...b, visible } : b)) } : {}),
+  }
+}
+

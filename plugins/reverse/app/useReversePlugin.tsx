@@ -9,26 +9,29 @@ import { FreeformEditor, useFreeformEditor } from '../ui/FreeformEditor'
 import { setCircularDimensioning } from '../core/draw'
 import { sectionLinePlane, useSectionLine } from '../state/sectionLineStore'
 import { reSceneOf } from '../viewer/reScene'
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PluginHost, PluginRuntime } from '../../../src/plugins/api'
 import { useStore } from '../../../src/state/store'
 import { dimensionKind } from '../core/parameters'
 import { isDimension } from '../core/sketch'
 import { gripSlotPath } from '../state/reStore'
 import { useShell } from '../../../src/state/shellStore'
-import { EXTRACT_MARK_COLOR, useMark } from '../../../src/state/markStore'
+import { EXTRACT_MARK_COLOR } from '../../../src/state/markStore'
 import { useDeviation } from '../../../src/state/deviationStore'
 import { builtAlignment } from '../../../src/core/deviation/align'
 import { curvatureScale } from '../../../src/core/geometry/curvature'
 import type { Vec2 } from '../../../src/core/flat/types'
 import type { Vec3 } from '../../../src/core/types'
 import { MapLegend } from '../../../src/ui/MapLegend'
+import { ExtendSurfaceDialog, useExtendDialog } from '../ui/ExtendSurfaceDialog'
 import { PipeDialog, usePipeDialog } from '../ui/PipeDialog'
 import { AutoFreeformDialog, useAutoFreeformDialog } from '../ui/AutoFreeformDialog'
 import { WrapSurfaceDialog, useWrapSurfaceDialog } from '../ui/WrapSurfaceDialog'
 import { FreeformSketchDialog, useFreeformSketchDialog } from '../ui/FreeformSketchDialog'
 import { Icon, type IconName } from '../../../src/ui/icons'
 import { anyChanged, PartChoice, PartKey, PartOption, type ViewSwitch } from '../../../src/ui/PartKey'
+import { EdgeSelectionPalette, type PickedEdgeOptions } from '../ui/EdgeSelectionPalette'
+import { edgeSelectionOptions } from '../core/edgeSelectionOptions'
 import { KeyIcon } from '../ui/reIcons'
 import { formatSigned } from '../../../src/ui/format'
 import { usePrefs } from '../../../src/state/prefsStore'
@@ -40,9 +43,10 @@ import { isFeatureSide } from '../core/preview'
 import { VIEW_MESH_MAP_SPACING } from '../core/compare'
 import { useReverseWorkspace } from './useReverseWorkspace'
 import { useSketchSceneSync } from './useSketchSceneSync'
-import { bodyColor, chainArcStart, reEditorOpen, snapFaceOf, useReverse } from '../state/reStore'
+import { chainArcStart, reEditorOpen, snapFaceOf, useReverse } from '../state/reStore'
 import { usePlacePick } from '../state/placePickStore'
 import { useRePrefs } from '../state/rePrefs'
+import { useFinishingAnalysis } from '../state/finishingAnalysis'
 import type { TangentEdges } from '../core/edgeLines'
 import { installCompareInDeviation, reverseSession } from './reSession'
 import { NO_PICK } from '../core/bodyFolders'
@@ -59,12 +63,14 @@ import type { FlatScene } from '../../../src/viewer/FlatScene'
 import { useNotes } from '../state/noteStore'
 import { pinNoteOnBody, useNotePins, useNotesOn } from './useNotePins'
 import { useNetworkLayer } from './useNetworkLayer'
+import { finishingSizeError, setFinishingFieldError } from '../state/finishingInput'
 import { readField } from '../ui/reLength'
 import { useSketchBrush } from '../state/sketchBrushStore'
 import { useSketchCornerTrim } from '../state/sketchCornerTrimStore'
 import { useSketchProject } from '../state/sketchProjectStore'
 import { useSketchPresentation } from '../state/sketchPresentation'
 import { useSketchMeasure } from './useSketchMeasure'
+import {useMeasureTool} from '../../../src/state/measureToolStore'
 
 /** A scale held per millimetre — a deviation in millimetres, a curvature
  *  per millimetre — as the legend shows it, in the units shown: `power` 1
@@ -106,10 +112,26 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
   // The CAD kernel's worker, the feature build, the bodies on the part — and
   // the 2D sheet borrowed for a sketch.
   const sketchSceneRef = useRef<FlatScene | null>(null)
-  const reverse = useReverseWorkspace({ sceneRef, clientRef, sheetRef: sketchSceneRef })
+  const fitting = useReverse(s => s.featureDraft?.kind === 'surface')
+  const savedScanHidden = useReverse(s => s.scanHidden)
+  const savedBodiesHidden = useReverse(s => s.bodiesHidden)
+  const [edgeOptions, setEdgeOptions] = useState<PickedEdgeOptions | null>(null)
+  const dismissEdgeOptions = useCallback(() => setEdgeOptions(null), [])
+  const [fitScanHidden, setFitScanHidden] = useState(false)
+  const [fitBodiesHidden, setFitBodiesHidden] = useState(true)
+  useEffect(() => {
+    if (!fitting) { setFitScanHidden(false); setFitBodiesHidden(true) }
+  }, [fitting])
+  const editingEdge = useReverse(s => s.featureDraft?.kind === 'fillet' || s.featureDraft?.kind === 'chamfer')
+  const finishingAnalysis = useFinishingAnalysis(s => s.enabled)
+  const showEdgeMap = editingEdge && finishingAnalysis
+  const scanHidden = fitting ? fitScanHidden : !showEdgeMap && savedScanHidden
+  const bodiesHidden = fitting ? fitBodiesHidden : savedBodiesHidden
+  const reverse = useReverseWorkspace({ sceneRef, clientRef, sheetRef: sketchSceneRef, scanHidden, bodiesHidden, showEdgeMap })
   const ribbonActions = useReverseRibbonActions(() => void reverse.exportStep())
   // Analysis → Measure's Sketch way: clicks on a sketch read it, read only.
   const sketchMeasure = useSketchMeasure(sceneRef, sketchSceneRef)
+  const measuring=useMeasureTool(s=>s.open)
   // A drag on the sketch sheet is solved once per frame, at the hand's
   // latest spot: a solve takes tens of milliseconds on a sketch of a real
   // part, and the pointer reports faster than that — solving every report
@@ -157,6 +179,13 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
   }, [sceneRef])
   const sketchPlacing = useReverse((s) => s.sketchDraft?.placing === true)
   const sketchModelShown = useReverse((s) => s.sketchModelShown)
+  const shownReference = useReverse(s => Boolean(s.sketchDraft && s.features.some(f => f.kind === 'sketch' && f.visible && !f.suppressed && f.id !== s.sketchDraft?.featureId)))
+  useEffect(() => {
+    if ((!measuring && !shownReference) || !sketchOpen || sketchModelShown) return
+    const view = sketchSceneRef.current?.sheetView()
+    const draft = useReverse.getState().sketchDraft
+    if (view && draft) sceneRef.current?.followSheet(draft.frame, view.centre, view.unitsPerScreenPx)
+  }, [measuring, shownReference, sketchOpen, sketchModelShown, sceneRef])
   const featureCount = useReverse((s) => s.features.length + s.rolledBack.length)
   const explorerVisibility = useReverseExplorerVisibility()
   const explorerHistoryEntries = useReverseExplorerHistoryEntries()
@@ -232,22 +261,8 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
       store.setStatus(line.snap ? 'Section line set, snapped to the nearest of X or Y. Create, or click Define interactive again.' : 'Section line set. Create, or click Define interactive again.')
       return
     }
-    // A Fit Surface gathers its region by clicks: the face under the click,
-    // flooded by normal angle, into the region — or out of it with Ctrl.
-    if (re.featureDraft?.kind === 'surface') {
-      if (useMark.getState().gesture !== null) return
-      const d = re.featureDraft
-      try {
-        const vertices = await clientRef.current.flood(hit.vertices[0], d.floodDeg)
-        const now = useReverse.getState().featureDraft
-        if (!now || now.kind !== 'surface') return
-        useReverse.getState().addToRegion(vertices, hit.ctrlKey)
-        store.setStatus(`${vertices.length.toLocaleString('en-US')} points ${hit.ctrlKey ? 'taken out of' : 'added to'} the region — ${useReverse.getState().featureDraft?.kind === 'surface' ? (useReverse.getState().featureDraft as { region: Uint32Array }).region.length.toLocaleString('en-US') : ''} in all. Click more of the scan, or Create.`)
-      } catch (e) {
-        store.setError(`The flood failed: ${e instanceof Error ? e.message : String(e)}`)
-      }
-      return
-    }
+    // Marking owns the pointer for a fit. With Navigate selected, leave the scan alone.
+    if (re.featureDraft?.kind === 'surface') return
     // A face being snapped onto the scan: the click says where it should
     // lie. The element the face is — a plane, a cylinder — is fitted there
     // and the move read off it; the box shows the ghost and the number.
@@ -358,6 +373,10 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
   }
   const gripDrag = (side: GripSide, delta: number, phase: 'start' | 'move' | 'end', pointer?: { x: number; y: number }): boolean => {
     if (!isFeatureSide(side)) return false
+    if (phase === 'move' && side === 'radius') {
+      useReverse.getState().gripDrag(side, delta, phase)
+      return true
+    }
     if (phase === 'move') {
       gripMove.current = { side, delta, pointer }
       if (!gripFrame.current) {
@@ -401,6 +420,16 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
       else if (re.featureDraft) {
         // A Delete face takes the whole round, hole or boss clicked.
         const d = re.featureDraft
+        if (d.kind === 'trim' && d.removed && hit.point) {
+          if (!d.tools.some(t => t.kind === 'body' && t.id === hit.bodyId)) {
+            if (d.tools.length < 2 && re.bodies.some(b => b.id === hit.bodyId && b.surface)) {
+              re.setFeatureDraft({ tools: [...d.tools, { kind: 'body', id: hit.bodyId }] })
+            }
+            return
+          }
+          if (d.tools.length >= 2 && re.preview.status === 'ok') re.setFeatureDraft({ removed: [...d.removed, { body: hit.bodyId, at: hit.point }] })
+          return
+        }
         re.toggleDraftFace(hit.bodyId, hit.face, d.kind === 'deleteFace' ? reverseSession()?.deleteFacesAt(hit.bodyId, hit.face.hash, d.tangent) : undefined)
       }
       else if (re.extrudeDraft?.extent.kind === 'toFace') {
@@ -412,7 +441,17 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
     reSceneOf(scene).onBodyEdgePick = (hit, x, y, additive) => {
       const re = useReverse.getState()
       if (useNotes.getState().placing) pinNoteOnBody(scene, { type: 'edge', ...hit }, x, y)
-      else if (re.featureDraft) re.toggleDraftEdge(hit.bodyId, hit.edge)
+      else if (re.featureDraft) {
+        re.toggleDraftEdge(hit.bodyId, hit.edge)
+        const d = useReverse.getState().featureDraft
+        const topology = reverseSession()?.topologies.get(hit.bodyId)
+        if (d && topology && (d.kind === 'chamfer' || (d.kind === 'fillet' && d.mode !== 'faceRound'))) {
+          const picks = reSceneOf(scene).bodyPicks
+          const nearby = picks.candidatesAt(x, y).flatMap(c => c.kind === 'edge' && c.hit.bodyId === hit.bodyId ? [c.hit.edge] : [])
+          const options = edgeSelectionOptions(topology, hit.edge, nearby)
+          setEdgeOptions({ x, y, bodyId: hit.bodyId, seed: hit.edge, picks, topology, options })
+        }
+      }
       else if (!reEditorOpen(re)) re.pickBodyItem({ type: 'edge', bodyId: hit.bodyId, edge: hit.edge }, { x, y }, additive)
     }
     reSceneOf(scene).onBodyVertexPick = (hit, x, y, additive) => {
@@ -438,7 +477,10 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
         for (const [id, n] of counts) if (best === null || n > (counts.get(best) ?? 0)) best = id
         return best
       }
-      if (d && (d.kind === 'fillet' || d.kind === 'chamfer')) {
+      if (d?.kind === 'fillet' && d.mode === 'faceRound') {
+        const body = d.body ?? mostOn(hit.faces)
+        if (body !== null) re.addDraftFaces(body, hit.faces.filter(f => f.bodyId === body).map(f => f.face))
+      } else if (d && (d.kind === 'fillet' || d.kind === 'chamfer')) {
         const body = d.body ?? mostOn(hit.edges)
         if (body !== null) re.addDraftEdges(body, hit.edges.filter((e) => e.bodyId === body).map((e) => e.edge))
       } else if (d && (d.kind === 'shell' || d.kind === 'draft' || d.kind === 'moveFace' || d.kind === 'deleteFace')) {
@@ -472,7 +514,7 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
       if (id !== null) re.setBodyHover({ ids: [id], from: 'view' })
       else if (re.bodyHover?.from === 'view') re.setBodyHover(null)
     }
-    scene.onGripFieldCommit = (side, text) => {
+    scene.onGripFieldCommit = (side, text, quiet, restoring) => {
       if (!isFeatureSide(side)) return
       // A number, or an expression over the parameters — kept beside the
       // number under the grip's slot, as the box keeps it.
@@ -480,21 +522,29 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
       // An angle on a revolve's ring, a taper's arrow and a Move's rings
       // (turnX, turnY, turnZ); a length on the rest.
       // A length typed is in the units shown, as in the box's fields.
-      const r = readField(text, side === 'taper' || side.startsWith('turn') ? 'angle' : 'length', re.parameterTable.scope, usePrefs.getState().units)
+      const units = usePrefs.getState().units
+      const finishing = side === 'radius' && (re.featureDraft?.kind === 'fillet' || re.featureDraft?.kind === 'chamfer')
+      const r = readField(text, side === 'taper' || side.startsWith('turn') ? 'angle' : 'length', re.parameterTable.scope, units)
+      if (finishing) {
+        const message = !text ? 'Enter a size.' : !r.ok ? r.error : restoring ? null : finishingSizeError(r.value, units)
+        setFinishingFieldError('grip', message)
+        if (message) return false
+      }
       if (!r.ok) {
-        useStore.getState().setError(`${text}: ${r.error}`)
-        return
+        if (!quiet) useStore.getState().setError(`${text}: ${r.error}`)
+        return false
       }
       re.setGripValue(side, r.value)
       const path = gripSlotPath(side, re)
       if (path && r.expr !== null) useReverse.getState().setDraftExpr(path, r.expr)
     }
-    scene.onGripFieldClose = () => useReverse.getState().setGripField(null)
+    scene.onGripFieldClose = () => { setFinishingFieldError('grip', null); useReverse.getState().setGripField(null) }
   }, [sceneRef])
 
   // The live map's reading and the curvature colouring, for their legends
   // beside the viewport.
   const mapReport = useReverse((s) => s.mapReport)
+  const extendOpen = useExtendDialog(s => s.open)
   const pipeOpen = usePipeDialog((s) => s.open)
   const freeformEditorOpen = useFreeformEditor(s => s.open)
   const autoFreeformOpen = useAutoFreeformDialog((s) => s.open)
@@ -514,24 +564,20 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
   // stay drawn.
   // Two selections, each a plain value: a store's selector that built an
   // object would be a new one every time it is asked.
-  const markColor = useReverse((s) =>
-    s.featureDraft?.kind === 'surface' ? bodyColor(s.featureDraft.featureId ?? s.nextFeatureId) : EXTRACT_MARK_COLOR,
-  )
-  const markGestures = useReverse((s) => s.featureDraft?.kind === 'surface' && Boolean(s.featureDraft.paint))
+  const markGestures = useReverse((s) => s.featureDraft?.kind === 'surface')
   // The measured elements and sections, as the datums the model is built
   // against, behind a key of its own.
   const elementsShown = useReverse((s) => s.elementsShown)
   // The view bar: the scan, the bodies and the elements, each shown or put
   // away by a click and drawn as its key's menu says; the two maps at the
   // side; a sketch's model under the sheet and its slice.
-  const scanHidden = useReverse((s) => s.scanHidden)
-  const bodiesHidden = useReverse((s) => s.bodiesHidden)
   const scanSeeThrough = useReverse((s) => s.scanSeeThrough)
   const bodiesSeeThrough = useReverse((s) => s.bodiesSeeThrough)
   const bodyMap = useReverse((s) => s.bodyMap)
   const curvatureMap = useReverse((s) => s.curvatureMap)
   const hasBodies = useReverse((s) => s.bodies.length > 0)
-  const anyBodyShown = useReverse((s) => !s.bodiesHidden && s.bodies.some((b) => b.visible))
+  const visibleBody = useReverse(s => s.bodies.some(b => b.visible))
+  const anyBodyShown = !bodiesHidden && visibleBody
   const sketchSliced = useReverse((s) => s.sketchSliced)
   const hasElements = useStore((s) => s.elements.length > 0 || s.sections.length > 0)
   const tangentEdges = useReverse((s) => s.tangentEdges)
@@ -553,7 +599,7 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
   const scanKey = {
     shown: {
       on: !scanHidden,
-      set: (on: boolean) => re().setScanHidden(!on),
+      set: (on: boolean) => fitting ? setFitScanHidden(!on) : re().setScanHidden(!on),
       disabled: !fileName
         ? 'No scan loaded'
         : hasBodies
@@ -589,7 +635,7 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
         testId="toggle-bodies"
         shown={{
           on: !bodiesHidden,
-          set: (on) => re().setBodiesHidden(!on),
+          set: (on) => fitting ? setFitBodiesHidden(!on) : re().setBodiesHidden(!on),
           disabled: hasBodies ? undefined : 'Build a body first',
         }}
         title="Show the bodies, or put them away as a whole and leave the scan to stand alone — with the deviation map still on it, read against the bodies as they are. Each body's own eye in the panel takes it out of the model and the map instead"
@@ -708,9 +754,9 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
     explorerCoreVisibility: { on: elementsShown, set: on => useReverse.getState().setElementsShown(on) },
     field: curvature ? { values: curvature.values, rgb: curvatureRgb, scale: curvatureScale(curvature.range) } : null,
     fieldVersion: curvature,
-    marking: markColor !== null ? { color: markColor, gestures: markGestures } : null,
+    marking: { color: EXTRACT_MARK_COLOR, gestures: markGestures },
     showsElements: elementsShown,
-    hideScan: scanHidden,
+    hideScan: scanHidden || (sketchStage && !sketchModelShown),
     scanKey,
     partKeys,
     viewKeys,
@@ -722,7 +768,9 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
     elementPick,
     claimElementPick,
     paintChange,
-    hideViewport: sketchStage && !sketchModelShown,
+    // Measure still needs the 3D camera and shown reference sketches when
+    // the working sketch's model view is off. Scan/bodies retain their mask.
+    hideViewport: sketchStage && !sketchModelShown && !measuring && !shownReference,
     // No front door: with no scan the workspace opens on a blank stage, as
     // plain CAD, and a scan is loaded from the panel or dropped on the stage.
     startPane: null,
@@ -862,8 +910,9 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
         {freeformSketchOpen && <FreeformSketchDialog />}
         {wrapSelection && <WrapSurfaceDialog />}
         {autoFreeformOpen && <AutoFreeformDialog onClose={() => useAutoFreeformDialog.getState().setOpen(false)} />}
+        {extendOpen && <ExtendSurfaceDialog />}
         {pipeOpen && <PipeDialog onClose={() => usePipeDialog.getState().setOpen(false)} />}
-        {mapReport && (
+        {!editingEdge && mapReport && (
           <MapLegend
             id="re-map"
             unit={len.word()}
@@ -886,7 +935,7 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
             onLimit={(_end, v) => useRePrefs.getState().setLiveMapRange(len.fromDisplay(v))}
           />
         )}
-        {!mapReport && curvature && (
+        {!editingEdge && !mapReport && curvature && (
           <MapLegend
             id="re-curvature"
             unit={`1/${len.word()}`}
@@ -902,8 +951,9 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
           />
         )}
         {!sketchStage && <PlaybackCaption />}
+        {!sketchStage && edgeOptions && <EdgeSelectionPalette pick={edgeOptions} close={dismissEdgeOptions} />}
         {!sketchStage && <BuildChip />}
-        {!sketchStage && fileName && featureCount === 0 && (
+        {!sketchStage && !contextKind && fileName && featureCount === 0 && (
           <div className="hintchip" data-test="reverse-ready-chip">
             Part loaded — choose a plane in the panel to sketch on
           </div>

@@ -23,6 +23,7 @@ import type { Vec3 } from '../core/types'
 type PluginMeasure = NonNullable<PluginRuntime['measure']>
 
 const MODES: { id: MeasureMode; label: string }[] = [
+  { id: 'adaptive', label: 'Automatic' },
   { id: '3d', label: '3D Distance' },
   { id: 'extended', label: 'Extended Distance' },
   { id: 'point', label: 'Point' },
@@ -36,6 +37,17 @@ const PREVIEW = '#62aae4'
 /** How near a mesh vertex a click must be, in pixels, for All to take it. */
 const SMART_VERTEX_PX = 10
 
+function adaptiveMeshPoint(x: number, y: number, vertex: boolean, flags: ReturnType<typeof snapFlags>): Vec3 | null {
+  const shell = useShell.getState()
+  if (vertex) return shell.scanPointAt?.(x, y, true) ?? null
+  if (flags.endpoint) {
+    const corner = shell.scanPointAt?.(x, y, true)
+    const screen = corner && shell.screenPointOf?.(corner)
+    if (corner && screen && Math.hypot(screen.x - x, screen.y - y) <= SMART_VERTEX_PX) return corner
+  }
+  return flags.curve ? shell.scanPointAt?.(x, y) ?? null : null
+}
+
 export function MeasureDialog({ plugins = [] }: { plugins?: readonly PluginMeasure[] }) {
   const t = useMeasureTool()
   const pluginsRef = useRef(plugins)
@@ -48,6 +60,7 @@ export function MeasureDialog({ plugins = [] }: { plugins?: readonly PluginMeasu
   // 3D Distance with a scan, a plugin's without one.
   useEffect(() => {
     if (!t.open) return
+    if(t.mode==='adaptive')return
     const usable = t.mode.startsWith('plugin:') ? extra.some((m) => m.id === t.mode && !m.disabled) : hasScan
     if (usable) return
     const other = hasScan ? null : extra.find((m) => !m.disabled)
@@ -57,13 +70,15 @@ export function MeasureDialog({ plugins = [] }: { plugins?: readonly PluginMeasu
     } else if (t.mode !== '3d') t.setMode('3d')
   })
   // The snap bar's switches the chosen way picks by.
-  const snapAs = extra.find((m) => m.id === t.mode)?.snap ?? 'measure'
+  const snapAs = t.mode === 'adaptive'
+    ? extra.find(m => m.adaptive && !m.disabled)?.snap ?? 'pick'
+    : extra.find(m => m.id === t.mode)?.snap ?? 'measure'
   const wireframe = useStore((s) => s.wireframe)
   const drag = useDialogDrag({ left: 270, top: 230 })
   // Clicks on the view become picks while the dialog is open.
   // While the dialog is open the snap bar shows what a click takes: the
   // mesh's switches, or those of the set a plugin's way picks by — a
-  // sketch's Pick switches, the Dimension tool's.
+  // sketch's shared geometry switches while editing.
   useEffect(() => {
     if (!t.open) return
     const before = useSnapFilter.getState().context
@@ -80,7 +95,8 @@ export function MeasureDialog({ plugins = [] }: { plugins?: readonly PluginMeasu
     // dragging it — so measuring changes nothing. The other buttons still
     // turn and pan the view.
     const hold = (e: MouseEvent) => {
-      if (e.button !== 0 || !useMeasureTool.getState().mode.startsWith('plugin:')) return
+      const mode=useMeasureTool.getState().mode
+      if (e.button !== 0 || (mode!=='adaptive'&&!mode.startsWith('plugin:'))) return
       if (!(e.target as HTMLElement | null)?.closest?.('.desktop-mid canvas')) return
       e.stopPropagation()
     }
@@ -88,22 +104,27 @@ export function MeasureDialog({ plugins = [] }: { plugins?: readonly PluginMeasu
     // A plugin's way shows what a click would take before it: asked once a
     // frame while the cursor moves over the view with no button down.
     let frame = 0
-    let at: { x: number; y: number } | null = null
+    let at: { x: number; y: number; ctrl?: boolean } | null = null
     const look = () => {
       frame = 0
       const tool = useMeasureTool.getState()
       const mode = tool.mode
-      if (!at || !mode.startsWith('plugin:')) return tool.setPreview(null)
+      if (!at || (mode!=='adaptive'&&!mode.startsWith('plugin:'))) return tool.setPreview(null)
       let seen: MeasurePreview | null = null
       for (const p of pluginsRef.current) {
-        seen = p.hover?.(mode, at.x, at.y) ?? null
+        const modes=mode==='adaptive'?p.modes.filter(m=>m.adaptive&&!m.disabled).map(m=>m.id):[mode]
+        for(const id of modes){seen=p.hover?.(id,at.x,at.y)??null;if(seen)break}
         if (seen) break
+      }
+      if (!seen && mode === 'adaptive') {
+        const p = adaptiveMeshPoint(at.x, at.y, Boolean(at.ctrl), snapFlags(snapAs))
+        if (p) seen = pluginsRef.current.find(plugin => plugin.meshPoint)?.meshPoint?.(p, false) ?? { outline: [], witness: [p] }
       }
       tool.setPreview(seen)
     }
     const move = (e: PointerEvent) => {
       const over = e.buttons === 0 && !!(e.target as HTMLElement | null)?.closest?.('.desktop-mid canvas')
-      at = over ? { x: e.clientX, y: e.clientY } : null
+      at = over ? { x: e.clientX, y: e.clientY, ctrl: e.ctrlKey } : null
       if (!frame) frame = requestAnimationFrame(look)
     }
     const click = (e: MouseEvent) => {
@@ -112,6 +133,21 @@ export function MeasureDialog({ plugins = [] }: { plugins?: readonly PluginMeasu
       if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > 4) return
       // A plugin's way: the plugin takes the click, or nothing does.
       const mode = useMeasureTool.getState().mode
+      if(mode==='adaptive'){
+        const picked=pluginsRef.current.some(p=>p.modes.filter(m=>m.adaptive&&!m.disabled).some(m=>p.pick(m.id,e.clientX,e.clientY,{ctrl:e.ctrlKey,shift:e.shiftKey})))
+        if (!picked) {
+          const p = adaptiveMeshPoint(e.clientX, e.clientY, e.ctrlKey, snapFlags(snapAs))
+          if (p) {
+            const provider = pluginsRef.current.find(plugin => plugin.meshPoint)
+            if (provider?.meshPoint) provider.meshPoint(p, true)
+            else useMeasureTool.getState().pick(p)
+          }
+        }
+        e.stopPropagation()
+        at = { x: e.clientX, y: e.clientY, ctrl: e.ctrlKey }
+        if (!frame) frame = requestAnimationFrame(look)
+        return
+      }
       if (mode.startsWith('plugin:')) {
         if (pluginsRef.current.some((m) => m.pick(mode, e.clientX, e.clientY, { ctrl: e.ctrlKey, shift: e.shiftKey }))) e.stopPropagation()
         // What the next click would take has changed with this one.
@@ -146,7 +182,7 @@ export function MeasureDialog({ plugins = [] }: { plugins?: readonly PluginMeasu
       document.removeEventListener('click', click, true)
       for (const kind of held) document.removeEventListener(kind, hold, true)
     }
-  }, [t.open])
+  }, [t.open, snapAs])
   if (!t.open) return null
   return (
     <>
@@ -159,7 +195,7 @@ export function MeasureDialog({ plugins = [] }: { plugins?: readonly PluginMeasu
           <div className="measure-modes" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4 }}>
             {MODES.map((m) => (
               <button key={m.id} data-test={`measure-${m.id}`} className={t.mode === m.id ? 'on' : undefined} aria-pressed={t.mode === m.id}
-                title={m.id === 'curve' ? 'Curve length is not built in Quick Scan yet' : hasScan ? m.label : `${m.label}: open a scan to measure on the mesh`} disabled={m.id === 'curve' || !hasScan} onClick={() => t.setMode(m.id)}>{m.label}</button>
+                title={m.id==='adaptive'?'Pick visible geometry or mesh points without switching measurement modes':m.id === 'curve' ? 'Curve length is not built in Quick Scan yet' : hasScan ? m.label : `${m.label}: open a scan to measure on the mesh`} disabled={m.id === 'curve' || (m.id!=='adaptive'&&!hasScan)} onClick={() => t.setMode(m.id)}>{m.label}</button>
             ))}
             {extra.map((m) => (
               <button key={m.id} data-test={`measure-${m.id.replace(':', '-')}`} className={t.mode === m.id ? 'on' : undefined} aria-pressed={t.mode === m.id}
@@ -217,7 +253,7 @@ function Readouts({ items }: { items: readonly Measurement[] }) {
               {m.rows.map((r, k) => (
                 <tr key={k} data-test="measure-row" data-label={r.label} data-value={r.unit === 'point' ? (r.point ?? []).join(',') : String(r.value)} data-exact={String(r.exact)} title={r.note}>
                   <td style={{ paddingRight: 6 }}>{r.label}{r.note ? <span className="hint" style={{ display: 'block', fontSize: 11 }}>{r.note}</span> : null}</td>
-                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap', verticalAlign: 'top' }}>{rowText(r, len)}</td>
+                  <td style={{ textAlign: 'right', whiteSpace: r.unit==='point'?'normal':'nowrap', verticalAlign: 'top' }}>{r.unit==='point'?(r.point??[]).map((v,i)=><span key={i} style={{display:'block',whiteSpace:'nowrap'}}>{'XYZ'[i]} {len.fmt(v,4)}</span>):rowText(r, len)}</td>
                 </tr>
               ))}
             </tbody>
@@ -311,6 +347,7 @@ function MeasureLayer() {
     })
     const ws = run(preview.witness)
     if (ws) {
+      if (preview.pointLabel && ws.length === 1) labels.push(box('measure-target', ws[0].x + 45, ws[0].y - 16, preview.pointLabel, '#1d5f96'))
       ws.forEach((s, k) => lines.push(<circle key={`pw${k}`} data-test="measure-preview-point" cx={s.x} cy={s.y} r={4} fill={PREVIEW} stroke="#000" strokeWidth={1} />))
       if (ws.length > 1) lines.push(<polyline key="pwl" points={ws.map((s) => `${s.x},${s.y}`).join(' ')} fill="none" stroke={PREVIEW} strokeWidth={1.5} strokeDasharray="5 4" />)
       if (preview.row && ws.length > 0) {

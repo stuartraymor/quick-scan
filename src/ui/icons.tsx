@@ -21,6 +21,9 @@
 
 import type { ReactNode } from 'react'
 
+// A horizontal line and a solid center, shared with the sketch viewport.
+export const coincidentIconPath = 'M2 12H22 M15 12a3 3 0 1 1-6 0 3 3 0 1 1 6 0Z'
+
 const ICONS = {
   // features
   sketch: (
@@ -69,22 +72,10 @@ const ICONS = {
       <path className="i-a" d="M7 6v11h10V6" />
     </>
   ),
-  fillet: (
-    <>
-      <path className="i-gf" d="M4 12a8 8 0 0 1 8-8h8v16H4Z" />
-      <path d="M12 4h8v16H4v-8" />
-      <path className="i-th i-ft i-ds" d="M4 12V4h8" />
-      <path className="i-a" d="M4 12a8 8 0 0 1 8-8" />
-    </>
-  ),
-  chamfer: (
-    <>
-      <path className="i-gf" d="m4 12 8-8h8v16H4Z" />
-      <path d="M12 4h8v16H4v-8" />
-      <path className="i-th i-ft i-ds" d="M4 12V4h8" />
-      <path className="i-a" d="m4 12 8-8" />
-    </>
-  ),
+  fillet: <path fill="#9aa599" stroke="currentColor" strokeWidth="1.2" d="M3 20v-3A14 14 0 0 1 17 3h4v17Z" />,
+  variableFillet: <path fill="#9aa599" stroke="currentColor" strokeWidth="1.2" d="M3 20v-3A14 14 0 0 1 17 3h4v8a9 9 0 0 0-9 9Z" />,
+  faceRoundFillet: <path fill="#9aa599" stroke="currentColor" strokeWidth="1.2" d="M3 20v-8a9 9 0 0 1 18 0v8Z" />,
+  chamfer: <path fill="#9aa599" stroke="currentColor" strokeWidth="1.2" d="M3 20v-3L17 3h4v17Z" />,
   draft: (
     <>
       <path className="i-gf" d="M4 20h16L17 4H4Z" />
@@ -179,7 +170,10 @@ const ICONS = {
     </>
   ),
   autoFreeform: (
-    <path className="i-f" d="M13 2 4 14h7l-1 8 10-13h-7l3-7z" />
+    <>
+      <path className="i-f" d="M11 2 3 14h6l-1 8 9-12h-6l3-8z" />
+      <path className="i-a" d="m16.5 8 2.5-6 2.5 6M17.4 6h3.2" />
+    </>
   ),
   freeform: (
     <>
@@ -353,13 +347,7 @@ const ICONS = {
   ),
 
   // relations
-  coincident: (
-    <>
-      <path d="M4 5l8 7.5M12 12.5l8-4" />
-      <circle className="i-a" cx="12" cy="12.5" r="3.6" />
-      <circle className="i-adt" cx="12" cy="12.5" r="1.6" />
-    </>
-  ),
+  coincident: <path d={coincidentIconPath} fill="currentColor" />,
   horizontal: (
     <>
       <path d="M6 8h15" />

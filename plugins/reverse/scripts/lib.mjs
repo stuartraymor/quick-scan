@@ -35,3 +35,16 @@ export function reverseHelpers(page) {
     },
   }
 }
+
+/** Load an already conflicting sketch into the editor to exercise its
+ * repair controls after checking the guard on new dimension edits. */
+export async function loadDimensionConflict(page, id, value) {
+  await page.evaluate(({ id, value }) => {
+    const store = window.__re.store.getState()
+    const sketch = structuredClone(store.sketchDraft.sketch)
+    const dimension = sketch.constraints.find(c => c.id === id && 'value' in c)
+    if (!dimension) throw new Error('Missing dimension in conflict fixture')
+    dimension.value = value
+    store.setSketch(sketch, undefined, true)
+  }, { id, value })
+}

@@ -8,6 +8,7 @@
 // has changed.
 
 import { useEffect, useState } from 'react'
+import { useLength } from '../../../src/app/useUnits'
 import type { SurfaceFitParams, SurfaceOrientation } from '../core/features'
 import { MAX_DEGREE, NET_MAX, NET_MIN } from '../core/surfaceFit'
 import { useControlNet } from '../state/controlNetStore'
@@ -59,6 +60,7 @@ function NetBox({ testId, title, value, disabled, onCommit }: { testId: string; 
 }
 
 export function SurfaceFitFields({ d, set }: { d: SurfaceDraft; set: (patch: Partial<FeatureDraft>) => void }) {
+  const len = useLength()
   const preview = useReverse((s) => s.preview)
   const controlNetOn = useControlNet((s) => s.on)
   const strength = useControlNet((s) => s.strength)
@@ -88,7 +90,7 @@ export function SurfaceFitFields({ d, set }: { d: SurfaceDraft; set: (patch: Par
   const degree = degreeDisplay ?? appliedDegree
   const setNet = (u: number, v: number) => edit({ net: { u: Math.max(NET_MIN, Math.min(NET_MAX, u)), v: Math.max(NET_MIN, Math.min(NET_MAX, v)) }, tolerance: undefined })
   const apply = (next: SurfaceFitParams) => {
-    set({ fit: next })
+    set({ fit: next, ...(next.expandPct !== d.fit.expandPct ? { useShapeExpansion: false } : {}) })
     setPending(null)
     setDegreeDisplay(null)
   }
@@ -143,6 +145,11 @@ export function SurfaceFitFields({ d, set }: { d: SurfaceDraft; set: (patch: Par
             </button>
           </span>
         </div>
+      )}
+      {d.fit.tolerance !== undefined && preview.status === 'ok' && preview.surface && (
+        <p data-test="surface-tolerance-result" role="status">
+          {preview.surface.max <= d.fit.tolerance ? 'Target met' : 'Target exceeded'} · maximum deviation {len.fmt(preview.surface.max, 4)} · target {len.fmt(d.fit.tolerance, 4)}
+        </p>
       )}
       <div className="surface-degree-row" data-test="surface-degree-row">
         {fit.maxDegree ? (

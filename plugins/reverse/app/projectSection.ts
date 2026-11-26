@@ -120,6 +120,27 @@ export function validateFeatureJson(e: Record<string, unknown>): void {
     object(e.plane, 'sketch.plane')
     object(e.frame, 'sketch.frame')
   }
+  if (e.kind === 'trim' && e.corrections !== undefined) {
+    for (const value of array(e.corrections, 'trim.corrections')) {
+      const edit = object(value, 'trim correction')
+      vector(edit.at, 3, 'trim correction point')
+      if (typeof edit.keep !== 'boolean') invalid('trim correction keep')
+    }
+  }
+  if (e.kind === 'trim' && e.removed !== undefined) {
+    for (const value of array(e.removed, 'trim.removed')) {
+      const pick = object(value, 'trim pick')
+      if (typeof pick.body !== 'number' || !Number.isFinite(pick.body) || pick.body < 1) invalid('trim pick body')
+      vector(pick.at, 3, 'trim pick point')
+    }
+  }
+  if (e.kind === 'thicken' && e.constraint !== undefined) {
+    const c = object(e.constraint, 'thicken.constraint')
+    if (!['direction', 'toPlane', 'betweenPlanes'].includes(String(c.mode))) invalid('thicken.constraint mode')
+    object(c.plane, 'thicken.constraint plane')
+    if (c.mode === 'betweenPlanes') object(c.end, 'thicken.constraint end')
+  }
+  if (e.kind === 'sheet' && e.projectOnto !== undefined && (!Number.isSafeInteger(e.projectOnto) || Number(e.projectOnto) < 1)) invalid('sheet.projectOnto')
   if (e.kind === 'surface') {
     indices(e.region, 'surface.region')
     // Older documents keep their unbounded legacy smoothing weight. Only the

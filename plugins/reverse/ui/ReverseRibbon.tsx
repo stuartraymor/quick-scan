@@ -5,7 +5,7 @@ import { MAX_SAMPLED_QUADS, MAX_STEPS } from '../core/freeform/make'
 import type { FreeformFeature } from '../core/features'
 // SPDX-License-Identifier: AGPL-3.0-only
 // The CAD workspace exposes its own actions; the shell knows no plugin state.
-import { DEFAULT_SURFACE_FIT } from '../core/surfaceFit'
+import { fittedSheetsToTrim, startSurfaceFit, trimFittedSheets } from '../app/startSurfaceFit'
 import { useShell } from '../../../src/state/shellStore'
 import { useZebra } from '../state/zebraStore'
 import type { ReactNode } from 'react'
@@ -17,6 +17,7 @@ import type { PluginRuntime } from '../../../src/plugins/api'
 import { useNotes } from '../state/noteStore'
 import { usePrefs } from '../../../src/state/prefsStore'
 import { throughPart } from './PlaceSketch'
+import { useExtendDialog } from './ExtendSurfaceDialog'
 import { usePipeDialog } from './PipeDialog'
 import { chooseFreeformObj } from './FreeformImport'
 import { useAutoFreeformDialog } from './AutoFreeformDialog'
@@ -24,7 +25,10 @@ import { openWrapSurface } from './WrapSurfaceDialog'
 import { useFreeformSketchDialog } from './FreeformSketchDialog'
 import { reverseSession } from '../app/reSession'
 import { useMark } from '../../../src/state/markStore'
-import { SURFACE_MIN_REGION } from '../core/features'
+import { flattenSheet } from '../core/flattenSheet'
+import { projectFaceOutline } from '../core/project'
+import { addEntity, emptySketch } from '../core/sketch'
+import { frameOnFace, SURFACE_MIN_REGION } from '../core/features'
 
 let convertingFreeform = false
 
@@ -195,7 +199,7 @@ export function useReverseRibbonActions(onExport: () => void): NonNullable<Plugi
     wrapSurface: action(openWrapSurface, !!fileName && (reverseSession()?.sceneRef.current?.paintedVertices().length ?? 0) >= SURFACE_MIN_REGION, 'Select a region of the scan first.'),
     newFreeform: action(() => useFreeformEditor.getState().setOpen(true), !!fileName, 'Import a scan first.'),
     autoFreeform: action(() => useAutoFreeformDialog.getState().setOpen(true), !!fileName, 'Import a scan first.'),
-    surface: action(() => state.startFeature('surface', { fit: { ...DEFAULT_SURFACE_FIT, smoothingLevel: 1 } }), !!fileName, 'Import a scan first.'),
+    surface: action(startSurfaceFit, !!fileName, 'Import a scan first.'),
     network: action(() => state.startFeature('network'), !!fileName, 'Import a scan first.'),
     extrude: action(() => state.startExtrude(), sketches > 0, 'Create a sketch first.'),
     revolve: action(() => state.startRevolve(), sketches > 0, 'Create a sketch first.'),
@@ -204,12 +208,53 @@ export function useReverseRibbonActions(onExport: () => void): NonNullable<Plugi
     moveFace: action(() => state.startFeature('moveFace'), state.bodies.length > 0, 'Create or import a body first.'),
     note: action(() => { useNotes.getState().setPinsShown(true); useNotes.getState().setPlacing(true) }, usePrefs.getState().agentLink, 'Switch the AI connection on first (AI tab).'),
     notes: action(() => { useNotes.getState().setPinsShown(true); useStore.getState().setStatus('Notes for the AI are listed in the CAD panel, under Notes; their pins are on the part.') }, usePrefs.getState().agentLink, 'Switch the AI connection on first (AI tab).'),
-    trim: action(() => state.startFeature('trim'), !!fileName && (state.bodies.some((b) => b.surface) || useStore.getState().elements.some((e) => ['plane', 'cylinder', 'cone', 'sphere'].includes(e.fit?.kind ?? ''))), 'Fit surfaces or primitives first.'),
+    trim: fittedSheetsToTrim(state).length >= 2 ? {
+      run: trimFittedSheets, disabled: busy || state.building || !ready || !!state.playback || picking,
+      title: 'Trim the surfaces just created',
+    } : action(() => state.startFeature('trim', fileName ? undefined : { removed: [] }), state.bodies.filter(b => b.surface).length >= 2 || (!!fileName && (state.bodies.some((b) => b.surface) || useStore.getState().elements.some((e) => ['plane', 'cylinder', 'cone', 'sphere'].includes(e.fit?.kind ?? '')))), 'Fit surfaces or primitives first.'),
+    duplicateFace: action(() => state.startFeature('duplicateFace', selection?.kind === 'bodyFace'
+      ? { body: selection.bodyId, faces: [selection.face] } : undefined), state.bodies.length > 0, 'Create or import a body first.'),
+    sewSurfaces: action(() => {
+      const sheets = state.bodies.filter(b => b.surface)
+      const body = sheets.find(b => b.id === selectedId) ?? sheets[0]
+      state.startFeature('boolean', { op: 'join', body: body.id, tool: sheets.find(b => b.id !== body.id)!.id })
+    }, state.bodies.filter(b => b.surface).length >= 2, 'Create two sheets with matching edges first.'),
     deleteFace: action(() => state.startFeature('deleteFace'), state.bodies.length > 0, 'Create or import a body first.'),
     thread: action(() => state.startFeature('thread'), state.bodies.length > 0, 'Create or import a body first.'),
     loft: action(() => state.startFeature('loft'), sketches >= 2, 'Create at least two sketches first.'),
     sweep: action(() => state.startFeature('sweep'), sketches >= 2, 'Create at least two sketches first.'),
+    extendSurface: action(() => useExtendDialog.getState().setOpen(true), state.bodies.some(b => b.surface), 'Create a sheet first.'),
     pipe: action(() => usePipeDialog.getState().setOpen(true), sketches > 0, 'Draw the path in a 2D sketch first.'),
+    flatten: action(() => {
+      const s = useReverse.getState()
+      const picked = s.selection?.kind === 'bodyFace' ? s.selection : undefined
+      const candidates = s.bodies.filter(b => b.surface && b.visible)
+      const body = picked ? s.bodies.find(b => b.id === picked.bodyId) : candidates.length === 1 ? candidates[0] : undefined
+      const session = reverseSession()
+      const topology = body && session?.topologies.get(body.id)
+      const mesh = body && session?.meshes.get(body.id)
+      const face = picked?.face ?? (topology?.faces.length === 1 ? topology.faces[0] : undefined)
+      if (!body || !face || !topology || !mesh) { useStore.getState().setStatus('Select one CAD face to flatten.'); return }
+      try {
+        const frame = frameOnFace(face.fingerprint)
+        const edges = topology.edges.filter(e => e.faces.includes(face.hash))
+        const outline = frame && edges.length ? projectFaceOutline(edges, frame) : null
+        let sketch
+        if (outline && !outline.skipped && outline.entities.length === edges.length) {
+          sketch = emptySketch()
+          for (const e of outline.entities) addEntity(sketch, { ...e, fixed: false, projected: false })
+        } else {
+          sketch = flattenSheet(mesh, face.hash).sketch
+        }
+        if (s.startSketchOn({ kind: 'world', axis: 'z', offset: 0 })) {
+          s.setSketch(sketch)
+          useStore.getState().setStatus('Flattened outline in an XY sketch. Review it and finish the sketch to keep it.')
+        }
+      } catch (error) { useStore.getState().setStatus(error instanceof Error ? error.message : String(error)) }
+    }, selection?.kind === 'bodyFace' || state.bodies.some(b => b.surface && b.visible), 'Select a CAD face to flatten.'),
+    projectSketch: action(() => state.startFeature('sheet', { planar: true, projectOnto: state.bodies.find(b => b.surface && b.id === selectedId)?.id ?? state.bodies.find(b => b.surface)!.id }), sketches > 0 && state.bodies.some(b => b.surface), 'Create a closed sketch and a target sheet first.'),
+    planarSheet: action(() => state.startFeature('sheet', { planar: true }), sketches > 0, 'Create a closed sketch first.'),
+    surfaceLoft: action(() => state.startFeature('loft', { surface: true, op: 'new' }), sketches >= 2, 'Create two section sketches first.'),
     sheet: action(() => state.startFeature('sheet'), sketches > 0, 'Create a sketch first.'),
     thicken: action(() => state.startFeature('thicken'), state.bodies.some(b => b.surface), 'Create a surface body first.'),
     boolean: action(() => state.startFeature('boolean'), state.bodies.length >= 2, 'Create or import at least two bodies first.'),
@@ -267,7 +312,7 @@ export function ReverseRibbon() {
       {tool('revolve', 'Revolve', 'revolve', () => state.startRevolve(), sketches > 0, 'Create a sketch first.', 'Revolve sketch regions about an axis.')}
     </Group>
     <Group label="Surface reconstruction">
-      {tool('surface', 'Fit surface', 'surface', () => state.startFeature('surface', { fit: { ...DEFAULT_SURFACE_FIT, smoothingLevel: 1 } }), !!fileName, 'Import a scan first.', 'Fit a smooth surface to a selected or marked scan region.')}
+      {tool('surface', 'Fit surface', 'surface', startSurfaceFit, !!fileName, 'Import a scan first.', 'Fit a smooth surface to a selected or marked scan region.')}
       {tool('network', 'Patch network', 'spline', () => state.startFeature('network'), !!fileName, 'Import a scan first.', 'Draw curves on the scan and fit connected surface patches.')}
       {tool('loft', 'Loft', 'loft', () => state.startFeature('loft'), sketches >= 2, 'Create at least two sketches first.')}
       {tool('sheet', 'Sheet', 'sheet', () => state.startFeature('sheet'), sketches > 0, 'Create a sketch first.')}

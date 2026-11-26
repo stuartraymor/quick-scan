@@ -6,7 +6,8 @@
 import { describe, expect, it } from 'vitest'
 import type { SectionFrame } from '../../../src/core/section/frame'
 import { liftPoint } from '../core/profiles'
-import { measureHitAt, planeSpot, pointOfHit, readoutAcross, readoutOne, readoutTwo, refOfHit } from '../core/measurePick'
+import { dimAnchorAt } from '../core/draw'
+import { MEASURE_ALLOW, measureHitAt, planeSpot, pointOfHit, readoutAcross, readoutOne, readoutTwo, refOfHit } from '../core/measurePick'
 import { addEntity, addRectangle, emptySketch } from '../core/sketch'
 
 const value = (rows: { key: string; value: number }[], key: string) => {
@@ -89,6 +90,16 @@ describe('Measure clicks on a sketch', () => {
 })
 
 describe('Measure on the part: a sketch stood in its plane', () => {
+  it('can pick the center of an edge-on circle where two quadrants share its screen pixel', () => {
+    const { s, c } = plate()
+    const distance = (p: readonly number[]) => Math.abs(p[0] - 5) * 10
+    const samePixel = (a: readonly number[], b: readonly number[]) => Math.abs(a[0] - b[0]) * 10 < 1
+    expect(dimAnchorAt(s, 8, MEASURE_ALLOW, distance, samePixel)).toEqual({ kind: 'point', anchor: { entity: c, at: 'center' } })
+    const quadrant = dimAnchorAt(s, 8, { ...MEASURE_ALLOW, center: false }, distance, samePixel)
+    expect(quadrant?.kind === 'piece' && quadrant.via?.at).toMatch(/^q[13]$/)
+    expect(dimAnchorAt(s, 8, MEASURE_ALLOW, p => Math.hypot(distance(p), 9), samePixel)).toBeNull()
+  })
+
   // A plane tilted about X by 30°, lifted 7 mm.
   const t = Math.PI / 6
   const frame: SectionFrame = { origin: [1, 2, 7], basisU: [1, 0, 0], basisV: [0, Math.cos(t), Math.sin(t)], normal: [0, -Math.sin(t), Math.cos(t)] }

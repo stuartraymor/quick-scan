@@ -64,6 +64,8 @@ export interface RawFace {
 }
 
 export interface RawEdge {
+  quadrants?: Vec3[]
+  center?: Vec3
   hash: number
   kind: EdgeKind
   mid: Vec3

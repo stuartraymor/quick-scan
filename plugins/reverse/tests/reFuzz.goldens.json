@@ -204,7 +204,7 @@
     "edges": 64
   },
   "seed 9": {
-    "note": "First goldens, occt-wasm 5.7.1 (2026-10-18).",
+    "note": "Single-edge fillet on the shelled block verified against SOLIDWORKS 2026 SP4.1. Top face and end transition verified at 0.56 mm before downstream patterning.",
     "steps": [
       "extrude",
       "chamfer",
@@ -225,10 +225,10 @@
       "ok",
       "failed"
     ],
-    "volume": 9112.108709769363,
-    "area": 16446.49911848942,
-    "faces": 37,
-    "edges": 83
+    "volume": 9114.501907317657,
+    "area": 16455.26737590371,
+    "faces": 33,
+    "edges": 75
   },
   "seed 10": {
     "note": "First goldens, occt-wasm 5.7.1 (2026-10-18).",

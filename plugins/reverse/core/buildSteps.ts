@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import type { RoundGroups } from './roundInputs'
 import type { PolynomialSurface } from './surfaceStep'
 // The features resolved for the build: each a BuildStep with its sketches
 // lifted into the part and its planes and axes found, and what resolving
@@ -103,7 +104,7 @@ export type BuildStep =
   /** `edgesWhere` and `facesWhere`: the queries the picks were given by,
    *  run again on the body as it stands before the step (where.ts). */
   | { kind: 'shell'; id: number; name: string; body: number; faces: FaceRef[]; facesWhere?: StoredPick<FaceRef>[]; thickness: number }
-  | { kind: 'fillet'; id: number; name: string; body: number; edges: EdgeRef[]; edgesWhere?: StoredPick<EdgeRef>[]; radius: number; chain: boolean; skipFailing?: boolean; variable?: VariableEdge[] }
+  | { kind: 'fillet'; id: number; name: string; body: number; edges: EdgeRef[]; edgesWhere?: StoredPick<EdgeRef>[]; radius: number; chain: boolean; skipFailing?: boolean; variable?: VariableEdge[]; roundFaces?: RoundGroups<FaceRef> }
   /** `mode` absent: one distance on both faces; else `distance2` or
    *  `angleDeg` with it, and `flip` for the other reference face — see
    *  ChamferFeature. */
@@ -127,19 +128,19 @@ export type BuildStep =
   /** Bodies carried by a rigid move, row-major 3 × 4 (move.ts) — or copies
    *  of them. */
   | { kind: 'moveBody'; id: number; name: string; bodies: number[]; matrix: number[]; copy: boolean }
-  | { kind: 'sheet'; id: number; name: string; sketchId: number; pieces: LoopPiece[]; dir: Vec3; from: number; to: number }
+  | { kind: 'sheet'; projectOnto?: number; profile?: Profile; id: number; name: string; sketchId: number; pieces: LoopPiece[]; dir: Vec3; from: number; to: number }
   | { kind: 'split'; id: number; name: string; body: number; tools: number[]; keep: SplitKeep; tolerance: number; overlap: number; within?: number }
   /** `sketches` are the sketches the profiles were taken from, in order —
    *  taken again from those the build placed anew; `sketchNames` their
    *  names, for a refusal to name them. */
-  | { kind: 'loft'; id: number; name: string; profiles: Profile[]; sketches: number[]; sketchNames?: string[]; ruled: boolean; op: BodyOp; target?: number }
+  | { kind: 'loft'; surface?: boolean; id: number; name: string; profiles: Profile[]; sketches: number[]; sketchNames?: string[]; ruled: boolean; op: BodyOp; target?: number }
   /** `sketches`: the profile's sketch and the path's, if it has one — taken
    *  again from those the build placed anew; `from`, a point of the profile:
    *  the end of the path it starts at is the one nearest it. `route`: what
    *  the path was made from where no sketch gave it. */
   | { kind: 'sweep'; id: number; name: string; profile: Profile; path: LoopPiece[]; from: Vec3; sketches: number[]; route?: SweepRoute; op: BodyOp; target?: number }
   /** A sheet body made a solid — see ThickenFeature. */
-  | { kind: 'thicken'; id: number; name: string; sheet: number; thickness: number; side: ThickenSide; op: BodyOp; target?: number }
+  | { kind: 'thicken'; id: number; name: string; sheet: number; thickness: number; side: ThickenSide; constraint?: { mode: 'direction' | 'toPlane' | 'betweenPlanes'; plane: PlaneGeometry; end?: PlaneGeometry }; op: BodyOp; target?: number }
   | { kind: 'pattern'; id: number; name: string; body: number; mode: 'circular' | 'linear'; origin: Vec3; dir: Vec3; count: number; step: number; grid?: { dir: Vec3; count: number; step: number } }
   /** The surface is fitted where the scan is — in the kernel worker, which
    *  holds the scan's vertices for the live map — so the step carries the
@@ -156,7 +157,7 @@ export type BuildStep =
   /** An Extend Surface: a whole-patch sheet run on past its edges (core/extend.ts). */
   | ({ kind: 'extend'; id: number; name: string } & Pick<ExtendFeature, 'sheet' | 'offset' | 'type' | 'sides' | 'samples'>)
   | ({ kind: 'freeform'; id: number; name: string } & Pick<FreeformFeature, 'positions' | 'faces' | 'creases' | 'steps' | 'snap' | 'snapType' | 'refitTolerance' | 'ask' | 'snapRegion'>)
-  | { kind: 'trim'; id: number; name: string; bodies: number[]; primitives: TrimPrimitive[]; tolerance: number; overlap: number }
+  | { kind: 'trim'; mergeFaces?: boolean; groupFaces?: boolean; corrections?: { at: Vec3; keep: boolean }[]; removed?: { body: number; at: Vec3 }[]; id: number; name: string; bodies: number[]; primitives: TrimPrimitive[]; tolerance: number; overlap: number }
   /** A sketch placed on the part before the features on it are built: its
    *  face found again and its projected pieces taken again from what they
    *  were projected from, the sketch solved on them — see build.ts

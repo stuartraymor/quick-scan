@@ -9,7 +9,7 @@
 // server's own module, and loaded through the panel's Scan slot.
 //
 //   npm run dev &  node plugins/reverse/scripts/e2e-reverse-sample.mjs
-import { check, click, finish, launchApp, pickOption, previewReady, shotPath, sleep } from '../../../scripts/e2e-lib.mjs'
+import { check, click, finish, launchApp, shotPath, sleep } from '../../../scripts/e2e-lib.mjs'
 
 // The sample's dimensions and pose, as src/core/geometry/samplePart.ts has them.
 const WIDTH = 40, HEIGHT = 30, LEG = 12, DEPTH = 20
@@ -29,8 +29,12 @@ function invert(m) {
   return { r, t }
 }
 
-const { browser, page, consoleErrors } = await launchApp({ width: 1600, height: 1000, protocolTimeout: 600_000 })
+const { browser, page, consoleErrors } = await launchApp({ width: 1600, height: 1000, protocolTimeout: 360_000 })
 
+page.on('dialog', async dialog => {
+  console.log('Browser dialog:', dialog.type(), dialog.message())
+  await dialog.dismiss()
+})
 await page.click('[data-test=workspace-reverse]')
 await page.waitForSelector('[data-test=kernel-status]')
 await page.waitForFunction(() => /ready/.test(document.querySelector('[data-test=kernel-status]')?.textContent ?? ''), { timeout: 180_000 }).catch(() => {})
@@ -52,22 +56,23 @@ await page.waitForFunction(() => /[1-9][\d,]* triangles/.test(document.querySele
 await sleep(500)
 check(/sample-bracket\.stl/.test(await page.$eval('[data-test=slot-scan]', (el) => el.textContent)), 'the sample loads')
 
-const rect3d = await page.$eval('.viewslot canvas', (el) => {
-  const r = el.getBoundingClientRect()
-  return { x: r.x + r.width / 2, y: r.y + r.height / 2, left: r.x, top: r.y, w: r.width, h: r.height }
-})
-/** Where a point of the part is on screen. */
-const screenOf = (p) =>
-  page.evaluate(
-    (p, rect) => {
-      const cam = window.__re.scene().viewport.camera
-      cam.updateMatrixWorld()
-      const v = cam.position.clone().set(p[0], p[1], p[2]).project(cam)
-      return [rect.left + ((v.x + 1) / 2) * rect.w, rect.top + ((1 - v.y) / 2) * rect.h]
-    },
-    p,
-    rect3d,
-  )
+const screenOf = (point) => page.evaluate(p => {
+  const { x, y } = window.__re.scene().screenPointOf(p)
+  return [x, y]
+}, point)
+const sketchThroughCentre = async (offset) => {
+  await click(page, '[data-test=workspace-reverse]')
+  await click(page, '[data-test=ribbon-2d-sketch]')
+  if (await page.$eval('[data-test=tool-inspector]', el => el.dataset.mode === 'floating')) await click(page, '[data-test=toggle-inspector-dock]')
+  await click(page, '[data-test=place-plane-z]')
+  if (offset !== undefined) {
+    await page.click('[data-test=place-offset]', { count: 3 })
+    await page.keyboard.type(String(offset))
+    await page.keyboard.press('Enter')
+  }
+  if (!await page.$eval('[data-test=place-on-slice]', el => el.checked)) await click(page, '[data-test=place-on-slice]')
+  await click(page, '[data-test=place-create]')
+}
 
 // ---- the nudge in the first sketch on an unaligned part ---------------------------------
 // A click on the scan starts nothing; a sketch is begun from the panel's
@@ -79,12 +84,12 @@ await sleep(600)
 await page.mouse.click(...(await screenOf(at([6, 6, DEPTH]))))
 await sleep(1200)
 check((await page.$('[data-test=sketch-editor]')) === null, 'a click on the scan opens no sketch')
-await pickOption(page, '[data-test=sketch-plane-select]', 'XY plane through the centre')
+await sketchThroughCentre()
 await page.waitForSelector('[data-test=sketch-editor]', { timeout: 20_000 }).catch(() => {})
 check((await page.$('[data-test=sketch-editor]')) !== null, 'a plane chosen on the unaligned part opens a sketch')
 check((await page.$('[data-test=sketch-align-nudge]')) !== null, 'and the box says the body will be built in the scanner’s frame, with the way to Measure’s alignment')
 await page.screenshot({ path: shotPath('sample-nudge.png') })
-await click(page, '[data-test=sketch-finish]')
+await click(page, '[data-test=sketch-cancel]')
 await page.waitForFunction(() => !document.querySelector('[data-test=sketch-editor]'), { timeout: 10_000 }).catch(() => {})
 
 // ---- aligned: the part back in the frame it was made in ----------------------------------
@@ -99,7 +104,7 @@ await page.evaluate(() => window.__re.scene().frameAll?.())
 await sleep(300)
 await page.evaluate(() => window.__re.scene().viewFrom?.('top'))
 await sleep(900)
-await pickOption(page, '[data-test=sketch-plane-select]', 'XY plane through the centre')
+await sketchThroughCentre(DEPTH / 2)
 await page.waitForSelector('[data-test=sketch-editor]', { timeout: 20_000 }).catch(() => {})
 check((await page.$('[data-test=sketch-editor]')) !== null, 'the XY plane through the centre opens a sketch')
 check((await page.$('[data-test=sketch-align-nudge]')) === null, 'with no nudge on the aligned part')
@@ -109,6 +114,11 @@ console.log('sketch frame:', JSON.stringify(frame))
 // "The centre" is the scan's centroid, which its triangulation puts a
 // little off the middle of the box.
 check(Math.abs(frame.normal[2] - 1) < 0.01 && Math.abs(frame.origin[2] - DEPTH / 2) < 0.5, 'across the L, about half way along it')
+await page.$eval('[data-test=sketch-fit-all]', el => {
+  const details = el.closest('details')
+  if (details && !details.open) details.querySelector('summary').click()
+})
+await page.waitForFunction(() => !document.querySelector('[data-test=sketch-fit-all]').disabled)
 await click(page, '[data-test=sketch-fit-all]')
 await page.waitForFunction(() => window.__re.store.getState().sketchDraft?.found?.length > 0, { timeout: 30_000 }).catch(() => {})
 const found = await page.evaluate(() => window.__re.store.getState().sketchDraft?.found?.length ?? 0)
@@ -128,11 +138,12 @@ await page.evaluate(
   DEPTH,
   SHORT,
 )
-await previewReady(page, { watchStatus: false }).catch(() => {})
+await page.waitForFunction(() => window.__re.store.getState().preview.status === 'ok', { timeout: 30000 })
 await sleep(400)
+console.log('Extrude preview ready')
 await click(page, '[data-test=extrude-create]')
-await page.waitForFunction(() => /mm³/.test(document.querySelector('[data-test=body-row] b')?.textContent ?? ''), { timeout: 60_000 }).catch(() => {})
-const volume = Number((/([\d.]+) mm³/.exec(await page.$eval('[data-test=body-row] b', (el) => el.textContent)) ?? [])[1])
+await page.waitForFunction(() => window.__re.store.getState().bodies.some(b => b.volume > 0), { timeout: 30000 })
+const volume = await page.evaluate(() => window.__re.store.getState().bodies[0].volume)
 console.log('body:', volume, 'mm³, the sample is', VOLUME)
 check(Math.abs(volume - VOLUME * (1 - SHORT / DEPTH)) < 1, `the body has the volume of the L, a tenth short (${volume} mm³)`)
 await page.screenshot({ path: shotPath('sample-body.png') })
@@ -141,26 +152,30 @@ await page.screenshot({ path: shotPath('sample-body.png') })
 // The body is put away first: a body's face under the cursor takes the
 // click before the scan does. The click floods the L's end face by normal
 // angle; the fit through a flat face is a flat surface within microns.
-await click(page, '[data-test=body-visible]')
+await click(page, '[data-test^=explorer-body-row-] .explorer-checkbox')
 await sleep(200)
-await click(page, '[data-test=feature-surface]')
+await click(page, '[data-test=ribbon-tab-surfacing]')
+await click(page, '[data-test=ribbon-fit-surface]')
 await page.waitForSelector('[data-test=surface-editor]')
-const regionText = () => page.$eval('[data-test=surface-region]', (el) => el.textContent)
-check(/None/.test(await regionText()), 'a new Fit surface opens with no region')
+const regionText = () => page.$eval('[data-test=surface-selection] [data-test=extract-count]', (el) => el.textContent)
+check(/Nothing selected/.test(await regionText()), 'a new Fit surface opens with no region')
 await page.mouse.click(...(await screenOf([6, 6, DEPTH])))
-await page.waitForFunction(() => /points/.test(document.querySelector('[data-test=surface-region]')?.textContent ?? ''), { timeout: 20_000 }).catch(() => {})
+await page.waitForFunction(() => /points/.test(document.querySelector('[data-test=surface-selection] [data-test=extract-count]')?.textContent ?? ''), { timeout: 20_000 }).catch(() => {})
 const regionPoints = Number((await regionText()).replace(/[^\d]/g, ''))
 console.log('region:', await regionText())
 check(regionPoints > 400 && regionPoints < 800, `a click floods the L’s end face into the region (${regionPoints} points — the face holds 696 cells)`)
+check(!await page.$('[data-test=surface-shape] [aria-pressed=true]'), 'the marked region waits for a surface type')
+check(!await page.$('[data-test=surface-analysis]'), 'analysis stays out of the selection stage')
+await click(page, '[data-test=surface-quick-freeform]')
 await page.waitForFunction(() => /Fitted/.test(document.querySelector('[data-test=surface-preview]')?.textContent ?? ''), { timeout: 60_000 }).catch(() => {})
 const fitted = await page.$eval('[data-test=surface-preview]', (el) => el.textContent)
 console.log('fit:', fitted)
 const sigma = Number((/σ ([\d.]+) mm/.exec(fitted) ?? [])[1])
 check(sigma < 0.001, `the surface through the flat face is flat: σ ${sigma} mm`)
-check((await page.$eval('[data-test=surface-region-clear]', (el) => el.disabled)) === false, 'Clear is offered')
+check((await page.$eval('[data-test=surface-selection] [data-test=extract-deselect]', (el) => el.disabled)) === false, 'Clear is offered')
 await page.screenshot({ path: shotPath('sample-surface.png') })
 // The same region as a plane: an exact face, held to the part's own planes.
-await page.select('[data-test=surface-shape]', 'plane')
+await click(page, '[data-test=surface-type-plane]')
 await page.waitForSelector('[data-test=surface-held]', { timeout: 60_000 }).catch(() => {})
 const held = await page.$eval('[data-test=surface-held]', (el) => el.textContent).catch(() => '')
 console.log('held:', held)
@@ -175,16 +190,15 @@ await page.select('[data-test=surface-constrain]', 'on|datum:xy')
 await page.waitForFunction(() => /Coincident with XY plane/.test(document.querySelector('[data-test=surface-held]')?.textContent ?? ''), { timeout: 60_000 }).catch(() => {})
 check(/Coincident with XY plane/.test(await page.$eval('[data-test=surface-held]', (el) => el.textContent).catch(() => '')), 'a forced relation holds however far off the fit was')
 await page.screenshot({ path: shotPath('sample-surface-plane.png') })
-await page.select('[data-test=surface-shape]', 'freeform')
+await click(page, '[data-test=surface-type-freeform]')
 await page.waitForFunction(() => /Fitted/.test(document.querySelector('[data-test=surface-preview]')?.textContent ?? ''), { timeout: 60_000 }).catch(() => {})
-// Ctrl-click takes the flood away again; a plain click brings it back.
-await page.keyboard.down('Control')
+// Right-click takes the flood away again; a plain click brings it back.
+await page.mouse.click(...(await screenOf([6, 6, DEPTH])), { button: 'right' })
+await page.waitForFunction(() => /Nothing selected/.test(document.querySelector('[data-test=surface-selection] [data-test=extract-count]')?.textContent ?? ''), { timeout: 10_000 }).catch(() => {})
+check(await page.$('.viewport-menu') === null, 'right-click removal leaves the viewport clear for the next pick')
+check(/Nothing selected/.test(await regionText()), 'Right-click takes the flood out of the region')
 await page.mouse.click(...(await screenOf([6, 6, DEPTH])))
-await page.keyboard.up('Control')
-await page.waitForFunction(() => /None/.test(document.querySelector('[data-test=surface-region]')?.textContent ?? ''), { timeout: 10_000 }).catch(() => {})
-check(/None/.test(await regionText()), 'Ctrl-click takes the flood out of the region')
-await page.mouse.click(...(await screenOf([6, 6, DEPTH])))
-await page.waitForFunction(() => /points/.test(document.querySelector('[data-test=surface-region]')?.textContent ?? ''), { timeout: 10_000 }).catch(() => {})
+await page.waitForFunction(() => /points/.test(document.querySelector('[data-test=surface-selection] [data-test=extract-count]')?.textContent ?? ''), { timeout: 10_000 }).catch(() => {})
 await page.waitForFunction(() => /Fitted/.test(document.querySelector('[data-test=surface-preview]')?.textContent ?? ''), { timeout: 60_000 }).catch(() => {})
 await click(page, '[data-test=surface-create]')
 await page.waitForFunction(() => document.querySelectorAll('[data-test=feature-row]').length === 3 && !window.__re.store.getState().building, { timeout: 60_000 }).catch(() => {})
@@ -198,7 +212,7 @@ await page.keyboard.down('Control')
 await page.keyboard.press('z')
 await page.keyboard.up('Control')
 await page.waitForFunction(() => document.querySelectorAll('[data-test=feature-row]').length === 2 && !window.__re.store.getState().building, { timeout: 60_000 }).catch(() => {})
-await click(page, '[data-test=body-visible]')
+await click(page, '[data-test^=explorer-body-row-] .explorer-checkbox')
 await sleep(300)
 
 // ---- Trim: the L's eight faces as surfaces, closed into a solid ---------------------------
@@ -234,25 +248,26 @@ const surfacesMade = await page.evaluate(
 )
 check(surfacesMade === 8, `the L’s eight faces are fitted as surfaces (${surfacesMade})`)
 await page.waitForFunction(() => document.querySelectorAll('[data-test=body-row]').length === 9 && !window.__re.store.getState().building, { timeout: 120_000 }).catch(() => {})
-await click(page, '[data-test=feature-trim]')
+await click(page, '[data-test=ribbon-trim]')
 await page.waitForSelector('[data-test=trim-editor]')
+if (await page.$eval('[data-test=trim-method]', el => el.value) !== 'scan') await page.select('[data-test=trim-method]', 'scan')
 check(/8 of 9/.test(await page.$eval('[data-test=trim-count]', (el) => el.textContent)), 'the Trim box opens with every surface body in the set, the solid left out')
 const tolText = await page.$eval('[data-test=trim-tolerance-source]', (el) => el.textContent)
 console.log('tolerance:', await page.$eval('[data-test=trim-tolerance]', (el) => el.value), '·', tolText)
 check(/median σ/.test(tolText) && Number(await page.$eval('[data-test=trim-tolerance]', (el) => el.value)) === 0.05, 'the tolerance is read off the surfaces’ fits — at its floor on a noiseless part')
-await page.waitForFunction(() => /Closed|Not closed/.test(document.querySelector('[data-test=trim-preview]')?.textContent ?? ''), { timeout: 120_000 }).catch(() => {})
+await page.waitForFunction(() => /Closed|Not closed/.test(document.querySelector('[data-test=trim-preview]')?.textContent ?? ''), { timeout: 300_000 })
 const trimText = await page.$eval('[data-test=trim-preview]', (el) => el.textContent)
 console.log('trim:', trimText)
 check(/^Closed/.test(trimText), 'the eight surfaces close into a solid')
 // One surface out: the set no longer closes and the open edges are drawn.
 const lastSurface = await page.evaluate(() => window.__re.store.getState().features.filter((f) => f.kind === 'surface').slice(-1)[0].id)
 await click(page, `[data-test=trim-tool-body-${lastSurface}]`)
-await page.waitForFunction(() => /Not closed/.test(document.querySelector('[data-test=trim-preview]')?.textContent ?? ''), { timeout: 120_000 }).catch(() => {})
+await page.waitForFunction(() => /Not closed/.test(document.querySelector('[data-test=trim-preview]')?.textContent ?? ''), { timeout: 300_000 })
 console.log('trim, one out:', await page.$eval('[data-test=trim-preview]', (el) => el.textContent))
 check(/Not closed/.test(await page.$eval('[data-test=trim-preview]', (el) => el.textContent)) && (await page.evaluate(() => window.__re.store.getState().preview.trim?.openEdges.length ?? 0)) >= 4, 'with one surface out the set does not close and the open edges round the gap are reported')
 await page.screenshot({ path: shotPath('sample-trim-open.png') })
 await click(page, `[data-test=trim-tool-body-${lastSurface}]`)
-await page.waitForFunction(() => /^Closed/.test(document.querySelector('[data-test=trim-preview]')?.textContent ?? ''), { timeout: 120_000 }).catch(() => {})
+await page.waitForFunction(() => /^Closed/.test(document.querySelector('[data-test=trim-preview]')?.textContent ?? ''), { timeout: 300_000 })
 await click(page, '[data-test=trim-create]')
 await page.waitForFunction(() => document.querySelectorAll('[data-test=body-row]').length === 10 && !window.__re.store.getState().building, { timeout: 120_000 }).catch(() => {})
 await sleep(300)
@@ -281,18 +296,25 @@ await sleep(300)
 const afterFillet = await page.evaluate((id) => window.__re.store.getState().bodies.find((b) => b.id === id), trimBody.id)
 console.log('filleted:', JSON.stringify(filleted), JSON.stringify(afterFillet))
 check(filleted?.id != null && afterFillet.closed && Math.abs(VOLUME - afterFillet.volume - (1 - Math.PI / 4) * 4 * DEPTH) < 0.5, `a fillet of R 2 on an edge of the trimmed solid takes the corner off (${(VOLUME - afterFillet.volume).toFixed(2)} mm³)`)
-// Undone — the ten features — for the mirror below.
-for (let i = 0; i < 10; i++) {
+// A gesture can commit several fitted faces in one undo step. Stop when
+// History reaches the original extrusion, regardless of that grouping.
+for (let i = 0; i < 24; i++) {
+  const previous = await page.evaluate(() => window.__re.store.getState().features.length)
+  if (previous <= 2) break
   await page.keyboard.down('Control')
   await page.keyboard.press('z')
   await page.keyboard.up('Control')
-  await sleep(60)
+  // Visibility and parameter edits are also undoable and can leave the feature count unchanged.
+  await sleep(150)
 }
-await page.waitForFunction(() => document.querySelectorAll('[data-test=feature-row]').length === 2 && !window.__re.store.getState().building, { timeout: 120_000 }).catch(() => {})
-await sleep(300)
+await page.waitForFunction(() => {
+  const state = window.__re.store.getState()
+  return !state.building && state.features.length === 2 && state.features.at(-1).kind === 'extrude'
+}, { timeout: 120000 })
 
 // ---- Mirror opens on the scan's own symmetry plane -----------------------------------------
-await click(page, '[data-test=feature-mirror]')
+await click(page, '[data-test=workspace-reverse]')
+await click(page, '[data-test=ribbon-mirror]')
 await page.waitForFunction(() => /symmetry plane/.test(document.querySelector('[data-test=mirror-symmetry]')?.textContent ?? '') && !/Looking/.test(document.querySelector('[data-test=mirror-symmetry]').textContent), { timeout: 120_000 }).catch(() => {})
 const mirror = await page.evaluate(() => {
   const d = window.__re.store.getState().featureDraft
@@ -315,7 +337,7 @@ await click(page, '[data-test=mirror-create]')
 await page.waitForFunction(() => document.querySelectorAll('[data-test=feature-row]').length === 3, { timeout: 30_000 }).catch(() => {})
 await page.waitForFunction(() => !window.__re.store.getState().building, { timeout: 60_000 }).catch(() => {})
 await sleep(300)
-const mirrored = Number((/([\d.]+) mm³/.exec(await page.$eval('[data-test=body-row] b', (el) => el.textContent)) ?? [])[1])
+const mirrored = await page.evaluate(() => window.__re.store.getState().bodies[0].volume)
 check(Math.abs(mirrored - VOLUME) < 1, `mirrored about the scan’s mid-plane and joined, the short end is made up: the sample’s volume (${mirrored} mm³)`)
 
 // Undone again: the comparison is of the body that is a tenth short.
@@ -326,6 +348,9 @@ await page.waitForFunction(() => document.querySelectorAll('[data-test=feature-r
 await sleep(500)
 
 // ---- Compare in Deviation ---------------------------------------------------------------------
+const showBody = '[data-test=body-visible][title="Show the body"]'
+if (await page.$(showBody)) await click(page, showBody)
+await page.waitForFunction(() => !document.querySelector('[data-test=compare-in-deviation]').disabled)
 await click(page, '[data-test=compare-in-deviation]')
 await page.waitForFunction(() => document.querySelector('[data-test=align-built]') !== null, { timeout: 120_000 }).catch(() => {})
 check((await page.$('[data-test=align-built]')) !== null, 'Compare in Deviation switches to Deviation with the bodies as the reference and says no best fit was run')

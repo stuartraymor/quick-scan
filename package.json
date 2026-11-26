@@ -1,7 +1,7 @@
 {
   "name": "quick-scan",
   "private": true,
-  "version": "1.2.28",
+  "version": "1.2.72",
   "type": "module",
   "license": "AGPL-3.0-only",
   "author": "Stefan Hermann (CNC Kitchen) <stefan@cnckitchen.com>",
@@ -78,6 +78,7 @@
     "manifold-3d": "3.2.1",
     "meshoptimizer": "1.2.0",
     "meshstep": "0.1.1",
+    "occt-stations": "npm:occt-wasm@5.18.5",
     "occt-wasm": "5.7.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

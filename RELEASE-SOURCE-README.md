@@ -1,9 +1,9 @@
-# Quick Scan 0.0.120 corresponding source
+# Quick Scan 1.2.72 corresponding source
 
-The versioned release branch contains the Electron application, reverse-engineering plugin, worker, automation catalog and original icon resources used to package the Windows installer. The commit tagged for this version identifies the corresponding source.
+This checkout contains the Electron application, reverse-engineering plugin, geometry workers, automation interfaces, reference guides, licenses and original assets for Quick Scan 1.2.72.
 
-Use Node.js 22 or newer. Install dependencies with `npm ci` and `npm --prefix mcp ci`. Run `npm test` and `npm run build`, then `node package-desktop.mjs` to package the Electron desktop. On Windows the Inno Setup script at `installer/build-installer.ps1` accepts the packaged application directory and an installer output directory. The desktop includes the file, update, example-library and agent bridges.
+Use Node.js 22 or later. Install dependencies with `npm ci` and `npm --prefix mcp ci`. Run `npm test`, `npm --prefix mcp test` and `npm run build`. On Windows, `node package-desktop.mjs` packages the desktop application. The installer script accepts the packaged application directory as `-AppDir` and a new installer output directory as `-OutDir`.
 
-Three Quick Scan example meshes ship with the app. Help also lists ten reference part names. Set the local example directory under the Quick Scan icon, Settings, to resolve them on each machine.
+Run the deterministic finishing benchmark with `node scripts/finishing-stress/run.mjs <new-results-directory> 512 8`. The runner records each stock part, the 50 requests it exercised, timings, checks and a summary. Individual scan fixtures used for local commercial CAD comparisons are supplied separately by their owners where permitted.
 
-`SOURCE-HASHES.json` records SHA-256 for each other tracked file using its normalized Git bytes. The release includes the Windows installer's separate SHA-256. See `RELEASE-VERIFICATION.md` for tested workflows and open differences. Upstream attribution and the AGPL-3.0-only license are retained.
+The Git tag identifies the source revision. `SOURCE-HASHES.json` records SHA-256 hashes for the corresponding source files. The release assets include the Windows installer and checksums. [Verification and limits](RELEASE-VERIFICATION.md) · [Attribution](ATTRIBUTION.md)

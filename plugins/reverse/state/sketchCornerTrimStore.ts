@@ -129,7 +129,8 @@ export const useSketchCornerTrim = create<SketchCornerTrimState>()((set, get) =>
     const what = result.unswept ? 'Lines joined: the corner point was outside the painted area. Paint over the corner point to fillet it.'
       : result.shape === 'sharp' ? 'The scan corner is sharp: lines joined.'
       : s.mode === 'trim' ? 'Corner joined.'
-      : scanFit?.exceeds ? 'Fillet created, but the scan round is not circular: the arc is off the scan by more than the tolerance. Undo and use Fit Curve for a free-form blend, or change the radius.'
+      : scanFit?.exceeds ? 'Fillet created. The tangent arc misses the scan by more than the tolerance. Check the fitted sides and radius. Use Fit Curve if the section is not circular.'
+      : result.confirm ? `Fillet created. ${result.confirm.replace(/^Check the preview: /, 'Check it: ')}`
       : 'Fillet created.'
     const lastFit: LastFit | null = result.radiusMm !== undefined || result.shape || result.unswept ? { radiusMm: result.radiusMm, rms: result.rms, usedPoints: result.usedPoints, shape: result.shape, ...(result.unswept ? { unswept: true } : {}), ...(scanFit ? { scanFit } : {}) } : null
     const made = useReverse.getState().sketchDraft?.sketch
@@ -137,7 +138,7 @@ export const useSketchCornerTrim = create<SketchCornerTrimState>()((set, get) =>
     set({
       lastFit,
       lastFillet: entry, trail: entry ? [entry] : [], radiusPreview: null,
-      message: scanFit?.exceeds ? what : `${what} Sweep another corner.`,
+      message: scanFit?.exceeds || result.confirm ? what : `${what} Sweep another corner.`,
     })
     return true
   }
@@ -214,10 +215,9 @@ export const useSketchCornerTrim = create<SketchCornerTrimState>()((set, get) =>
       const { result, pair } = sweepCornerTrim(source, { path: [...path], radius }, s, points, s.mode === 'autoFillet' ? chains : undefined)
       if (!result.ok) { set({ message: result.error }); return false }
       const ends = pair?.ends.map((e): Anchor => ({ entity: e.entity, at: e.at }))
-      if (result.confirm) {
-        set({ pending: { result, sourceKey: JSON.stringify(source), source, ...(ends ? { ends } : {}) }, message: result.confirm })
-        return false
-      }
+      // A round the scan supports only weakly is made at once, as
+      // QUICKSURFACE makes every fillet, and the panel says what to check.
+      // Before 1.2.29 it waited for Accept, and nothing seemed to happen.
       return commit(result, source, ends)
     },
     acceptPending: () => {

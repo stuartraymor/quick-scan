@@ -8,7 +8,8 @@
 // thread (reLocal.ts), so a test or a script builds exactly as the page does.
 
 import type { Vec3 } from '../../../src/core/types'
-import type { Rigid } from '../../../src/core/deviation/rigid'
+import { rigidApplyToPoints, rigidInvert, type Rigid } from '../../../src/core/deviation/rigid'
+import { deviationSampler } from './freeform/previewDeviation'
 import type { NominalSurface } from '../../../src/core/deviation/surface'
 import { computeVertexNormals } from '../../../src/core/geometry/normals'
 import type { KernelMesh, ReKernel, StepCheck, StepLabel, StepMend } from './kernel'
@@ -64,8 +65,8 @@ export type ReWorkerRequest =
   /** The live map: the scan's signed distance to the last preview's solid,
    *  or to the given bodies of the last build, for the vertices within
    *  reach of it — see liveMap.ts. */
-  | { type: 'preview-deviation'; requestId: number; positions: Float32Array }
-  | { type: 'refine-deviation'; requestId: number; data: MeasuredTriangles; tolerance: number }
+  | { type: 'preview-deviation'; requestId: number; positions: Float32Array; supportedOnly?: boolean }
+  | { type: 'refine-deviation'; requestId: number; data: MeasuredTriangles; tolerance: number; supportedOnly?: boolean }
   | { type: 'map'; requestId: number; source: 'preview' | 'bodies'; bodyIds: number[]; range: number }
   /** The scan against the given bodies in detail: the field, each face's
    *  reading, the worst spots — see compareDetail.ts — the scan read by
@@ -98,7 +99,7 @@ export type ReWorkerResponse =
   | { type: 'preview-ok'; requestId: number; preview: PreviewResult }
   /** A round, a chamfer or a shell whose preview failed, with where it
    *  failed — see Builder.diagnose. Any other failure is an error. */
-  | { type: 'preview-failed'; requestId: number; message: string; where: Float32Array[] }
+  | { type: 'preview-failed'; requestId: number; message: string; where: Float32Array[]; restarted?: boolean }
   | { type: 'stage-ok'; requestId: number; stage: { mesh: KernelMesh; topology: { faces: FaceInfo[]; edges: EdgeInfo[] } } | null }
   | { type: 'step-ok'; requestId: number; text: string; check?: StepCheck; mended?: StepMend[] }
   | { type: 'section-cut-ok'; requestId: number; bodies: { id: number; polylines: Float32Array[] }[] }
@@ -163,10 +164,31 @@ export function createReService(loadKernel: () => Promise<ReKernel>, loadManifol
    *  every datum alignment baked in — so a body built in that frame is
    *  compared in it too. */
   let scan: { positions: Float32Array; indices: Uint32Array | null; normals: Float32Array | null; transform: Rigid | null } | null = null
+  let scanSurface: NominalSurface | null = null
+  let finishingSampler: ReturnType<typeof deviationSampler> | null = null
+  function measurePreview(b: Builder, positions: Float32Array, supportedOnly = false): Float32Array {
+    if (!supportedOnly) return b.previewSurfaceDeviation(positions)
+    if (!scanSurface || !scan) throw new Error('A reference scan is required for finishing deviation.')
+    finishingSampler ??= deviationSampler(scanSurface, undefined, true)
+    if (!scan.transform) return finishingSampler(positions)
+    const inScan = positions.slice()
+    rigidApplyToPoints(rigidInvert(scan.transform), inScan)
+    return finishingSampler(inScan)
+  }
   /** The steps the kernel trapped on, by their keys (stepKeys), with what it
    *  said: built as failed — not played — until the step is changed, so a
    *  step that crashes the kernel crashes it once. */
   const crashed = new Map<string, string>()
+  // The client sends each imported file only once during a worker's life.
+  // A new kernel in the same worker needs those files again.
+  const importedFiles = new Map<string, string>()
+  let lastInputs: Pick<Extract<ReWorkerRequest, { type: 'build' }>, 'steps' | 'sketches'> | null = null
+  let failedPreview: { step: string; inputs: string; message: string } | null = null
+  const inputKey = () => {
+    if (!lastInputs) return ''
+    const sketches = new Map(lastInputs.sketches)
+    return JSON.stringify(stepKeys(lastInputs.steps, id => sketches.get(id)))
+  }
   /** The last preview's tessellation, kept for the map: its buffers went
    *  to the viewport, so this is a copy, and the surface over it is built
    *  the first time a map asks for it. */
@@ -200,7 +222,8 @@ export function createReService(loadKernel: () => Promise<ReKernel>, loadManifol
     parallel = null
     lastPreview = null
     const b = await load()
-    b.setScan(scan && scan.indices && !scan.transform ? surfaceOfMeshes([{ positions: scan.positions, normals: new Float32Array(0), indices: scan.indices }], { joinSeams: false }) : null, scan && !scan.transform ? scan.positions : null)
+    b.addStepFiles(importedFiles)
+    b.setScan(scan && !scan.transform ? scanSurface : null, scan && !scan.transform ? scan.positions : null, scan && !scan.transform ? scan.normals : null)
     return b
   }
 
@@ -227,8 +250,14 @@ export function createReService(loadKernel: () => Promise<ReKernel>, loadManifol
       // The kernel's calls told as this service's: under Node several
       // services share a thread.
       teller?.hook(b)
-      if (msg.type === 'build' || msg.type === 'preview') b.addStepFiles(msg.stepFiles ?? [])
+      if (msg.type === 'preview' || msg.type === 'build') await b.kernel.prepareStations(msg.type === 'build' ? msg.steps : [msg.step])
+      if (msg.type === 'build' || msg.type === 'preview') {
+        for (const [key, text] of msg.stepFiles ?? []) importedFiles.set(key, text)
+        b.addStepFiles(msg.stepFiles ?? [])
+      }
       if (msg.type === 'build') {
+        lastInputs = { steps: msg.steps, sketches: msg.sketches }
+        if (failedPreview && inputKey() !== failedPreview.inputs) failedPreview = null
         for (const [key, why] of msg.crashed ?? []) crashed.set(key, why)
         const sketches = new Map(msg.sketches)
         const sketchOf = (id: number) => sketches.get(id)
@@ -262,6 +291,7 @@ export function createReService(loadKernel: () => Promise<ReKernel>, loadManifol
           const crash = `The CAD kernel crashed on this step (${said}) and was started again; the part was built again without it.${where}`
           if (key !== null) crashed.set(key, `${crash} Change the step to try it again.`)
           const fresh = await restart()
+          await fresh.kernel.prepareStations(msg.steps)
           const again = fresh.build(withoutCrashed(msg.steps, sketchOf), sketchOf, true)
           // Why it may have crashed: the step's diagnosis, on the fresh
           // kernel, on the body as it stood before the step, within a time
@@ -271,6 +301,7 @@ export function createReService(loadKernel: () => Promise<ReKernel>, loadManifol
           const d = key !== null ? fresh.diagnoseCrashed(msg.steps[at], CRASH_DIAGNOSIS_MS) : null
           if (kernel?.trapped != null) {
             const last = await restart()
+            await last.kernel.prepareStations(msg.steps)
             const { results, bodies, all, steps } = last.build(withoutCrashed(msg.steps, sketchOf), sketchOf, true)
             return answer({ type: 'build-ok', requestId: msg.requestId, results, bodies, all, steps, ...crashedOut() }, bodyBuffers(bodies))
           }
@@ -292,6 +323,9 @@ export function createReService(loadKernel: () => Promise<ReKernel>, loadManifol
         return answer({ type: 'bodies-ok', requestId: msg.requestId, bodies }, bodyBuffers(bodies))
       }
       if (msg.type === 'preview') {
+        if (failedPreview && failedPreview.step === JSON.stringify(msg.step)) {
+          return answer({ type: 'preview-failed', requestId: msg.requestId, message: failedPreview.message, where: [] })
+        }
         let preview: PreviewResult
         // The step's own time bounds a shell's diagnosis.
         const began = performance.now()
@@ -306,6 +340,10 @@ export function createReService(loadKernel: () => Promise<ReKernel>, loadManifol
         }
         lastPreview = { mesh: { positions: preview.mesh.positions.slice(), normals: preview.mesh.normals, indices: preview.mesh.indices.slice() }, surface: null }
         const transfer: Transferable[] = [preview.mesh.positions.buffer, preview.mesh.normals.buffer, preview.mesh.indices.buffer]
+        for (const { mesh } of preview.trim?.pieces ?? []) {
+          transfer.push(mesh.positions.buffer, mesh.normals.buffer, mesh.indices.buffer)
+          if (mesh.faceHash) transfer.push(mesh.faceHash.buffer)
+        }
         if (preview.mesh.faceHash) transfer.push(preview.mesh.faceHash.buffer)
         return answer({ type: 'preview-ok', requestId: msg.requestId, preview }, transfer)
       }
@@ -320,6 +358,7 @@ export function createReService(loadKernel: () => Promise<ReKernel>, loadManifol
         return answer({ type: 'stage-ok', requestId: msg.requestId, stage }, transfer)
       }
       if (msg.type === 'scan') {
+        failedPreview = null
         if (msg.positions === null) scan = null
         else if (msg.positions) {
           // The normals the map and the comparison read the scan's side by:
@@ -327,19 +366,23 @@ export function createReService(loadKernel: () => Promise<ReKernel>, loadManifol
           const normals = msg.normals ?? (msg.indices ? computeVertexNormals(msg.positions, msg.indices) : null)
           scan = { positions: msg.positions, indices: msg.indices ?? null, normals, transform: msg.transform }
         } else if (scan) scan = { ...scan, transform: msg.transform }
+        if (msg.positions !== undefined) {
+          scanSurface = scan?.indices ? surfaceOfMeshes([{ positions: scan.positions, normals: new Float32Array(0), indices: scan.indices }], { joinSeams: false }) : null
+          finishingSampler = null
+        }
         // The scan as a surface for a split's cell test: built once per scan,
         // the moment it is here — a few hundred milliseconds on a big scan,
         // spent in the worker. The scan is not watertight, so only the
         // distance is read, never the sign.
-        b.setScan(scan && scan.indices && !scan.transform ? surfaceOfMeshes([{ positions: scan.positions, normals: new Float32Array(0), indices: scan.indices }], { joinSeams: false }) : null, scan && !scan.transform ? scan.positions : null)
+        b.setScan(scan && !scan.transform ? scanSurface : null, scan && !scan.transform ? scan.positions : null, scan && !scan.transform ? scan.normals : null)
         return answer({ type: 'scan-ok', requestId: msg.requestId })
       }
       if (msg.type === 'preview-deviation') {
-        const values = b.previewSurfaceDeviation(msg.positions)
+        const values = measurePreview(b, msg.positions, msg.supportedOnly)
         return answer({ type: 'preview-deviation-ok', requestId: msg.requestId, values }, [values.buffer])
       }
       if (msg.type === 'refine-deviation') {
-        const data = refineDeviation(msg.data, positions => b.previewSurfaceDeviation(positions), msg.tolerance)
+        const data = refineDeviation(msg.data, positions => measurePreview(b, positions, msg.supportedOnly), msg.tolerance, undefined, undefined, msg.supportedOnly)
         return answer({ type: 'refine-deviation-ok', requestId: msg.requestId, data }, [data.positions.buffer, data.triangles.buffer, data.values.buffer])
       }
       if (msg.type === 'map') {
@@ -447,6 +490,14 @@ export function createReService(loadKernel: () => Promise<ReKernel>, loadManifol
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
       if ((isTrap(e) || kernel?.trapped != null) && msg.type !== 'init') {
+        if (msg.type === 'preview' && (msg.step.kind === 'fillet' || msg.step.kind === 'chamfer')) {
+          try { await restart() } catch (error) {
+            return answer({ type: 'error', requestId: msg.requestId, message: `Could not restart the CAD kernel after the failed preview. ${String(error)}` })
+          }
+          const why = `The CAD kernel stopped while previewing this ${msg.step.kind}. Change the edge selection or dimensions before trying it again. (${message})`
+          failedPreview = { step: JSON.stringify(msg.step), inputs: inputKey(), message: why }
+          return answer({ type: 'preview-failed', requestId: msg.requestId, message: why, where: [], restarted: true })
+        }
         // Not a build: the kernel started again all the same, and the next
         // build plays the part on the new one.
         await restart().catch(() => {})

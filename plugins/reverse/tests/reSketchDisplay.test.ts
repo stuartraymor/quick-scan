@@ -68,6 +68,9 @@ describe('feedback matching actual sketch intent', () => {
       expect(lineIntent([0, 0], to)).toBe(axisRelationOf([0, 0], to))
     }
     expect(axisIntentMark([0, 0], [10, 0.4], 1)).toHaveLength(3)
+    expect(axisIntentMark([0, 0], [10, 0.4], 1, true)).toHaveLength(0)
+    expect(axisIntentMark([0, 0], [0.004, 10], 1, true)).toHaveLength(0)
+    expect(axisIntentMark([0, 0], [0, 10], 1, true)).toHaveLength(2)
     expect(axisIntentMark([0, 0], [0.4, 10], 1)).toHaveLength(2)
     expect(axisIntentMark([0, 0], [10, 1], 1)).toHaveLength(0)
     expect(axisIntentMark([0, 0], [0, 0], 1)).toHaveLength(0)

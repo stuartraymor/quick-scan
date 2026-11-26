@@ -315,7 +315,8 @@ class Runner {
       const e = entityOf(k, d.chain.entity)
       if (!e) this.fail('chain-missing', `chain holds ${d.chain.entity}`)
     }
-    // Degenerate geometry is noted, not failed: a question for QUICKSURFACE.
+    // Collect the first occurrence per entity. The summary fails on any
+    // undersized piece or unmet relation, including after OK and reopen.
     for (const e of k.entities) {
       if (this.noted.has(e.id)) continue
       const bad = e.kind === 'line' ? Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]) < 1e-6 : (e.kind === 'circle' || e.kind === 'arc') && !(e.r > 1e-6)
@@ -971,7 +972,7 @@ describe('2D Sketch drawing and history, seeded random workflows', () => {
     lines.push(`time per step kind: ${[...stepTime].sort((a, b) => b[1][1] - a[1][1]).map(([k, [n, ms]]) => `${k} ${n}x ${(ms / n).toFixed(1)}ms`).join(', ')}`)
     lines.push('slowest single steps:')
     for (const x of slowest) lines.push(`   ${(x.ms / 1000).toFixed(2)} s  seed ${x.seed}  ${x.what}`)
-    lines.push('warnings (not failures):')
+    lines.push('geometry and relation violations:')
     for (const [k, g] of [...warnings].sort((a, b) => b[1].count - a[1].count)) lines.push(`   ${g.count}x ${k}  e.g. seed ${g.seed}: ${g.example.slice(0, 200)}`)
     lines.push('')
     lines.push('messages shown to the user (draft.error):')
@@ -984,6 +985,7 @@ describe('2D Sketch drawing and history, seeded random workflows', () => {
     // the run.
     const unknown = [...groups.keys()].filter((sig) => !KNOWN.some((k) => k.test(sig)))
     expect(unknown).toEqual([])
+    expect([...warnings.keys()]).toEqual([])
   }, 1_800_000)
 })
 

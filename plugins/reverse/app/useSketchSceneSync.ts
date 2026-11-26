@@ -8,6 +8,8 @@
 // times a second, and only the sheet needs to know where it is.
 
 import { snapFlags, useSnapFilter } from '../../../src/state/snapFilterStore'
+import { pointOnSheet } from '../../../src/core/section/frame'
+import { liftPoint } from '../core/profiles'
 import { useMeasureTool } from '../../../src/state/measureToolStore'
 import { sketchIconPaths, type SketchCommandIconName } from '../ui/SketchCommandIcon'
 import { sketchGrips } from '../core/drag'
@@ -235,8 +237,8 @@ export function handleSnapMark(kind: 'point' | 'curve', at: Vec2, radius: number
 /** H or V beside the rubber-banded line, matching its real inferred
  *  relation. Strokes live in the draft layer, so they cannot intercept a
  *  click intended for the geometry or persist after the tool is put down. */
-export function axisIntentMark(from: Vec2, to: Vec2, s: number): FlatFit[] {
-  const axis = lineIntent(from, to)
+export function axisIntentMark(from: Vec2, to: Vec2, s: number, referenceSnapped = false): FlatFit[] {
+  const axis = lineIntent(from, to, referenceSnapped)
   if (!axis || !(s > 0)) return []
   const x = (from[0] + to[0]) / 2 + s * 2
   const y = (from[1] + to[1]) / 2 + s * 3
@@ -421,9 +423,24 @@ export function useSketchSceneSync({
   /** What a click or a drag may land on besides the sketch: the slice
    *  chains, and the grid at its current spacing when grid snapping is
    *  switched on — or nothing, with Ctrl held. */
+  const referenceCache = useRef<{ features: ReturnType<typeof useReverse.getState>['features']; frame: object; id?: number; points: SnapContext['referencePoints'] } | null>(null)
   const snapFor = (raw: boolean): SnapContext => {
-    const frame = useReverse.getState().sketchDraft?.frame
+    const { sketchDraft, features } = useReverse.getState()
+    const frame = sketchDraft?.frame
+    if (frame && !raw && (referenceCache.current?.features !== features || referenceCache.current.frame !== frame || referenceCache.current.id !== sketchDraft.featureId)) {
+      const points: NonNullable<SnapContext['referencePoints']>[number][] = []
+      for (const feature of features) {
+        if (feature.kind !== 'sketch' || !feature.visible || feature.suppressed || feature.id === sketchDraft.featureId) continue
+        for (const entity of feature.sketch.entities) {
+          if (entity.kind !== 'line' && entity.kind !== 'circle' && entity.kind !== 'arc') continue
+          const position = entity.kind === 'line' ? anchorPoint(entity, 'center') : entity.c
+          points.push({ point: pointOnSheet(frame, liftPoint(feature.frame, position)).at, type: entity.kind === 'line' ? 'midpoint' : 'center' })
+        }
+      }
+      referenceCache.current = { features, frame, id: sketchDraft.featureId, points }
+    }
     return {
+      referencePoints: frame && !raw ? referenceCache.current?.points : undefined,
       chains: chainsOf()?.chains ?? null,
       grid: useRePrefs.getState().gridSnap ? (scene()?.gridStep() ?? null) : null,
       datums: frame ? datumTraces(frame) : null,
@@ -548,16 +565,17 @@ export function useSketchSceneSync({
       const closing = draft.tool === 'spline' && splineClosesAt(draft.pending, at.p, at.radius)
       fits.push(...toolPreview(draft.tool, draft.pending, closing ? draft.pending[0] : snap.point, useRePrefs.getState().drawModes, useRePrefs.getState().polygonSides))
       if (snap.kind) fits.push(...snapMark(snap.kind, snap.point, at.radius * 0.6))
-      if (draft.tool === 'line' && draft.pending.length === 1) fits.push(...axisIntentMark(draft.pending[0], snap.point, at.radius * 0.55))
+      if (draft.tool === 'line' && draft.pending.length === 1) fits.push(...axisIntentMark(draft.pending[0], snap.point, at.radius * 0.55, draft.pendingOnReference || snap.reference))
       // Over the chain's last end the press is the sketch's: held and
       // dragged it draws a tangent arc.
       overHandle = chainArcStart(draft, at.p, at.radius) !== null
     } else if (at && draft.pending.length === 0) {
-      overHandle = dragHandleAt(draft.sketch, at.p, at.radius) !== null
+      overHandle = dragHandleAt(draft.sketch, at.p, at.radius, draft.selection) !== null
     }
     // What a click would take, lit on the pieces — redrawn only when it
     // changes, as the cursor moves over a piece and off it.
     const pick = at && !swung && !boxed.current ? sketchHoverAt(draft, at.p, at.radius) : null
+    if (at && pick?.point && draft.tool === 'dimension') fits.push(...handleSnapMark('point', pick.point, at.radius))
     const key = pick ? `${pick.pieces.join(',')}|${pick.point?.join(',') ?? ''}|${pick.datum ?? ''}` : ''
     if (key !== hovered.current.key) {
       hovered.current = { key, pick }
@@ -583,7 +601,7 @@ export function useSketchSceneSync({
     // the piece and not a pan of the sheet.
     view.setDragHover(overHandle)
     // A chain's carried-on start is an end already drawn, not a pick to pin.
-    view.setDraftMarks(draft.chain ? [] : draft.pending, fits, undefined, colors().free)
+    view.setDraftMarks(draft.chain ? [] : draft.pending, fits, undefined, colors().free, undefined, draft.tool === 'spline')
   }
 
   /** The pieces, the coordinate planes' lines and the dots on the ends, in
@@ -744,8 +762,8 @@ export function useSketchSceneSync({
     for (const e of sketch.entities) {
       if (e.kind === 'point') continue
       const inHand = sketchPointVisible(useRePrefs.getState().sketchControlPoints, selected.has(e.id), lit.has(e.id))
-      for (const {at, point} of sketchGrips(e)) {
-        if (!sketchGripShown(e.kind, at, inHand)) continue
+      for (const {at, point} of sketchGrips(e, selected.has(e.id) && draft.tool === 'select')) {
+        if (!sketchGripShown(e.kind, at, inHand) || (e.kind === 'arc' && (at === 'p0' || at === 'center') && !inHand)) continue
         dots.push({ at: point, color: '#111111', size: SKETCH_DOT.end, shape: 'square' })
       }
     }
@@ -754,12 +772,13 @@ export function useSketchSceneSync({
     // line, an arc's centre — something to aim a drawn end or a dimension
     // at. Lighter than the grips: they are places to land, not handles.
     const bar = useSnapFilter.getState().context
-    const shown = bar === 'draw' || bar === 'pick' ? snapFlags(bar) : null
+    const shown = bar && bar !== 'measure' ? snapFlags(bar) : null
     if (shown) {
       for (const e of sketch.entities) {
-        if (shown.quadrant) for (const q of quadrantsOf(e)) dots.push({ at: q.point, color: SNAP_POINT_COLOR, size: SKETCH_DOT.end, shape: 'square' })
+        if (e.kind === 'arc' && bar !== 'sketchPick' && !sketchPointVisible(useRePrefs.getState().sketchControlPoints, selected.has(e.id), lit.has(e.id))) continue
+        if (shown.quadrant && !(draft.tool === 'select' && selected.has(e.id) && e.kind === 'circle')) for (const q of quadrantsOf(e)) dots.push({ at: q.point, color: SNAP_POINT_COLOR, size: SKETCH_DOT.end, shape: 'square' })
+        if (bar === 'sketchPick' && shown.center && e.kind === 'arc') dots.push({ at: e.c, color: SNAP_POINT_COLOR, size: SKETCH_DOT.end, shape: 'square' })
         if (shown.midpoint && e.kind === 'line') dots.push({ at: anchorPoint(e, 'center'), color: SNAP_POINT_COLOR, size: SKETCH_DOT.end, shape: 'square' })
-        if (shown.center && e.kind === 'arc') dots.push({ at: e.c, color: SNAP_POINT_COLOR, size: SKETCH_DOT.end, shape: 'square' })
       }
     }
     for (const p of picks) {
@@ -825,7 +844,7 @@ export function useSketchSceneSync({
       if (!showGlyphs && draft.selectedConstraint !== c.id) continue
       const glyph = GLYPHS[c.kind]
       const at = glyphSpot(c, sketch)
-      if (glyph && at) notes.push({ id: c.id, text: glyph, at, editing: draft.selectedConstraint === c.id, className: glyphClass, tip: relationName(c.kind), iconPath: sketchIconPaths[c.kind as SketchCommandIconName] })
+      if (glyph && at) notes.push({ id: c.id, text: glyph, at, editing: draft.selectedConstraint === c.id, className: c.kind === 'coincident' ? glyphClass + ' coincident' : glyphClass, tip: relationName(c.kind), iconPath: sketchIconPaths[c.kind as SketchCommandIconName] })
     }
     for (const e of fixedPieces(sketch)) {
       const id = fixId(e.id)
@@ -890,7 +909,7 @@ export function useSketchSceneSync({
       const shape = dimShape(place ? { ...live, place } : live, sketch, traces, lift)
       if (!shape) continue
       const text = dimensionFieldText(live, units)
-      dims.push({ shape, value: dimensionText(live, units), ...(unmetIds.has(c.id) ? { className: 'overdefined' } : c.driven ? { className: 'driven' } : {}), selected: draft.selectedConstraint === c.id && draft.dimMade == null && draft.tool === 'select', ...(draft.dimMade == null ? { edit: { id: c.id, value: c.value, ...(text !== undefined ? { text } : {}) } } : {}) })
+      dims.push({ shape, value: dimensionText(live, units), ...(unmetIds.has(c.id) ? { className: 'overdefined' } : c.driven ? { className: 'driven' } : {}), selected: draft.selectedConstraint === c.id && draft.dimMade == null && draft.tool === 'select', ...(draft.dimMade == null && (draft.tool === 'select' || draft.tool === 'dimension') ? { edit: { id: c.id, value: c.value, ...(text !== undefined ? { text } : {}) } } : {}) })
     }
     view.setSketchDimensions(dims, { color: colors().dimension, className: 'sketch-dim unspread' })
     useHeldDimension.getState().setHeld(heldValue)
@@ -920,9 +939,9 @@ export function useSketchSceneSync({
     // While Measure is open the bar is the Measure's: the mesh's switches,
     // or a sketch's Pick switches for its Sketch way.
     if (useMeasureTool.getState().open) return
-    const picks = snapTool === 'dimension' || (snapTool === 'relation' && snapRelation === 'coincident')
+    const coincident = snapTool === 'relation' && snapRelation === 'coincident'
     const none = snapTool === null || snapTool === 'relation' || snapTool === 'fillet' || snapTool === 'chamfer' || snapTool === 'project'
-    bar.setContext(picks ? 'pick' : none ? null : 'draw')
+    bar.setContext(snapTool === 'dimension' || coincident ? 'sketchPick' : none ? null : 'draw')
     return () => {
       if (!useMeasureTool.getState().open) useSnapFilter.getState().setContext(null)
     }

@@ -52,6 +52,8 @@ function confirmable(): (() => void) | null {
   // A patch being placed is closed first, as a spline's points are made
   // the curve — never the network made under it; the next one makes it.
   if (re.featureDraft?.kind === 'network' && re.featureDraft.placing) return networkFinishPlacing
+  if (re.featureDraft?.kind === 'surface' && (re.preview.status !== 'ok' || !re.preview.surface)) return null
+  if (re.featureDraft?.kind === 'trim' && (re.preview.status !== 'ok' || !re.preview.trim)) return null
   if (re.featureDraft) return featureDraftReady(re.featureDraft) ? () => re.commitFeature() : null
   return null
 }

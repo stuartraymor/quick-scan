@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { validLaw, roundRoles } from './roundInputs'
 // The feature list resolved for the build: planes and axes found from what
 // they refer to, a hole's axis, and every feature turned into the BuildStep
 // the builder plays, in order.
@@ -273,9 +274,13 @@ export function resolveFeatures(
     }
     if (f.kind === 'fillet') {
       const variable = f.variable ?? []
-      if (f.edges.length === 0 && variable.length === 0) failed(f, 'Pick the edges to round.')
+      if (f.roundFaces) {
+        if (roundRoles.some(role => !f.roundFaces![role]?.length)) failed(f, 'Pick the left side, center and right side faces.')
+        else steps.push({ kind: 'fillet', id: f.id, name: f.name, body: f.body, edges: [], radius: 0, chain: f.chain, roundFaces: f.roundFaces })
+      }
+      else if (f.edges.length === 0 && variable.length === 0) failed(f, 'Pick the edges to round.')
       else if (f.edges.length > 0 && !(f.radius > 0)) failed(f, 'The fillet needs a radius.')
-      else if (variable.some((v) => !(v.radius[0] > 0 && v.radius[1] > 0))) failed(f, 'An edge rounded at a varying radius needs both its radii.')
+      else if (variable.some((v) => !validLaw(v.radius, v.points))) failed(f, 'An edge rounded at a varying radius needs both its radii.')
       else steps.push({ kind: 'fillet', id: f.id, name: f.name, body: f.body, edges: f.edges, ...queriesOf(f), radius: f.radius, chain: f.chain, ...(f.skipFailing ? { skipFailing: true } : {}), ...(variable.length > 0 ? { variable } : {}) })
       continue
     }
@@ -402,7 +407,11 @@ export function resolveFeatures(
         continue
       }
       const pieces = sketchPieces(sketch)
-      if (pieces.length === 0) failed(f, 'The sketch has no pieces to make a sheet of.')
+      if (f.planar || f.projectOnto !== undefined) {
+        const profile = loftProfile(sketch, regionsOf(sketch), 'the planar surface')
+        if (typeof profile === 'string') failed(f, profile)
+        else steps.push({ kind: 'sheet', id: f.id, name: f.name, sketchId: f.sketchId, pieces, dir: sketch.frame.normal, from: f.from, to: f.to, profile, projectOnto: f.projectOnto })
+      } else if (pieces.length === 0) failed(f, 'The sketch has no pieces to make a sheet of.')
       else if (Math.abs(f.to - f.from) < 1e-9) failed(f, 'The sheet has no height.')
       else steps.push({ kind: 'sheet', id: f.id, name: f.name, sketchId: f.sketchId, pieces, dir: sketch.frame.normal, from: f.from, to: f.to })
       continue
@@ -431,7 +440,7 @@ export function resolveFeatures(
       if (lost) failed(f, lost)
       else if (bodies.length + primitives.length === 0) failed(f, 'The trim has no surfaces to close.')
       else if (!(f.tolerance > 0) || !(f.overlap > 0 && f.overlap <= 1)) failed(f, 'The trim needs a tolerance above zero and an overlap between 0 and 1.')
-      else steps.push({ kind: 'trim', id: f.id, name: f.name, bodies, primitives, tolerance: f.tolerance, overlap: f.overlap })
+      else steps.push({ kind: 'trim', id: f.id, name: f.name, ...(f.mergeFaces === false ? { mergeFaces: false } : {}), ...(f.groupFaces === false ? { groupFaces: false } : {}), ...(f.removed ? { removed: f.removed } : {}), ...(f.corrections?.length ? { corrections: f.corrections } : {}), bodies, primitives, tolerance: f.tolerance, overlap: f.overlap })
       continue
     }
     if (f.kind === 'surface') {
@@ -443,7 +452,7 @@ export function resolveFeatures(
         // A plane or cylinder is held to what stands before it in the list;
         // the ones after it are held to it.
         const before = features.slice(0, features.indexOf(f))
-        const refSurfaces = before.filter((o): o is SurfaceFeature => o.kind === 'surface' && (o.shape ?? 'freeform') !== 'freeform').map((o) => ({ id: o.id, name: o.name }))
+        const refSurfaces = before.filter((o): o is SurfaceFeature => o.kind === 'surface' && (o.shape === 'plane' || o.shape === 'cylinder')).map((o) => ({ id: o.id, name: o.name }))
         steps.push({ kind: 'surface', id: f.id, name: f.name, region: f.region, fit: f.fit, ...(f.controlSurface ? { controlSurface: structuredClone(f.controlSurface) } : {}), shape: f.shape ?? 'freeform', constrain: f.constrain ?? { mode: 'auto' }, refs: constrainRefs(ctx.elements), refSurfaces, ...(f.regionBox?.normal ? { facing: f.regionBox.normal } : {}) })
       }
       continue
@@ -506,7 +515,7 @@ export function resolveFeatures(
       // "NCollection_DataMap::Find", and a run-off section lofts "ok".
       reason ??= loftProblem(through, profiles)
       if (reason) failed(f, reason)
-      else steps.push({ kind: 'loft', id: f.id, name: f.name, profiles, sketches: f.sketches, sketchNames: through.map((s) => s.name), ruled: f.ruled, op: f.op, target: f.target })
+      else steps.push({ kind: 'loft', id: f.id, name: f.name, profiles, sketches: f.sketches, sketchNames: through.map((s) => s.name), ...(f.surface ? { surface: true } : {}), ruled: f.ruled, op: f.op, target: f.target })
       continue
     }
     if (f.kind === 'sweep') {
@@ -524,8 +533,12 @@ export function resolveFeatures(
       continue
     }
     if (f.kind === 'thicken') {
-      if (!(f.thickness > 0)) failed(f, 'The sheet needs a thickness.')
-      else steps.push({ kind: 'thicken', id: f.id, name: f.name, sheet: f.sheet, thickness: f.thickness, side: f.side, op: f.op, target: f.target })
+      const c = f.constraint
+      const plane = c && resolvePlane(c.plane, ctx)
+      const end = c?.mode === 'betweenPlanes' ? resolvePlane(c.end, ctx) : undefined
+      if (c && (!plane || (c.mode === 'betweenPlanes' && !end))) failed(f, 'A plane referenced by Thicken is missing.')
+      else if (!(Number.isFinite(f.thickness) && f.thickness > 0)) failed(f, 'The sheet needs a positive, finite thickness.')
+      else steps.push({ kind: 'thicken', id: f.id, name: f.name, sheet: f.sheet, thickness: f.thickness, side: f.side, ...(c && plane ? { constraint: { mode: c.mode, plane, end: end ?? undefined } } : {}), op: f.op, target: f.target })
       continue
     }
     if (f.kind === 'pattern') {

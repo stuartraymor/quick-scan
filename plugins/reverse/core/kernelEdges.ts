@@ -15,7 +15,7 @@
 
 import type { Vec3 } from '../../../src/core/types'
 import { cross, dot, len, normalize, scale, sub } from '../../../src/core/vec'
-import { parseHistory, vec, xyz } from './kernelMath'
+import { cadEdgeLength, parseHistory, vec, xyz } from './kernelMath'
 import { HASH_BOUND } from './kernelOps'
 import type { Shape } from './kernelTypes'
 import type { OcctLike } from './occtTypes'
@@ -155,7 +155,7 @@ export function oddEdges(occt: OcctLike, shape: Shape, { knife = false, limit = 
       const hash = occt.hashCode(e, HASH_BOUND)
       const faces = [...new Set(facesOf.get(hash) ?? [])]
       if (faces.length === 2 && !knife) continue
-      const length = occt.curveLength(e)
+      const length = cadEdgeLength(occt, e)
       // No length: a pole or an apex — unless the kernel draws it, an
       // edge a hair long a reader may keep with one face.
       if (!(length > NO_LENGTH_MM) && (faces.length === 2 || degenerate(hash))) continue
@@ -277,7 +277,7 @@ export function shortEdges(occt: OcctLike, shape: Shape, { underMm = SHORT_EDGE_
   if (occt.isNull(shape)) return { edges, count }
   const edgeHandles = occt.getSubShapes(shape, 'edge')
   try {
-    const short = edgeHandles.filter((e) => occt.curveLength(e) < underMm)
+    const short = edgeHandles.filter((e) => cadEdgeLength(occt, e) < underMm)
     if (short.length === 0) return { edges, count }
     const facesOf = parseHistory(occt.edgeToFaceMap(shape, HASH_BOUND))
     const degenerate = degenerateOnes(occt, shape)
@@ -291,7 +291,7 @@ export function shortEdges(occt: OcctLike, shape: Shape, { underMm = SHORT_EDGE_
       count++
       if (edges.length >= limit) continue
       const { first, last } = occt.curveParameters(e)
-      edges.push({ hash, at: vec(occt.curvePointAtParam(e, (first + last) / 2)), length: occt.curveLength(e), faces })
+      edges.push({ hash, at: vec(occt.curvePointAtParam(e, (first + last) / 2)), length: cadEdgeLength(occt, e), faces })
     }
   } finally {
     for (const h of edgeHandles) occt.release(h)
@@ -407,7 +407,7 @@ export function narrowFaces(occt: OcctLike, shape: Shape, widthMm: number, own: 
       let p = 0
       const edges = occt.getSubShapes(f, 'edge')
       try {
-        for (const e of edges) p += occt.curveLength(e)
+        for (const e of edges) p += cadEdgeLength(occt, e)
       } finally {
         for (const e of edges) occt.release(e)
       }

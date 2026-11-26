@@ -9,6 +9,9 @@ import type { PoleFrame } from './poleFrameGizmo'
 // lies behind them, the bodies, which come after, and the coordinate planes
 // at the origin, last.
 
+import type { TrimPiece } from '../core/buildTypes'
+import type { KernelMesh } from '../core/kernel'
+import { FinishingOverlay, type FinishingDisplay } from './finishingOverlay'
 import { cageLines } from '../core/freeform/cageLines'
 import { SliceArrow } from './sliceArrow'
 import { boxPoint, StackSlab } from './stackSlab'
@@ -17,6 +20,7 @@ import { SurfacePoleDrag } from './surfacePoleDrag'
 import { surfacePolePreview } from './surfacePolePreview'
 import type { PolynomialSurface } from '../core/surfaceStep'
 import * as THREE from 'three'
+import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js'
 import type { SectionFrame, WorldAxis } from '../../../src/core/section/frame'
 import type { Vec3 } from '../../../src/core/types'
 import type { SceneManager } from '../../../src/viewer/SceneManager'
@@ -46,6 +50,10 @@ const OVERLAP_COLOR = 0xe0564f
 
 export class ReScene {
   private host: SceneLayerHost
+  private trimMeshes: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>[] = []
+  private trimActive = false
+  private trimHover: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial> | null = null
+  onTrimPick: ((piece: TrimPiece) => void) | null = null
   private poleDrag: SurfacePoleDrag
   private polePreview: THREE.Mesh | null = null
   /** The bodies built, in the scan's frame — they were modelled on the scan
@@ -69,6 +77,11 @@ export class ReScene {
   private zebra: 'zebra' | 'draft' | 'envmap' | null = null
   private bodiesFaint = false
   /** The ghost of a feature being set up — see setBodyPreview. */
+  private fitAnalysisShown = false
+  private finishingDisplay: FinishingDisplay | null = null
+  private finishingOverlay = new FinishingOverlay()
+  private finishingMesh: KernelMesh | null = null
+  private finishingFaces: readonly number[] = []
   bodyPreview: THREE.Mesh | null = null
   cagePreview: THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial> | null = null
   /** The sketches drawn on the part, and their regions as click targets. */
@@ -77,6 +90,7 @@ export class ReScene {
   /** The coordinate planes at the origin, while they are shown. */
   readonly planes: CoordinatePlanes
   /** The Start and End of a varying round's edges, named on the part. */
+  private chamferReference: CSS2DObject | null = null
   private varyingEnds: VaryingEnds
   private planePick = false
   /** The bodies dimmed while a pick is on for the others. */
@@ -246,6 +260,11 @@ export class ReScene {
           ? this.beginBodyWindow(e)
           : false,
       click: (x, y, additive) => {
+        if (this.trimActive) {
+          const hit = this.trimAt(x, y)
+          if (hit) this.onTrimPick?.(hit.userData.piece)
+          return !!hit
+        }
         // What the arrow keys stepped to is what was asked for.
         const stepped = this.steppedAt({ x, y })
         this.stepped = null
@@ -273,6 +292,17 @@ export class ReScene {
       // grip or a lit sketch region, which are on top.
       // The body under it is told to the body list, whose row lights.
       hover: (at, covered) => {
+        if (this.trimActive) {
+          const hit = at && !covered ? this.trimAt(at.x, at.y) : null
+          if (hit !== this.trimHover) {
+            this.trimHover?.material.emissive.setHex(0)
+            hit?.material.emissive.setHex(0x55451f)
+            this.trimHover = hit
+            this.host.setCursor(hit ? 'pointer' : '')
+            this.host.invalidate()
+          }
+          return !!hit
+        }
         if (!this.bodyPicks.picking()) {
           this.setHoveredBody(null)
           return false
@@ -332,6 +362,7 @@ export class ReScene {
           material.needsUpdate = true
         }
         dress(this.bodyPreview)
+        for (const mesh of this.trimMeshes) dress(mesh)
         for (const mesh of this.bodyMeshes.values()) dress(mesh)
         for (const o of this.overlaps) dress(o.mesh)
         this.bodyPicks.setClipping(planes)
@@ -367,8 +398,10 @@ export class ReScene {
         this.setBodyPreview(null, '#ffffff')
         this.setOverlaps([])
         this.caps.dispose()
+        this.setTrimPieces(null)
         this.bodyPicks.dispose()
         this.varyingEnds.dispose()
+        this.chamferReference?.removeFromParent()
         this.host.partGroup.remove(this.bodyGroup)
       },
     }
@@ -684,6 +717,10 @@ export class ReScene {
   private regionUnder(clientX: number, clientY: number): SketchRegionHit | null {
     const region = this.sketches.regionAt(clientX, clientY)
     if (!region || this.sketches.picksThrough() || region.distance === undefined) return region
+    if (this.bodiesSolid && !this.bodiesFaint) {
+      const depth = this.bodyPicks.opaqueDepthAt(clientX, clientY, this.seeThroughBodies)
+      if (region.distance > depth + Math.max(1e-6, depth * 1e-8)) return null
+    }
     const scan = this.host.scanDistanceAt(clientX, clientY)
     // A region that far behind the scan is still on the face, not inside
     // the part.
@@ -754,8 +791,14 @@ export class ReScene {
   setBodyPreview(
     mesh: { positions: Float32Array; normals: Float32Array; indices: Uint32Array; faceHash?: Int32Array } | null,
     color: string,
-    options: { through?: boolean; replaces?: readonly number[]; edges?: boolean; cage?: { positions: ArrayLike<number>; faces: readonly (readonly number[])[] } } = {},
+    options: { through?: boolean; fitSurface?: boolean; edgeFeature?: boolean; finishFaces?: readonly number[]; replaces?: readonly number[]; edges?: boolean; cage?: { positions: ArrayLike<number>; faces: readonly (readonly number[])[] } } = {},
   ): void {
+    if (this.blendOutline) {
+      this.bodyGroup.remove(this.blendOutline)
+      this.blendOutline.geometry.dispose()
+      this.blendOutline.material.dispose()
+      this.blendOutline = null
+    }
     if (this.cagePreview) {
       this.bodyGroup.remove(this.cagePreview)
       this.cagePreview.geometry.dispose()
@@ -810,18 +853,111 @@ export class ReScene {
         material.transparent = !solid
         material.needsUpdate = true
       }
-      material.opacity = solid ? 1 : 0.45
+      material.opacity = options.fitSurface ? this.fitPreviewOpacity() : solid ? 1 : 0.45
       material.depthWrite = solid
-      material.depthTest = !options.through
+      // A best fit can sit just inside the scan. Keep its translucent extent visible there.
+      material.depthTest = !options.through && !options.fitSurface
       applyFinish(material, this.host.theme())
       material.clippingPlanes = this.host.clipPlanes()
       const ghost = new THREE.Mesh(geometry, material)
+      ghost.userData.fitSurface = Boolean(options.fitSurface)
+      ghost.userData.edgeFeature = Boolean(options.edgeFeature)
       ghost.renderOrder = 3
       this.bodyGroup.add(ghost)
       this.bodyPreview = ghost
     }
+    this.finishingMesh = options.edgeFeature ? mesh : null
+    this.finishingFaces = options.finishFaces ?? []
+    this.refreshFinishing()
     this.recap()
     this.host.invalidate()
+  }
+
+  private blendOutline: THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial> | null = null
+
+  drawBlendDrag(mesh: KernelMesh, outline: Float32Array, body: number, color: string, finishFaces?: readonly number[]): void {
+    const geometry = this.bodyPreview?.geometry
+    const position = geometry?.getAttribute('position')
+    if (!geometry || !position || position.array !== mesh.positions) {
+      this.setBodyPreview(mesh, color, { replaces: [body], edgeFeature: true, finishFaces })
+      const border = new THREE.BufferGeometry()
+      border.setAttribute('position', new THREE.BufferAttribute(outline,3))
+      const material = new THREE.LineBasicMaterial({ color: '#423e3b', depthTest:false, depthWrite:false, clippingPlanes:this.host.clipPlanes() })
+      this.blendOutline = new THREE.LineSegments(border,material)
+      this.blendOutline.frustumCulled = false
+      this.blendOutline.renderOrder = 5
+      this.bodyGroup.add(this.blendOutline)
+      return
+    }
+    position.needsUpdate = true
+    const border = this.blendOutline?.geometry.getAttribute('position')
+    if (border) border.needsUpdate = true
+    geometry.computeBoundingSphere()
+    if (this.finishingDisplay) this.refreshFinishing()
+    this.host.invalidate()
+  }
+
+  /** Visible trim fragments are both the drawing and the pick targets. */
+  setTrimPieces(pieces: { piece: TrimPiece; color: string; wireframe: boolean }[] | null): void {
+    this.trimActive = pieces !== null
+    this.trimHover = null
+    for (const mesh of this.trimMeshes) {
+      this.bodyGroup.remove(mesh)
+      mesh.geometry.dispose()
+      mesh.material.dispose()
+    }
+    this.trimMeshes = []
+    for (const { piece, color, wireframe } of pieces ?? []) {
+      const geometry = new THREE.BufferGeometry()
+      geometry.setAttribute('position', new THREE.BufferAttribute(piece.mesh.positions, 3))
+      geometry.setAttribute('normal', new THREE.BufferAttribute(piece.mesh.normals, 3))
+      geometry.setIndex(new THREE.BufferAttribute(piece.mesh.indices, 1))
+      const material = new THREE.MeshStandardMaterial({ color, side: THREE.DoubleSide, wireframe, clippingPlanes: this.host.clipPlanes() })
+      const mesh = new THREE.Mesh(geometry, material)
+      mesh.userData.piece = piece
+      this.bodyGroup.add(mesh)
+      this.trimMeshes.push(mesh)
+    }
+    this.host.invalidate()
+  }
+
+  private trimAt(x: number, y: number) {
+    this.host.setPickRay(x, y)
+    this.bodyGroup.updateWorldMatrix(true, true)
+    const hit = this.host.raycaster.intersectObjects(this.trimMeshes, false).find(hit =>
+      !this.host.clipPlanes()?.some(plane => plane.distanceToPoint(hit.point) < 0))
+    return this.trimMeshes.find(mesh => mesh === hit?.object) ?? null
+  }
+
+  private fitPreviewOpacity(): number {
+    return this.fitAnalysisShown ? 0.14 : 0.36
+  }
+
+  setFinishingDisplay(display: FinishingDisplay | null): void {
+    this.finishingDisplay = display && { ...display, report: (state, statistics) => { display.report(state, statistics); this.host.invalidate() } }
+    for (const [id, body] of this.bodyMeshes) this.dressBody(body.material as THREE.MeshStandardMaterial, id)
+    this.refreshFinishing()
+    this.host.invalidate()
+  }
+
+  private refreshFinishing(): void {
+    const preview = this.bodyPreview?.userData.edgeFeature ? this.bodyPreview : null
+    if (preview) {
+      const material = preview.material as THREE.MeshStandardMaterial
+      material.transparent = !!this.finishingDisplay
+      material.opacity = this.finishingDisplay ? .24 : 1
+      material.depthWrite = !this.finishingDisplay
+    }
+    this.finishingOverlay.update(preview, this.finishingMesh, this.finishingFaces, this.finishingDisplay)
+  }
+
+  setFitAnalysisShown(shown: boolean): void {
+    this.fitAnalysisShown = shown
+    if (this.bodyPreview?.userData.fitSurface) {
+      const material = this.bodyPreview.material as THREE.MeshStandardMaterial
+      material.opacity = this.fitPreviewOpacity()
+      this.host.invalidate()
+    }
   }
 
   /** Colour the current preview itself; never recolour the reference scan. */
@@ -1008,7 +1144,7 @@ export class ReScene {
       material.transparent = true
       material.opacity = 0.15
       material.depthWrite = false
-    } else if (this.bodiesFaint) {
+    } else if (this.bodiesFaint || this.finishingDisplay) {
       material.transparent = true
       material.opacity = 0.18
       material.depthWrite = false
@@ -1209,6 +1345,37 @@ export class ReScene {
    *  radius — none with an empty list — with the radius there in `units`. */
   setVaryingEnds(edges: readonly VaryingEdgeEnds[], units: DisplayUnits = 'mm'): void {
     this.varyingEnds.set(edges, units)
+  }
+
+  /** One button at the first picked edge. The picked-face overlay shows the
+   * support measured by Distance 1 or by the angle. */
+  setChamferReference(reference: { point: Vec3; hash: number; flipped: boolean } | null, flip: () => void): void {
+    if (!reference) {
+      this.chamferReference?.removeFromParent()
+      this.chamferReference = null
+      return
+    }
+    if (!this.chamferReference) {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = 'chamfer-reference-control'
+      button.dataset.test = 'chamfer-viewport-flip'
+      button.textContent = '⇄ Flip reference'
+      button.title = 'The highlighted face at the first picked edge is the reference. Switch the reference side for this chamfer.'
+      for (const event of ['pointerdown', 'pointerup', 'dblclick', 'wheel']) {
+        button.addEventListener(event, e => e.stopPropagation())
+      }
+      const label = new CSS2DObject(button)
+      label.center.set(0, 1)
+      this.host.partGroup.add(label)
+      this.chamferReference = label
+    }
+    const label = this.chamferReference
+    label.position.set(...reference.point)
+    label.element.setAttribute('aria-pressed', String(reference.flipped))
+    label.element.dataset.face = String(reference.hash)
+    label.element.onclick = event => { event.stopPropagation(); flip() }
+    this.host.invalidate()
   }
 
   /** Light the faces and edges a feature has picked. */

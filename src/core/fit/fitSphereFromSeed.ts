@@ -88,7 +88,7 @@ export function fitSphereFromSeed(
 /** Best-fit sphere on a hand-painted selection — the marked points as given,
  *  with the user's outlier cut-off and nothing else in the way. */
 export function fitSphereOnSelection(
-  g: MeshGraph,
+  g: Pick<MeshGraph, 'positions' | 'normals'>,
   selection: Uint32Array,
   settings: FitSettings,
 ): SphereFitOutput {

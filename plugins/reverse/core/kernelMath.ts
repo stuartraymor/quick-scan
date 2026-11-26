@@ -6,8 +6,42 @@
 import type { Vec3 } from '../../../src/core/types'
 import { add, cross, dot, len, normalize, scale, sub } from '../../../src/core/vec'
 import type { FaceHistory, RawFace } from './kernelTypes'
-import type { XYZ } from './occtTypes'
+import type { OcctLike, XYZ } from './occtTypes'
 import type { EdgeKind, FaceKind } from './topo'
+
+/**
+ * OCCT's default length quadrature changes slightly when a closed ellipse
+ * is split into arcs. Integrate the analytic speed over the actual edge range
+ * so a trim seam and the corresponding face perimeters agree across STEP files.
+ */
+export function cadEdgeLength(o: Pick<OcctLike, 'curveType' | 'curveLength' | 'curveParameters' | 'curvePointAtParam'>, edge: number, type = o.curveType(edge)): number {
+  if (type !== 'ellipse') return o.curveLength(edge)
+  const { first, last } = o.curveParameters(edge)
+  // OCCT parameterizes an ellipse as C + A cos(t) + B sin(t), with A and B
+  // orthogonal. Diametrically opposite points on its carrier give their lengths.
+  const diameter = (t: number) => len(sub(vec(o.curvePointAtParam(edge, t)), vec(o.curvePointAtParam(edge, t + Math.PI))))
+  const major = diameter(0) / 2
+  const minor = diameter(Math.PI / 2) / 2
+  const speed = (t: number) => Math.hypot(major * Math.sin(t), minor * Math.cos(t))
+  const integrate = (a: number, b: number, fa: number, fm: number, fb: number, tol: number, depth: number): number => {
+    const m = (a + b) / 2
+    const fl = speed((a + m) / 2), fr = speed((m + b) / 2)
+    const coarse = (b - a) * (fa + 4 * fm + fb) / 6
+    const fine = (b - a) * (fa + 4 * fl + 2 * fm + 4 * fr + fb) / 12
+    const correction = (fine - coarse) / 15
+    if (Math.abs(correction) <= tol || depth === 0) return fine + correction
+    return integrate(a, m, fa, fl, fm, tol / 2, depth - 1) + integrate(m, b, fm, fr, fb, tol / 2, depth - 1)
+  }
+  // Split at the extrema first, including arcs whose parameter wraps past 2π.
+  const quadrant = Math.PI / 2
+  let start = first, length = 0
+  for (let i = Math.floor(first / quadrant) + 1; start < last; i++) {
+    const end = Math.min(last, i * quadrant)
+    length += integrate(start, end, speed(start), speed((start + end) / 2), speed(end), (end - start) * major * 1e-12, 20)
+    start = end
+  }
+  return length
+}
 
 /** A part's name as a file gives it, or undefined where it says nothing: a
  *  blank, a bare number, an instance tag a CAD system writes for a

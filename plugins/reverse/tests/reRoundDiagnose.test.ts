@@ -260,8 +260,14 @@ describe('a round the kernel refuses', () => {
     const outline = sketchOf(1, (s) => addRectangle(s, [0, 0], [30, 20]))
     const base: Feature[] = [outline, extrudeAll(2, outline, 0, 5, 'new')]
     const plate = await build(builder, base)
-    const corner = plate.bodies[0].topology.edges.find((e) => e.fingerprint.kind === 'line' && Math.abs(e.fingerprint.dir[2]) > 0.99)!
-    const out = await build(builder, [...base, { id: 3, kind: 'fillet', name: 'Round', body: 2, edges: [corner.fingerprint], radius: 1.3, chain: false, visible: true } as FilletFeature])
+    const corners = plate.bodies[0].topology.edges.filter((e) => e.fingerprint.kind === 'line' && Math.abs(e.fingerprint.dir[2]) > 0.99)
+    const round: FilletFeature = { id: 3, kind: 'fillet', name: 'Round', body: 2, edges: [corners[0].fingerprint], radius: 1.3, chain: false, visible: true }
+    // One explicitly selected corner has an independent, exact section fallback.
+    const single = await build(builder, [...base, round])
+    expect(single.results.find(r => r.id === 3)?.status).toBe('ok')
+    expect(single.bodies[0].volume).toBeCloseTo(30 * 20 * 5 - (1 - Math.PI / 4) * 1.3 ** 2 * 5, 5)
+    // Two upright corners require the failed multi-edge solve and its diagnostic.
+    const out = await build(builder, [...base, { ...round, edges: corners.slice(0, 2).map(e => e.fingerprint) }])
     const failed = out.results.find((r) => r.id === 3)!
     expect(failed.status).toBe('failed')
     expect(failed.message).toMatch(/\(Filleting: produced an invalid solid\)$/)

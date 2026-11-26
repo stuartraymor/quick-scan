@@ -1465,11 +1465,14 @@ export class FlatScene {
     cloud?: readonly Vec2[],
     color = '#8b95a3',
     handles: readonly SplineHandle[] = [],
+    interactivePins = true,
   ): void {
     for (const dispose of this.draftCleanup) dispose()
     this.draftCleanup = []
     this.draftGroup.clear()
-    this.draftPicks = picks.map((p) => [p[0], p[1]])
+    // Numbered construction clicks can be visible without taking the next
+    // press. Only tools that edit these pins register them for hit testing.
+    this.draftPicks = interactivePins ? picks.map((p) => [p[0], p[1]]) : []
     this.draftHandles = handles.map((h) => ({ ...h, at: [...h.at], a: [...h.a], b: [...h.b] }))
     if (this.draftPicks.length === 0 && !this.dragging && !this.handleDragging) this.setPinHover(false)
     if (handles.length > 0) {
