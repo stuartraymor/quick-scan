@@ -25,12 +25,13 @@
 import { ScanPaths } from '../../../../src/core/geometry/scanPath'
 import type { Vec3 } from '../../../../src/core/types'
 import type { AutoTools } from './autoTools'
-import { type DirectionConstraint, type WorkMesh, fillCageHoles, guideConstraints, improveRims, mainPieces, meshArea, mirrored, positiveHalf, scanTopology, subMesh, welded, withoutSlivers } from './autoPrepare'
-import { featureConstraints, featureDetailWeight } from './autoFeatures'
+import { type DirectionConstraint, type WorkMesh, fillCageHoles, guideConstraints, improveRims, mainPieces, meshArea, mirrored, positiveHalf, scanTopology, simplifyLayoutMesh, subMesh, welded, withoutSlivers } from './autoPrepare'
+import { BALANCED_DETAIL_FACTOR, featureConstraints, featureDetailWeight } from './autoFeatures'
 import { offShare, refineToTolerance } from './autoRefine'
 import { type Cage, triangles } from './cage'
 import { coverageProbes, scanCoverage, type ScanCoverage } from './scanCoverage'
 import { instantQuads } from './instant'
+import { restoreScanRims } from './scanRims'
 import { type FitStats, type ScanProject, fitCageToScan, surfaceDeviation } from './limitFit'
 
 /** The target quads of Low, Medium and Fine: QUICKSURFACE's own. */
@@ -58,7 +59,7 @@ export const AUTO_ALGORITHMS: readonly AutoAlgorithm[] = ['basic', 'feature']
  */
 export type AutoDetails = 'low' | 'balanced' | 'higher' | 'highest'
 export const AUTO_DETAILS: readonly AutoDetails[] = ['low', 'balanced', 'higher', 'highest']
-export const DETAIL_FACTOR: Record<AutoDetails, number> = { low: 1.04, balanced: 2.19, higher: 3.88, highest: 5.79 }
+export const DETAIL_FACTOR: Record<AutoDetails, number> = { low: 1.04, balanced: BALANCED_DETAIL_FACTOR, higher: 3.88, highest: 5.79 }
 
 /** Symmetry: none, or the global plane the cage is made mirror-symmetric about — OXY (z = 0), OYZ (x = 0) or OXZ (y = 0). */
 export type AutoSymmetry = 'none' | 'oxy' | 'oyz' | 'oxz'
@@ -150,6 +151,7 @@ export interface AutoOutcome {
   /** Quads added by Refine to tolerance. */
   refined: number
   topologyResolutionRaised: boolean
+  faults: { nonmanifoldEdges: number; degenerateTriangles: number; alternateLayout: boolean; simplificationTopology?: 'recovered' | 'unresolved' }
   /** The limit surface as a mesh, for the preview. */
   surface: { positions: Float32Array; normals: Float32Array; indices: Uint32Array; edgeSegments: Uint32Array; signed: Float32Array }
   /** Time of each stage, ms. */
@@ -191,20 +193,20 @@ export function mirrorPositions(positions: Float64Array, mirror: { axis: number;
 }
 
 /** What a cage's connectivity comes to. */
-export function cageCounts(c: Cage): { irregular: number; edge: number; closed: boolean; boundaryEdges: number } {
+export function cageCounts(c: Cage): { irregular: number; edge: number; closed: boolean; boundaryEdges: number; nonmanifoldEdges: number } {
   const n = c.positions.length / 3
   const count = new Map<number, number>()
   const key = (a: number, b: number) => (a < b ? a * n + b : b * n + a)
   for (const f of c.faces) for (let k = 0; k < f.length; k++) count.set(key(f[k], f[(k + 1) % f.length]), (count.get(key(f[k], f[(k + 1) % f.length])) ?? 0) + 1)
   const valence = new Int32Array(n)
   const rim = new Uint8Array(n)
-  let boundaryEdges = 0, manifold = true, sum = 0
+  let boundaryEdges = 0, nonmanifoldEdges = 0, sum = 0
   const p = c.positions
   for (const [e, k] of count) {
     const a = Math.floor(e / n), b = e % n
     valence[a]++
     valence[b]++
-    if (k > 2) manifold = false
+    if (k > 2) nonmanifoldEdges++
     if (k === 1) {
       boundaryEdges++
       rim[a] = 1
@@ -214,7 +216,7 @@ export function cageCounts(c: Cage): { irregular: number; edge: number; closed: 
   }
   let irregular = 0
   for (let v = 0; v < n; v++) if (valence[v] > 0 && !rim[v] && valence[v] !== 4) irregular++
-  return { irregular, edge: count.size > 0 ? sum / count.size : 0, closed: manifold && boundaryEdges === 0, boundaryEdges }
+  return { irregular, edge: count.size > 0 ? sum / count.size : 0, closed: nonmanifoldEdges === 0 && boundaryEdges === 0, boundaryEdges, nonmanifoldEdges }
 }
 
 /** The scan as something a surface point can be taken to: the nearest point whose side agrees with the surface's. */
@@ -290,15 +292,17 @@ export function runAutoFreeform(scan: { positions: Float32Array | Float64Array; 
   // Native Low, Medium, Fine and Custom runs show diminishing extra rows as
   // the ordinary layout resolves more of each ridge. Normalize the saturating
   // allowance at Medium; smooth regions keep the requested surface density.
-  const weight = algorithm === 'feature' && detail !== 'low'
-    ? featureDetailWeight(reference, area) * (2 * AUTO_TARGETS.medium / (AUTO_TARGETS.medium + target))
+  const detailed = algorithm === 'feature' && detail !== 'low'
+  const topology = detailed ? scanTopology(reference) : undefined
+  const weight = detailed
+    ? featureDetailWeight(reference, area, target, topology)
     : 1
   const factor = algorithm === 'feature' ? 1 + (DETAIL_FACTOR[detail] - 1) * weight : 1
-  const asked = Math.max(16, Math.round((target * factor) / (axis >= 0 ? 2 : 1)))
+  const asked = Math.max(16, Math.round(Math.min(AUTO_QUADS_MAX, target * factor) / (axis >= 0 ? 2 : 1)))
   // Read topology before decimation or the symmetry cut. Artificial rims in
   // a working copy must not increase the user's requested layout density.
-  const original = asked <= 2000 && (axis >= 0 || reference.indices.length / 3 > 2 * asked)
-    ? scanTopology(reference) : undefined
+  const original = topology ?? (asked <= 2000 && (axis >= 0 || reference.indices.length / 3 > 2 * asked)
+    ? scanTopology(reference) : undefined)
   const openCycles = original && original.boundaryEdges > 0 && axis < 0 ? Math.max(0, whole.kept - original.euler) : 0
   const layoutArea = axis >= 0 ? meshArea(work) : area
   const scale = Math.sqrt(layoutArea / asked)
@@ -306,7 +310,13 @@ export function runAutoFreeform(scan: { positions: Float32Array | Float64Array; 
   if (settings.improveHoles) work = improveRims(work, 4 * scale).mesh
   // A dense scan is laid out on a lighter copy: enough triangles under every quad for the field to read the shape, no more.
   const budget = Math.min(LAYOUT_TRIANGLES_MAX, Math.max(LAYOUT_TRIANGLES_MIN, LAYOUT_TRIANGLES_PER_QUAD * asked))
-  if (tools && work.indices.length / 3 > 1.25 * budget) work = tools.simplify(work, budget)
+  let simplificationTopology: AutoOutcome['faults']['simplificationTopology']
+  if (tools && work.indices.length / 3 > 1.25 * budget) {
+    const before = axis < 0 ? (settings.improveHoles ? scanTopology(work) : original ?? scanTopology(work)) : undefined
+    const reduced = simplifyLayoutMesh(work, budget, LAYOUT_TRIANGLES_MAX, tools.simplify, before?.closed ? before.euler : undefined)
+    work = reduced.mesh
+    simplificationTopology = reduced.simplificationTopology
+  }
   report(0.7)
   const constraints: DirectionConstraint[] = []
   // Measured on basic_part at 4380 quads (bakeoff/RESULTS.md): the hard edges and curvature directions given to the
@@ -323,11 +333,12 @@ export function runAutoFreeform(scan: { positions: Float32Array | Float64Array; 
   const paths = new ScanPaths(reference.positions, reference.indices)
   const project = scanProjector(paths)
   /** The cage of `count` quads (of the half, with a symmetry), whole. */
-  const layOut = (count: number): { cage: Cage; mirror: AutoOutcome['mirror']; scale: number; topologyResolutionRaised: boolean } => {
+  const layOut = (count: number, seed = 0): { cage: Cage; mirror: AutoOutcome['mirror']; scale: number; topologyResolutionRaised: boolean } => {
     let laid
     try {
       laid = instantQuads(work, {
         quads: count,
+        seed,
         openCycles,
         boundaries: true,
         // The scan's sharp edges kept sharp in the field, for both algorithms: measured (bakeoff/RESULTS.md), it brings the
@@ -356,7 +367,16 @@ export function runAutoFreeform(scan: { positions: Float32Array | Float64Array; 
       return q.distance <= 1e-6 * reach || normalGap >= 0.7 * q.distance
     }
     {
-      const filled = fillCageHoles(positions, faces, CAGE_HOLE_EDGES, covered)
+      const extended = algorithm === 'basic' && original && original.boundaryLength < 2 * Math.sqrt(area)
+      const filled = fillCageHoles(positions, faces, extended ? 16 : CAGE_HOLE_EDGES, (centre, rim) => {
+        if (!covered(centre)) return false
+        if (rim.length <= CAGE_HOLE_EDGES) return true
+        const supported = rim.filter(v => {
+          const sample: Vec3 = [(centre[0]+positions[3*v])/2, (centre[1]+positions[3*v+1])/2, (centre[2]+positions[3*v+2])/2]
+          return covered(sample) || (paths.closest(sample)?.distance ?? Infinity) < 0.25 * reach
+        })
+        return supported.length >= Math.ceil(rim.length * 0.85)
+      })
       positions = filled.positions
       faces = filled.faces
     }
@@ -469,7 +489,60 @@ export function runAutoFreeform(scan: { positions: Float32Array | Float64Array; 
 
   // ---- measure
   enter('measure')
-  const { mesh: d, coverage } = measured ?? measureFit(cage, laid.scale)
+  measured ??= measureFit(cage, laid.scale)
+  let alternateLayout = false
+  // A forward-only fit can look good while missing blades or small scan openings.
+  // Retry once at the same density and compare both layouts on the same scan probes.
+  const incomplete = original && !original.closed && (measured.coverage.max > 1.5 * laid.scale ||
+    (original.boundaryEdges > 0 && cageCounts(cage).closed))
+  if (incomplete && !settings.refineTolerance && axis < 0 && asked <= 5000) {
+    let other: ReturnType<typeof layOut> | undefined
+    try { other = layOut(asked, 1) } catch (error) {
+      if (stopped !== undefined) throw stopped
+      if (!(error instanceof AutoError)) throw error
+    }
+    if (other) {
+      const fit = fitCageToScan(other.cage, project, fitOptions)
+      const next = measureFit(fit.cage, other.scale)
+      const shape = cageCounts(fit.cage)
+      const current = measured
+      const score = (m: typeof current) => Math.hypot(m.mesh.rms, m.coverage.rms)
+      const recoveredRim = cageCounts(cage).closed && shape.boundaryEdges > 0
+      if (next.mesh.points > 0 && shape.nonmanifoldEdges === 0 &&
+          next.coverage.max <= current.coverage.max * 1.05 &&
+          next.mesh.missed / (next.mesh.points + next.mesh.missed) <= current.mesh.missed / (current.mesh.points + current.mesh.missed) + 0.01 &&
+          (score(next) < 0.98 * score(current) || (recoveredRim && score(next) <= score(current) * 1.02))) {
+        cage = fit.cage
+        laid = other
+        fitted = fit
+        measured = next
+        alternateLayout = true
+      }
+    }
+  }
+  if (algorithm === 'feature' && !settings.improveHoles && !settings.refineTolerance && axis < 0 &&
+      original && original.boundaryEdges > 0 && cageCounts(cage).closed) {
+    const opened = restoreScanRims(cage, reference, laid.scale)
+    if (opened !== cage) {
+      const checked = measureFit(opened, laid.scale)
+      // A resolved aperture is useful only if the surrounding surface still fits.
+      const slack = Math.min(tolerance / 10, 0.005 * laid.scale)
+      if (checked.mesh.points > 0 && checked.mesh.rms <= measured.mesh.rms + slack &&
+          checked.coverage.rms <= measured.coverage.rms + slack && checked.coverage.max <= measured.coverage.max + slack) {
+        cage = opened
+        measured = checked
+      }
+    }
+  }
+  const { mesh: d, coverage } = measured
+  let degenerateTriangles = 0
+  for (let i = 0; i < d.indices.length; i += 3) {
+    const a = 3*d.indices[i], b = 3*d.indices[i+1], c = 3*d.indices[i+2], p = d.positions
+    const ux = p[b]-p[a], uy = p[b+1]-p[a+1], uz = p[b+2]-p[a+2]
+    const vx = p[c]-p[a], vy = p[c+1]-p[a+1], vz = p[c+2]-p[a+2]
+    const area2 = Math.hypot(uy*vz-uz*vy, uz*vx-ux*vz, ux*vy-uy*vx)
+    if (!Number.isFinite(area2) || area2 <= laid.scale * laid.scale * 1e-12) degenerateTriangles++
+  }
   const counts = cageCounts(cage)
   ms.measure += performance.now() - started
   report(1)
@@ -493,6 +566,7 @@ export function runAutoFreeform(scan: { positions: Float32Array | Float64Array; 
     deviation: { tolerance, points: d.points, missed: d.missed, rms: d.rms, max: d.max, within: d.within },
     refined,
     topologyResolutionRaised: laid.topologyResolutionRaised,
+    faults: { nonmanifoldEdges: counts.nonmanifoldEdges, degenerateTriangles, alternateLayout, ...(simplificationTopology ? { simplificationTopology } : {}) },
     surface: { positions: d.positions, normals: d.normals, indices: d.indices, signed: d.signed, edgeSegments: d.edgeSegments },
     ms,
   }

@@ -256,12 +256,24 @@ export const KIND_LABELS: Record<Feature['kind'] | 'coil', string> = {
   trim: 'Trim',
 }
 
+function generatedSurface(feature?: Feature): boolean {
+  return feature?.kind === 'freeform' && feature.autoFreeform === true
+}
+
+/** In an Auto Freeform comparison the scan and skin both write depth, so
+ * the scan is visible where it lies outside the fitted surface. */
+export function defaultScanTransparency(s: Pick<ReState, 'bodies' | 'bodiesHidden' | 'features'>): boolean {
+  if (s.bodiesHidden || !s.bodies.length) return false
+  const generated = new Set(s.features.filter(generatedSurface).map(f => f.id))
+  return s.bodies.some(b => b.visible && !generated.has(bodyMaker(b.id)))
+}
+
 /** The bodies named as a CAD body list names them — Solid 1, Solid 2 for
  *  the closed ones, Shell 1 for a surface — counted in the order of the
  *  features that made them, so a body keeps its number when a later one
  *  is edited away and comes back, and does not take the name of the
  *  feature, which is a step of the history rather than a thing. */
-export function nameBodies<B extends { id: number; name: string; surface?: boolean; label?: string }>(bodies: readonly B[], features: readonly { id: number }[], styles: BodyStyles = {}): (B & { color: string })[] {
+export function nameBodies<B extends { id: number; name: string; surface?: boolean; label?: string }>(bodies: readonly B[], features: readonly Feature[], styles: BodyStyles = {}): (B & { color: string })[] {
   const order = new Map(features.map((f, i) => [f.id, i]))
   const at = (id: number) => order.get(bodyMaker(id)) ?? Infinity
   const sorted = [...bodies].sort((a, b) => at(a.id) - at(b.id) || islandOf(a.id) - islandOf(b.id))
@@ -279,7 +291,11 @@ export function nameBodies<B extends { id: number; name: string; surface?: boole
   }
   // A name given is the body's; the count runs on under it, so the bodies
   // round it keep theirs.
-  return bodies.map((b) => ({ ...b, name: styles[b.id]?.name || (names.get(b.id) ?? `Body ${b.id}`), color: styles[b.id]?.color ?? bodyColor(b.id) }))
+  return bodies.map((b) => {
+    const style = styles[b.id]
+    const color = generatedSurface(features[at(b.id)]) ? '#c2b7a3' : bodyColor(b.id)
+    return { ...b, name: style?.name || (names.get(b.id) ?? `Body ${b.id}`), color: style?.color ?? color }
+  })
 }
 
 export function nameFor(s: Pick<ReState, 'nextOfKind'>, kind: Feature['kind'] | 'coil'): { name: string; nextOfKind: Record<string, number> } {

@@ -1120,6 +1120,8 @@ export interface FreeformFeature extends FeatureFlags {
   /** False evaluates the control surface independently of gesture snapping.
    * New manual patches use false. Undefined retains legacy fitted geometry. */
   fitToScan?: boolean
+  /** The cage was created by Auto Freeform. Used for its committed display. */
+  autoFreeform?: boolean
   /** Requested finished-surface fitting tolerance in model millimetres. */
   refitTolerance?: number
   ask?: FreeformAsk
@@ -1131,7 +1133,7 @@ export interface FreeformFeature extends FeatureFlags {
 }
 
 /** What a freeform feature holds besides its name. */
-export type FreeformData = Pick<FreeformFeature, 'positions' | 'faces' | 'creases' | 'steps' | 'snap' | 'snapType' | 'fitToScan' | 'refitTolerance' | 'ask' | 'snapRegion' | 'fromSketch'>
+export type FreeformData = Pick<FreeformFeature, 'positions' | 'faces' | 'creases' | 'steps' | 'snap' | 'snapType' | 'fitToScan' | 'autoFreeform' | 'refitTolerance' | 'ask' | 'snapRegion' | 'fromSketch'>
 
 /** A Fill Surface: a surface through a grid of points (core/fill.ts), QUICKSURFACE's Fill Surface of a four-sided loop with every edge Contact. The grid is kept, so the surface is rebuilt without the scan or the sketch it was made from. A sheet body of its own. */
 export interface FillFeature extends FeatureFlags {

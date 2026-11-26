@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { defaultScanTransparency } from '../state/reFeatureHelpers'
 import { mapRoundGroups, roundRoles } from '../core/roundInputs'
 // The Reverse engineer workspace's plumbing: the kernel brought up when the
 // workspace is first entered, the slice chains a sketch is drawn over, the
@@ -520,7 +521,7 @@ export function useReverseWorkspace({
   // proud of the other.
   const scanSeeThrough = useReverse((s) => s.scanSeeThrough)
   const bodiesSeeThrough = useReverse((s) => s.bodiesSeeThrough)
-  const anyBodyShown = !bodiesHidden && bodies.some((b) => b.visible)
+  const defaultTransparent = useReverse(defaultScanTransparency)
   // A face being snapped has the scan to click next, and the body lies
   // right on it: for that while the bodies are a tint and their edges,
   // and the scan is solid under them.
@@ -537,14 +538,14 @@ export function useReverseWorkspace({
     sceneRef.current?.setScanVisible(!scanHidden)
     reScene()?.setBodiesSolid(!bodiesSeeThrough)
     reScene()?.setBodiesFaint(snapping && !scanHidden)
-    sceneRef.current?.setScanGhost((scanSeeThrough ?? anyBodyShown) && !scanHidden && !snapping && !showEdgeMap)
+    sceneRef.current?.setScanGhost((scanSeeThrough ?? defaultTransparent) && !scanHidden && !snapping && !showEdgeMap)
     return () => {
       sceneRef.current?.setScanVisible(true)
       reScene()?.setBodiesSolid(false)
       reScene()?.setBodiesFaint(false)
       sceneRef.current?.setScanGhost(false)
     }
-  }, [scanHidden, scanSeeThrough, bodiesSeeThrough, anyBodyShown, snapping, showEdgeMap, onReverse, sceneRef])
+  }, [scanHidden, scanSeeThrough, bodiesSeeThrough, defaultTransparent, snapping, showEdgeMap, onReverse, sceneRef])
 
   // Transparent on one body (its style), over whatever the Bodies key says.
   const bodyStylesNow = useReverse((s) => s.bodyStyles)

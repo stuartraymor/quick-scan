@@ -43,6 +43,7 @@ interface Made {
   body?: { faces: number; solid: boolean; valid: boolean; area: number; volume?: number }
   auto: { algorithm: string; target: number; quads: number; vertices: number; irregular: number; meanEdge: number; closed: boolean; boundaryEdges: number; pieces: number; refined: number; symmetry: string; symmetric: { vertices: number; onPlane: number } | null }
   bodies: { count: number; changed?: { id: number }[] }
+  faults: { nonmanifoldEdges: number; degenerateTriangles: number; alternateLayout: boolean }
   fitted: { iterations: number; tolerance: number; rms: number; max: number; points: number; within: number; fraction: number }
   ms: Record<string, number>
 }
@@ -58,6 +59,7 @@ describe('reverse.freeform.auto', () => {
     const r = await auto({ algorithm: 'basic', quads: 300, name: 'Auto' })
     expect(r.feature).toMatchObject({ kind: 'freeform', name: 'Auto', status: 'ok' })
     expect(r.auto).toMatchObject({ algorithm: 'basic', target: 300, closed: true, boundaryEdges: 0, pieces: 1, refined: 0 })
+    expect(r.faults).toEqual({ nonmanifoldEdges: 0, degenerateTriangles: 0, alternateLayout: false })
     expect(Math.abs(r.auto.quads - 300) / 300).toBeLessThan(0.1)
     // A closed quad surface of sphere topology: V − E + F = 2 with E = 2F.
     expect(r.auto.vertices).toBe(r.auto.quads + 2)

@@ -53,12 +53,15 @@ interface Guide { clicks: Vec3[]; line: number[] }
 interface Stats {
   quads: number
   irregular: number
+  edge: number
   vertices: number
   rms: number
   max: number
   within: number
   tolerance: number
   coverage: AutoOutcome['coverage']
+  faults: AutoOutcome['faults']
+  missed: number
   closed: boolean
   seconds: number
   refined: number
@@ -213,9 +216,9 @@ export function AutoFreeformDialog({ onClose }: { onClose: () => void }) {
       previewVersion.current = version
       previewCage.current = writeQuadObj(made.cage, 'Auto Freeform preview')
       setStats({
-        quads: made.quads, irregular: made.irregular, vertices: made.vertices, rms: made.deviation.rms, max: made.deviation.max,
+        quads: made.quads, irregular: made.irregular, edge: made.edge, vertices: made.vertices, rms: made.deviation.rms, max: made.deviation.max,
         within: made.deviation.points > 0 ? made.deviation.within / made.deviation.points : 0, tolerance: made.deviation.tolerance,
-        coverage: made.coverage, closed: made.closed, seconds: (performance.now() - started) / 1000, refined: made.refined, topologyResolutionRaised: made.topologyResolutionRaised,
+        coverage: made.coverage, faults: made.faults, missed: made.deviation.missed, closed: made.closed, seconds: (performance.now() - started) / 1000, refined: made.refined, topologyResolutionRaised: made.topologyResolutionRaised,
       })
     } catch (e) {
       if (e instanceof AutoStopped) return
@@ -239,7 +242,7 @@ export function AutoFreeformDialog({ onClose }: { onClose: () => void }) {
     setError('')
     try {
       // The cage is fitted already: the body is its own surface, as shown. Snap stays on for editing it.
-      await runCommand('reverse.freeform.create', { obj: previewCage.current, steps: boundedBuildSteps(stats.quads, AUTO_BUILD_STEPS), snap: true, fitToScan: false }, text => useStore.getState().setStatus(text))
+      await runCommand('reverse.freeform.create', { obj: previewCage.current, steps: boundedBuildSteps(stats.quads, AUTO_BUILD_STEPS), snap: true, fitToScan: false, autoFreeform: true }, text => useStore.getState().setStatus(text))
       useStore.getState().setStatus('Auto Freeform created.')
       onClose()
     } catch (e) {
@@ -305,10 +308,15 @@ export function AutoFreeformDialog({ onClose }: { onClose: () => void }) {
         <span>Deviation: RMS {len.fmt(stats.rms, 3)}, max {len.fmt(stats.max, 3)}</span>
         <span>{Math.round(stats.within * 100)}% within {len.fmt(stats.tolerance)}{stats.refined > 0 ? ` · ${stats.refined.toLocaleString()} quads added` : ''}</span>
         <span title={`${stats.coverage.samples.toLocaleString()} probes distributed by scan area`}>Scan to surface: RMS {len.fmt(stats.coverage.rms, 3)}, max {len.fmt(stats.coverage.max, 3)}</span>
+        {stats.missed > 0 && <span>{stats.missed.toLocaleString()} surface {stats.missed === 1 ? 'sample has' : 'samples have'} no compatible scan measurement.</span>}
+        {stats.faults.nonmanifoldEdges + stats.faults.degenerateTriangles > 0 && <span role="alert">Surface faults · {stats.faults.nonmanifoldEdges} nonmanifold edges · {stats.faults.degenerateTriangles} degenerate triangles</span>}
+        {stats.faults.simplificationTopology === 'recovered' && <span>Kept a finer working mesh to preserve the closed scan topology.</span>}
+        {stats.faults.simplificationTopology === 'unresolved' && <span role="alert">Simplifying this scan changed its topology. Inspect narrow sections before export.</span>}
+        {stats.faults.alternateLayout && <span>Re-fitted after checking scan coverage.</span>}
         {stats.topologyResolutionRaised && <span>Increased resolution to preserve the scan’s openings and coverage.</span>}
         <span>{stats.irregular.toLocaleString()} irregular point{stats.irregular === 1 ? '' : 's'} · {stats.closed ? 'closed' : 'open'} · {stats.seconds.toFixed(1)} s</span>
       </small>}
-      {displaySurface ? <FreeformSurfaceDisplay positions={displaySurface.positions} measured={displaySurface.signed} /> : <fieldset className="ff-display" disabled><legend>Surface Display</legend><button type="button" aria-label="Shaded"><FreeformIcon name="shaded" /></button><button type="button" aria-label="Tolerance / Deviation"><FreeformIcon name="deviation" /></button><button type="button">Options …</button></fieldset>}
+      {displaySurface ? <FreeformSurfaceDisplay positions={displaySurface.positions} measured={displaySurface.signed} edge={stats?.edge} /> : <fieldset className="ff-display" disabled><legend>Surface Display</legend><button type="button" aria-label="Shaded"><FreeformIcon name="shaded" /></button><button type="button" aria-label="Tolerance / Deviation"><FreeformIcon name="deviation" /></button><button type="button">Options …</button></fieldset>}
       <details className="ff-auto-more" open={more} onToggle={e => setMore((e.target as HTMLDetailsElement).open)}>
         <summary data-test="auto-freeform-more">More</summary>
         <fieldset disabled={working} style={{ display: 'grid', gap: 6, border: 0, padding: '6px 0 0', margin: 0 }}>

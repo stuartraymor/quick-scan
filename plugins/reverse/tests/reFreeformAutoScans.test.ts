@@ -12,6 +12,7 @@
 // Native, lego, Basic Medium: 2054 quads, one open piece of 22 rim edges,
 // 6.5 % irregular; its CAD body 0.0594 mm rms and 0.642 mm at most from the
 // scan; a first capture of the finished preview at 5.9 s.
+import { setTimeout as yieldToRunner } from 'node:timers/promises'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import { fixture } from '../../../tests/fixtures'
@@ -46,6 +47,7 @@ const note = (scan: string, settings: AutoSettings, r: AutoOutcome, seconds: num
 }
 
 async function run(scan: string, mesh: ReturnType<typeof readStl>, settings: AutoSettings): Promise<{ r: AutoOutcome; seconds: number; longestGap: number }> {
+  await yieldToRunner(0)
   const tools = await loadAutoTools()
   let last = performance.now(), longestGap = 0
   const started = performance.now()

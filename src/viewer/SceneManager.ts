@@ -1087,7 +1087,10 @@ export class SceneManager {
     // minds.
     if (wireSlots) geometry.setAttribute('wireSlot', new THREE.BufferAttribute(wireSlots, 1))
     else geometry.deleteAttribute('wireSlot')
-    geometry.setIndex(new THREE.BufferAttribute(indices, 1))
+    // The picking BVH permutes its index. Fitting uses the imported order.
+    const renderIndex = new THREE.BufferAttribute(indices.slice(), 1)
+    geometry.setIndex(renderIndex)
+    this.scanTriangleOrder.set(renderIndex, indices)
     geometry.computeBoundingBox()
     geometry.computeBoundingSphere()
     if (adopt) this.adoptScanLayout(geometry, copyOf)
@@ -2054,6 +2057,7 @@ export class SceneManager {
   /** The scan's full triangle list while part of it is hidden (Hide Selected
    *  / Isolate) — put back by showHiddenTriangles. A view state only: fits,
    *  sections and exports still use the whole scan. */
+  private readonly scanTriangleOrder = new WeakMap<THREE.BufferAttribute, Uint32Array>()
   private fullIndex: THREE.BufferAttribute | null = null
 
   /** Hide the selected triangles ('selected'), or everything but them
@@ -2081,7 +2085,11 @@ export class SceneManager {
       if (which === 'selected' ? !inside : inside) kept.push(idx[t], idx[t + 1], idx[t + 2])
     }
     if (kept.length === idx.length || kept.length === 0) return 0
-    if (!this.fullIndex) this.fullIndex = index.clone()
+    if (!this.fullIndex) {
+      this.fullIndex = index.clone()
+      const order = this.scanTriangleOrder.get(index)
+      if (order) this.scanTriangleOrder.set(this.fullIndex, order)
+    }
     geometry.setIndex(new THREE.BufferAttribute(Uint32Array.from(kept), 1))
     geometry.disposeBoundsTree?.()
     geometry.computeBoundsTree()
@@ -3437,11 +3445,11 @@ export class SceneManager {
   /** The scan's triangles over its own vertices — a shading copy folded
    *  back to the vertex it was cut from — a fresh array, for a worker that
    *  wants the scan as a surface. */
-  scanIndices(): Uint32Array | null {
+  scanIndices(sourceOrder = false): Uint32Array | null {
     const g = this.scanGeometry()
     const index = g?.getIndex()
     if (!g || !index) return null
-    const src = index.array as Uint32Array
+    const src = (sourceOrder && this.scanTriangleOrder.get(index)) || index.array as Uint32Array
     const out = new Uint32Array(src.length)
     const own = this.scanVertexCount()
     const copyOf = this.editedShown && this.other ? this.other.copyOf : this.copyOf
