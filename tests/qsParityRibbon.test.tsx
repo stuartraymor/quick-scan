@@ -39,11 +39,11 @@ describe('QUICKSURFACE ribbon parity', () => {
 
   it('Freeform, Surfacing and CAD are three different tabs', () => {
     const freeform = render('freeform'), surfacing = render('surfacing'), cad = render('cad')
-    expect(groups(freeform)).toEqual(['Create New Freeform', 'Tools', 'Assistant'])
+    expect(groups(freeform)).toEqual(['Create New Freeform', 'Tools', 'Export Model', 'Assistant'])
     expect(groups(surfacing)).toEqual(['Create', 'Tools', 'Assistant'])
     // Checked live against QUICKSURFACE 8.0.128 on 2026-11-02: no File group on CAD.
     expect(groups(cad)).toEqual(['Cross sections', 'Create', 'Edges', 'Patterns', 'Export Model', 'Assistant'])
-    expect(labels(freeform)).toEqual(expect.arrayContaining(['New Freeform', 'Auto Freeform', 'Wrap Surface', 'From 3D Sketch', 'From quad OBJ ...', 'Thicken', 'Offset', 'Convert to CAD body']))
+    expect(labels(freeform)).toEqual(expect.arrayContaining(['New Freeform', 'Auto Freeform', 'Wrap Surface', 'From 3D Sketch', 'From quad OBJ ...', 'Thicken', 'Offset', 'Convert to CAD body', 'Export']))
     expect(labels(surfacing)).toEqual(expect.arrayContaining(['Fit Surface', 'Loft', 'Fill Surface', 'From 2D sketch', 'Sweep', 'Pipe', '3D Sketch', 'Helix', 'Roll Sketch', 'Duplicate Face', 'Extend Surface', 'Sew surfaces', 'Flatten', 'Project sketch']))
   })
 

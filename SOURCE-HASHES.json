@@ -1960,7 +1960,7 @@
   "tests/qsParityDocked.test.tsx": "8fdb94bdad4c8da0788e21dc3e788b47bdffaa566611dce5a3686ba65e01d621",
   "tests/qsParityExtract.test.tsx": "69cfbdc7b4a88f7ab7597064feb0dadf08f533601ee14204571b58f8981b6fdc",
   "tests/qsParityPrepare.test.tsx": "e3befb87de53ba76a22c5bb767739f6ab338a9b7da474f26437272578028d6ee",
-  "tests/qsParityRibbon.test.tsx": "091644d60d5042cf41873d5ccda044d4d343d6a7c78be97f8d97298a0b8bd9ca",
+  "tests/qsParityRibbon.test.tsx": "1d82117aaf92c91863c90103d7a7e735e0b5a98ffa5de9b5389cb6218e393629",
   "tests/recents.test.cjs": "375b0e9ed013e3d370ec55ac5846d0a2282ca135d06517aafddf8d0ad8ae0569",
   "tests/referenceMapMesh.test.ts": "e130c969b42082594b829540f44a200514d918f112ffcfbf3c17400c04cbe488",
   "tests/referenceMapWait.test.ts": "865a1c727d44e3752dd743abc34c7c7693c8b35602b88d43db7341e7861bbc79",
