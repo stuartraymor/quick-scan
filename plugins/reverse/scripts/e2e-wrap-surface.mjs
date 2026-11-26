@@ -25,8 +25,10 @@ try {
   await tab('Main')
   await page.click('[data-test=ribbon-edit-scan]')
   await page.waitForSelector('[data-test=edit-scan-select-all]')
+  const deselect = '[data-test=edit-scan-deselect]'
+  assert.equal(await page.$eval(deselect, button => button.disabled), true)
   await page.click('[data-test=edit-scan-select-all]')
-  await page.waitForFunction(() => /points selected/.test(document.querySelector('.qs-count')?.textContent ?? ''))
+  await page.waitForSelector(deselect + ':enabled')
   await tab('Freeform')
   await page.waitForFunction(() => !document.querySelector('[data-test=ribbon-wrap-surface]').disabled)
   await page.click(button)

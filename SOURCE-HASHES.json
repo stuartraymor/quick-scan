@@ -649,7 +649,7 @@
   "plugins/reverse/scripts/e2e-thread.mjs": "303a948cf765db8ce8a8e6c570eb06f2a0d87257fe6424f0178a7a022e3fd925",
   "plugins/reverse/scripts/e2e-torus-body.mjs": "87587b7524dd92f0452afd5b896f4f67ac89956d09a3862872ecbbc2ea92fd4e",
   "plugins/reverse/scripts/e2e-wheel-cap.mjs": "09bfb19f452e5b13c5f6cbba8af6f813a3fffbf8141322f865b6e8063f395350",
-  "plugins/reverse/scripts/e2e-wrap-surface.mjs": "24d307ada6ed5b178cf07e54e8a7a6f1d77cfae36549c1f031ae5ee691d07ba9",
+  "plugins/reverse/scripts/e2e-wrap-surface.mjs": "578fe9e8627b785042c1ff1b0344dc59942a801750339aadc5956105b8bdf00c",
   "plugins/reverse/scripts/e2e-zoom-fit-locked.mjs": "016bc72764925d6b9cefa39cf09251092d1b5a6f1aab05eee702150599f0f15c",
   "plugins/reverse/scripts/lib.mjs": "8a90b90f91e24591528abd5288cdff34f83022f5f3633e82a00b24726d9ff9e9",
   "plugins/reverse/scripts/measure-reply-cost.mjs": "942b1f2a72cef4eee628fffbd26e27c83d1093c093ba672bbf2a64d13b2e57b7",
