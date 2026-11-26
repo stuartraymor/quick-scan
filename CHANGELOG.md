@@ -1,3 +1,7 @@
+## Quick Scan 1.2.98 | Preserve closed scan topology during Auto Freeform
+
+Auto Freeform validates the decimated working mesh of a closed scan. It can keep a finer mesh when simplification pinches a neck or changes its Euler characteristic. Preview and the AI command report the outcome.
+
 ## Quick Scan 1.2.97 | Committed Auto Freeform surface over the scan
 
 A newly committed Auto Freeform has a neutral CAD finish. The scan shows where it protrudes through the fitted skin. The body color and scan transparency controls remain available.

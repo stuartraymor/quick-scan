@@ -310,6 +310,8 @@ export function AutoFreeformDialog({ onClose }: { onClose: () => void }) {
         <span title={`${stats.coverage.samples.toLocaleString()} probes distributed by scan area`}>Scan to surface: RMS {len.fmt(stats.coverage.rms, 3)}, max {len.fmt(stats.coverage.max, 3)}</span>
         {stats.missed > 0 && <span>{stats.missed.toLocaleString()} surface {stats.missed === 1 ? 'sample has' : 'samples have'} no compatible scan measurement.</span>}
         {stats.faults.nonmanifoldEdges + stats.faults.degenerateTriangles > 0 && <span role="alert">Surface faults · {stats.faults.nonmanifoldEdges} nonmanifold edges · {stats.faults.degenerateTriangles} degenerate triangles</span>}
+        {stats.faults.simplificationTopology === 'recovered' && <span>Kept a finer working mesh to preserve the closed scan topology.</span>}
+        {stats.faults.simplificationTopology === 'unresolved' && <span role="alert">Simplifying this scan changed its topology. Inspect narrow sections before export.</span>}
         {stats.faults.alternateLayout && <span>Re-fitted after checking scan coverage.</span>}
         {stats.topologyResolutionRaised && <span>Increased resolution to preserve the scan’s openings and coverage.</span>}
         <span>{stats.irregular.toLocaleString()} irregular point{stats.irregular === 1 ? '' : 's'} · {stats.closed ? 'closed' : 'open'} · {stats.seconds.toFixed(1)} s</span>

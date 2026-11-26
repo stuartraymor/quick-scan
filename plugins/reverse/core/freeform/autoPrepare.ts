@@ -105,6 +105,30 @@ export function scanTopology(mesh: WorkMesh): { euler: number; closed: boolean; 
   return { euler: vertices-incidences.size+mesh.indices.length/3, closed: boundaryEdges===0 && nonManifold===0, boundaryEdges, boundaryLength }
 }
 
+/** A coarse edge collapse can pinch two walls together even on a closed scan.
+ * Increase only the working triangle budget. The requested quad count stays fixed. */
+export function simplifyLayoutMesh(
+  source: WorkMesh, budget: number, maxTriangles: number,
+  simplify: (mesh: WorkMesh, triangles: number) => WorkMesh, closedEuler?: number,
+): { mesh: WorkMesh; simplificationTopology?: 'recovered' | 'unresolved' } {
+  const first = simplify(source, budget)
+  if (closedEuler === undefined || first === source) return { mesh: first }
+  const sourceTriangles = source.indices.length / 3
+  const limit = Math.min(sourceTriangles, maxTriangles)
+  let mesh = first
+  let target = budget
+  for (;;) {
+    const check = scanTopology(mesh)
+    if (check.closed && check.euler === closedEuler) {
+      return target === budget ? { mesh } : { mesh, simplificationTopology: 'recovered' }
+    }
+    if (target >= limit) return { mesh: first, simplificationTopology: 'unresolved' }
+    target = Math.min(limit, 2 * target)
+    if (target === sourceTriangles) return { mesh: source, simplificationTopology: 'recovered' }
+    mesh = simplify(source, target)
+  }
+}
+
 export function meshArea(m: WorkMesh): number {
   let area = 0
   for (let t = 0; t + 2 < m.indices.length; t += 3) area += triangleArea(m.positions, m.indices[t], m.indices[t + 1], m.indices[t + 2])

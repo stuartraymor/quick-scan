@@ -4,13 +4,29 @@ import type { Vec3 } from '../../../src/core/types'
 import { coverageProbes, scanCoverage } from '../core/freeform/scanCoverage'
 import { measuredDeviationStats } from '../core/freeform/analysisRamp'
 import { AUTO_ALGORITHMS, AUTO_BUILD_STEPS, cageCounts, runAutoFreeform } from '../core/freeform/autoFreeform'
-import { rims } from '../core/freeform/autoPrepare'
+import { rims, simplifyLayoutMesh } from '../core/freeform/autoPrepare'
 import { restoreScanRims } from '../core/freeform/scanRims'
 import { fitCageToScan, surfaceDeviation, type ScanProject } from '../core/freeform/limitFit'
 import { boundedBuildSteps, freeformBody } from '../core/freeform/make'
 import { cagePatches, type PatchGrid } from '../core/freeform/patches'
 import { matchedTangents, subdivisionNet } from '../core/freeform/subdivisionNet'
 import { ReKernel } from '../core/kernel'
+
+it('retains the topology of a closed scan when a decimated intermediate becomes nonmanifold', () => {
+  const positions = Float32Array.from([0,0,0, 1,0,0, 0,1,0, 0,0,1])
+  const tetrahedron = { positions, indices: Uint32Array.from([0,1,2, 0,3,1, 1,3,2, 2,3,0]) }
+  const bad = { positions, indices: Uint32Array.from([...tetrahedron.indices, ...tetrahedron.indices]) }
+  const source = { positions, indices: new Uint32Array(60) }
+  const attempts: number[] = []
+  const kept = simplifyLayoutMesh(source, 4, 16, (_mesh, n) => {
+    attempts.push(n)
+    return n === 16 ? tetrahedron : bad
+  }, 2)
+  expect(attempts).toEqual([4, 8, 16])
+  expect(kept).toEqual({ mesh: tetrahedron, simplificationTopology: 'recovered' })
+  expect(simplifyLayoutMesh(source, 4, 8, () => bad, 2)).toEqual({ mesh: bad, simplificationTopology: 'unresolved' })
+  expect(simplifyLayoutMesh(tetrahedron, 2, 8, () => bad, 2)).toEqual({ mesh: tetrahedron, simplificationTopology: 'recovered' })
+})
 
 it('keeps default CAD conversion within the sampling budget at the observed Highest density', () => {
   expect(boundedBuildSteps(4431, AUTO_BUILD_STEPS)).toBe(3)

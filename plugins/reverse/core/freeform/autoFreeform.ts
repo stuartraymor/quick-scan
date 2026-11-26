@@ -25,7 +25,7 @@
 import { ScanPaths } from '../../../../src/core/geometry/scanPath'
 import type { Vec3 } from '../../../../src/core/types'
 import type { AutoTools } from './autoTools'
-import { type DirectionConstraint, type WorkMesh, fillCageHoles, guideConstraints, improveRims, mainPieces, meshArea, mirrored, positiveHalf, scanTopology, subMesh, welded, withoutSlivers } from './autoPrepare'
+import { type DirectionConstraint, type WorkMesh, fillCageHoles, guideConstraints, improveRims, mainPieces, meshArea, mirrored, positiveHalf, scanTopology, simplifyLayoutMesh, subMesh, welded, withoutSlivers } from './autoPrepare'
 import { BALANCED_DETAIL_FACTOR, featureConstraints, featureDetailWeight } from './autoFeatures'
 import { offShare, refineToTolerance } from './autoRefine'
 import { type Cage, triangles } from './cage'
@@ -151,7 +151,7 @@ export interface AutoOutcome {
   /** Quads added by Refine to tolerance. */
   refined: number
   topologyResolutionRaised: boolean
-  faults: { nonmanifoldEdges: number; degenerateTriangles: number; alternateLayout: boolean }
+  faults: { nonmanifoldEdges: number; degenerateTriangles: number; alternateLayout: boolean; simplificationTopology?: 'recovered' | 'unresolved' }
   /** The limit surface as a mesh, for the preview. */
   surface: { positions: Float32Array; normals: Float32Array; indices: Uint32Array; edgeSegments: Uint32Array; signed: Float32Array }
   /** Time of each stage, ms. */
@@ -310,7 +310,13 @@ export function runAutoFreeform(scan: { positions: Float32Array | Float64Array; 
   if (settings.improveHoles) work = improveRims(work, 4 * scale).mesh
   // A dense scan is laid out on a lighter copy: enough triangles under every quad for the field to read the shape, no more.
   const budget = Math.min(LAYOUT_TRIANGLES_MAX, Math.max(LAYOUT_TRIANGLES_MIN, LAYOUT_TRIANGLES_PER_QUAD * asked))
-  if (tools && work.indices.length / 3 > 1.25 * budget) work = tools.simplify(work, budget)
+  let simplificationTopology: AutoOutcome['faults']['simplificationTopology']
+  if (tools && work.indices.length / 3 > 1.25 * budget) {
+    const before = axis < 0 ? (settings.improveHoles ? scanTopology(work) : original ?? scanTopology(work)) : undefined
+    const reduced = simplifyLayoutMesh(work, budget, LAYOUT_TRIANGLES_MAX, tools.simplify, before?.closed ? before.euler : undefined)
+    work = reduced.mesh
+    simplificationTopology = reduced.simplificationTopology
+  }
   report(0.7)
   const constraints: DirectionConstraint[] = []
   // Measured on basic_part at 4380 quads (bakeoff/RESULTS.md): the hard edges and curvature directions given to the
@@ -560,7 +566,7 @@ export function runAutoFreeform(scan: { positions: Float32Array | Float64Array; 
     deviation: { tolerance, points: d.points, missed: d.missed, rms: d.rms, max: d.max, within: d.within },
     refined,
     topologyResolutionRaised: laid.topologyResolutionRaised,
-    faults: { nonmanifoldEdges: counts.nonmanifoldEdges, degenerateTriangles, alternateLayout },
+    faults: { nonmanifoldEdges: counts.nonmanifoldEdges, degenerateTriangles, alternateLayout, ...(simplificationTopology ? { simplificationTopology } : {}) },
     surface: { positions: d.positions, normals: d.normals, indices: d.indices, signed: d.signed, edgeSegments: d.edgeSegments },
     ms,
   }
