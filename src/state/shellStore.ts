@@ -50,6 +50,8 @@ interface ShellState {
   setHiddenTriangles: (n: number) => void
   setExtractOpen: (open: boolean) => void
   /** The Prepare Scan wizard's step (0–3), or null when it is not running. */
+  editScanOpen: boolean
+  openEditScan: (prepare?: boolean) => void
   prepareStep: number | null
   setPrepareStep: (step: number | null) => void
   setAppMenuOpen: (open: boolean) => void
@@ -75,6 +77,8 @@ export const useShell = create<ShellState>()((set) => ({
   screenPointOf: null,
   gripPointOf: null,
   setSelection: (selection) => set({ selection }),
+  editScanOpen: false,
+  openEditScan: (prepare = false) => set({ workspace: 'mesh', inspectorOpen: true, editScanOpen: true, extractOpen: false, prepareStep: prepare ? 0 : null }),
   prepareStep: null,
   setPrepareStep: (prepareStep) => set({ prepareStep }),
   hiddenTriangles: 0,
@@ -91,5 +95,5 @@ export const useShell = create<ShellState>()((set) => ({
   // panel stays as it was until a command opens it.
   setRibbonTab: (ribbonTab, workspace) => set({ ribbonTab, ...(workspace ? { workspace } : {}) }),
   // Starting a command keeps the ribbon tab it was started from, as in QUICKSURFACE.
-  setWorkspace: (workspace) => set({ workspace, inspectorOpen: true }),
+  setWorkspace: (workspace) => set({ workspace, inspectorOpen: true, editScanOpen: false, prepareStep: null }),
 }))

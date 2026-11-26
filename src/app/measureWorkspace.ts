@@ -285,7 +285,7 @@ export function measureWorkspace({ clientRef, sceneRef }: MeasureDeps) {
   /** The open symmetry-plane draft asks the worker for the mirror plane —
    *  refined from the seed plane it names, or from the scan's principal
    *  planes — and takes the numbers into its params the way typed ones go. */
-  const findSymmetry = async () => {
+  const findSymmetry = async (manualSeed?: { normal: Vec3; point: Vec3 }) => {
     const s = useStore.getState()
     const d = s.draft
     if (!d || d.method !== 'plane-symmetry' || d.status === 'fitting') return
@@ -297,7 +297,7 @@ export function measureWorkspace({ clientRef, sceneRef }: MeasureDeps) {
     try {
       const marked = d.selection ?? null
       const r = await clientRef.current!.symmetry(
-        seedFit ? { normal: seedFit.normal, point: seedFit.center } : seedBase ? { normal: seedBase.normal, point: seedBase.point } : null,
+        manualSeed ?? (seedFit ? { normal: seedFit.normal, point: seedFit.center } : seedBase ? { normal: seedBase.normal, point: seedBase.point } : null),
         marked,
       )
       const now = useStore.getState().draft

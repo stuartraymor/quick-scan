@@ -371,3 +371,9 @@ button.ribbon-text-key.with-icon { display: flex; align-items: center; gap: 6px;
 .example-settings .library-path { margin-top: 6px; border: 1px solid var(--line); padding: 8px; overflow-wrap: anywhere; }
 .example-settings .library-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .example-settings .library-actions button:last-child { margin-inline-start: auto; }
+
+/* The Main ribbon's first two groups use the measured large-button pitch. */
+.desktop-ribbon-group:has([data-test="ribbon-prepare-scan"]) .desktop-ribbon-tool {min-width:76px;max-width:76px}
+.desktop-ribbon-group:has([data-test="ribbon-open"]):has([data-test="ribbon-save"]) .desktop-ribbon-tool {min-width:76px;max-width:76px}
+.desktop-ribbon-group:has([data-test="ribbon-prepare-scan"]) .desktop-ribbon-tool span {max-width:46px;font:11px/13px Tahoma,sans-serif}
+.desktop-ribbon-group:has([data-test="ribbon-prepare-scan"]) .icon {width:28px;height:28px}

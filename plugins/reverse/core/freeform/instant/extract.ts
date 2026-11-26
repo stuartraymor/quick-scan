@@ -538,7 +538,7 @@ export interface Extracted {
  * reprojection onto the scan.
  */
 export function extractFaces(
-  graph: Graph, scale: number, smooth: number, grid: RayGrid | null, progress: Progress,
+  graph: Graph, scale: number, smooth: number, grid: RayGrid | null, progress: Progress, preserveOpenings = false,
 ): Extracted {
   const nVOld = graph.nV
   let ids = graph.adj
@@ -582,6 +582,26 @@ export function extractFaces(
   }
   /** fill_face(): a quad as it is; a triangle or pentagon as a fan (kept whole here); larger faces cut into quads. */
   const fillFace = (verts: number[]): void => {
+    // A short cycle around a bore or an open tube can look exactly like a face
+    // in the field graph. Check its interior against the input before capping it.
+    if (preserveOpenings && grid && verts.every(v => crease[v])) {
+      let x = 0, y = 0, z = 0, nx = 0, ny = 0, nz = 0
+      const first = 3 * verts[0]
+      for (let i = 0; i < verts.length; i++) {
+        const a = 3 * verts[i], b = 3 * verts[(i + 1) % verts.length]
+        x += O[a]; y += O[a+1]; z += O[a+2]
+        const ax = O[a]-O[first], ay = O[a+1]-O[first+1], az = O[a+2]-O[first+2]
+        const bx = O[b]-O[first], by = O[b+1]-O[first+1], bz = O[b+2]-O[first+2]
+        nx += ay*bz-az*by; ny += az*bx-ax*bz; nz += ax*by-ay*bx
+      }
+      const length = Math.hypot(nx, ny, nz)
+      if (length > 0) {
+        nx /= length; ny /= length; nz /= length
+        x /= verts.length; y /= verts.length; z /= verts.length
+        if (!Number.isFinite(grid.intersect(x,y,z,nx,ny,nz,scale/2)) &&
+            !Number.isFinite(grid.intersect(x,y,z,-nx,-ny,-nz,scale/2))) return
+      }
+    }
     while (verts.length > 2) {
       const m = verts.length
       if (m === 4 || m === 3 || m === 5) {

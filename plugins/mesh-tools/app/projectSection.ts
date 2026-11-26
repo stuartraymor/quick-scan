@@ -70,10 +70,12 @@ export type ScanEditJson =
   | { kind: 'scale'; factors: [number, number, number] }
   | { kind: 'skirt'; edges: number }
   | { kind: 'reduce'; triangles: number }
+  | {kind:'split';method:'split'|'subtract'|'add';tool:string;triangles:number}
+  | { kind:'rim'; action:'semi'|'bridge'|'smooth'|'zip'|'expand'; triangles:number }
   | { kind: 'noise'; iterations: number; region?: number }
   | { kind: 'mirror'; plane: string }
   | { kind: 'cut'; plane: string; removed: number; capped: number; open: number }
-  | { kind: 'fill'; maxSize: number; mode: 'curved' | 'flat'; holes: number; triangles: number }
+  | { kind: 'fill'; maxSize: number; mode: 'curved' | 'flat'; algorithm?: 'auto'|'flat'|'tangent'|'curvature'; selected?: boolean; holes: number; triangles: number }
   | { kind: 'smooth'; size: number; limit: number; maxMove: number; region?: number }
   | { kind: 'boolean'; op: 'subtract' | 'add' | 'intersect'; solid: string; removed: number; added: number; volume: number }
   | { kind: 'offset'; distance: number; maxMove: number; region?: number }
@@ -166,6 +168,14 @@ function validateMeshPart(raw: unknown): MeshPart {
       else if (edit.kind === 'mirror') fields(edit, 'plane', 'string', where)
       else if (edit.kind === 'skirt') fields(edit, 'edges', 'number', where)
       else if (edit.kind === 'reduce') fields(edit, 'triangles', 'number', where)
+      else if(edit.kind==='split'){
+        fields(edit,'tool','string',where);fields(edit,'triangles','number',where)
+        if(!['split','subtract','add'].includes(String(edit.method)))invalid(where)
+      }
+      else if (edit.kind === 'rim') {
+        if(!['semi','bridge','smooth','zip','expand'].includes(String(edit.action))) invalid(where)
+        fields(edit,'triangles','number',where)
+      }
       else if (edit.kind === 'noise') {
         fields(edit, 'iterations', 'number', where)
         if (edit.region !== undefined && typeof edit.region !== 'number') invalid(`${where}.region`)
@@ -182,6 +192,8 @@ function validateMeshPart(raw: unknown): MeshPart {
         fields(edit, 'removed capped open', 'number', where)
       } else if (edit.kind === 'fill') {
         fields(edit, 'maxSize holes triangles', 'number', where)
+        if (edit.algorithm !== undefined && !['auto','flat','tangent','curvature'].includes(String(edit.algorithm))) invalid(`${where}.algorithm`)
+        if (edit.selected !== undefined && typeof edit.selected !== 'boolean') invalid(`${where}.selected`)
         if (edit.mode !== 'curved' && edit.mode !== 'flat') invalid(`${where}.mode`)
       } else if (edit.kind === 'smooth') {
         fields(edit, 'size limit maxMove', 'number', where)
@@ -226,6 +238,8 @@ function scanEditOf(e: ScanEditJson): ScanEdit {
       return { kind: e.kind, edges: e.edges }
     case 'reduce':
       return { kind: e.kind, triangles: e.triangles }
+    case 'split': return {kind:e.kind,method:e.method,tool:e.tool,triangles:e.triangles}
+    case 'rim': return {kind:e.kind,action:e.action,triangles:e.triangles}
     case 'noise':
       return { kind: e.kind, iterations: e.iterations, ...(e.region !== undefined ? { region: e.region } : {}) }
     case 'scale':
@@ -235,7 +249,7 @@ function scanEditOf(e: ScanEditJson): ScanEdit {
     case 'cut':
       return { kind: e.kind, plane: e.plane, removed: e.removed, capped: e.capped, open: e.open }
     case 'fill':
-      return { kind: e.kind, maxSize: e.maxSize, mode: e.mode, holes: e.holes, triangles: e.triangles }
+      return { kind: e.kind, maxSize: e.maxSize, mode: e.mode, ...(e.algorithm ? {algorithm:e.algorithm,selected:e.selected} : {}), holes: e.holes, triangles: e.triangles }
     case 'smooth':
       return { kind: e.kind, size: e.size, limit: e.limit, maxMove: e.maxMove, ...(e.region !== undefined ? { region: e.region } : {}) }
     case 'boolean':

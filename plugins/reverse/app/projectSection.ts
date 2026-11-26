@@ -175,7 +175,11 @@ export function validateFeatureJson(e: Record<string, unknown>): void {
     fields(route, 'bendRadius', 'number', 'sweep.route')
   }
   if (e.kind === 'import') {
-    const file = object(e.file, 'import.file')
+    if(e.alignment!==undefined){
+        const pose=object(e.alignment,'import.alignment')
+        for(const [key,n] of [['r',9],['t',3]] as const)if(!Array.isArray(pose[key])||pose[key].length!==n||!pose[key].every(Number.isFinite))invalid('import.alignment')
+      }
+      const file = object(e.file, 'import.file')
     fields(file, 'key name', 'string', 'import.file')
     fields(file, 'size', 'number', 'import.file')
     if (e.freeformSource !== undefined && (!Number.isSafeInteger(e.freeformSource) || Number(e.freeformSource) < 1)) invalid('import.freeformSource')

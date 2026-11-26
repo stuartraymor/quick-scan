@@ -7,7 +7,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import type { SceneManager } from '../../../src/viewer/SceneManager'
 import { refused, run, soupOf, startHeadless, stlBytes, undoLabels, type Headless } from '../../../tests/commandKit'
 import { createReverseSession, installReverseSession, type ReverseSession } from '../app/reSession'
-import { AUTO_TARGETS, DETAIL_FACTOR } from '../core/freeform/autoFreeform'
+import { AUTO_TARGETS } from '../core/freeform/autoFreeform'
 import { ReClient } from '../core/reClient'
 import { useReverse } from '../state/reStore'
 import plugin from '../plugin'
@@ -87,12 +87,12 @@ describe('reverse.freeform.auto', () => {
     expect(Math.abs(low.auto.quads - 1000) / 1000).toBeLessThan(0.05)
   })
 
-  it('Feature aligned is the default, and gives more quads than the target by Feature Details; Refine to tolerance adds more', async () => {
+  it('Feature aligned defaults to the requested density on a smooth scan and tolerance refinement adds quads', async () => {
     const r = await auto({ quads: 200, steps: 1, snap: false })
     expect(r.auto.algorithm).toBe('feature')
-    expect(Math.abs(r.auto.quads - 200 * DETAIL_FACTOR.balanced) / (200 * DETAIL_FACTOR.balanced)).toBeLessThan(0.12)
+    expect(Math.abs(r.auto.quads - 200) / 200).toBeLessThan(0.12)
     const low = await auto({ quads: 200, details: 'low', steps: 1, snap: false })
-    expect(low.auto.quads).toBeLessThan(r.auto.quads)
+    expect(Math.abs(low.auto.quads - 200) / 200).toBeLessThan(0.12)
     const refined = await auto({ algorithm: 'basic', quads: 200, refineTolerance: 0.005, steps: 1, snap: false })
     expect(refined.auto.refined).toBeGreaterThan(0)
     expect(refined.auto.quads).toBeGreaterThan(230)

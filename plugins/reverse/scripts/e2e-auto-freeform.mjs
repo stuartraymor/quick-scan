@@ -117,7 +117,7 @@ try {
   const undoBefore = await page.evaluate(() => document.querySelector('[data-test=undo]')?.getAttribute('title'))
   assert.equal(typeof undoBefore, 'string')
   const quads = await preview()
-  assert.ok(quads > 200 && quads < 700, `Feature aligned, Balanced gives about 2.2 × 200 quads: ${quads}`)
+  assert.ok(Math.abs(quads / 200 - 1) < 0.12, `Smooth sphere stays near the custom target of 200 quads: ${quads}`)
   assert.equal(await features(), 0)
   assert.ok(await page.evaluate(() => window.__re.reScene().bodyPreview?.geometry.attributes.position.count > 0))
   assert.ok(await page.evaluate(() => window.__re.reScene().cagePreview?.geometry.attributes.position.count > 0))
@@ -133,30 +133,42 @@ try {
   await page.screenshot({ path: shotPath('auto-freeform-preview.png') })
 
   const displayClick = text => page.$eval('[data-test=freeform-surface-display]', (e, text) => Array.from(e.querySelectorAll('button')).find(b => b.textContent === text).click(), text)
-  await displayClick('Deviation')
+  const viewportToggle = '[data-test=auto-viewport-deviation]'
+  await page.click(viewportToggle)
   await page.waitForSelector('[data-test=freeform-deviation-legend]', { timeout: 120000 })
-  assert.ok(await page.evaluate(() => window.__re.reScene().bodyPreview.material.vertexColors))
-  assert.ok(await page.evaluate(() => window.__re.reScene().bodyPreview.geometry.attributes.color.count === window.__re.reScene().bodyPreview.geometry.attributes.position.count))
+  const samples = await page.evaluate(() => {
+    const preview = window.__re.reScene().bodyPreview
+    return { n: preview.geometry.attributes.scanSample.count, vertices: preview.geometry.attributes.position.count,
+      id: preview.geometry.uuid, wires: window.__re.reScene().cagePreview.geometry.index.count }
+  })
+  assert.equal(samples.n, samples.vertices)
+  assert.ok(samples.wires > 8 * quads)
   await displayClick('Options')
   await type('[aria-label="Deviation tolerance"]', '0')
-  assert.equal(await page.$eval('[data-test=freeform-deviation-options]', e => e.querySelector('[data-test=deviation-options-ok]').disabled), true)
+  assert.equal(await page.$eval('[data-test=deviation-options-ok]', e => e.disabled), true)
   await type('[aria-label="Deviation tolerance"]', '0.2')
-  await page.click('input[name=preview-colouring][value=pass-fail]')
+  await page.click('input[name=freeform-colouring][value=pass-fail]')
   await page.click('[data-test=deviation-options-ok]')
   await page.waitForSelector('[data-test=freeform-deviation-options]', { hidden: true })
-  assert.ok(await page.$eval('[data-test=freeform-deviation-legend]', e => e.textContent.includes('0.2')))
-  assert.ok(await page.evaluate(() => {
-    const colours = window.__re.reScene().bodyPreview.geometry.attributes.color.array
-    return Array.from({ length: colours.length / 3 }, (_, i) => [colours[3 * i], colours[3 * i + 1], colours[3 * i + 2]]).every(c => (c[0] === 1 && c[1] === 0 && c[2] === 0) || (c[0] === 0 && c[1] === 1 && c[2] === 0))
-  }))
-  await displayClick('Surface Only (Space)')
+  assert.ok(await page.$eval('[data-test=freeform-deviation-legend]', e => e.textContent.includes('0.2') && e.textContent.includes('Mean')))
+  const display = await page.evaluate(() => {
+    const preview = window.__re.reScene().bodyPreview, u = preview.material.userData.freeformAnalysis
+    return {id: preview.geometry.uuid, tolerance: u.tolerance.value, passFail: u.passFail.value}
+  })
+  assert.deepEqual(display, {id: samples.id, tolerance: 0.2, passFail: true})
+  await page.click(viewportToggle)
+  assert.equal(await page.$('[data-test=freeform-deviation-legend]'), null)
+  await page.click(viewportToggle)
   assert.equal(await page.evaluate(() => window.__scanruler.scene().scanShown()), false)
+  await displayClick('Surface Only (Space)')
+  assert.equal(await page.evaluate(() => window.__scanruler.scene().scanShown()), true)
   await page.$eval('[data-test=auto-freeform-dialog] form', e => e.focus())
   await page.keyboard.press('Space')
-  assert.equal(await page.evaluate(() => window.__scanruler.scene().scanShown()), true)
+  assert.equal(await page.evaluate(() => window.__scanruler.scene().scanShown()), false)
   await page.screenshot({ path: shotPath('auto-freeform-deviation.png') })
   await displayClick('Shaded')
-  assert.equal(await page.evaluate(() => window.__re.reScene().bodyPreview.material.vertexColors), false)
+  assert.equal(await page.evaluate(() => window.__scanruler.scene().scanShown()), true)
+  assert.equal(await page.evaluate(() => !!window.__re.reScene().bodyPreview.material.userData.freeformAnalysis), false)
 
   // Clear Result takes the preview away and greys OK again.
   await page.click('[data-test=auto-freeform-clear]')

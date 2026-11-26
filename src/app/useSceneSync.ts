@@ -186,6 +186,7 @@ export function useSceneSync({
   const markSession = marking && markWorkspace
   // A plugin's workspace marks with the same tools, in a colour of its own —
   // and may keep a marking shown with the gestures stood down.
+  const editScan = useShell(s => s.editScanOpen)
   const pluginMarkColor = plugin?.marking?.color ?? null
   const pluginGestures = plugin?.marking?.gestures ?? false
   // The third session that marks is the split-screen picker's, and it marks the
@@ -203,6 +204,7 @@ export function useSceneSync({
       return
     }
     scene.setPaintBrush({
+      toggleWand: editScan,
       color: extractSession || paintSession ? EXTRACT_MARK_COLOR : (pluginMarkColor ?? MARK_COLOR),
       diameter: brushDiameter,
       erase: markErase,
@@ -216,6 +218,7 @@ export function useSceneSync({
     markSession,
     extractSession,
     pluginMarkColor,
+    editScan,
     pluginGestures,
     draftColor,
     brushDiameter,
@@ -1066,8 +1069,8 @@ export function useSceneSync({
   // Extract primitives opens ready to pick a surface. The explicit Navigate
   // key still returns the mouse to the camera; re-renders must not re-arm it.
   useEffect(() => {
-    if (extractSession) useMark.getState().setGesture('wand')
-  }, [extractSession, source])
+    if (extractSession || editScan) useMark.getState().setGesture('wand')
+  }, [extractSession, editScan, source, workspace])
 
   // While the split picker is up the main viewport is hidden behind it; stop
   // rendering it rather than paying for a 1.4-million-triangle frame nobody

@@ -35,11 +35,12 @@ import { buildAdjacency } from '../../../src/core/geometry/adjacency'
 import { orthoBasis } from '../../../src/core/fit/linalg'
 import type { Vec3 } from '../../../src/core/types'
 import { round125 } from './reduce'
-import { boundaryLoops, loopSize, type BoundaryLoop } from './boundary'
+import { boundaryLoops, loopSize, rimSphereDiameter, type BoundaryLoop } from './boundary'
 import { compactEdit, type EditedMesh } from './edit'
 import { fillPlanarLoops, selfCrossing } from './planar'
 
 export type FillMode = 'curved' | 'flat'
+export type RimFillMethod = 'auto' | 'flat' | 'tangent' | 'curvature'
 
 /** The size under which a rim is a hole to fill: a twentieth of the part's
  *  diagonal, on the 1-2-5 steps — 10 mm for a part a hand's width across.
@@ -155,10 +156,11 @@ export function fillHoles(
   mode: FillMode,
   onProgress?: (text: string) => void,
   at?: Vec3,
+  rim?: { start?:number; method:RimFillMethod },
 ): EditedMesh & { report: FillReport } {
   if (!(maxSize > 0)) throw new Error('The size must be more than zero.')
   const { loops } = boundaryLoops(indices, vertexCount)
-  let holes = loops.filter((l) => loopSize(positions, l.vertices) < maxSize)
+  let holes = rim?.start !== undefined ? loops.filter(l=>l.vertices.includes(rim.start!)) : loops.filter((l) => rim ? rimSphereDiameter(positions,l.vertices)<=maxSize*(1+1e-7) : loopSize(positions,l.vertices)<maxSize)
   if (holes.length === 0) throw new Error('No hole in the scan is smaller than that.')
   if (at) {
     let best: BoundaryLoop | null = null
@@ -181,7 +183,8 @@ export function fillHoles(
   let failed = 0
   holes.forEach((loop, h) => {
     if (h % 25 === 0) onProgress?.(`Filling holes — ${h.toLocaleString('en-US')} of ${holes.length.toLocaleString('en-US')}…`)
-    const patch = patchFor(positions, loop, adjacency, mode)
+    const selected = rim?.method === 'auto' ? (loop.vertices.length < 40 ? 'tangent' : 'curvature') : rim?.method
+    const patch = patchFor(positions, loop, adjacency, selected === 'curvature' ? 'curvature' : selected === 'tangent' ? 'curved' : selected ?? mode)
     if (!patch) {
       failed++
       return
@@ -226,7 +229,7 @@ function patchFor(
   positions: Float32Array,
   loop: BoundaryLoop,
   adjacency: { offsets: Uint32Array; list: Uint32Array },
-  mode: FillMode,
+  mode: FillMode | 'curvature',
 ): Patch | null {
   const n = loop.vertices.length
   const pos: number[] = []
@@ -552,7 +555,7 @@ function fair(
   positions: Float32Array,
   rim: Uint32Array,
   adjacency: { offsets: Uint32Array; list: Uint32Array },
-  mode: FillMode,
+  mode: FillMode | 'curvature',
   iterations: number,
 ): void {
   const local = mesh.pos.length / 3
@@ -576,7 +579,7 @@ function fair(
   }
   const rows: number[] = []
   for (let v = rimCount; v < local; v++) rows.push(v)
-  if (mode === 'curved') {
+  if (mode !== 'flat') {
     for (let i = 0; i < rimCount; i++) {
       const g = rim[i]
       for (let k = adjacency.offsets[g]; k < adjacency.offsets[g + 1]; k++) {
@@ -597,6 +600,36 @@ function fair(
   }
   const isFree = (v: number) => v >= rimCount && v < local
   const rowNbrs = rows.map((r) => Int32Array.from(neighbours[r]))
+
+  const rimDelta = new Float64Array(rimCount * 3)
+  if (mode === 'curvature') {
+    for (let i=0;i<rimCount;i++) {
+      const outside = [...neighbours[i]].filter(v => v >= local)
+      if (!outside.length) continue
+      const a=(i+rimCount-1)%rimCount, b=(i+1)%rimCount
+      // The component along the local surface normal avoids pulling the patch sideways.
+      const tangent=[0,1,2].map(k=>x[3*b+k]-x[3*a+k])
+      const radial=[0,1,2].map(k=>outside.reduce((sum,v)=>sum+x[3*v+k]-x[3*i+k],0)/outside.length)
+      const normal=[tangent[1]*radial[2]-tangent[2]*radial[1],tangent[2]*radial[0]-tangent[0]*radial[2],tangent[0]*radial[1]-tangent[1]*radial[0]]
+      const norm=Math.hypot(...normal)
+      if(!norm)continue
+      for(let k=0;k<3;k++)normal[k]/=norm
+      const g=rim[i]
+      let sum=0,n=0
+      for(let j=adjacency.offsets[g];j<adjacency.offsets[g+1];j++){
+        const v=adjacency.list[j]
+        if(rimLocal.has(v))continue
+        const degree=adjacency.offsets[v+1]-adjacency.offsets[v]
+        if(!degree)continue
+        for(let h=adjacency.offsets[v];h<adjacency.offsets[v+1];h++)
+          for(let k=0;k<3;k++)sum+=normal[k]*(positions[3*v+k]-positions[3*adjacency.list[h]+k])/degree
+        n++
+      }
+      const limit=Math.hypot(...radial)*.25
+      const displacement=n?Math.max(-limit,Math.min(limit,sum/n)):0
+      for(let k=0;k<3;k++)rimDelta[3*i+k]=normal[k]*displacement
+    }
+  }
 
   // A x (rows ← free) and Aᵀ y (free ← rows); the free points are numbered
   // from zero in both.
@@ -643,7 +676,7 @@ function fair(
       const nb = rowNbrs[r]
       let s = 0
       for (let k = 0; k < nb.length; k++) if (!isFree(nb[k])) s += x[nb[k] * 3 + axis]
-      c[r] = (isFree(v) ? 0 : x[v * 3 + axis]) - s / nb.length
+      c[r] = (isFree(v) ? 0 : x[v * 3 + axis]) - s / nb.length - (v < rimCount ? rimDelta[3*v+axis] : 0)
     }
     const b = new Float64Array(free)
     applyAt(c, b)

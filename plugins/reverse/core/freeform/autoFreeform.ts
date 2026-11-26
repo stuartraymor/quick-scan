@@ -26,9 +26,10 @@ import { ScanPaths } from '../../../../src/core/geometry/scanPath'
 import type { Vec3 } from '../../../../src/core/types'
 import type { AutoTools } from './autoTools'
 import { type DirectionConstraint, type WorkMesh, fillCageHoles, guideConstraints, improveRims, mainPieces, meshArea, mirrored, positiveHalf, subMesh, welded, withoutSlivers } from './autoPrepare'
-import { featureConstraints } from './autoFeatures'
+import { featureConstraints, featureDetailWeight } from './autoFeatures'
 import { offShare, refineToTolerance } from './autoRefine'
 import type { Cage } from './cage'
+import { coverageProbes, scanCoverage, type ScanCoverage } from './scanCoverage'
 import { instantQuads } from './instant'
 import { type FitStats, type ScanProject, fitCageToScan, surfaceDeviation } from './limitFit'
 
@@ -144,10 +145,13 @@ export interface AutoOutcome {
   fit: FitStats
   /** The fitted surface against the scan. */
   deviation: { tolerance: number; points: number; missed: number; rms: number; max: number; within: number }
+  /** Area-sampled distance in the opposite direction, from the selected scan to the preview. */
+  coverage: ScanCoverage
   /** Quads added by Refine to tolerance. */
   refined: number
+  topologyResolutionRaised: boolean
   /** The limit surface as a mesh, for the preview. */
-  surface: { positions: Float32Array; normals: Float32Array; indices: Uint32Array }
+  surface: { positions: Float32Array; normals: Float32Array; indices: Uint32Array; edgeSegments: Uint32Array; signed: Float32Array }
   /** Time of each stage, ms. */
   ms: Record<AutoStage, number>
 }
@@ -281,7 +285,13 @@ export function runAutoFreeform(scan: { positions: Float32Array | Float64Array; 
     work = positiveHalf(work, axis)
     if (work.indices.length < 3) throw new AutoError(`Nothing of the scan lies on the positive side of the ${symmetry.toUpperCase()} plane.`)
   }
-  const factor = algorithm === 'feature' ? DETAIL_FACTOR[settings.details ?? 'balanced'] : 1
+  const detail = settings.details ?? 'balanced'
+  // Additional rows along a ridge scale with its length divided by the nominal
+  // quad width. The ordinary surface cells scale with area instead.
+  const weight = algorithm === 'feature' && detail !== 'low'
+    ? featureDetailWeight(reference, area) * Math.sqrt(AUTO_TARGETS.medium / target)
+    : 1
+  const factor = algorithm === 'feature' ? 1 + (DETAIL_FACTOR[detail] - 1) * weight : 1
   const asked = Math.max(16, Math.round((target * factor) / (axis >= 0 ? 2 : 1)))
   const layoutArea = axis >= 0 ? meshArea(work) : area
   const scale = Math.sqrt(layoutArea / asked)
@@ -306,7 +316,7 @@ export function runAutoFreeform(scan: { positions: Float32Array | Float64Array; 
   const paths = new ScanPaths(reference.positions, reference.indices)
   const project = scanProjector(paths)
   /** The cage of `count` quads (of the half, with a symmetry), whole. */
-  const layOut = (count: number): { cage: Cage; mirror: AutoOutcome['mirror']; scale: number } => {
+  const layOut = (count: number): { cage: Cage; mirror: AutoOutcome['mirror']; scale: number; topologyResolutionRaised: boolean } => {
     let laid
     try {
       laid = instantQuads(work, {
@@ -332,7 +342,10 @@ export function runAutoFreeform(scan: { positions: Float32Array | Float64Array; 
     let faces = laid.faces
     const covered = (c: [number, number, number]): boolean => {
       const q = paths.closest(c)
-      return !!q && q.distance <= 1.5 * reach
+      if (!q || q.distance > 1.5 * reach) return false
+      // A point beyond a scan rim can be near the rim without lying over scan.
+      const normalGap = Math.abs((c[0]-q.point[0])*q.normal[0] + (c[1]-q.point[1])*q.normal[1] + (c[2]-q.point[2])*q.normal[2])
+      return q.distance <= 1e-6 * reach || normalGap >= 0.7 * q.distance
     }
     {
       const filled = fillCageHoles(positions, faces, CAGE_HOLE_EDGES, covered)
@@ -362,7 +375,7 @@ export function runAutoFreeform(scan: { positions: Float32Array | Float64Array; 
       for (let v = 0; v < partner.length; v++) if (partner[v] === v) onPlane++
       made = { axis, partner, onPlane }
     }
-    return { cage: { positions, faces, creases: [] }, mirror: made, scale: reach }
+    return { cage: { positions, faces, creases: [] }, mirror: made, scale: reach, topologyResolutionRaised: laid.topologyResolutionRaised === true }
   }
   let laid = layOut(asked)
   let cage: Cage = laid.cage
@@ -371,12 +384,19 @@ export function runAutoFreeform(scan: { positions: Float32Array | Float64Array; 
   // ---- fit
   enter('fit')
   const symmetric = (c: Cage, m: AutoOutcome['mirror']): Cage => (m ? { ...c, positions: mirrorPositions(c.positions, m) } : c)
-  let fitted = fitCageToScan(cage, project, { iterations: 5, progress: report })
+  const fitOptions = algorithm === 'feature' && detail !== 'low' ? { iterations: 8, fairness: 0.012 } : { iterations: 5 }
+  let fitted = fitCageToScan(cage, project, { ...fitOptions, progress: report })
   cage = symmetric(fitted.cage, mirror)
 
   // ---- refine
   enter('refine')
   let refined = 0
+  const probes = coverageProbes(reference)
+  const measureFit = (candidate: Cage, scale: number) => {
+    const mesh = surfaceDeviation(candidate, project, tolerance, 2, 6 * scale, true)
+    return { mesh, coverage: scanCoverage(probes, mesh, tolerance) }
+  }
+  let measured: ReturnType<typeof measureFit> | undefined
   if (settings.refineTolerance && settings.refineTolerance > 0) {
     const before = cage.faces.length
     const cap = Math.min(AUTO_QUADS_MAX, 2 * before)
@@ -390,13 +410,20 @@ export function runAutoFreeform(scan: { positions: Float32Array | Float64Array; 
       off = cage.faces.length > 0 ? r.off / cage.faces.length : 0
     }
     // Still off over much of it, and few quads added: the whole is laid out again, finer.
-    if (off > RELAY_OFF_SHARE && cage.faces.length < 1.25 * before) {
+    measured = measureFit(cage, laid.scale)
+    const currentCoverage = measured.coverage
+    // A layout may have low forward RMS simply because it omitted part of the scan.
+    const missingRegion = currentCoverage.max > laid.scale && currentCoverage.rms > settings.refineTolerance
+    if ((off > RELAY_OFF_SHARE && cage.faces.length < 1.25 * before) || missingRegion) {
       report(0.6)
       const finer = layOut(Math.min(Math.round(2 * asked), Math.round(AUTO_QUADS_MAX / (axis >= 0 ? 2 : 1))))
-      const again = fitCageToScan(finer.cage, project, { iterations: 5, progress: (f) => report(0.8 + 0.2 * f) })
+      const again = fitCageToScan(finer.cage, project, { ...fitOptions, progress: (f) => report(0.8 + 0.2 * f) })
       const candidate = symmetric(again.cage, finer.mirror)
       log?.(`laid out again: ${candidate.faces.length} quads, fit rms ${again.stats.rms.toFixed(5)} against ${fitted.stats.rms.toFixed(5)}`)
-      if (again.stats.rms < fitted.stats.rms) {
+      const next = measureFit(candidate, finer.scale)
+      const betterFit = next.mesh.points > 0 && Math.hypot(next.mesh.rms, next.coverage.rms) < Math.hypot(measured.mesh.rms, currentCoverage.rms)
+      if (betterFit && (!missingRegion || next.coverage.max <= currentCoverage.max)) {
+        measured = next
         cage = candidate
         mirror = finer.mirror
         fitted = { cage, stats: again.stats }
@@ -408,9 +435,9 @@ export function runAutoFreeform(scan: { positions: Float32Array | Float64Array; 
 
   // ---- measure
   enter('measure')
-  const d = surfaceDeviation(cage, project, tolerance, 2, 6 * laid.scale)
+  const { mesh: d, coverage } = measured ?? measureFit(cage, laid.scale)
   const counts = cageCounts(cage)
-  enter('measure')
+  ms.measure += performance.now() - started
   report(1)
   return {
     cage,
@@ -428,9 +455,11 @@ export function runAutoFreeform(scan: { positions: Float32Array | Float64Array; 
     symmetry,
     mirror,
     fit: fitted.stats,
+    coverage,
     deviation: { tolerance, points: d.points, missed: d.missed, rms: d.rms, max: d.max, within: d.within },
     refined,
-    surface: { positions: d.positions, normals: d.normals, indices: d.indices },
+    topologyResolutionRaised: laid.topologyResolutionRaised,
+    surface: { positions: d.positions, normals: d.normals, indices: d.indices, signed: d.signed, edgeSegments: d.edgeSegments },
     ms,
   }
 }

@@ -1,3 +1,6 @@
+import { splitEnvelope } from './core/splitEnvelope'
+import { splitMesh } from './core/splitMesh'
+import { editRims } from './core/rimEdit'
 // SPDX-License-Identifier: AGPL-3.0-only
 // Mesh Tools' part of the mesh worker: the operations core/protocol.ts names,
 // on the mesh the workspace works on — the edited copy when there is one,
@@ -221,9 +224,15 @@ const ops: { [K in keyof MeshToolsOps]: (payload: Payload<K>, ctx: WorkerContext
       const cut = cutMesh(g.positions, g.indices, g.vertexCount, edit.origin, edit.normal, edit.cap)
       result = cut
       report = { kind: 'cut', report: cut.report }
+     } else if(edit.type==='split'){
+      const split=splitMesh(g,edit.envelope===undefined?edit.cutter:splitEnvelope(edit.cutter,g,edit.envelope))
+      result=split;report={kind:'split',parts:split.parts,regions:split.regions}
+    } else if (edit.type === 'rim') {
+      result=editRims(g.positions,g.indices,g.vertexCount,edit.operation)
+      report={kind:'rim',action:edit.operation.action,triangles:(result.indices.length-g.indices.length)/3}
     } else if (edit.type === 'fill-holes') {
       ctx.progress('Filling holes…')
-      const filled = fillHoles(g.positions, g.indices, g.vertexCount, edit.maxSize, edit.mode, ctx.progress, edit.at)
+      const filled = fillHoles(g.positions, g.indices, g.vertexCount, edit.maxSize, edit.mode, ctx.progress, edit.at, edit.rim)
       result = filled
       report = { kind: 'fill', report: filled.report }
     } else if (edit.type === 'smooth') {
@@ -253,7 +262,7 @@ const ops: { [K in keyof MeshToolsOps]: (payload: Payload<K>, ctx: WorkerContext
       const wasm = await loadManifold()
       const what = edit.tools.length === 1 ? 'the solid' : 'the solids'
       ctx.progress(edit.op === 'subtract' ? `Taking ${what} out of the mesh…` : edit.op === 'add' ? `Adding ${what} to the mesh…` : `Keeping what the mesh and ${what} share…`)
-      const made = booleanMesh(wasm, g, edit.tools, edit.op)
+      const made = booleanMesh(wasm,g,edit.envelope===undefined?edit.tools:edit.tools.map(t=>({...splitEnvelope(t,g,edit.envelope!),name:t.name})),edit.op)
       result = made
       report = { kind: 'boolean', report: made.report }
     }

@@ -6,9 +6,10 @@ import { fromDisplay } from '../../../src/core/units'
 import type { PreviewColouring } from '../core/freeform/previewDeviation'
 
 /** New Freeform's analysis settings are a transaction, independent of CAD fitting. */
-export function FreeformDeviationOptions({ tolerance, colouring, onApply, onClose }: {
+export function FreeformDeviationOptions({ tolerance, colouring, onApply, onPreview, onClose }: {
   tolerance: number; colouring: PreviewColouring
   onApply(tolerance: number, colouring: PreviewColouring): void
+  onPreview?(value: { tolerance: number; colouring: PreviewColouring }): void
   onClose(): void
 }) {
   const length = useLength()
@@ -22,6 +23,9 @@ export function FreeformDeviationOptions({ tolerance, colouring, onApply, onClos
   const close = () => { dialog.current?.close(); onClose() }
   const valid = draft.text.trim() !== '' && Number.isFinite(mm) && mm > 0 && Number.isFinite(5 * mm)
   useEffect(() => {
+    if (valid) onPreview?.({ tolerance: mm, colouring: draftColouring })
+  }, [valid, mm, draftColouring, onPreview])
+  useEffect(() => {
     const element = dialog.current!
     element.showModal()
     element.querySelector('input')?.select()
@@ -30,15 +34,15 @@ export function FreeformDeviationOptions({ tolerance, colouring, onApply, onClos
   return createPortal(<dialog ref={dialog} className="ff-deviation-options" aria-label="Deviation Options"
     data-test="freeform-deviation-options" onCancel={e => { e.preventDefault(); close() }}
     onKeyDown={e => e.stopPropagation()}>
-    <form onSubmit={e => { e.preventDefault(); if (valid) { onApply(mm, draftColouring); close() } }}>
+    <form onSubmit={e => { e.preventDefault(); e.stopPropagation(); if (valid) { onApply(mm, draftColouring); close() } }}>
       <header><span>Deviation Options</span><button type="button" aria-label="Close Deviation Options" onClick={close}>×</button></header>
       <label className="ff-deviation-value">Tolerance (+/-)
         <input autoFocus aria-label="Deviation tolerance" aria-invalid={!valid} type="number" step="any"
           value={text} onChange={e => setDraft({ text: e.target.value, units: length.units })} /> <span>{length.word()}</span>
       </label>
       <fieldset><legend>Colouring</legend>
-        <label><input type="radio" name="freeform-colouring" checked={draftColouring === 'pass-fail'} onChange={() => setDraftColouring('pass-fail')} />Pass / Fail</label>
-        <label><input type="radio" name="freeform-colouring" checked={draftColouring === 'gradient'} onChange={() => setDraftColouring('gradient')} />Gradient</label>
+        <label><input type="radio" name="freeform-colouring" value="pass-fail" checked={draftColouring === 'pass-fail'} onChange={() => setDraftColouring('pass-fail')} />Pass / Fail</label>
+        <label><input type="radio" name="freeform-colouring" value="gradient" checked={draftColouring === 'gradient'} onChange={() => setDraftColouring('gradient')} />Gradient</label>
       </fieldset>
       {!valid && <small role="alert">Enter a positive, finite tolerance.</small>}
       <footer><button type="submit" data-test="deviation-options-ok" disabled={!valid}>OK</button><button type="button" onClick={close}>Cancel</button></footer>

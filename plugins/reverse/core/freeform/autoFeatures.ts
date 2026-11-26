@@ -204,8 +204,7 @@ export function curvatureField(m: WorkMesh, scale: number): CurvatureField {
   return { direction, k }
 }
 
-/** The scan's edges sharper than `degrees`, as constraints at their ends: the edge's direction, and the vertex held where it is. */
-export function hardEdgeConstraints(m: WorkMesh, degrees: number): DirectionConstraint[] {
+function visitBentEdges(m: WorkMesh, degrees: number, visit: (a: number, b: number, length: number, cosine: number) => void): void {
   const p = m.positions
   const nv = p.length / 3
   const nt = m.indices.length / 3
@@ -221,7 +220,6 @@ export function hardEdgeConstraints(m: WorkMesh, degrees: number): DirectionCons
   normalise(faceNormal)
   const first = new Map<number, number>()
   const cos = Math.cos((degrees * Math.PI) / 180)
-  const out = new Map<number, DirectionConstraint>()
   for (let t = 0; t < nt; t++) {
     for (let k = 0; k < 3; k++) {
       const a = m.indices[t * 3 + k], b = m.indices[t * 3 + ((k + 1) % 3)]
@@ -236,11 +234,33 @@ export function hardEdgeConstraints(m: WorkMesh, degrees: number): DirectionCons
       const dx = p[b * 3] - p[a * 3], dy = p[b * 3 + 1] - p[a * 3 + 1], dz = p[b * 3 + 2] - p[a * 3 + 2]
       const l = Math.hypot(dx, dy, dz)
       if (!(l > 0)) continue
-      for (const v of [a, b]) {
-        if (!out.has(v)) out.set(v, { vertex: v, direction: [dx / l, dy / l, dz / l], position: [p[v * 3], p[v * 3 + 1], p[v * 3 + 2]], weight: 1 })
-      }
+      visit(a, b, l, Math.max(-1, Math.min(1, dot)))
     }
   }
+}
+
+/** Integrated excess bend per characteristic length. A planar or gently curved
+ * scan needs no extra feature rows. Scale and subdivision along a ridge leave
+ * its contribution unchanged. Saturate the allowance on heavily textured scans. */
+export function featureDetailWeight(mesh: WorkMesh, area: number): number {
+  const threshold = 20
+  const radians = threshold * Math.PI / 180
+  let bend = 0
+  visitBentEdges(mesh, threshold, (_a, _b, length, cosine) => {
+    bend += length * (Math.acos(cosine) - radians)
+  })
+  return Math.min(1.5, Math.sqrt(bend / Math.sqrt(area)))
+}
+
+export function hardEdgeConstraints(m: WorkMesh, degrees: number): DirectionConstraint[] {
+  const p = m.positions
+  const out = new Map<number, DirectionConstraint>()
+  visitBentEdges(m, degrees, (a, b, length) => {
+    const direction: [number, number, number] = [0, 1, 2].map(k => (p[3*b+k] - p[3*a+k]) / length) as [number, number, number]
+    for (const v of [a, b]) {
+      if (!out.has(v)) out.set(v, { vertex: v, direction, position: [p[v*3], p[v*3+1], p[v*3+2]], weight: 1 })
+    }
+  })
   return [...out.values()]
 }
 

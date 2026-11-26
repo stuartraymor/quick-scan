@@ -1,3 +1,5 @@
+import { useHistoryBlocked } from '../../../src/ui/useHistoryBlocked'
+import { BoundarySketches } from './boundarySketches'
 // SPDX-License-Identifier: AGPL-3.0-only
 // The Mesh Tools workspace's part in the app, for one render: the
 // workspace's verbs (useMeshWorkspace), the two maps it shows — how far the
@@ -21,7 +23,9 @@ import { Icon, type IconName } from '../../../src/ui/icons'
 import type { PickHit } from '../../../src/viewer/SceneManager'
 import { DELETE_MARK_COLOR, FLIP_MARK_COLOR, OFFSET_MARK_COLOR, SMOOTH_MARK_COLOR, TRIM_MARK_COLOR, useMeshTools, type MeshView, type TrimView } from '../state/meshStore'
 import { reductionScale } from '../core/reduce'
-import { MeshPanel } from '../ui/MeshPanel'
+import { SelectionMeshes, createSelectionMesh } from './selectionMeshes'
+import { boundaryLoops } from '../core/boundary'
+import { MeshPanel, type ScanDetail } from '../ui/MeshPanel'
 import { ScaleDialog } from '../ui/ScaleDialog'
 import { PolygonReductionDialog } from '../ui/PolygonReductionDialog'
 import { ReduceNoiseDialog } from '../ui/ReduceNoiseDialog'
@@ -75,6 +79,16 @@ const TRIM_VIEWS: { id: TrimView; icon: IconName; label: string; title: string }
 ]
 
 export function useMeshPlugin(host: PluginHost): PluginRuntime {
+  const historyBusy=useHistoryBlocked()
+  const pendingCopy=useMeshTools(s=>s.copyTriangles!==null)
+
+  const editScan = useShell(s => s.editScanOpen)
+  const [detail,setDetail] = useState<ScanDetail>(null)
+  useEffect(() => {
+    setDetail(null)
+    if (editScan) useMeshTools.getState().setTool(null)
+  }, [editScan])
+  const detailTitle = detail && { islands: 'Multiple meshes', holes: 'Fill holes', boundaries: 'Edit boundaries', boolean: 'Split Mesh' }[detail]
   const { sceneRef } = host
   // The workspace's verbs, which its commands run too — see
   // meshToolsSession. The maps it shows are the session's: how far the
@@ -278,7 +292,7 @@ export function useMeshPlugin(host: PluginHost): PluginRuntime {
       },
     },
     readingAt,
-    toolContext: { title: tool ? `Edit scan · ${tool}` : 'Edit scan', key: tool ?? '', active: tool !== null },
+    toolContext: { title: editScan && detailTitle ? detailTitle : tool ? `Edit scan · ${tool}` : 'Edit scan', key: detail ?? tool ?? '', active: !!detailTitle || tool !== null },
     // The maps are read by hovering; they have no pins to set.
     pick: () => {},
     hoverReadout: reduceMapShown || copyMapShown,
@@ -301,7 +315,7 @@ export function useMeshPlugin(host: PluginHost): PluginRuntime {
     },
     marking: session
       ? {
-          color:
+          color: editScan ? '#d53534' :
             session === 'smooth'
               ? SMOOTH_MARK_COLOR
               : session === 'offset'
@@ -332,8 +346,28 @@ export function useMeshPlugin(host: PluginHost): PluginRuntime {
       blurb:
         'Load a scan and clean it up — clear the stray islands, delete what is not the part, turn it the right way out, cut off the base it stood on, fill its holes, smooth out the scatter, expand or shrink it, hollow it — and reduce it to a light mesh to model over in CAD, held within a tolerance you set, measured against the scan to prove it, and exported where you aligned it. STL, PLY, OBJ or 3MF, in millimetres — everything stays in this browser.',
     },
+    panelCommitBlocked:pendingCopy&&historyBusy,
+    commitPanelEdits: async () => !useMeshTools.getState().editing && (useMeshTools.getState().copyTriangles === null || await adoptEditedCopy()),
+    explorerObjects: <><SelectionMeshes scene={sceneRef.current} /><BoundarySketches scene={sceneRef.current}/></>,
     panel: (
-      <MeshPanel
+      <MeshPanel detail={detail} setDetail={setDetail}
+        scene={sceneRef.current}
+        removeRegion={v=>void deleteMarked(v,{units})}
+        splitActions={{blocked:historyBusy,preview:tools.previewSplit,commit:async(p,m,n)=>Boolean(await tools.commitSplit(p,m,n,{units}))}}
+        rimActions={{
+          change:async operation=>Boolean(await tools.editBoundary(operation,{units})),
+          fill:async (start,method,diameter)=>Boolean(await tools.fillScanHoles(undefined,{units},{start,method,diameter}))
+        }}
+        onCreateSelection={cut => void createSelectionMesh(sceneRef.current, cut ? marked => deleteMarked(marked, {units, inStep: true}) : undefined)}
+        onBoundaries={() => {
+          const geom = sceneRef.current?.scanGeometry(), index = geom?.getIndex()
+          if (!geom || !index) return
+          const selected = new Set<number>()
+          for (const loop of boundaryLoops(Uint32Array.from(index.array), geom.getAttribute('position').count).loops)
+            for (const v of loop.vertices) selected.add(v)
+          sceneRef.current?.setPaintedVertices(Uint32Array.from(selected), '#d53534')
+          useMark.getState().setCount(selected.size)
+        }}
         onOpenScan={(f) => void host.openScan(f)}
         onReduce={() => void runReduce(units)}
         onExport={(format) => exportReducedMesh(sceneRef, format, units)}

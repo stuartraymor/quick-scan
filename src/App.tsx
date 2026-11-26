@@ -98,6 +98,7 @@ import { useNavigationView } from './state/navigationViewStore'
 import { useShell } from './state/shellStore'
 import { EXTRACT_MARK_COLOR, useMark } from './state/markStore'
 import {useInteractiveAlign} from './state/interactiveAlignStore'
+import { PrepareSymmetry } from './ui/PrepareSymmetry'
 import { PrepareScanWizard } from './ui/PrepareScanWizard'
 import { ExtractPrimitives } from './ui/ExtractPrimitives'
 import { useThickness } from './state/thicknessStore'
@@ -363,6 +364,7 @@ export default function App() {
     remeasureScan: (refit) => hostVerbs.current!.remeasureScan(refit),
   }).current
   const runtimes: PluginRuntime[] = plugins().map((p) => p.usePlugin?.(host) ?? NO_RUNTIME)
+  const prepareStep = useShell(s => s.prepareStep)
   const shellWorkspace = useShell((s) => s.workspace)
   const activeIndex = plugins().findIndex((p) => p.workspace?.id === shellWorkspace)
   /** The runtime of the plugin whose workspace is on screen, if one is. */
@@ -1254,14 +1256,26 @@ export default function App() {
     attempt()
   }
   /** Each Prepare Scan step opens the tool it guides through. */
-  const handlePrepareStep = (step: number) => {
+  const handlePrepareStep = async (step: number | null, keepSymmetry = false) => {
     const shell = useShell.getState()
-    if (step !== 2 && shell.extractOpen) closeExtract()
-    const mesh = plugins().find((p) => p.id === 'mesh-tools')?.workspace
-    if (step === 0) shell.setWorkspace(mesh ? mesh.id : 'elements')
-    if (step === 1) { shell.setWorkspace('elements'); handleStartDraft('plane'); useStore.getState().setDraftMethod('plane-symmetry') }
-    if (step === 2) { if (useStore.getState().draft) useStore.getState().cancelDraft(); shell.setWorkspace('elements'); shell.setExtractOpen(true) }
-    if (step === 3) { shell.setWorkspace('elements'); handleStartAlignment() }
+    if (shell.editScanOpen && active?.commitPanelEdits && !await active.commitPanelEdits()) return
+    if (shell.prepareStep === 1 && useStore.getState().draft?.status === 'fitting') return
+    if (keepSymmetry && (useStore.getState().draft?.params.length ?? 0) >= 6 && !handleConfirmDraft()) return
+    if (shell.extractOpen) closeExtract()
+    if (useStore.getState().alignDraft) useStore.getState().cancelAlignment()
+    if (useStore.getState().draft) handleCancelDraft()
+    if (step === 0) shell.openEditScan(true)
+    else {
+      shell.setWorkspace('elements')
+      if (step === 1) {
+        handleStartDraft('plane')
+        useStore.getState().setDraftMethod('plane-symmetry')
+      }
+      if (step === 2) shell.setExtractOpen(true)
+      if (step === 3) handleStartAlignment()
+      shell.setPrepareStep(step)
+      shell.setInspectorOpen(step !== null)
+    }
   }
   const closeExtract = () => {
     useShell.getState().setExtractOpen(false)
@@ -1957,7 +1971,7 @@ export default function App() {
       <ModelRolledBar />
       <RecoveryBar recovery={recovery} />
       <ConnectorBar />
-      <PrepareScanWizard onStep={handlePrepareStep} />
+
       <ExtractPrimitives onType={(k) => void handleExtractType(k)} preview={extractPreview} onCreate={createExtracted} onClearPreview={clearExtractedPreview} onClose={closeExtract} onClear={clearPaint} fitting={extractFitting} onHide={() => handleHideTriangles('selected')} onIsolate={() => handleHideTriangles('unselected')} onShowAll={handleShowHidden} onAnalyse={applyExtractAnalysis} onAnalysisOff={clearExtractAnalysis} />
       <div className="mid desktop-mid">
         <ObjectExplorer
@@ -1973,7 +1987,7 @@ export default function App() {
           interactionBlocked={picking}
           scanVisibility={active?.scanKey?.shown ? { shown: active.scanKey.shown.on, toggle: () => active.scanKey!.shown!.set(!active.scanKey!.shown!.on), disabled: Boolean(active.scanKey.shown.disabled) } : undefined}
           scanActions={{
-            edit: () => { const mesh = plugins().find((p) => p.id === 'mesh-tools')?.workspace; if (mesh) useShell.getState().setWorkspace(mesh.id) },
+            edit: () => useShell.getState().openEditScan(),
             tinted: scanTinted,
             color: scanColor,
             defaultColor: handleDefaultColor,
@@ -1983,7 +1997,7 @@ export default function App() {
             properties: scanProperties,
           }}
         />
-        <ToolInspector context={active?.toolContext}>
+        <ToolInspector context={active?.toolContext} onScanStep={handlePrepareStep} scanFooter={<PrepareScanWizard onStep={handlePrepareStep} commitBlocked={active?.panelCommitBlocked} />}>
         {onDeviation ? (
           <DeviationPanel
             onOpenScan={(f) => void openFile(f)}
@@ -2014,6 +2028,8 @@ export default function App() {
             onMeasure={() => void runThickness()}
             onCopy={handleCopyThicknessReport}
           />
+        ) : prepareStep === 1 ? (
+          <PrepareSymmetry rebuild={handleFindSymmetry}/>
         ) : active?.panel ? (
           active.panel
         ) : onFlat ? (

@@ -179,6 +179,8 @@ export interface PluginRuntime {
    *  plugin cannot take it yet (its kernel still loading, another editor open). */
   importCad?: (file: File) => boolean
   /** Plugin-owned rows in the document explorer's Objects and History tabs. */
+  panelCommitBlocked?: boolean
+  commitPanelEdits?: () => Promise<boolean>
   explorerObjects?: ReactNode
   explorerHistory?: ReactNode
   /** Flat model-history rows keyed in the common document-order namespace. */

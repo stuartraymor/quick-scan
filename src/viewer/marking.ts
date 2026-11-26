@@ -24,6 +24,7 @@ export type MarkGesture = 'brush' | 'window' | 'lasso' | 'wand' | 'circle' | 'li
 /** The surface marking: a fit is measured on exactly what it covers, instead
  *  of on a region grown from a click or on the whole scan. */
 export interface PaintBrush {
+  toggleWand?: boolean
   /** Tint of the marked surface — the colour the pending element will get. */
   color: string
   /** Width of the brush on the surface, in the scan's own units (mm). */
@@ -157,6 +158,30 @@ function facesCamera(
   view: THREE.Vector3,
 ): boolean {
   return rawFaceNormal(pos, a, b, c, facingScratch).dot(view) < 0
+}
+
+/** Work in scan coordinates so a rotated or translated scan keeps the same selection depth. */
+function selectionDepth(mesh: THREE.Mesh, camera: THREE.OrthographicCamera) {
+  const inverse = new THREE.Matrix4().copy(mesh.matrixWorld).invert()
+  const towardEye = camera.getWorldDirection(new THREE.Vector3()).transformDirection(inverse).negate()
+  const material = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material
+  const planes = (material.clippingPlanes ?? []).map((plane: THREE.Plane) => plane.clone().applyMatrix4(inverse))
+  const ray = new THREE.Ray(new THREE.Vector3(), towardEye)
+  const bvh = mesh.geometry.boundsTree
+  const epsilon = Math.max(1e-7, (mesh.geometry.boundingSphere?.radius ?? 1) * 1e-8)
+  const includes = (point: THREE.Vector3, through: boolean) => {
+    let far = Infinity
+    for (const plane of planes) {
+      const distance = plane.distanceToPoint(point)
+      if (distance < -epsilon) return false
+      const slope = plane.normal.dot(towardEye)
+      if (slope < 0) far = Math.min(far, -distance / slope)
+    }
+    if (through || !bvh) return true
+    ray.origin.copy(point)
+    return !bvh.raycastFirst(ray, THREE.DoubleSide, epsilon, far)
+  }
+  return { inverse, includes }
 }
 
 /** Everything the marking is allowed to touch outside itself. */
@@ -429,9 +454,10 @@ export class SurfaceMarking {
     const graph = this.triangleGraph()
     if (!hit || typeof hit.faceIndex !== 'number' || !graph) return
     // Remembered so the degrees slider can grow or shrink this pick live.
-    this.lastWand = { seed: hit.faceIndex, erase, before: this.ctx.regions.paintedVertices() }
+    const toggleOff = this.paint.toggleWand && hit.face && [hit.face.a, hit.face.b, hit.face.c].every(v => this.ctx.regions.isMarked(v))
+    this.lastWand = { seed: hit.faceIndex, erase: erase || Boolean(toggleOff), before: this.ctx.regions.paintedVertices() }
     this.applyWand()
-    if (!erase) this.ctx.onWandPick?.({ x: clientX, y: clientY })
+    if (!erase && !toggleOff) this.ctx.onWandPick?.({ x: clientX, y: clientY })
   }
 
   /** The triangle graph of the scan as drawn, built once and kept until the
@@ -554,54 +580,57 @@ export class SurfaceMarking {
     if (!mesh || !brush || !this.ctx.paintAttr()) return
 
     this.ctx.setPickRay(clientX, clientY)
-    const hit = this.ctx.raycaster.intersectObject(mesh, false)[0]
-    if (!hit || hit.faceIndex === undefined || hit.faceIndex === null) return
-
     const geometry = mesh.geometry as THREE.BufferGeometry
     const bvh = geometry.boundsTree
     const index = geometry.getIndex()
     if (!bvh || !index) return
-    const idx = index.array as ArrayLike<number>
-    const pos = (geometry.getAttribute('position') as THREE.BufferAttribute).array as Float32Array
-
-    // The hit arrives in world space, which is the reference's frame once the
-    // scan has been aligned; everything below is in the scan's own. scratchD
-    // holds the centre across the sweep — the trio below is the sweep's.
-    this.ctx.partGroup.updateWorldMatrix(true, false)
-    const centre = this.ctx.partGroup.worldToLocal(this.scratchD.copy(hit.point))
-    const f = hit.faceIndex * 3
-    const face = this.faceNormal(pos, idx[f], idx[f + 1], idx[f + 2])
-    if (!face) return
-
+    const idx = index.array
+    const pos = geometry.getAttribute('position').array as Float32Array
+    const { inverse, includes } = selectionDepth(mesh, this.ctx.camera)
+    const through = brush.backfaces === true
     const radius = Math.max(brush.diameter / 2, 1e-6)
-    this.paintSphere.center.copy(centre)
+    const ray = this.ctx.raycaster.ray.clone().applyMatrix4(inverse)
+    const box = new THREE.Box3()
+    const midpoint = new THREE.Vector3()
+    let face: THREE.Vector3 | null = null
+    const centre = this.paintSphere.center
+    if (!through) {
+      const hit = this.ctx.raycaster.intersectObject(mesh, false)[0]
+      if (typeof hit?.faceIndex !== 'number') return
+      centre.copy(hit.point).applyMatrix4(inverse)
+      const f = hit.faceIndex * 3
+      face = this.faceNormal(pos, idx[f], idx[f + 1], idx[f + 2])
+      if (!face) return
+    }
     this.paintSphere.radius = radius
     const sphere = this.paintSphere
     const regions = this.ctx.regions
     const near = this.scratchA
     const edge1 = this.scratchB
     const edge2 = this.scratchC
-    // With back faces allowed the brush marks straight through: the test that
-    // keeps a stroke on the face under the cursor is the same one that keeps
-    // it off the far wall, so switching it off does both.
-    const anyFacing = brush.backfaces === true
     const own = this.ctx.graphVertex
 
     bvh.shapecast({
-      intersectsBounds: (box) => (sphere.intersectsBox(box) ? INTERSECTED : NOT_INTERSECTED),
+      intersectsBounds: bounds => {
+        const touches = through ? ray.intersectsBox(box.copy(bounds).expandByScalar(radius)) : sphere.intersectsBox(bounds)
+        return touches ? INTERSECTED : NOT_INTERSECTED
+      },
       intersectsTriangle: (tri, triIndex) => {
-        // The box the BVH pruned by is not the triangle: check the triangle
-        // itself before taking it.
-        tri.closestPointToPoint(centre, near)
-        if (near.distanceToSquared(centre) > radius * radius) return false
-        // Same winding convention as the face under the cursor, so the two
-        // normals can be compared at all.
-        if (!anyFacing) {
+        if (through) {
+          // A circular footprint swept along the viewing ray reaches every depth,
+          // including a rear sheet when the centre of the dab is over a gap.
+          if (!ray.intersectTriangle(tri.a, tri.b, tri.c, false, near) &&
+              ray.distanceSqToSegment(tri.a, tri.b) > radius * radius &&
+              ray.distanceSqToSegment(tri.b, tri.c) > radius * radius &&
+              ray.distanceSqToSegment(tri.c, tri.a) > radius * radius) return false
+        } else {
+          tri.closestPointToPoint(centre, near)
+          if (near.distanceToSquared(centre) > radius * radius) return false
           edge1.subVectors(tri.b, tri.a)
           edge2.subVectors(tri.c, tri.a)
-          edge1.cross(edge2)
-          if (edge1.dot(face) <= 0) return false
+          if (edge1.cross(edge2).dot(face!) <= 0) return false
         }
+        if (!includes(tri.getMidpoint(midpoint), through)) return false
         const f = triIndex * 3
         regions.markVertex(own(idx[f]), erase)
         regions.markVertex(own(idx[f + 1]), erase)
@@ -684,13 +713,8 @@ export class SurfaceMarking {
    * is far finer than anything drawn by hand, so where exactly the boundary
    * cuts a single triangle is below the noise of the gesture itself.
    *
-   * There is no depth buffer in this: what stops a window from marking the
-   * whole part front to back is the facing test, which is how every CAD
-   * selection does it and is why "include back faces" is a switch the user
-   * holds. On an open scan seen through a hole, surface behind the cursor
-   * *facing this way* is marked too — which is the honest answer, since from
-   * this side of the part there is nothing to tell it apart from the near
-   * wall.
+   * Visible-only gestures test occlusion at each candidate centre. Select
+   * through uses the same outline at every depth of the displayed mesh.
    */
   private markMarquee(outline: { x: number; y: number }[], erase: boolean): void {
     const mesh = this.ctx.mesh()
@@ -734,7 +758,8 @@ export class SurfaceMarking {
     const viewLocal = new THREE.Vector3(0, 0, -1)
       .applyQuaternion(this.ctx.camera.quaternion)
       .applyMatrix3(new THREE.Matrix3().setFromMatrix4(this.ctx.partGroup.matrixWorld).invert())
-    const anyFacing = marker.backfaces === true
+    const through = marker.backfaces === true
+    const depth = selectionDepth(mesh, this.ctx.camera)
 
     const test = polygonTester(outline)
     const regions = this.ctx.regions
@@ -744,7 +769,13 @@ export class SurfaceMarking {
       const a = idx[f], b = idx[f + 1], c = idx[f + 2]
       if (clipped[a] || clipped[b] || clipped[c]) continue
       if (!test((sx[a] + sx[b] + sx[c]) / 3, (sy[a] + sy[b] + sy[c]) / 3)) continue
-      if (!anyFacing && !facesCamera(pos, a, b, c, viewLocal)) continue
+      if (!through && !facesCamera(pos, a, b, c, viewLocal)) continue
+      p.set(
+        (pos[3 * a] + pos[3 * b] + pos[3 * c]) / 3,
+        (pos[3 * a + 1] + pos[3 * b + 1] + pos[3 * c + 1]) / 3,
+        (pos[3 * a + 2] + pos[3 * b + 2] + pos[3 * c + 2]) / 3,
+      )
+      if (!depth.includes(p, through)) continue
       regions.markVertex(own(a), erase)
       regions.markVertex(own(b), erase)
       regions.markVertex(own(c), erase)

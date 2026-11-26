@@ -1,8 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Independently drawn compact glyphs for the observed extraction tool rows.
 import type {ReactNode} from 'react'
-export type ExtractIconName='navigate'|'wand'|'brush'|'lasso'|'line'|'window'|'circle'|'through'|'enlarge'|'shrink'|'isolate'|'hide'|'show'|'deselect'|'all'|'plane'|'cylinder'|'axis'|'cone'|'sphere'|'freeform'
+export type ExtractIconName='navigate'|'wand'|'brush'|'lasso'|'line'|'window'|'circle'|'through'|'enlarge'|'shrink'|'isolate'|'hide'|'show'|'deselect'|'all'|'plane'|'cylinder'|'axis'|'cone'|'sphere'|'freeform'|'boundary'|'swap'|'invert'|'erase'|'smooth'|'split'|'project'|'remove'
 const glyphs:Record<ExtractIconName,ReactNode>={
+ boundary:<circle cx="12" cy="12" r="10" fill="#d1beb2" strokeWidth="2"/>,
+ swap:<><path d="M1 12q10-15 22 0Q12 26 1 12Z" fill="#c8c6a9" stroke="#625e50"/><path d="M12 1v22" stroke="#494436"/><circle cx="12" cy="12" r="4" stroke="#605945"/></>,
+ invert:<><circle cx="12" cy="12" r="10" fill="#cebcaf" stroke="#44392f"/><path d="M17 3a10 10 0 0 1-10 18Z" fill="var(--extract-blue)" stroke="#44392f"/></>,
+ erase:<><circle cx="10" cy="14" r="9" fill="#e8aaa9" stroke="#403532"/><path d="m7 12 10-10 6 5-10 11Z" fill="#38323a" stroke="#302c2b"/><path d="m7 12 4-4 6 6-4 4Z" fill="#f7edef"/></>,
+ smooth:<><circle cx="12" cy="12" r="10" fill="#dcc4b9" stroke="#87645e"/><path d="m5 8 5-4 7 1 3 6-2 7-7 2-6-4Z" fill="var(--extract-well)" stroke="#353330"/></>,
+ split:<><circle cx="12" cy="12" r="10" fill="#c8b4a4" stroke="#403631"/><path d="M2 20 19 2l3 1L5 22Z" fill="#7cb4ab" stroke="#333"/></>,
+ project:<><path d="m1 14 6-6 5 4 8-8 3 5M2 20h20" stroke="#272727" strokeWidth="1.5"/><path d="M2 15v4m10-6v6m9-9v9" stroke="#5e5652" strokeDasharray="2 1"/></>,
+ remove:<path d="m4 4 16 16m0-16L4 20" stroke="#d96965" strokeWidth="5"/>,
  navigate:<><path fill="var(--extract-blue)" d="m3 7 9-5 9 5v10l-9 5-9-5Z"/><path d="m3 7 9 5 9-5M12 12v10" stroke="var(--extract-pale)"/><path fill="var(--extract-pale)" d="m3 7 9-5 9 5-9 5Z"/></>,
  wand:<><path fill="var(--extract-blue)" stroke="none" d="m10 1 2 5 5-3-1 6 6 1-5 3 4 5-6-1-1 6-3-6-5 4 1-6-6-1 5-3-3-5 6 1Z"/><path stroke="var(--extract-edge)" strokeWidth="2.2" d="m14 14 8 8"/></>,
  brush:<><path fill="var(--extract-blue)" d="m4 4 5 1 9 12-3 3L5 10Z"/><path d="m4 4 5 6M15 15l4 2"/></>,

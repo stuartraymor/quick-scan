@@ -136,6 +136,9 @@ describe('an Import', () => {
       ['Plate', 200],
       ['Post', 96],
     ])
+    const placed=build(builder,[{id:7,kind:'import',name:'Import 1',file:{key,name:'pcb.step',size:text.length},visible:true,
+      alignment:{r:[1,0,0,0,1,0,0,0,1],t:[7,2,-1]}}])
+    expect(boxOf(placed.bodies[1].mesh.positions).min[0]).toBeCloseTo(27,4)
     // The post stands where the file has it.
     expect(boxOf(out.bodies[1].mesh.positions).min[0]).toBeCloseTo(20, 4)
     builder.dispose()

@@ -24,8 +24,8 @@
 // Pure: a cage and a way to project a point on the scan in, a cage out.
 
 import type { Vec3 } from '../../../../src/core/types'
-import { type Cage, type CageTopology, topology, vertexCount } from './cage'
-import { vertexNormals } from './limit'
+import { type Cage, type CageTopology, edgeKey, topology, vertexCount } from './cage'
+import { limitPositions, vertexNormals } from './limit'
 import { subdivide, vertexRule } from './subdivide'
 
 /** A point of the scan for a point of the surface: the nearest, with the scan's normal there. */
@@ -258,19 +258,19 @@ function solve(s: WeightRows, w: Float64Array, l: WeightRows, lambda: number, ep
   const p = new Float64Array(n)
   const ap = new Float64Array(n)
   mul(x, ap)
-  let bb = 0
+  let residualSquared = 0
   for (let i = 0; i < n; i++) {
     r[i] = b[i] - ap[i]
-    bb += b[i] * b[i]
+    residualSquared += r[i] * r[i]
   }
-  if (bb === 0) bb = 1
+  // Scale convergence to the correction, so translating a part cannot hide its fitting error.
   let rz = 0
   for (let i = 0; i < n; i++) {
     z[i] = r[i] / diag[i]
     p[i] = z[i]
     rz += r[i] * z[i]
   }
-  const stop = tolerance * tolerance * bb
+  const stop = tolerance * tolerance * residualSquared
   for (let it = 0; it < maxIterations; it++) {
     let rr = 0
     for (let i = 0; i < n; i++) rr += r[i] * r[i]
@@ -473,6 +473,10 @@ export interface SurfaceDeviation {
   indices: Uint32Array
   /** Unsigned distance to the scan at each vertex, mm; NaN where the scan had no point. */
   distance: Float32Array
+  /** Scan relative to fitted surface, using the measured scan normal. */
+  signed: Float32Array
+  /** Original cage edges evaluated on the same limit mesh used for analysis. */
+  edgeSegments: Uint32Array
   points: number
   missed: number
   rms: number
@@ -482,31 +486,42 @@ export interface SurfaceDeviation {
 }
 
 /** The cage's limit surface sampled (subdivided `steps` times) with each sample's distance to the scan. */
-export function surfaceDeviation(c: Cage, project: ScanProject, tolerance: number, steps = 2, reach = Infinity): SurfaceDeviation {
+export function surfaceDeviation(c: Cage, project: ScanProject, tolerance: number, steps = 2, reach = Infinity, includeEdges = false): SurfaceDeviation {
   let fine = c
-  for (let i = 0; i < Math.max(1, steps); i++) fine = subdivide(fine)
-  const rows = limitRows(fine)
-  const nv = rows.rows
-  const pos = new Float64Array(nv * 3)
-  const col = new Float64Array(nv)
-  const out = new Float64Array(nv)
-  for (let k = 0; k < 3; k++) {
-    for (let v = 0; v < nv; v++) col[v] = fine.positions[v * 3 + k]
-    apply(rows, col, out)
-    for (let v = 0; v < nv; v++) pos[v * 3 + k] = out[v]
+  let segments = new Uint32Array(0)
+  for (let level = 0; level < Math.max(1, steps); level++) {
+    const net = topology(fine)
+    if (includeEdges) {
+      if (level === 0) segments = Uint32Array.from(net.edges.flatMap(({ a, b }) => [a, b]))
+      const next = new Uint32Array(segments.length * 2)
+      const firstMidpoint = vertexCount(fine) + fine.faces.length
+      for (let i = 0; i < segments.length; i += 2) {
+        const a = segments[i], b = segments[i + 1]
+        const mid = firstMidpoint + net.edgeOf.get(edgeKey(a, b))!
+        next.set([a, mid, mid, b], 2 * i)
+      }
+      segments = next
+    }
+    fine = subdivide(fine, net)
   }
+  const pos = limitPositions(fine)
+  const nv = pos.length / 3
   const nrm = vertexNormals(pos, fine.faces)
   const side = woundAgainst(pos, nrm, project) ? -1 : 1
   const distance = new Float32Array(nv)
+  const signed = new Float32Array(nv)
   let points = 0, missed = 0, sum = 0, max = 0, within = 0
   for (let v = 0; v < nv; v++) {
     const q = project([pos[v * 3], pos[v * 3 + 1], pos[v * 3 + 2]], [side * nrm[v * 3], side * nrm[v * 3 + 1], side * nrm[v * 3 + 2]])
     if (!q || !(q.distance <= reach)) {
-      distance[v] = NaN
+      signed[v] = distance[v] = NaN
       missed++
       continue
     }
     distance[v] = q.distance
+    const sideOfScan = (pos[3*v] - q.point[0]) * q.normal[0] +
+      (pos[3*v+1] - q.point[1]) * q.normal[1] + (pos[3*v+2] - q.point[2]) * q.normal[2]
+    signed[v] = sideOfScan < 0 ? q.distance : -q.distance
     points++
     sum += q.distance * q.distance
     if (q.distance > max) max = q.distance
@@ -516,5 +531,5 @@ export function surfaceDeviation(c: Cage, project: ScanProject, tolerance: numbe
   fine.faces.forEach((f, i) => {
     indices.set([f[0], f[1], f[2], f[0], f[2], f[3]], i * 6)
   })
-  return { positions: Float32Array.from(pos), normals: Float32Array.from(nrm), indices, distance, points, missed, rms: points > 0 ? Math.sqrt(sum / points) : 0, max, within }
+  return { positions: Float32Array.from(pos), normals: Float32Array.from(nrm), indices, distance, signed, edgeSegments: segments, points, missed, rms: points > 0 ? Math.sqrt(sum / points) : 0, max, within }
 }

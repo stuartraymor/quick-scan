@@ -31,6 +31,8 @@
 //    no triangle output, no point clouds, no adaptive sizing.
 
 import { cleanQuads } from './cleanup'
+import { triangles } from '../cage'
+import { coverageProbes, scanCoverage } from '../scanCoverage'
 import { buildDedge, dualVertexAreas, meshStats, reorderForLocality, subdivide, uniformAdjacency, vertexNormals } from './dedge'
 import type { TriMesh } from './dedge'
 import { RayGrid, extractFaces, extractGraph } from './extract'
@@ -74,6 +76,8 @@ export interface InstantResult {
   scale: number
   /** orientation-field singularity count */
   singularities: number
+  /** A coarse closed part needed a newly prepared, finer field to recover its topology. */
+  topologyResolutionRaised?: boolean
   stats: {
     quads: number
     boundaryEdges: number
@@ -96,6 +100,10 @@ const COUNT_TOLERANCE = [0.03, 0.045]
 const MAX_ATTEMPTS = 3
 
 export function instantQuads(input: InstantInput, options: InstantOptions): InstantResult {
+  return solveField(input, options, true)
+}
+
+function solveField(input: InstantInput, options: InstantOptions, allowRestart: boolean): InstantResult {
   const progress = new Progress(options.progress)
   const ms: Record<string, number> = { prepare: 0, hierarchy: 0, orientation: 0, position: 0, extract: 0, smooth: 0 }
   let clock = now()
@@ -155,8 +163,10 @@ export function instantQuads(input: InstantInput, options: InstantOptions): Inst
 
   // Constraints: open boundaries (batch.cpp, -b), then the caller's.
   const alignBoundaries = options.boundaries ?? true
-  let anyBoundary = false
-  if (alignBoundaries) for (let e = 0; e < nF * 3 && !anyBoundary; e++) if (dedge.E2E[e] === INVALID) anyBoundary = true
+  const closedInput = !dedge.E2E.includes(INVALID)
+  // A closed triangular manifold has 3F/2 edges. A closed quad manifold has 2F.
+  const inputEuler = closedInput ? new Set(F).size - nF / 2 : 0
+  const anyBoundary = alignBoundaries && !closedInput
   const constraints = options.constraints ?? []
   if (anyBoundary || constraints.length > 0) {
     clearConstraints(hierarchy)
@@ -211,9 +221,17 @@ export function instantQuads(input: InstantInput, options: InstantOptions): Inst
 
   // ---- position field and extraction; again at a corrected scale when the count is off.
   let grid: RayGrid | null = null
-  let best: { clean: ReturnType<typeof cleanQuads>; scale: number; error: number } | null = null
+  let best: { clean: ReturnType<typeof cleanQuads>; scale: number; error: number; incomplete: boolean } | null = null
+  let scanSamples: Float32Array | undefined
+  const coverage = (c: { positions: Float64Array; faces: number[][] }) => {
+    scanSamples ??= coverageProbes({ positions: Float32Array.from(input.positions), indices: input.indices }, 128)
+    const indices = triangles({ ...c, creases: [] })
+    return scanCoverage(scanSamples, { positions: Float32Array.from(c.positions), indices }, 0)
+  }
+  let sawWrongTopology = false
   ms.attempts = 0
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+  for (let attempt = 0; attempt < MAX_ATTEMPTS + 1; attempt++) {
+    if (attempt === MAX_ATTEMPTS && (!best?.incomplete || !closedInput || target > 2000)) break
     ms.attempts++
     progress.report('position', 0)
     randomPositions(hierarchy, scale, seed, progress.part('position', 0, 0))
@@ -225,15 +243,53 @@ export function instantQuads(input: InstantInput, options: InstantOptions): Inst
     if (smooth > 0 && grid === null) grid = new RayGrid(V, F, nF, scale / 4, progress.part('extract', 0, 0))
     const graph = extractGraph(level0, crease, scale, progress)
     lap('extract')
-    const extracted = extractFaces(graph, scale, smooth, grid, progress)
+    const extracted = extractFaces(graph, scale, smooth, grid, progress, anyBoundary)
     const clean = cleanQuads(extracted.positions, extracted.normals, extracted.quads, extracted.nV)
     lap('smooth')
     const count = clean.faces.length
-    const error = Math.abs(count - target) / target
-    if (best === null || error < best.error) best = { clean, scale, error }
-    if (error <= COUNT_TOLERANCE[Math.min(attempt, COUNT_TOLERANCE.length - 1)]) break
+    const countError = Math.abs(count - target) / target
+    const wrongTopology = closedInput && (clean.boundaryEdges > 0 || clean.positions.length / 3 - count !== inputEuler)
+    sawWrongTopology ||= wrongTopology
+    const incomplete = count === 0 || wrongTopology
+    let error = countError
+    if (closedInput && incomplete) {
+      // A fragment can have the requested count yet omit most of a thin ring.
+      // Compare incomplete candidates against identical area-weighted scan probes.
+      error = Infinity
+      if (count > 0) {
+        error = coverage(clean).rms
+      }
+    }
+    if (!best || (best.incomplete && !incomplete) || (best.incomplete === incomplete && error < best.error)) {
+      best = { clean, scale, error, incomplete }
+    }
+    if (!incomplete && error <= COUNT_TOLERANCE[Math.min(attempt, COUNT_TOLERANCE.length - 1)]) break
     // Nothing at all: the lattice is too coarse for the scan to hold a cell of it.
-    scale *= count === 0 ? 0.6 : Math.sqrt(count / target)
+    const correction = count === 0 ? 0.6 : Math.sqrt(count / target)
+    // On a closed input, a hole can mean too few cells cross a narrow wall.
+    // Try a finer grid even when the surviving face count meets the target.
+    scale *= incomplete ? Math.min(0.7, Math.max(0.5, correction)) : correction
+  }
+  if (allowRestart && closedInput && target <= 2000 && (sawWrongTopology || !best?.clean.faces.length)) {
+    const previous = best?.clean.faces.length ? coverage(best.clean) : { rms: Infinity, max: Infinity }
+    if (!best || best.incomplete || previous.max > best.scale) {
+      // Changing spacing in an already prepared hierarchy cannot restore
+      // cross-section detail discarded at its coarse working resolution.
+      // Keep the first covering, genus-preserving result. Very slender sections
+      // can still span fewer than three cells in the first replacement field.
+      for (const multiplier of [5, 10, 20]) {
+        const resolution = target * multiplier
+        if (resolution > 10000) break
+        const finer = solveField(input, { ...options, quads: resolution }, false)
+        for (const stage of Object.keys(ms)) ms[stage] += finer.stats.msByStage[stage] ?? 0
+        if (!finer.faces.length || finer.stats.boundaryEdges !== 0 || finer.positions.length / 3 - finer.faces.length !== inputEuler) continue
+        const next = coverage(finer)
+        if (next.rms <= previous.rms && next.max <= previous.max) {
+          ms.total = now() - started
+          return { ...finer, topologyResolutionRaised: true, stats: { ...finer.stats, msByStage: ms } }
+        }
+      }
+    }
   }
   if (best === null || best.clean.faces.length === 0) return empty(scale, singularities)
   ms.total = now() - started

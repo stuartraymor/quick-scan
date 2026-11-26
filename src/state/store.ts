@@ -365,7 +365,7 @@ interface AppState {
   selectAlignmentElement: (id: number) => void
   /** Carry every element (and the coordinate datums among the constructions)
    *  through an applied alignment. The mesh itself is the caller's business. */
-  applyAlignment: (m: Rigid) => void
+  applyAlignment: (m: Rigid, moveFeatures?:boolean) => void
   clearAppliedAlignment: () => void
   startDimension: (type: string) => void
   /** Re-open an existing dimension — same slots, same preview, written back to
@@ -1479,7 +1479,7 @@ export const useStore = create<AppState>()((set, get) => ({
       return { alignDraft: withSlotElement(ad, 'secondary', id, s.elements) }
     }),
 
-  applyAlignment: (m) =>
+  applyAlignment: (m,moveFeatures=true) =>
     set((s) => {
       const moved = new Float64Array(3)
       rigidApply(m, s.modelCenter[0], s.modelCenter[1], s.modelCenter[2], moved)
@@ -1512,6 +1512,11 @@ export const useStore = create<AppState>()((set, get) => ({
           cut: d.cut ? transformCut(d.cut, m) : undefined,
           cutKey: d.cut && frame ? sectionKeyOf(frame, d) : undefined,
         })
+      }
+      if(!moveFeatures)return {
+        alignDraft:null,
+        appliedAlignment:s.appliedAlignment?rigidCompose(m,s.appliedAlignment):m,
+        modelCenter:[moved[0],moved[1],moved[2]] as Vec3,
       }
       const sections = s.sections.map(moveSection)
       return {
