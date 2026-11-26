@@ -109,12 +109,12 @@ check(net.segments === 0 && net.points === 0, 'unticked, the net is gone')
 
 // Ticked again, then a plane: no net to show, and the tick goes with the shape.
 await click(page, '[data-test=surface-control-net]')
-await page.select('[data-test=surface-shape]', 'plane')
+await click(page, '[data-test=surface-type-plane]')
 await sleep(1500)
 check((await page.$('[data-test=surface-control-net]')) === null, 'a plane has no Control Net tick')
 net = await netInScene()
 check(net.segments === 0 && net.points === 0, 'and no net is drawn for it')
-await page.select('[data-test=surface-shape]', 'freeform')
+await click(page, '[data-test=surface-type-freeform]')
 await sleep(1500)
 // Commit the fitted sheet: it must be exportable from the same panel as a solid.
 await page.waitForFunction(() => !document.querySelector('[data-test=surface-create]')?.disabled, { timeout: 60_000 })
