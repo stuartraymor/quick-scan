@@ -208,7 +208,7 @@ export function AutoFreeformDialog({ onClose }: { onClose: () => void }) {
       if (version === undefined || version !== commandHost().session.clientRef.current?.scanVersion) throw new Error('The scan changed. Preview again before continuing.')
       const scene = session.sceneRef.current
       if (!scene) throw new Error('The viewport is unavailable.')
-      reSceneOf(scene).setBodyPreview(made.surface, '#5da9d6', { edgeSegments: made.surface.edgeSegments })
+      reSceneOf(scene).setBodyPreview(made.surface, '#56b8a2', { edgeSegments: made.surface.edgeSegments })
       setDisplaySurface(made.surface)
       previewVersion.current = version
       previewCage.current = writeQuadObj(made.cage, 'Auto Freeform preview')
@@ -305,7 +305,7 @@ export function AutoFreeformDialog({ onClose }: { onClose: () => void }) {
         <span>Deviation: RMS {len.fmt(stats.rms, 3)}, max {len.fmt(stats.max, 3)}</span>
         <span>{Math.round(stats.within * 100)}% within {len.fmt(stats.tolerance)}{stats.refined > 0 ? ` · ${stats.refined.toLocaleString()} quads added` : ''}</span>
         <span title={`${stats.coverage.samples.toLocaleString()} probes distributed by scan area`}>Scan to surface: RMS {len.fmt(stats.coverage.rms, 3)}, max {len.fmt(stats.coverage.max, 3)}</span>
-        {stats.topologyResolutionRaised && <span>Increased resolution to preserve closed geometry.</span>}
+        {stats.topologyResolutionRaised && <span>Increased resolution to preserve the scan’s openings and coverage.</span>}
         <span>{stats.irregular.toLocaleString()} irregular point{stats.irregular === 1 ? '' : 's'} · {stats.closed ? 'closed' : 'open'} · {stats.seconds.toFixed(1)} s</span>
       </small>}
       {displaySurface ? <FreeformSurfaceDisplay positions={displaySurface.positions} measured={displaySurface.signed} /> : <fieldset className="ff-display" disabled><legend>Surface Display</legend><button type="button" aria-label="Shaded"><FreeformIcon name="shaded" /></button><button type="button" aria-label="Tolerance / Deviation"><FreeformIcon name="deviation" /></button><button type="button">Options …</button></fieldset>}

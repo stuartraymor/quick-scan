@@ -20,7 +20,7 @@ const ringCases = [
   [0, 'basic', 100], [0, 'feature', 100], [9, 'feature', 100],
   [10, 'basic', 100], [11, 'feature', 100], [11, 'basic', 120],
   [11, 'basic', 150], [13, 'basic', 150], [15, 'feature', 100],
-  [16, 'feature', 100], [17, 'basic', 120], [17, 'basic', 220],
+  [16, 'feature', 100], [17, 'basic', 120], [17, 'basic', 220], [1, 'feature', 120],
 ] as const
 it.each(ringCases)('keeps ring %i closed with %s at target %i', (variant, algorithm, quads) => {
   const positions: number[] = [], indices: number[] = []
@@ -34,11 +34,15 @@ it.each(ringCases)('keeps ring %i closed with %s at target %i', (variant, algori
     indices.push(p,q,r,p,r,s)
   }
   const made = runAutoFreeform({positions:Float32Array.from(positions), indices:Uint32Array.from(indices)},
-    {algorithm,quads,hardEdgeAngle:25,details:'low'})
+    {algorithm,quads,hardEdgeAngle:variant === 1 ? 40 : 25,details:'low',symmetry:variant === 1 ? 'oyz' : 'none'})
   expect(made.topologyResolutionRaised).toBe(true)
   expect(made.closed).toBe(true)
   expect(made.vertices-made.quads).toBe(0)
   expect(made.boundaryEdges).toBe(0)
+  if (variant === 1) {
+    expect(made.mirror?.onPlane).toBeGreaterThan(0)
+    expect(made.coverage.max).toBeLessThan(.02)
+  }
   expect(made.coverage.max).toBeLessThan(variant === 0 ? .05 : radius * 1.1)
   expect(made.coverage.rms).toBeLessThan(.055)
 })

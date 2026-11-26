@@ -100,7 +100,7 @@ describe('Extract primitives — QUICKSURFACE parity', () => {
       'extract-tool-line': 'Select by drawing a line',
       'extract-tool-window': 'Select by drawing a rectangle',
       'extract-tool-circle': 'Select by drawing a circle',
-      'extract-tool-through': 'Select through',
+      'extract-tool-through': 'Choose a marking tool to select through the mesh',
       'extract-enlarge': 'Enlarge currently selected area',
       'extract-shrink': 'Shrink currently selected area',
       'extract-isolate': 'Isolate (leave selected and hide others)',

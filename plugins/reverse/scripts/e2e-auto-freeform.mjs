@@ -167,6 +167,7 @@ try {
   assert.equal(await page.evaluate(() => window.__scanruler.scene().scanShown()), false)
   await page.screenshot({ path: shotPath('auto-freeform-deviation.png') })
   await displayClick('Shaded')
+  assert.equal(await page.evaluate(() => window.__re.reScene().bodyPreview.material.color.getHexString()), '56b8a2')
   assert.equal(await page.evaluate(() => window.__scanruler.scene().scanShown()), true)
   assert.equal(await page.evaluate(() => !!window.__re.reScene().bodyPreview.material.userData.freeformAnalysis), false)
 

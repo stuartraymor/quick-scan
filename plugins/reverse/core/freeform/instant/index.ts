@@ -49,6 +49,8 @@ export interface InstantInput {
 }
 
 export interface InstantOptions {
+  /** Independent cycles on the original open input before layout decimation. */
+  openCycles?: number
   /** Target number of QUADS in the output (pure-quad). Converted here to Instant Meshes' scale (its pure-quad output has about four times the faces it is asked for). */
   quads: number
   /** Align the field to open boundaries (IM -b). Default true. */
@@ -76,7 +78,7 @@ export interface InstantResult {
   scale: number
   /** orientation-field singularity count */
   singularities: number
-  /** A coarse closed part needed a newly prepared, finer field to recover its topology. */
+  /** The working resolution was increased to recover topology or scan coverage. */
   topologyResolutionRaised?: boolean
   stats: {
     quads: number
@@ -285,6 +287,24 @@ function solveField(input: InstantInput, options: InstantOptions, allowRestart: 
         if (!finer.faces.length || finer.stats.boundaryEdges !== 0 || finer.positions.length / 3 - finer.faces.length !== inputEuler) continue
         const next = coverage(finer)
         if (next.rms <= previous.rms && next.max <= previous.max) {
+          ms.total = now() - started
+          return { ...finer, topologyResolutionRaised: true, stats: { ...finer.stats, msByStage: ms } }
+        }
+      }
+    }
+  }
+  const cycles = options.openCycles ?? 0
+  if (allowRestart && best?.clean.faces.length && !closedInput && target <= 2000 && cycles > Math.sqrt(target)) {
+    // Allow up to three rings of cells around an unresolved opening
+    // (7x7 minus its centre) and retain a retry only when coverage improves.
+    const resolution = Math.min(10000, 8 * target, 48 * cycles)
+    if (resolution > 1.5 * target) {
+      const previous = coverage(best.clean)
+      const finer = solveField(input, { ...options, quads: resolution }, false)
+      for (const stage of Object.keys(ms)) ms[stage] += finer.stats.msByStage[stage] ?? 0
+      if (finer.faces.length && finer.stats.boundaryEdges > 0) {
+        const next = coverage(finer)
+        if (next.rms < previous.rms && next.max <= previous.max) {
           ms.total = now() - started
           return { ...finer, topologyResolutionRaised: true, stats: { ...finer.stats, msByStage: ms } }
         }

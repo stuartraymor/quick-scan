@@ -1,3 +1,7 @@
+## Quick Scan 1.2.93 | Auto Freeform symmetry, open scans and quad targets
+
+Mirrored cages are checked against the original closed mesh. Densely perforated open scans can retry at a finer field resolution when the scan coverage improves. Feature Details follows the measured response across Low, Medium, Fine and Custom targets. The shaded preview uses the reference teal with the existing dark workspace and signed deviation colors.
+
 ## Quick Scan 1.2.92 | Auto Freeform ring closure and feature density
 
 Coarse toroidal scans can retry at finer resolution to preserve the opening. Feature aligned allocates extra quads according to measured bends in the scan. The CAD conversion matches the transverse tangents of neighboring smooth patches while retaining their shared boundary and intentional creases.

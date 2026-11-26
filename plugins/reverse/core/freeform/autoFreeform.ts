@@ -25,10 +25,10 @@
 import { ScanPaths } from '../../../../src/core/geometry/scanPath'
 import type { Vec3 } from '../../../../src/core/types'
 import type { AutoTools } from './autoTools'
-import { type DirectionConstraint, type WorkMesh, fillCageHoles, guideConstraints, improveRims, mainPieces, meshArea, mirrored, positiveHalf, subMesh, welded, withoutSlivers } from './autoPrepare'
+import { type DirectionConstraint, type WorkMesh, fillCageHoles, guideConstraints, improveRims, mainPieces, meshArea, mirrored, positiveHalf, scanTopology, subMesh, welded, withoutSlivers } from './autoPrepare'
 import { featureConstraints, featureDetailWeight } from './autoFeatures'
 import { offShare, refineToTolerance } from './autoRefine'
-import type { Cage } from './cage'
+import { type Cage, triangles } from './cage'
 import { coverageProbes, scanCoverage, type ScanCoverage } from './scanCoverage'
 import { instantQuads } from './instant'
 import { type FitStats, type ScanProject, fitCageToScan, surfaceDeviation } from './limitFit'
@@ -198,12 +198,13 @@ export function cageCounts(c: Cage): { irregular: number; edge: number; closed: 
   for (const f of c.faces) for (let k = 0; k < f.length; k++) count.set(key(f[k], f[(k + 1) % f.length]), (count.get(key(f[k], f[(k + 1) % f.length])) ?? 0) + 1)
   const valence = new Int32Array(n)
   const rim = new Uint8Array(n)
-  let boundaryEdges = 0, sum = 0
+  let boundaryEdges = 0, manifold = true, sum = 0
   const p = c.positions
   for (const [e, k] of count) {
     const a = Math.floor(e / n), b = e % n
     valence[a]++
     valence[b]++
+    if (k > 2) manifold = false
     if (k === 1) {
       boundaryEdges++
       rim[a] = 1
@@ -213,7 +214,7 @@ export function cageCounts(c: Cage): { irregular: number; edge: number; closed: 
   }
   let irregular = 0
   for (let v = 0; v < n; v++) if (valence[v] > 0 && !rim[v] && valence[v] !== 4) irregular++
-  return { irregular, edge: count.size > 0 ? sum / count.size : 0, closed: boundaryEdges === 0, boundaryEdges }
+  return { irregular, edge: count.size > 0 ? sum / count.size : 0, closed: manifold && boundaryEdges === 0, boundaryEdges }
 }
 
 /** The scan as something a surface point can be taken to: the nearest point whose side agrees with the surface's. */
@@ -286,13 +287,19 @@ export function runAutoFreeform(scan: { positions: Float32Array | Float64Array; 
     if (work.indices.length < 3) throw new AutoError(`Nothing of the scan lies on the positive side of the ${symmetry.toUpperCase()} plane.`)
   }
   const detail = settings.details ?? 'balanced'
-  // Additional rows along a ridge scale with its length divided by the nominal
-  // quad width. The ordinary surface cells scale with area instead.
+  // Native Low, Medium, Fine and Custom runs show diminishing extra rows as
+  // the ordinary layout resolves more of each ridge. Normalize the saturating
+  // allowance at Medium; smooth regions keep the requested surface density.
   const weight = algorithm === 'feature' && detail !== 'low'
-    ? featureDetailWeight(reference, area) * Math.sqrt(AUTO_TARGETS.medium / target)
+    ? featureDetailWeight(reference, area) * (2 * AUTO_TARGETS.medium / (AUTO_TARGETS.medium + target))
     : 1
   const factor = algorithm === 'feature' ? 1 + (DETAIL_FACTOR[detail] - 1) * weight : 1
   const asked = Math.max(16, Math.round((target * factor) / (axis >= 0 ? 2 : 1)))
+  // Read topology before decimation or the symmetry cut. Artificial rims in
+  // a working copy must not increase the user's requested layout density.
+  const original = asked <= 2000 && (axis >= 0 || reference.indices.length / 3 > 2 * asked)
+    ? scanTopology(reference) : undefined
+  const openCycles = original && original.boundaryEdges > 0 && axis < 0 ? Math.max(0, whole.kept - original.euler) : 0
   const layoutArea = axis >= 0 ? meshArea(work) : area
   const scale = Math.sqrt(layoutArea / asked)
   report(0.3)
@@ -321,6 +328,7 @@ export function runAutoFreeform(scan: { positions: Float32Array | Float64Array; 
     try {
       laid = instantQuads(work, {
         quads: count,
+        openCycles,
         boundaries: true,
         // The scan's sharp edges kept sharp in the field, for both algorithms: measured (bakeoff/RESULTS.md), it brings the
         // fitted surface nearer the scan — basic_part 0.209 → 0.161 mm rms, lego 0.037 → 0.031 — at the same share of irregular points.
@@ -378,6 +386,32 @@ export function runAutoFreeform(scan: { positions: Float32Array | Float64Array; 
     return { cage: { positions, faces, creases: [] }, mirror: made, scale: reach, topologyResolutionRaised: laid.topologyResolutionRaised === true }
   }
   let laid = layOut(asked)
+  // The field sees an open half after a symmetry cut. Validate the assembled
+  // cage against the uncut input, where closure and genus are meaningful.
+  if (axis >= 0 && original?.closed) {
+    const sameTopology = (c: Cage) => c.positions.length / 3 - c.faces.length === original.euler && cageCounts(c).closed
+    if (!sameTopology(laid.cage)) {
+      const probes = coverageProbes(reference, 256)
+      const distance = (c: Cage) => scanCoverage(probes, { positions: Float32Array.from(c.positions), indices: triangles(c) }, tolerance)
+      const coarse = distance(laid.cage)
+      for (const factor of [2, 5, 10, 20]) {
+        if (factor * asked > 5000) break
+        let candidate: ReturnType<typeof layOut>
+        try { candidate = layOut(factor * asked) }
+        catch (error) {
+          if (stopped !== undefined) throw stopped
+          if (error instanceof AutoError) continue
+          throw error
+        }
+        if (!sameTopology(candidate.cage)) continue
+        const fit = distance(candidate.cage)
+        if (fit.rms <= coarse.rms && fit.max <= coarse.max) {
+          laid = { ...candidate, topologyResolutionRaised: true }
+          break
+        }
+      }
+    }
+  }
   let cage: Cage = laid.cage
   let mirror = laid.mirror
 

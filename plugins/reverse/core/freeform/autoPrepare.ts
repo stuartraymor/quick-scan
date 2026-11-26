@@ -82,6 +82,23 @@ function triangleArea(p: Float32Array, a: number, b: number, c: number): number 
   return 0.5 * Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx)
 }
 
+export function scanTopology(mesh: WorkMesh): { euler: number; closed: boolean; boundaryEdges: number } {
+  const nv = mesh.positions.length / 3, used = new Uint8Array(nv)
+  const incidences = new Map<number, number>()
+  let vertices = 0, boundaryEdges = 0, nonManifold = 0
+  for (let i=0; i<mesh.indices.length; i+=3) for (let k=0; k<3; k++) {
+    const a = mesh.indices[i+k], b = mesh.indices[i+(k+1)%3]
+    if (!used[a]) { used[a] = 1; vertices++ }
+    const key = a < b ? a*nv+b : b*nv+a
+    const previous = incidences.get(key) ?? 0
+    incidences.set(key, previous+1)
+    if (previous === 0) boundaryEdges++
+    else if (previous === 1) boundaryEdges--
+    else if (previous === 2) nonManifold++
+  }
+  return { euler: vertices-incidences.size+mesh.indices.length/3, closed: boundaryEdges===0 && nonManifold===0, boundaryEdges }
+}
+
 export function meshArea(m: WorkMesh): number {
   let area = 0
   for (let t = 0; t + 2 < m.indices.length; t += 3) area += triangleArea(m.positions, m.indices[t], m.indices[t + 1], m.indices[t + 2])
