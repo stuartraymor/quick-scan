@@ -124,7 +124,7 @@ export type BuildStep =
   | { kind: 'offsetBody'; id: number; name: string; body: number; distance: number; keep: boolean }
   /** A STEP file's bodies, by the key its text was handed to the builder
    *  under (Builder.addStepFiles). */
-  | { kind: 'import'; id: number; name: string; file: string }
+  | { kind: 'import'; id: number; name: string; file: string; matrix?:number[] }
   /** Bodies carried by a rigid move, row-major 3 × 4 (move.ts) — or copies
    *  of them. */
   | { kind: 'moveBody'; id: number; name: string; bodies: number[]; matrix: number[]; copy: boolean }

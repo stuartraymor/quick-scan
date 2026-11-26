@@ -15,7 +15,7 @@
 import { create } from 'zustand'
 import { defaultTolerance, type ReduceReport, type ReduceSettings } from '../core/reduce'
 import { defaultMinPiece } from '../core/pieces'
-import { defaultHoleSize, type FillMode, type HoleSurvey } from '../core/fillHoles'
+import { defaultHoleSize, type FillMode, type RimFillMethod, type HoleSurvey } from '../core/fillHoles'
 import { defaultSmoothLimit, defaultSmoothSize } from '../core/smooth'
 import type { CopyDeviationStats } from '../core/edit'
 import type { BooleanOp } from '../core/boolean'
@@ -61,6 +61,8 @@ export type ScanEdit =
   | { kind: 'scale'; factors: [number, number, number] }
   | { kind: 'skirt'; edges: number }
   | { kind: 'reduce'; triangles: number }
+  | {kind:'split';method:'split'|'subtract'|'add';tool:string;triangles:number}
+  | { kind:'rim'; action:'semi'|'bridge'|'smooth'|'zip'|'expand'; triangles:number }
   | { kind: 'noise'; iterations: number; region?: number }
   | { kind: 'mirror'; plane: string }
   | {
@@ -81,7 +83,7 @@ export type ScanEdit =
       capped: number
       open: number
     }
-  | { kind: 'fill'; maxSize: number; mode: FillMode; holes: number; triangles: number }
+  | { kind: 'fill'; maxSize: number; mode: FillMode; algorithm?: RimFillMethod; selected?: boolean; holes: number; triangles: number }
   | {
       kind: 'smooth'
       /** Bumps smaller than this across smoothed out, mm, and no point moved
@@ -763,6 +765,8 @@ export function scanEditText(e: ScanEdit, units: DisplayUnits = 'mm'): string {
       return 'Projected the boundaries on OXY'
     case 'reduce':
       return 'Replaced by the reduced mesh'
+    case 'split': return `${({split:'Split',subtract:'Cut',add:'Combine'})[e.method]} with ${e.tool}`
+    case 'rim': return ({semi:'Split hole',bridge:'Bridge holes',smooth:'Smooth boundary',zip:'Zip boundary',expand:'Expand hole'})[e.action]
     case 'noise':
       return `Reduced noise, ${e.iterations} iteration${e.iterations === 1 ? '' : 's'}${e.region ? ' on a selection' : ''}`
     case 'scale':
@@ -773,7 +777,7 @@ export function scanEditText(e: ScanEdit, units: DisplayUnits = 'mm'): string {
     case 'cut':
       return `Cut at ${cutPlaneText(e.plane, units)}${e.capped > 0 ? `, closed flat` : ''}`
     case 'fill':
-      return `Filled ${count(e.holes)} hole${e.holes === 1 ? '' : 's'} under ${len(e.maxSize)}${e.mode === 'flat' ? ', flat' : ''}`
+      return `Filled ${count(e.holes)} hole${e.holes === 1 ? '' : 's'}${e.selected ? '' : ' under '+len(e.maxSize)}${e.algorithm ? ', '+e.algorithm : e.mode === 'flat' ? ', flat' : ''}`
     case 'smooth':
       return `Smoothed bumps under ${len(e.size)}${e.region ? ' in a marked region' : ''}, within ${len(e.limit)}`
     case 'boolean':
@@ -800,6 +804,8 @@ export function scanEditFigure(e: ScanEdit, units: DisplayUnits = 'mm'): string 
       return `${count(e.edges)} edges`
     case 'reduce':
       return `${count(e.triangles)} △`
+    case 'split': return `${count(e.triangles)} △`
+    case 'rim': return `${e.triangles>0?'+':''}${e.triangles} △`
     case 'noise':
       return `× ${e.iterations}`
     case 'scale':

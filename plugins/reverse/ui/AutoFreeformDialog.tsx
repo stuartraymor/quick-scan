@@ -37,6 +37,7 @@ import {
   AUTO_BUILD_STEPS, AUTO_HARD_EDGE_DEG, AUTO_QUADS_MAX, AUTO_QUADS_MIN, AUTO_STAGE_LABEL, AUTO_SYMMETRIES, AUTO_TARGETS,
   type AutoAlgorithm, type AutoDetails, type AutoOutcome, type AutoSettings, type AutoStage, type AutoSymmetry,
 } from '../core/freeform/autoFreeform'
+import { boundedBuildSteps } from '../core/freeform/make'
 import { reEditorOpen, useReverse } from '../state/reStore'
 
 export const useAutoFreeformDialog = create<{ open: boolean; setOpen: (open: boolean) => void }>(set => ({
@@ -57,9 +58,11 @@ interface Stats {
   max: number
   within: number
   tolerance: number
+  coverage: AutoOutcome['coverage']
   closed: boolean
   seconds: number
   refined: number
+  topologyResolutionRaised: boolean
 }
 
 export function AutoFreeformDialog({ onClose }: { onClose: () => void }) {
@@ -108,9 +111,9 @@ export function AutoFreeformDialog({ onClose }: { onClose: () => void }) {
   const previewVersion = useRef<number | null>(null)
   const alive = useRef(true)
   const form = useRef<HTMLFormElement>(null)
-  const [displayPositions, setDisplayPositions] = useState<Float32Array | null>(null)
+  const [displaySurface, setDisplaySurface] = useState<AutoOutcome['surface'] | null>(null)
   const clearMesh = () => {
-    setDisplayPositions(null)
+    setDisplaySurface(null)
     const scene = reverseSession()?.sceneRef.current
     if (scene) reSceneOf(scene).setBodyPreview(null, '#ffffff')
     previewVersion.current = null
@@ -200,19 +203,19 @@ export function AutoFreeformDialog({ onClose }: { onClose: () => void }) {
       })
       running.current = run
       const made: AutoOutcome = await run.result
-      running.current = null
       if (!alive.current || ticket !== request.current) return
+      running.current = null
       if (version === undefined || version !== commandHost().session.clientRef.current?.scanVersion) throw new Error('The scan changed. Preview again before continuing.')
       const scene = session.sceneRef.current
       if (!scene) throw new Error('The viewport is unavailable.')
-      reSceneOf(scene).setBodyPreview(made.surface, '#5da9d6', { cage: made.cage })
-      setDisplayPositions(made.surface.positions)
+      reSceneOf(scene).setBodyPreview(made.surface, '#56b8a2', { edgeSegments: made.surface.edgeSegments })
+      setDisplaySurface(made.surface)
       previewVersion.current = version
       previewCage.current = writeQuadObj(made.cage, 'Auto Freeform preview')
       setStats({
         quads: made.quads, irregular: made.irregular, vertices: made.vertices, rms: made.deviation.rms, max: made.deviation.max,
         within: made.deviation.points > 0 ? made.deviation.within / made.deviation.points : 0, tolerance: made.deviation.tolerance,
-        closed: made.closed, seconds: (performance.now() - started) / 1000, refined: made.refined,
+        coverage: made.coverage, closed: made.closed, seconds: (performance.now() - started) / 1000, refined: made.refined, topologyResolutionRaised: made.topologyResolutionRaised,
       })
     } catch (e) {
       if (e instanceof AutoStopped) return
@@ -222,7 +225,7 @@ export function AutoFreeformDialog({ onClose }: { onClose: () => void }) {
     }
   }
   async function generate() {
-    if (!valid || working || previewCage.current === null || previewVersion.current === null) return
+    if (!valid || working || !stats || previewCage.current === null || previewVersion.current === null) return
     const state = useReverse.getState(), scan = useStore.getState()
     if (previewVersion.current !== null && previewVersion.current !== commandHost().session.clientRef.current?.scanVersion) {
       clearPreview(); setError('The scan changed. Preview again before continuing.'); return
@@ -236,7 +239,7 @@ export function AutoFreeformDialog({ onClose }: { onClose: () => void }) {
     setError('')
     try {
       // The cage is fitted already: the body is its own surface, as shown. Snap stays on for editing it.
-      await runCommand('reverse.freeform.create', { obj: previewCage.current, steps: AUTO_BUILD_STEPS, snap: true, fitToScan: false }, text => useStore.getState().setStatus(text))
+      await runCommand('reverse.freeform.create', { obj: previewCage.current, steps: boundedBuildSteps(stats.quads, AUTO_BUILD_STEPS), snap: true, fitToScan: false }, text => useStore.getState().setStatus(text))
       useStore.getState().setStatus('Auto Freeform created.')
       onClose()
     } catch (e) {
@@ -301,9 +304,11 @@ export function AutoFreeformDialog({ onClose }: { onClose: () => void }) {
       {stats && <small className="ff-auto-stats" data-test="auto-freeform-stats">
         <span>Deviation: RMS {len.fmt(stats.rms, 3)}, max {len.fmt(stats.max, 3)}</span>
         <span>{Math.round(stats.within * 100)}% within {len.fmt(stats.tolerance)}{stats.refined > 0 ? ` · ${stats.refined.toLocaleString()} quads added` : ''}</span>
+        <span title={`${stats.coverage.samples.toLocaleString()} probes distributed by scan area`}>Scan to surface: RMS {len.fmt(stats.coverage.rms, 3)}, max {len.fmt(stats.coverage.max, 3)}</span>
+        {stats.topologyResolutionRaised && <span>Increased resolution to preserve the scan’s openings and coverage.</span>}
         <span>{stats.irregular.toLocaleString()} irregular point{stats.irregular === 1 ? '' : 's'} · {stats.closed ? 'closed' : 'open'} · {stats.seconds.toFixed(1)} s</span>
       </small>}
-      {displayPositions ? <FreeformSurfaceDisplay positions={displayPositions} /> : <fieldset className="ff-display" disabled><legend>Surface Display</legend><button type="button" aria-label="Shaded"><FreeformIcon name="shaded" /></button><button type="button" aria-label="Tolerance / Deviation"><FreeformIcon name="deviation" /></button><button type="button">Options …</button></fieldset>}
+      {displaySurface ? <FreeformSurfaceDisplay positions={displaySurface.positions} measured={displaySurface.signed} /> : <fieldset className="ff-display" disabled><legend>Surface Display</legend><button type="button" aria-label="Shaded"><FreeformIcon name="shaded" /></button><button type="button" aria-label="Tolerance / Deviation"><FreeformIcon name="deviation" /></button><button type="button">Options …</button></fieldset>}
       <details className="ff-auto-more" open={more} onToggle={e => setMore((e.target as HTMLDetailsElement).open)}>
         <summary data-test="auto-freeform-more">More</summary>
         <fieldset disabled={working} style={{ display: 'grid', gap: 6, border: 0, padding: '6px 0 0', margin: 0 }}>

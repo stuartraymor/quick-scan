@@ -288,7 +288,8 @@ export function useMeshWorkspace(session: MeshToolsSession) {
   // The rims are found, and marked on the part, while Fill holes is in hand
   // — again for each size typed, and for each version of the scan.
   const holeSize = useMeshTools((s) => s.holeSize)
-  const sortingHoles = workspace === 'mesh' && tool === 'holes' && fileName !== null && triangleCount > 0
+  const diagnosticOpen=useShell(s=>s.editScanOpen)
+  const sortingHoles = !diagnosticOpen && workspace === 'mesh' && tool === 'holes' && fileName !== null && triangleCount > 0
   const rims = useRef<{ holes: Float32Array; centres: Float32Array; open: Float32Array } | null>(null)
   useEffect(() => {
     if (!sortingHoles) return
@@ -479,5 +480,5 @@ export function useMeshWorkspace(session: MeshToolsSession) {
     return session.fillScanHoles([centres[one * 3], centres[one * 3 + 1], centres[one * 3 + 2]], run)
   }
 
-  return { ...session, fillScanHoles }
+  return { ...session, fillScanHoles, fillHoleAt: session.fillScanHoles }
 }

@@ -26,6 +26,7 @@ import { useReverse } from '../state/reStore'
 import { FreeformEditorLayer, type FreeformSelectionMode } from '../viewer/freeformEditorLayer'
 import { reSceneOf } from '../viewer/reScene'
 import { FreeformIcon } from './FreeformIcon'
+import { FreeformToleranceLegend } from './FreeformToleranceLegend'
 import { FreeformDeviationOptions } from './FreeformDeviationOptions'
 import './freeformControls.css'
 import type { ManipulatorFrame } from '../viewer/freeformManipulator'
@@ -568,17 +569,9 @@ export function FreeformEditor() {
     <button role="menuitem" onClick={() => { if (hidden.length) setHidden([]); setMenu(null) }}><span className="ff-visibility-label"><FreeformIcon name="show" size={16} />Show Hidden</span></button>
   </>
   return <div ref={backdrop} className="modalback" data-test="freeform-editor" style={{ background: 'transparent', alignItems: 'flex-start', justifyContent: 'flex-start', paddingTop: 'min(176px, 25dvh)', paddingLeft: 'min(224px, max(8px, calc(100vw - 306px)))' }} onPointerDown={e => { if (e.target === e.currentTarget) setMenu(null) }}>
-    {display === 'deviation' && <aside className="ff-viewport-legend" data-test="freeform-tolerance-legend" aria-label="Surface tolerance scale">
-      <div className="ff-viewport-scale">
-        <span style={{top:0}}>{length.fmt(5*tolerance)}</span>
-        <span style={{top:'35%'}}>{length.fmt(tolerance)}</span>
-        <span style={{top:'65%'}}>{length.fmt(-tolerance)}</span>
-        <span style={{top:'100%'}}>{length.fmt(-5*tolerance)}</span>
-        <div className="ff-viewport-ramp" aria-hidden="true" />
-      </div>
-      <small>{colouring === 'gradient' ? 'Black: outside scale' : 'Pass / Fail'}</small>
-      <small>Gray: reverse side</small>
-    </aside>}
+    {display === 'deviation' && <FreeformToleranceLegend tolerance={tolerance} colouring={colouring} testId="freeform-tolerance-legend">
+      <small>Gray reverse side</small>
+    </FreeformToleranceLegend>}
     <form tabIndex={-1} className="modal ff-editor" role="dialog" aria-label="Edit Surface" style={{ width: 290, maxHeight: 'calc(100dvh - min(176px, 25dvh) - 8px)', boxSizing: 'border-box', overflowY: 'auto', padding: 12, display: 'grid', gap: 8 }} onSubmit={e => e.preventDefault()} onKeyDown={e => e.stopPropagation()}>
       {tool === 'brush-smooth' ? <>
         <header className="ff-title">Smooth</header>

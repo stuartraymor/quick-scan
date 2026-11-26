@@ -2027,6 +2027,13 @@ button.x:disabled {
   background: var(--ink);
 }
 
+:root[data-theme='dark'] .keys button.on,
+:root[data-theme='dark'] .keys button.on:hover:not(:disabled) {
+  color:var(--ink);
+  background:var(--command-selected,var(--accent-soft));
+  border-color:var(--accent);
+}
+
 /* A part's key on the view bar (ui/PartKey): the click that shows the part
    and the caret that opens its menu, as one key — dark together while the
    part is shown. One that cannot be clicked now is greyed out by its ARIA

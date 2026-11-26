@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // The Mesh Tools workspace's part of a project file.
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { selectionMeshSection } from '../app/selectionMeshes'
+import { packProject, unpackProject } from '../../../src/core/project/archive'
 import { validateManifest } from '../../../src/core/project/manifest'
 import { collectProject, prepareProjectState, readAs } from '../../../src/app/project'
 import { useMeshTools } from '../state/meshStore'
@@ -251,4 +253,37 @@ describe('the Mesh Tools part of a project', () => {
     expect(useMeshTools.getState().maxTriangles).toBe(50_000)
   })
 
+})
+
+
+it('reopens legacy selection meshes and stores eight pieces in two flat archive members', () => {
+  fresh()
+  const input = sources()
+  const { manifest, members } = collectProject(input, null, '1.2.75')
+  const points = new Float32Array([0,0,0, 1,0,0, 0,1,0])
+  const faces = new Uint32Array([0,1,2])
+  const legacy = unpackProject(packProject(manifest, [
+    ...members,
+    { name: 'selection-meshes/0-points.bin', bytes: new Uint8Array(points.buffer) },
+    { name: 'selection-meshes/0-triangles.bin', bytes: new Uint8Array(faces.buffer) },
+  ]))
+  selectionMeshSection.prepare([{ name:'Mesh 1', shown:true }], legacy)()
+  const captured = new Map<string,Uint8Array>()
+  const context = { sources:input, scanSaved:true, addMember:(key:string,bytes:Uint8Array)=>{captured.set(key,bytes)} }
+  const saved = selectionMeshSection.collect(context)!
+  expect(saved[0]).toEqual({ name:'Mesh 1', shown:true, vertices:3, triangles:1 })
+  const eight = Array.from({length:8}, (_,i)=>({...saved[0],name:`Mesh ${i+1}`,shown:i!==3}))
+  const repeated = new Map(Array.from(captured,([key,bytes])=>{
+    const joined = new Uint8Array(bytes.length*eight.length)
+    eight.forEach((_,i)=>joined.set(bytes,i*bytes.length))
+    return [key,joined] as const
+  }))
+  selectionMeshSection.prepare(eight,{manifest,members:repeated})()
+  captured.clear()
+  expect(selectionMeshSection.collect(context)).toEqual(eight)
+  expect(captured).toEqual(repeated)
+  const reopened = unpackProject(packProject(manifest,[...members,...Array.from(captured,([name,bytes])=>({name,bytes}))]))
+  selectionMeshSection.prepare(eight,reopened)()
+  expect(selectionMeshSection.collect(context)).toEqual(eight)
+  selectionMeshSection.prepare(undefined,reopened)()
 })

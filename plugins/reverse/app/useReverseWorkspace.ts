@@ -13,7 +13,7 @@ import { mapRoundGroups, roundRoles } from '../core/roundInputs'
 import { firstChamferReference } from '../core/chamferSides'
 import { featureDraftReady } from '../state/reDrafts'
 import { EXTRACT_MARK_COLOR } from '../../../src/state/markStore'
-import { useTrimDisplay, resetTrimDisplay } from '../state/trimDisplay'
+import { displayedTrimPieces, useTrimDisplay, resetTrimDisplay } from '../state/trimDisplay'
 import { useStack } from '../state/stackStore'
 import { useMeasureTool } from '../../../src/state/measureToolStore'
 import { stackDistances } from '../core/stackedReference'
@@ -22,10 +22,13 @@ import { edgesThroughSelection, longChains, sectionModeKey } from '../core/selec
 import { reSceneOf } from '../viewer/reScene'
 import { useControlNet } from '../state/controlNetStore'
 import { useZebra } from '../state/zebraStore'
-import { useEffect, useRef, useState, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { EDGE_MIN_FEATURE_MM, type EdgeChains } from '../../../src/core/flat/edges'
 import type { Vec2 } from '../../../src/core/flat/types'
 import type { Vec3 } from '../../../src/core/types'
+import { useHistory } from '../../../src/state/historyStore'
+import { activeAlignmentScope } from '../../../src/core/alignmentScope'
+import { rigidToJson,rigidFromJson } from '../../../src/core/project/manifest'
 import { rigidApply, rigidCompose, rigidInvert, type Rigid } from '../../../src/core/deviation/rigid'
 import type { KernelMesh } from '../core/kernel'
 import type { EdgeInfo, FaceInfo, PreviewStep } from '../core/build'
@@ -135,12 +138,14 @@ export function useReverseWorkspace({
 
   // ---- the kernel, when the workspace is first entered ----------------------------
   const workspace = useShell((s) => s.workspace)
+  const scanEditorOpen=useShell(s=>s.editScanOpen)
+  const hasFeatures=useReverse(s=>s.features.length>0)
   const kernelStatus = useReverse((s) => s.kernelStatus)
   useEffect(() => {
-    if (workspace !== 'reverse' || kernelStatus !== 'idle') return
+    if (kernelStatus!=='idle'||(workspace!=='reverse'&&!(scanEditorOpen&&hasFeatures))) return
     // Why it could not start is on the store, for the panel.
     session.startKernel().catch(() => {})
-  }, [workspace, kernelStatus, session])
+  }, [workspace, kernelStatus, session,scanEditorOpen,hasFeatures])
 
   // ---- the slice chains under the sketch --------------------------------------------
   const referenceChains = useReverse((s) => s.sketchDraft?.sketch.referenceChains)
@@ -238,7 +243,7 @@ export function useReverseWorkspace({
   useEffect(() => useStore.subscribe((state, previous) => {
     const appliedAlignment = state.appliedAlignment
     const before = previous.appliedAlignment
-    if (before === appliedAlignment) return
+    if (before === appliedAlignment || useHistory.getState().restoring) return
     symmetryCache.current = null
     symmetryStamp.current++
     // Both are cumulative from the scanner's frame; what moved the part
@@ -281,8 +286,11 @@ export function useReverseWorkspace({
       curves: n.curves.map((c) => ({ ...c, via: c.via.map(moveAt) })),
       cells: n.cells.map((c) => ({ ...c, seed: moveAt(c.seed), ...(c.centre ? { centre: moveAt(c.centre) } : {}) })),
     })
+    const scope=activeAlignmentScope()
     const moved = (f: Feature): Feature =>
-      f.kind === 'network'
+      f.kind==='import' && scope?.importedCad && f.freeformSource===undefined
+        ? {...f,alignment:rigidToJson(f.alignment?rigidCompose(delta,rigidFromJson(f.alignment)):delta)}
+        : scope?.features===false ? f : f.kind === 'network'
         ? movedNetwork(f)
         : f.kind === 'fill'
         ? { ...f, points: Array.from({ length: f.points.length / 3 }, (_, i) => moveAt([f.points[i * 3], f.points[i * 3 + 1], f.points[i * 3 + 2]])).flat() }
@@ -303,8 +311,8 @@ export function useReverseWorkspace({
       features: s.features.map(moved),
       // Those below the rollback bar are of the same part.
       rolledBack: s.rolledBack.map(moved),
-      sketchDraft: s.sketchDraft ? { ...s.sketchDraft, frame: transformFrame(s.sketchDraft.frame, delta), plane: movePlane(s.sketchDraft.plane), sketch: moveSources(s.sketchDraft.sketch) } : null,
-      ...(s.featureDraft?.kind === 'network' ? { featureDraft: { ...movedNetwork(s.featureDraft), placing: null, history: [], future: [], suggested: null } } : {}),
+      sketchDraft: scope?.features===false?s.sketchDraft:s.sketchDraft ? { ...s.sketchDraft, frame: transformFrame(s.sketchDraft.frame, delta), plane: movePlane(s.sketchDraft.plane), sketch: moveSources(s.sketchDraft.sketch) } : null,
+      ...(scope?.features!==false && s.featureDraft?.kind === 'network' ? { featureDraft: { ...movedNetwork(s.featureDraft), placing: null, history: [], future: [], suggested: null } } : {}),
       buildVersion: s.buildVersion + 1,
     }))
     chainsRef.current = null
@@ -409,12 +417,12 @@ export function useReverseWorkspace({
   // CAD on screen from Main to Analysis (read live, 2026-11-20). Leaving
   // the CAD tabs used to take them off the scene while the Objects list
   // still showed them ticked.
-  useEffect(() => {
+  useLayoutEffect(() => {
     const scene = sceneRef.current
     if (!scene) return
     reSceneOf(scene).setBodies(
       bodies
-        .map((b) => ({ id: b.id, mesh: meshes.get(b.id), visible: b.visible && !bodiesHidden && !hideSketchPart, color: b.color ?? bodyColor(b.id), topology: topologies.get(b.id) }))
+        .map((b) => ({ id: b.id, mesh: b.confirmedMesh ?? meshes.get(b.id), visible: b.visible && !bodiesHidden && !hideSketchPart, color: b.color ?? bodyColor(b.id), topology: topologies.get(b.id) }))
         .filter((b): b is { id: number; mesh: KernelMesh; visible: boolean; color: string; topology: BodyTopology | undefined } => b.mesh !== undefined),
     )
     // With no scan the bodies are the part, and the size everything else
@@ -476,16 +484,16 @@ export function useReverseWorkspace({
     offerSolids(
       'reverse',
       bodies
-        .filter((b) => !b.surface && b.closed)
         .map((b) => ({
           key: `reverse:${b.id}`,
+          surface:b.surface||!b.closed,
           name: b.name,
           source: 'Reverse engineer',
           version: bodiesVersion,
           mesh: async (chord: number) => {
             const client = session.client()
             if (!client) throw new Error('The CAD kernel is not running â€” open the Reverse engineer workspace once.')
-            const [m] = await client.referenceMeshes([b.id], chord)
+            const [m] = await client.referenceMeshes([b.id],chord,Boolean(b.surface||!b.closed))
             if (!m) throw new Error(`${b.name} is not built any more.`)
             return { positions: m.positions, indices: m.indices }
           },
@@ -1138,14 +1146,14 @@ export function useReverseWorkspace({
           // and the map being the last answer's to give.
           if (previewSession.current !== asked || !answer) return
           const latest = previewNext.current === null
-          if ((step.kind === 'fillet' || step.kind === 'chamfer') && (!latest || useReverse.getState().featureDraft !== featureDraft)) return
+          if ((step.kind === 'fillet' || step.kind === 'chamfer' || step.kind === 'surface' || step.kind === 'trim') && (!latest || useReverse.getState().featureDraft !== featureDraft || useReverse.getState().buildVersion !== re.buildVersion)) return
           // A feature on a body hands back the body as it would leave it:
           // drawn solid in the body's place. A cut's tool is inside the
           // body it cuts, and is drawn through it.
           const fd = useReverse.getState().featureDraft
           // A face being moved keeps its ghost see-through: the scan under
           // it is what is being clicked.
-          const replaces = fd?.kind === 'trim' && fd.removed?.length ? fd.tools.filter(t => t.kind === 'body').map(t => t.id) : !fd || !('body' in fd) || fd.body === null || fd.kind === 'moveFace' || fd.kind === 'duplicateFace' || (fd.kind === 'mirror' && !fd.join) || (fd.kind === 'offsetBody' && fd.keep) ? [] : fd.kind === 'boolean' && fd.tool !== null && !fd.keep ? [fd.body, fd.tool] : [fd.body]
+          const replaces = fd?.kind === 'trim' ? re.bodies.filter(b => b.surface && fd.tools.some(t => t.kind === 'body' && t.id === b.id)).map(b => b.id) : !fd || !('body' in fd) || fd.body === null || fd.kind === 'moveFace' || fd.kind === 'duplicateFace' || (fd.kind === 'mirror' && !fd.join) || (fd.kind === 'offsetBody' && fd.keep) ? [] : fd.kind === 'boolean' && fd.tool !== null && !fd.keep ? [fd.body, fd.tool] : [fd.body]
           const cutting = (draft?.op ?? (fd && 'op' in fd ? fd.op : null)) === 'cut'
           // A Move draws its own ghost; the answer is the map's.
           if (fd?.kind !== 'moveBody') reScene()?.setBodyPreview(answer.trim?.pieces ? null : answer.mesh, ghostColor(), { replaces, through: replaces.length === 0 && cutting, edgeFeature: fd?.kind === 'fillet' || fd?.kind === 'chamfer', finishFaces: answer.finishFaces, fitSurface: fd?.kind === 'surface', edges: answer.edges || fd?.kind === 'surface' })
@@ -1162,12 +1170,13 @@ export function useReverseWorkspace({
               : nativeBlendDrag(answer.mesh, simpleBlend.edges[0].fingerprint, simpleBlend.kind, simpleBlend.kind==='fillet' ? simpleBlend.radius : simpleBlend.distance)
             blendBase.current = drag ? { key: blendKey, drag, finishFaces: answer.finishFaces } : null
           }
-          useReverse.getState().setPreview({ status: 'ok', volume: answer.volume, closed: answer.closed, ...(answer.note ? { note: answer.note } : {}), ...(answer.surface ? { surface: answer.surface } : {}), ...(answer.trim ? { trim: answer.trim } : {}), ...(answer.network ? { network: answer.network } : {}), ...(answer.sheetFaces !== undefined ? { sheetFaces: answer.sheetFaces } : {}), ...(answer.failure ? { failure: answer.failure } : {}) })
+          useReverse.getState().setPreview({ status: 'ok', volume: answer.volume, closed: answer.closed, ...(answer.note ? { note: answer.note } : {}), ...(answer.surface && fd?.kind === 'surface' ? { surface: answer.surface } : {}), ...((answer.surface && fd?.kind === 'surface') || (answer.trim && fd?.kind === 'trim') ? { confirmedMesh: { draft: fd!, buildVersion: re.buildVersion, mesh: answer.mesh } } : {}), ...(answer.trim ? { trim: answer.trim } : {}), ...(answer.network ? { network: answer.network } : {}), ...(answer.sheetFaces !== undefined ? { sheetFaces: answer.sheetFaces } : {}), ...(answer.failure ? { failure: answer.failure } : {}) })
           setGhostTick((t) => t + 1)
         })
         .catch((e) => {
           if (previewSession.current !== asked || previewNext.current !== null) return
-          if ((step.kind === 'fillet' || step.kind === 'chamfer') && useReverse.getState().featureDraft !== featureDraft) return
+          if ((step.kind === 'fillet' || step.kind === 'chamfer' || step.kind === 'trim') && useReverse.getState().featureDraft !== featureDraft) return
+          if (step.kind === 'trim' && useReverse.getState().buildVersion !== re.buildVersion) return
           ghostBase.current = null
           if (useReverse.getState().featureDraft?.kind !== 'moveBody') reScene()?.setBodyPreview(null, '#ffffff')
           useReverse.getState().setPreview({ status: 'failed', message: message(e), ...(e instanceof PreviewFailure && e.where.length > 0 ? { where: e.where } : {}) })
@@ -1288,14 +1297,21 @@ export function useReverseWorkspace({
   // kernel cannot do at the size asked â€” the preview's while its box is
   // open, else those of every built feature that failed so.
   const previewOpen = useReverse((s) => (s.featureDraft?.kind === 'trim' && s.preview.status === 'ok' ? s.preview.trim?.openEdges : undefined))
-  const trimPieces = useReverse(s => s.featureDraft?.kind === 'trim' && s.preview.status === 'ok' ? s.preview.trim?.pieces : undefined)
+  const trimPieces = useReverse(s => s.featureDraft?.kind === 'trim' ? displayedTrimPieces(s.preview) : undefined)
   const trimDisplay = useTrimDisplay()
   const trimOpen = featureDraft?.kind === 'trim'
   useEffect(() => { if (!trimOpen) resetTrimDisplay() }, [trimOpen])
-  useEffect(() => {
+  const trimTools = featureDraft?.kind === 'trim' ? featureDraft.tools : undefined
+  const showingTrimPieces = !!trimPieces
+  useLayoutEffect(() => {
+    if (!sceneRef.current || !onReverse || !showingTrimPieces || !trimTools) return
+    const view = reSceneOf(sceneRef.current)
+    view.setEditingBodies(bodies.filter(b => b.surface && trimTools.some(t => t.kind === 'body' && t.id === b.id)).map(b => b.id))
+    return () => { view.onTrimPick = null; view.setTrimPieces(null); view.setEditingBodies([]) }
+  }, [sceneRef, onReverse, showingTrimPieces, trimTools, bodies])
+  useLayoutEffect(() => {
     if (!sceneRef.current || !onReverse || !trimPieces) return
     const view = reSceneOf(sceneRef.current)
-    view.setEditingBodies([...new Set(trimPieces.map(p => p.body))])
     view.setTrimPieces(trimPieces.filter(p => !trimDisplay.hidden.includes(p.body) &&
       (trimDisplay.view === 'all' || p.removed === (trimDisplay.view === 'removed'))).map(piece => ({
         piece, wireframe: trimDisplay.wireframe, color: piece.removed ? '#cd7160' : bodies.find(b => b.id === piece.body)?.color ?? bodyColor(piece.body),
@@ -1303,8 +1319,9 @@ export function useReverseWorkspace({
     view.onTrimPick = piece => {
       const re = useReverse.getState()
       const d = re.featureDraft
-      if (d?.kind !== 'trim' || re.preview.status !== 'ok' || re.preview.trim?.pieces !== trimPieces) return
-      if (!piece.removed && re.preview.trim.kept <= 1) {
+      if (d?.kind !== 'trim' || displayedTrimPieces(re.preview) !== trimPieces) return
+      if (re.preview.status === 'building' && !re.preview.trimDisplay?.pickable) return
+      if (!piece.removed && !trimPieces.some(p => p !== piece && !p.removed)) {
         useStore.getState().setStatus('Keep at least one trim piece.')
         return
       }
@@ -1317,11 +1334,10 @@ export function useReverseWorkspace({
       if (!piece.removed) removed.push({ body: piece.body, at: piece.at })
       re.setFeatureDraft({ removed })
     }
-    return () => { view.onTrimPick = null; view.setTrimPieces(null); view.setEditingBodies([]) }
-  }, [onReverse, sceneRef, trimPieces, trimDisplay, bodies])
+  }, [onReverse, sceneRef, trimPieces, trimDisplay, bodies, trimTools])
   const previewWhere = useReverse((s) => (s.featureDraft ? (s.preview.status === 'failed' ? s.preview.where : s.preview.status === 'ok' ? s.preview.failure?.where : undefined) : undefined))
   const results = useReverse((s) => s.results)
-  useEffect(() => {
+  useLayoutEffect(() => {
     const scene = sceneRef.current
     if (!scene) return
     if (!onReverse) {

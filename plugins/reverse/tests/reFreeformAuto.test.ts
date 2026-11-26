@@ -162,13 +162,13 @@ describe('runAutoFreeform', () => {
     expect(r.closed).toBe(true)
   })
 
-  it('Feature aligned gives the features more quads than the target, by Feature Details', () => {
+  it('Feature aligned keeps a smooth sphere close to the requested density', () => {
     const ball = sphereScan(30, 0, 5)
     expect(AUTO_TARGETS).toEqual({ low: 1000, medium: 2000, fine: 4000 })
     const low = auto(ball, { algorithm: 'feature', quads: 400, details: 'low' })
     const balanced = auto(ball, { algorithm: 'feature', quads: 400 })
     expect(Math.abs(low.quads - 400 * DETAIL_FACTOR.low) / (400 * DETAIL_FACTOR.low)).toBeLessThan(0.1)
-    expect(Math.abs(balanced.quads - 400 * DETAIL_FACTOR.balanced) / (400 * DETAIL_FACTOR.balanced)).toBeLessThan(0.1)
+    expect(Math.abs(balanced.quads - 400) / 400).toBeLessThan(0.1)
     expect(balanced.algorithm).toBe('feature')
   })
 

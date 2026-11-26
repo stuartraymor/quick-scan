@@ -178,3 +178,26 @@ export function loopSize(positions: Float32Array, loop: Uint32Array): number {
   const [, bc] = furthest(b)
   return Math.max(ab, bc)
 }
+
+/** Diameter of a sphere enclosing every vertex of a boundary (Ritter's algorithm). */
+export function rimSphereDiameter(points:Float32Array, ring:Uint32Array):number {
+  if(!ring.length)return 0
+  const farthest=(start:number)=>{
+    let best=start, distance=0
+    for(const v of ring){
+      const d=Math.hypot(points[3*v]-points[3*start],points[3*v+1]-points[3*start+1],points[3*v+2]-points[3*start+2])
+      if(d>distance){best=v;distance=d}
+    }
+    return best
+  }
+  const first=farthest(ring[0]), last=farthest(first)
+  let x=(points[3*first]+points[3*last])/2,y=(points[3*first+1]+points[3*last+1])/2,z=(points[3*first+2]+points[3*last+2])/2
+  let radius=Math.hypot(points[3*first]-x,points[3*first+1]-y,points[3*first+2]-z)
+  for(const v of ring){
+    const dx=points[3*v]-x,dy=points[3*v+1]-y,dz=points[3*v+2]-z,distance=Math.hypot(dx,dy,dz)
+    if(distance<=radius)continue
+    const next=(radius+distance)/2, shift=(next-radius)/distance
+    x+=dx*shift;y+=dy*shift;z+=dz*shift;radius=next
+  }
+  return 2*radius
+}

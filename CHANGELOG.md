@@ -1,3 +1,51 @@
+## Quick Scan 1.2.93 | Auto Freeform symmetry, open scans and quad targets
+
+Mirrored cages are checked against the original closed mesh. Densely perforated open scans can retry at a finer field resolution when the scan coverage improves. Feature Details follows the measured response across Low, Medium, Fine and Custom targets. The shaded preview uses the reference teal with the existing dark workspace and signed deviation colors.
+
+## Quick Scan 1.2.92 | Auto Freeform ring closure and feature density
+
+Coarse toroidal scans can retry at finer resolution to preserve the opening. Feature aligned allocates extra quads according to measured bends in the scan. The CAD conversion matches the transverse tangents of neighboring smooth patches while retaining their shared boundary and intentional creases.
+
+## Quick Scan 1.2.91 | Auto Freeform fitting, deviation and CAD continuity
+
+Basic and Feature aligned rebuild the working mesh when coarse sampling loses closed topology. The viewport reports higher resolution when it is needed. Adaptive default CAD sampling allows the 11,529-quad Highest Lego preview to commit to a body. Both modes retain the dark theme, signed deviation and AI controls.
+
+## Quick Scan 1.2.90 | Auto Freeform seams and scan coverage
+
+Existing Basic and Feature aligned cages now convert their regular subdivision spans using their own cubic parameters. Closed mesh retries account for topology and missing coverage. The signed, live deviation controls and dark AI workspace were exercised in the Windows application.
+
+## Quick Scan 1.2.89 | Auto Freeform deviation visibility
+
+The viewport deviation control isolates the fitted surface. Both modes report scan-to-surface coverage.
+
+## Quick Scan 1.2.88 | Auto Freeform fitting
+
+Preserve open boundaries, fit accurately at large coordinates and show signed deviation on the evaluated quad grid.
+
+## Quick Scan 1.2.83 | Split preview and confirmation
+
+A background CAD rebuild can update the cutter list while a mesh preview is running. Split now retains the selected cutter's preview across unrelated list updates. OK and Close follow the shared document's busy state.
+
+## Quick Scan 1.2.82 | Split mesh and scoped alignment
+
+Edit Scan can preview and commit a mesh partition, Cut or Combine. Prepare Scan has independent imported CAD and feature scope controls. Open CAD sheets are available when editing a newly reopened project.
+
+## Quick Scan 1.2.80 | Hole and boundary editing
+
+Edit Scan and Prepare Scan now support semi-hole strokes, guided bridging, hole repair from the viewport, pinned boundary smoothing, seam welding and saved 3D boundary curves. Both entry points use the shared theme.
+
+## Quick Scan 1.2.79 | Stable scan workspace and shared theme
+
+Opening Edit Scan and Prepare Scan keeps the normal ribbon height and Objects pane width. The command windows use the standalone Extract Primitives theme. The AI ribbon, settings, notes, Rebuild with AI and local MCP workflows are included.
+
+## Quick Scan 1.2.77 | Dark scan tools and AI
+
+Edit Scan, Prepare Scan and the Magic Wand menu honor the display theme. The AI ribbon, connection settings, notes and Rebuild with AI wizard remain available. The local MCP integration test paired an isolated client, measured a part, exported geometry and reopened the saved project.
+
+## Quick Scan 1.2.76 | Edit Scan and Prepare Scan
+
+Edit Scan and the four Prepare Scan steps use the QUICKSURFACE panel dimensions, button rows, diagnostic windows and wand menu placement. Cut & Create and Copy & Create save independent mesh objects in the project. Version 1.2.75 can also reopen selections written by the intermediate 1.2.73 and 1.2.74 builds.
+
 ## 1.2.34 - Shared Edit Sketch snap settings
 
 Make Coincident, Dimension, Select Other and geometry measurements in Edit Sketch follow the same snap settings. Disabled centers and curves are excluded from coincident picks.

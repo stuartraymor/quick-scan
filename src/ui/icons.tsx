@@ -853,9 +853,10 @@ const ICONS = {
   ),
   prepareScan: (
     <>
-      <path className="i-g" d="m2 16 4-9 10-3 5 8-6 7-13-3Z" />
-      <path className="i-th" d="m2 16 8-4-4-5m4 5 6-8m-6 8 5 7m-5-7 11 0" />
-      <path className="i-a" strokeWidth="2.4" d="m14 19 3 3 6-8" />
+      <path fill="#d9d0bb" stroke="#63584b" d="m2 11 5-8 9 1 5 7-5 9H7Z"/>
+      <path fill="none" stroke="#8f816e" d="m2 11 9-1-4-7m4 7 5 10m-5-10 10 1"/>
+      <path fill="#eeece4" stroke="#514d48" d="m15 2 2 1 2-1 2 2-1 2 2 1v3l-2 1 1 2-2 2-2-1-2 1-1-2-2-1V9l2-1-1-2 2-1Z"/>
+      <circle cx="17" cy="8" r="2.4" fill="#aaa49b" stroke="#58534d"/>
     </>
   ),
   save: (
@@ -895,8 +896,10 @@ const ICONS = {
   ),
   wsMesh: (
     <>
-      <path className="i-g" d="M3 18 6 7l8-3 7 5-2 10Z" />
-      <path className="i-a" d="M11 13 3 18m8-5L6 7m5 6 3-9m-3 9 10-4m-10 4 8 6" />
+      <path fill="#d3b1a0" stroke="#a98e7e" d="m1 12 5-9h11l6 9-6 9H7Z"/>
+      <path fill="#d86d64" stroke="#a95b52" d="m1 12 10-1-4 10Z"/>
+      <path fill="#e9897a" stroke="#b36d62" d="m11 11 12 1-6 9Z"/>
+      <path fill="none" stroke="#b88e7e" d="m6 3 5 8 6-8m-6 8-4 10"/>
     </>
   ),
   // Reduce: the scan's triangles, fine where they were and few and

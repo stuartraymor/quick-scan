@@ -17,6 +17,7 @@ export interface SolidMesh {
 }
 
 export interface OfferedSolid {
+  surface?:boolean
   /** Unique among every source's solids, and the same for one solid while
    *  it is offered. */
   key: string
@@ -51,5 +52,5 @@ export function offerSolids(source: string, solids: readonly OfferedSolid[]): vo
 
 /** Every solid on offer, source by source. */
 export function offeredSolids(bySource: SolidsState['bySource'] = useSolids.getState().bySource): OfferedSolid[] {
-  return Object.values(bySource).flat()
+  return Object.values(bySource).flat().filter(body=>!body.surface)
 }

@@ -12,6 +12,7 @@ import type { PoleFrame } from './poleFrameGizmo'
 import type { TrimPiece } from '../core/buildTypes'
 import type { KernelMesh } from '../core/kernel'
 import { FinishingOverlay, type FinishingDisplay } from './finishingOverlay'
+import { freeformAnalysisRamp } from '../core/freeform/analysisRamp'
 import { cageLines } from '../core/freeform/cageLines'
 import { SliceArrow } from './sliceArrow'
 import { boxPoint, StackSlab } from './stackSlab'
@@ -791,7 +792,7 @@ export class ReScene {
   setBodyPreview(
     mesh: { positions: Float32Array; normals: Float32Array; indices: Uint32Array; faceHash?: Int32Array } | null,
     color: string,
-    options: { through?: boolean; fitSurface?: boolean; edgeFeature?: boolean; finishFaces?: readonly number[]; replaces?: readonly number[]; edges?: boolean; cage?: { positions: ArrayLike<number>; faces: readonly (readonly number[])[] } } = {},
+    options: { through?: boolean; fitSurface?: boolean; edgeFeature?: boolean; finishFaces?: readonly number[]; replaces?: readonly number[]; edges?: boolean; edgeSegments?: Uint32Array; cage?: { positions: ArrayLike<number>; faces: readonly (readonly number[])[] } } = {},
   ): void {
     if (this.blendOutline) {
       this.bodyGroup.remove(this.blendOutline)
@@ -805,9 +806,14 @@ export class ReScene {
       this.cagePreview.material.dispose()
       this.cagePreview = null
     }
-    if (mesh && options.cage) {
+    if (mesh && (options.cage || options.edgeSegments)) {
       const geometry = new THREE.BufferGeometry()
-      geometry.setAttribute('position', new THREE.BufferAttribute(cageLines(options.cage.positions, options.cage.faces), 3))
+      if (options.edgeSegments) {
+        geometry.setAttribute('position', new THREE.BufferAttribute(mesh.positions, 3))
+        geometry.setIndex(new THREE.BufferAttribute(options.edgeSegments, 1))
+      } else if (options.cage) {
+        geometry.setAttribute('position', new THREE.BufferAttribute(cageLines(options.cage.positions, options.cage.faces), 3))
+      }
       const material = new THREE.LineBasicMaterial({ color: '#182630', depthWrite: false })
       material.clippingPlanes = this.host.clipPlanes()
       const lines = new THREE.LineSegments(geometry, material)
@@ -826,6 +832,7 @@ export class ReScene {
     // the program again — every answer of a drag, a tenth of a second each.
     const kept = this.bodyPreview
     if (kept) {
+      if ((kept.material as THREE.Material).userData.freeformAnalysis) this.setAutoDeviation(null, 1, false)
       kept.geometry.dispose()
       this.bodyGroup.remove(kept)
       this.bodyPreview = null
@@ -838,7 +845,7 @@ export class ReScene {
       geometry.setIndex(new THREE.BufferAttribute(mesh.indices, 1))
       geometry.computeBoundingBox()
       geometry.computeBoundingSphere()
-      const solid = replaces.length > 0 || Boolean(options.cage)
+      const solid = replaces.length > 0 || Boolean(options.cage || options.edgeSegments)
       const material = kept ? (kept.material as THREE.MeshStandardMaterial) : new THREE.MeshStandardMaterial({
         side: THREE.DoubleSide,
         // Behind its own edges, as the bodies are.
@@ -958,6 +965,52 @@ export class ReScene {
       material.opacity = this.fitPreviewOpacity()
       this.host.invalidate()
     }
+  }
+
+  /** Interpolate distances on the fitted mesh before applying the tolerance bands. */
+  setAutoDeviation(values: Float32Array | null, tolerance: number, passFail: boolean): void {
+    const preview = this.bodyPreview
+    if (!preview) return
+    const material = preview.material as THREE.MeshStandardMaterial
+    const geometry = preview.geometry
+    if (values) {
+      if (values.length !== geometry.getAttribute('position').count) throw new Error('Deviation samples must match the fitted mesh.')
+      if (!geometry.hasAttribute('scanSample')) {
+        const samples = new Float32Array(values.length * 2)
+        for (let i = 0; i < values.length; i++) {
+          if (!Number.isFinite(values[i])) continue
+          samples[2*i] = values[i]
+          samples[2*i+1] = 1
+        }
+        geometry.setAttribute('scanSample', new THREE.BufferAttribute(samples, 2))
+      }
+      const uniforms = material.userData.freeformAnalysis ??= { tolerance: { value: tolerance }, passFail: { value: passFail } }
+      uniforms.tolerance.value = tolerance
+      uniforms.passFail.value = passFail
+      if (material.customProgramCacheKey() !== 'auto-freeform-analysis') {
+        material.onBeforeCompile = shader => {
+          shader.uniforms.ffTolerance = uniforms.tolerance
+          shader.uniforms.ffPassFail = uniforms.passFail
+          shader.vertexShader = 'attribute vec2 scanSample; varying vec2 ffSample;\n' + shader.vertexShader.replace(
+            '#include <begin_vertex>', '#include <begin_vertex>\nffSample = scanSample;')
+          shader.fragmentShader = 'uniform float ffTolerance; uniform bool ffPassFail; varying vec2 ffSample;\n' +
+            freeformAnalysisRamp + '\n' + shader.fragmentShader.replace('#include <opaque_fragment>', `
+              vec3 ramp = ffSample.y < 0.99999 ? vec3(0.58) : analysisRamp(ffSample.x / ffTolerance, ffPassFail);
+              outgoingLight = sRGBTransferEOTF(vec4(ramp, 1.0)).rgb;
+              #include <opaque_fragment>`)
+        }
+        material.customProgramCacheKey = () => 'auto-freeform-analysis'
+        material.toneMapped = false
+        material.needsUpdate = true
+      }
+    } else if (material.userData.freeformAnalysis) {
+      delete material.userData.freeformAnalysis
+      material.onBeforeCompile = THREE.Material.prototype.onBeforeCompile
+      material.customProgramCacheKey = THREE.Material.prototype.customProgramCacheKey
+      material.toneMapped = true
+      material.needsUpdate = true
+    }
+    this.host.invalidate()
   }
 
   /** Colour the current preview itself; never recolour the reference scan. */

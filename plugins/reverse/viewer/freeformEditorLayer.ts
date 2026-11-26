@@ -20,6 +20,7 @@ import { previewEvaluation, previewTopologyKey } from '../core/freeform/previewE
 import { cageVertexLimits } from '../core/freeform/limit'
 import { moveSurfaceAnchor, snapSurfaceAnchorHeld, snapSurfaceAnchors, surfaceAnchorDrag } from './freeformAnchorDrag'
 import { fitMergedContact, joinFolds, mergeBoundaryEdge, mergeBoundaryPoint, mergeChainEnds, weldExtension } from '../core/freeform/merge'
+import { freeformAnalysisRamp } from '../core/freeform/analysisRamp'
 import { liveDeviationGrid } from '../core/freeform/liveDeviationGrid'
 import { deviationAtlasValues } from '../core/freeform/deviationAtlas'
 import type { KernelMesh } from '../core/kernel'
@@ -632,16 +633,7 @@ export class FreeformEditorLayer {
                 shader.vertexShader = 'attribute vec3 analysisCoordinates; varying vec3 vAnalysisCoordinates;\n' + shader.vertexShader.replace(
                   '#include <begin_vertex>', '#include <begin_vertex>\nvAnalysisCoordinates = analysisCoordinates;')
               }
-              const rampFunction = `vec3 analysisRamp(float deviation) {
-                  float ratio = abs(deviation);
-                  float t = (ratio - 1.0) / 4.0;
-                  vec3 outside = ${passFail ? 'vec3(0.51, 0.0, 0.0)' : `
-                    ratio > 5.0 ? vec3(0.25) : deviation > 0.0
-                      ? vec3(1.0, 1.0 - t, 0.0)
-                      : vec3(0.0, 1.0 - t, 1.0)
-                  `};
-                  return ratio <= 1.0 ? vec3(0.0, 1.0, 0.0) : outside;
-                }`
+              const rampFunction = freeformAnalysisRamp + '\nvec3 analysisRamp(float d) { return analysisRamp(d, ' + (passFail ? 'true' : 'false') + '); }'
               const gridFunction = grid ? `
                 uniform sampler2D analysisGrid; uniform vec2 analysisGridSize; varying vec3 vAnalysisCoordinates;
                 vec3 gridRamp(vec2 p) {

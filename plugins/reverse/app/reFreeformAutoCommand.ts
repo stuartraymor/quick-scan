@@ -7,6 +7,7 @@
 
 import { invalid } from '../../../src/commands/core/common'
 import { arr, bool, enumOf, int, num, obj, str } from '../../../src/commands/schema'
+import { measuredDeviationStats } from '../core/freeform/analysisRamp'
 import { round3 } from '../../../src/core/round'
 import { type Command } from '../../../src/plugins/api'
 import { type AutoProgressListener, type AutoRun, startAutoFreeform } from '../core/freeform/autoClient'
@@ -14,7 +15,7 @@ import {
   AUTO_ALGORITHMS, AUTO_BUILD_STEPS, AUTO_DETAILS, AUTO_HARD_EDGE_DEG, AUTO_QUADS_MAX, AUTO_QUADS_MIN, AUTO_SYMMETRIES, AUTO_TARGETS, DETAIL_FACTOR,
   type AutoAlgorithm, type AutoDetails, AutoError, type AutoOutcome, type AutoSettings, type AutoSymmetry,
 } from '../core/freeform/autoFreeform'
-import { MAX_STEPS } from '../core/freeform/make'
+import { boundedBuildSteps, MAX_STEPS } from '../core/freeform/make'
 import { bodiesChanged, bodyRows } from './reCommandAnswers'
 import type { FreeformFeature } from '../core/features'
 import { change, featureNamed, re, ready } from './reCommandCore'
@@ -44,7 +45,7 @@ export const freeformAuto: Command<{
 }> = {
   name: 'auto',
   title: 'Make a freeform cage over the scan automatically',
-  description: `Auto Freeform (Freeform ▸ Auto Freeform): the scan becomes a quad surface laid along its shape and fitted to it. \`algorithm\` is QUICKSURFACE’s: basic — an even field-aligned layout at the target — or feature (the default) — the same layout with \`details\` giving the part’s features more quads than the target (low ×${DETAIL_FACTOR.low}, balanced ×${DETAIL_FACTOR.balanced} — the default — higher ×${DETAIL_FACTOR.higher}, highest ×${DETAIL_FACTOR.highest}, QUICKSURFACE’s own counts on a test part). The target is \`density\` low ${AUTO_TARGETS.low}, medium ${AUTO_TARGETS.medium} (the default) or fine ${AUTO_TARGETS.fine}, or \`quads\` for any number from ${AUTO_QUADS_MIN} to ${AUTO_QUADS_MAX}. Scan edges sharper than \`hardEdgeAngle\` (${AUTO_HARD_EDGE_DEG}° unless given) are kept sharp in the layout, by either algorithm. A closed scan gives a closed cage; an open scan an open one whose rim follows the scan’s. Crumbs beside the part (pieces under 2 % of the largest) are left out. \`symmetry\` oxy / oyz / oxz lays out the half of the scan on the positive side of z = 0, x = 0 or y = 0 and mirrors it, so the cage is exactly symmetric and has vertices on the plane; the scan must cross the plane. \`improveHoles\` closes small holes and evens ragged rims before the layout. \`guides\` are curves on the scan (each a list of [x, y, z] points, mm) the quads’ edges are made to follow. \`selectedOnly\` lays the cage over the points marked on the scan alone. \`refineTolerance\` (mm) adds rows of quads where the fitted surface is still further than that from the scan, up to four times the quads. The cage’s vertices are solved by least squares so that its limit surface lies on the scan. It is added as one freeform feature (refined \`steps\` times, taken onto the scan when \`snap\`) — edit, snap, convert or thicken it as any freeform. Returns the feature, the cage’s counts (quads against the target, inner vertices with other than four edges, mean edge, rim edges), the fitted surface’s deviation from the scan and the time each stage took.`,
+  description: `Auto Freeform (Freeform ▸ Auto Freeform): the scan becomes a quad surface laid along its shape and fitted to it. \`algorithm\` is QUICKSURFACE’s: basic — an even field-aligned layout at the target — or feature (the default) — the same layout with \`details\` giving the part’s features more quads than the target (low ×${DETAIL_FACTOR.low}, balanced ×${DETAIL_FACTOR.balanced} — the default — higher ×${DETAIL_FACTOR.higher}, highest ×${DETAIL_FACTOR.highest}, QUICKSURFACE’s own counts on a test part). The target is \`density\` low ${AUTO_TARGETS.low}, medium ${AUTO_TARGETS.medium} (the default) or fine ${AUTO_TARGETS.fine}, or \`quads\` for any number from ${AUTO_QUADS_MIN} to ${AUTO_QUADS_MAX}. Scan edges sharper than \`hardEdgeAngle\` (${AUTO_HARD_EDGE_DEG}° unless given) are kept sharp in the layout, by either algorithm. Closed scans are checked for closure and topology. Coarse features may need a denser layout. Open scan rims guide the layout. Crumbs beside the part (pieces under 2 % of the largest) are left out. \`symmetry\` oxy / oyz / oxz lays out the half of the scan on the positive side of z = 0, x = 0 or y = 0 and mirrors it, so the cage is exactly symmetric and has vertices on the plane; the scan must cross the plane. \`improveHoles\` closes small holes and evens ragged rims before the layout. \`guides\` are curves on the scan (each a list of [x, y, z] points, mm) the quads’ edges are made to follow. \`selectedOnly\` lays the cage over the points marked on the scan alone. \`refineTolerance\` (mm) adds rows of quads where the fitted surface is still further than that from the scan, up to four times the quads. The cage’s vertices are solved by least squares so that its limit surface lies on the scan. It is added as one freeform feature (refined \`steps\` times, taken onto the scan when \`snap\`) — edit, snap, convert or thicken it as any freeform. Returns the feature, the cage’s counts (quads against the target, inner vertices with other than four edges, mean edge, rim edges), the fitted surface’s deviation from the scan and the time each stage took.`,
   input: obj(
     {
       algorithm: enumOf([...AUTO_ALGORITHMS], 'basic, or feature (aligned to the part’s features; the default).'),
@@ -65,7 +66,7 @@ export const freeformAuto: Command<{
     [],
   ),
   label: ({ name }) => `auto freeform${typeof name === 'string' ? ` “${name}”` : ''}`,
-  run: async ({ algorithm = 'feature', density, quads, details, symmetry = 'none', improveHoles, guides, selectedOnly, refineTolerance, hardEdgeAngle, name, steps = AUTO_BUILD_STEPS, snap = true, resnap = false }) => {
+  run: async ({ algorithm = 'feature', density, quads, details, symmetry = 'none', improveHoles, guides, selectedOnly, refineTolerance, hardEdgeAngle, name, steps, snap = true, resnap = false }) => {
     const s = await ready()
     requireFreeName(name)
     if (density !== undefined && quads !== undefined) invalid('Give `density` or `quads`, not both.')
@@ -79,7 +80,7 @@ export const freeformAuto: Command<{
     const made = await prepareAutoCage(s, settings).result.catch((e) => refuse(e))
     const cage = made.cage
     const before = bodyRows(s)
-    const id = await change(() => re().addFreeform({ positions: Array.from(cage.positions), faces: cage.faces, creases: cage.creases, steps, snap, ...(resnap ? {} : { fitToScan: false }) }, name))
+    const id = await change(() => re().addFreeform({ positions: Array.from(cage.positions), faces: cage.faces, creases: cage.creases, steps: steps ?? boundedBuildSteps(cage.faces.length, AUTO_BUILD_STEPS), snap, ...(resnap ? {} : { fitToScan: false }) }, name))
     const f = featureNamed(id) as FreeformFeature
     return { ...madeOut(f), ...autoAnswer(made), bodies: bodiesChanged(s, before) }
   },
@@ -93,6 +94,7 @@ function refuse(e: unknown): never {
 /** The outcome as the command answers it. */
 export function autoAnswer(made: AutoOutcome) {
   const d = made.deviation
+  const signed = measuredDeviationStats(made.surface.signed, d.tolerance)
   return {
     auto: {
       algorithm: made.algorithm,
@@ -107,10 +109,12 @@ export function autoAnswer(made: AutoOutcome) {
       pieces: made.pieces,
       piecesKept: made.piecesKept,
       refined: made.refined,
+      topologyResolutionRaised: made.topologyResolutionRaised,
       symmetry: made.symmetry,
       symmetric: made.mirror ? { vertices: made.mirror.partner.length, onPlane: made.mirror.onPlane } : null,
     },
-    fitted: { iterations: made.fit.iterations, tolerance: d.tolerance, points: d.points, missed: d.missed, rms: round3(d.rms), max: round3(d.max), within: d.within, fraction: d.points > 0 ? round3(d.within / d.points) : 0 },
+    coverage: made.coverage,
+    fitted: { signedScanFromSurface: signed && { min: signed.min, max: signed.max, mean: signed.mean }, iterations: made.fit.iterations, tolerance: d.tolerance, points: d.points, missed: d.missed, rms: round3(d.rms), max: round3(d.max), within: d.within, fraction: d.points > 0 ? round3(d.within / d.points) : 0 },
     ms: Object.fromEntries(Object.entries(made.ms).map(([k, v]) => [k, Math.round(v)])),
   }
 }

@@ -1,3 +1,5 @@
+import type { RimOperation } from '../core/rimEdit'
+import type { RimFillMethod } from '../core/fillHoles'
 // SPDX-License-Identifier: AGPL-3.0-only
 // The Mesh Tools workspace's verbs, outside React — what the panel's buttons
 // and the workspace's commands (meshCommands.ts) both run.
@@ -327,6 +329,7 @@ export function createMeshToolsSession({
         const map = before ? composeVertexMaps(before.map, result.vertexMap) : result.vertexMap
         await historyAsync(label, async () => {
           await setEditedCopy({ source, map })
+          useMeshTools.setState(s=>({selectionStatuses:s.selectionStatuses.map(x=>({...x,vertices:remapVertices(x.vertices,result.vertexMap)}))}))
           useMeshTools.getState().addPending(result.edit)
         })
         useStore.getState().setStatus(result.status)
@@ -434,8 +437,6 @@ export function createMeshToolsSession({
       busyText,
       async () => {
         const { positions, indices, vertexMap, report } = await tools().editScan(request())
-        // Saved selection statuses follow their points to their new numbers.
-        useMeshTools.setState((s) => ({ selectionStatuses: s.selectionStatuses.map((x) => ({ ...x, vertices: remapVertices(x.vertices, vertexMap) })) }))
         return { positions, indices, vertexMap, report, ...describe(report) }
       },
       run,
@@ -613,18 +614,30 @@ export function createMeshToolsSession({
 
   /** Close every hole under the size in the panel — or, given a point, the
    *  one of them nearest it alone. */
-  const fillScanHoles = (at?: Vec3, run?: EditRun) => {
+  const previewSources=new WeakMap<ScanEdited,{scan:number;edited:number;pose:Rigid|null}>()
+  const previewSplit=async(request:ScanEditRequest)=>{
+    const channel=tools(), source={scan:channel.scanVersion,edited:channel.editedVersion,pose:useStore.getState().appliedAlignment}
+    const mesh=await channel.editScan(request)
+    previewSources.set(mesh,source)
+    return mesh
+  }
+  const editBoundary = (operation:RimOperation,run?:EditRun) => workerEdit(
+    'Edit scan: '+operation.action, 'Editing the mesh boundary…', ()=>({type:'rim',operation}), report=>{
+      if(report.kind!=='rim')throw Error('Unexpected boundary edit result.')
+      return {edit:report,status:'Boundary edit complete.'}
+    },run)
+  const fillScanHoles = (at?: Vec3, run?: EditRun, rim?:{start?:number;method:RimFillMethod;diameter:number}) => {
     const { holeSize, fillMode } = useMeshTools.getState()
     return workerEdit(
       at ? 'Mesh Tools: fill a hole' : 'Mesh Tools: fill holes',
       at ? 'Filling the hole…' : 'Filling holes…',
-      () => ({ type: 'fill-holes', maxSize: holeSize, mode: fillMode, ...(at ? { at } : {}) }),
+      () => ({ type: 'fill-holes', maxSize: rim?.diameter ?? holeSize, mode: fillMode, ...(at ? { at } : {}), ...(rim ? {rim:{start:rim.start,method:rim.method}} : {}) }),
       (r) => {
         const f = r.kind === 'fill' ? r.report : { filled: 0, triangles: 0, vertices: 0, failed: 0, left: 0 }
         const failed = f.failed > 0 ? ` — ${count(f.failed)} could not be closed, the rim crossing itself too much` : ''
         const what = at ? 'the hole' : `${count(f.filled)} hole${f.filled === 1 ? '' : 's'}`
         return {
-          edit: { kind: 'fill', maxSize: holeSize, mode: fillMode, holes: f.filled, triangles: f.triangles },
+          edit: { kind: 'fill', maxSize: rim?.diameter ?? holeSize, mode: fillMode, ...(rim ? {algorithm:rim.method,selected:rim.start!==undefined} : {}), holes: f.filled, triangles: f.triangles },
           status: `Filled ${what} with ${count(f.triangles)} triangles${failed}. Ctrl+Z opens ${at ? 'it' : 'them'} again.`,
         }
       },
@@ -986,11 +999,23 @@ export function createMeshToolsSession({
     scaleScan,
     mirrorScan,
     cutScan,
+    editBoundary,
     fillScanHoles,
     smoothScan,
     offsetScan,
     shellScan,
     meshOfSolid,
+    previewSplit,
+    commitSplit:(preview:ScanEdited,method:'split'|'subtract'|'add',tool:string,run?:EditRun)=>editCopy(
+      'Split mesh: '+tool,'Applying the preview…',async()=>{
+        const source=previewSources.get(preview),channel=tools()
+        if(!source||source.scan!==channel.scanVersion||source.edited!==channel.editedVersion||source.pose!==useStore.getState().appliedAlignment)
+          throw Error('The scan changed. Preview the split again.')
+        return {
+        ...preview,positions:preview.positions.slice(),edit:{kind:'split',method,tool,triangles:preview.indices.length/3},
+        status:method==='split'&&preview.report.kind==='split'?`Split into ${preview.report.parts} individual meshes.`:'Mesh edit applied.',
+        }
+      },run),
     booleanScan,
     trimBodyOf,
     trimScan,

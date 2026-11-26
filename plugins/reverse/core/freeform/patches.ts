@@ -43,6 +43,9 @@ export interface PatchGrid {
   cols: number
   /** The cage faces this grid covers. */
   faces: number[]
+  /** Signed fine-mesh midpoint IDs of smooth two-sample boundary spans,
+   * ordered down the left/right and across the top/bottom. Zero skips a rim or crease. */
+  smoothSpans?: number[][]
 }
 
 export interface CagePatches {
@@ -215,7 +218,7 @@ export function asQuadCage(c: Cage): Cage {
 /** The cage's patches: its blocks, each sampled on the limit surface after
  *  `steps` refinements (the positions of the refined cage's vertices may be
  *  swapped for others — `positions` — a snapped surface's). */
-export function cagePatches(cage: Cage, steps: number, positions?: (fine: Cage, limit: Float64Array) => Float64Array, maxSide = MAX_BLOCK_SIDE): CagePatches {
+export function cagePatches(cage: Cage, steps: number, positions?: (fine: Cage, limit: Float64Array) => Float64Array, maxSide = MAX_BLOCK_SIDE, matchTangents = false): CagePatches {
   if (!(steps >= 1 && steps <= 5)) throw new Error('Steps run from 1 to 5.')
   const quad = asQuadCage(cage)
   const t0 = topology(quad)
@@ -241,7 +244,28 @@ export function cagePatches(cage: Cage, steps: number, positions?: (fine: Cage, 
       points[k * 3 + 1] = pos[v * 3 + 1]
       points[k * 3 + 2] = pos[v * 3 + 2]
     })
-    return { points, rows: lattice.rows, cols: lattice.cols, faces: b.faces }
+    const grid: PatchGrid = { points, rows: lattice.rows, cols: lattice.cols, faces: b.faces }
+    if (matchTangents && steps >= 2) {
+      const stride = 2 ** steps
+      const sideIndex = (side: number, rows: number, cols: number, i: number) =>
+        side < 2 ? i * cols + (side === 1 ? cols - 1 : 0) : (side === 3 ? rows - 1 : 0) * cols + i
+      grid.smoothSpans = [0, 1, 2, 3].map(side => {
+        const spans: number[] = []
+        const count = side < 2 ? b.rows : b.cols
+        for (let i = 0; i < count - 1; i++) {
+          const a = b.vertices[sideIndex(side, b.rows, b.cols, i)]
+          const z = b.vertices[sideIndex(side, b.rows, b.cols, i+1)]
+          const edge = t0.edges[t0.edgeOf.get(edgeKey(a, z))!]
+          const vertex = (k: number) => lattice.v[sideIndex(side, grid.rows, grid.cols, i*stride+k)]
+          for (let k = 0; k < stride; k += 2) {
+            const smooth = edge.faces.length === 2 && !edge.crease
+            spans.push(smooth ? (vertex(k+1)+1) * (vertex(k) < vertex(k+2) ? 1 : -1) : 0)
+          }
+        }
+        return spans
+      })
+    }
+    return grid
   })
   return { cage: quad, closed: t0.closed, blocks, grids, steps }
 }

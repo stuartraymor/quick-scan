@@ -50,7 +50,9 @@ export function MeshHealthView({ health, busy, onTool, onRemoveDuplicates }: { h
   )
 }
 
-export function MeshHealth({ busy }: { busy: boolean }) {
+export function useMeshHealth(busy: boolean) {
+  const file = useStore(s => s.fileName)
+  const copy = useMeshTools(s => s.copyTriangles)
   const triangles = useStore((s) => s.triangleCount)
   const edits = useMeshTools((s) => s.edits.length)
   const [health, setHealth] = useState<Health | null>(null)
@@ -59,6 +61,11 @@ export function MeshHealth({ busy }: { busy: boolean }) {
     let live = true
     runCommand('mesh.inspect', {}).then((r) => { if (live) setHealth(healthOf(r)) }, () => { if (live) setHealth(null) })
     return () => { live = false }
-  }, [triangles, edits, busy])
+  }, [file, triangles, edits, copy, busy])
+  return health
+}
+
+export function MeshHealth({ busy }: { busy: boolean }) {
+  const health = useMeshHealth(busy)
   return <MeshHealthView health={health} busy={busy} onTool={(t) => useMeshTools.getState().setTool(t)} onRemoveDuplicates={() => meshHotkeys.removeDuplicates?.()} />
 }

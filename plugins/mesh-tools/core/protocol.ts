@@ -1,3 +1,5 @@
+import type { RimOperation } from './rimEdit'
+import type { RimFillMethod } from './fillHoles'
 // SPDX-License-Identifier: AGPL-3.0-only
 // What Mesh Tools asks of the mesh worker, and what comes back — the
 // operations its part of the worker answers (see ../worker.ts), each on the
@@ -43,15 +45,19 @@ export type ScanEditRequest =
   | { type: 'scale'; factors: Vec3; about: Vec3 }
   | { type: 'mirror'; origin: Vec3; normal: Vec3 }
   | { type: 'cut'; origin: Vec3; normal: Vec3; cap: boolean }
-  | { type: 'fill-holes'; maxSize: number; mode: FillMode; at?: Vec3 }
+  | { type: 'fill-holes'; maxSize: number; mode: FillMode; at?: Vec3; rim?:{start?:number;method:RimFillMethod} }
+  | { type:'split'; envelope?:number; cutter:import('./splitMesh').SplitTool }
+  | { type:'rim'; operation:RimOperation }
   | { type: 'smooth'; settings: SmoothSettings }
-  | { type: 'boolean'; op: BooleanOp; tools: BooleanTool[] }
+  | { type: 'boolean'; op: BooleanOp; envelope?:number; tools: BooleanTool[] }
   | { type: 'offset'; settings: OffsetSettings }
   | { type: 'hollow'; thickness: number }
   | { type: 'thicken'; thickness: number; side: ThickenSide }
 
 /** What an edit did, tool by tool. */
 export type MeshEditReport =
+  | {kind:'split';parts:number;regions:Uint32Array}
+  | { kind:'rim'; action:RimOperation['action']; triangles:number }
   | { kind: 'delete'; triangles: number }
   | { kind: 'flip'; triangles: number }
   | { kind: 'scale'; factors: Vec3 }

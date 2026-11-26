@@ -13,6 +13,7 @@ import type { Vec3 } from '../../../src/core/types'
 import type { ConstrainMode } from '../core/autoConstrain'
 import type { BodyFolder } from '../core/bodyFolders'
 import type { Diagnosis, EdgeInfo, FaceInfo, SurfaceReport, TrimReport } from '../core/build'
+import type { KernelMesh } from '../core/kernel'
 import type { NetworkReport } from '../core/networkBody'
 import type { DimPick } from '../core/draw'
 import type { AxisRef, BodyOp, BooleanOp, ChamferMode, ExtrudeExtent, FaceProfile, Feature, HoleAxis, MirrorPlane, NetworkFeature, PlaneRef, RegionBox, SplitKeep, StepFileRef, SurfaceFitParams, SurfaceShape, ThickenSide, TrimTool } from '../core/features'
@@ -197,13 +198,15 @@ export interface MapReport {
 
 export type PreviewInfo =
   | { status: 'idle' }
-  | { status: 'building' }
-  | { status: 'ok'; volume: number; closed: boolean; note?: string; surface?: SurfaceReport; trim?: TrimReport; network?: NetworkReport; sheetFaces?: number; failure?: Diagnosis }
+  | { status: 'building'; trimDisplay?: { pieces: NonNullable<TrimReport['pieces']>; pickable: boolean } }
+  | { status: 'ok'; volume: number; closed: boolean; note?: string; surface?: SurfaceReport; confirmedMesh?: { draft: FeatureDraft; buildVersion: number; mesh: KernelMesh }; trim?: TrimReport; network?: NetworkReport; sheetFaces?: number; failure?: Diagnosis }
   /** `where`: the edges or face outlines a round, a chamfer or a shell
    *  failed on, drawn red on the part — see Builder.diagnose. */
   | { status: 'failed'; message: string; where?: Float32Array[] }
 
 export interface BodyInfo {
+  /** Accepted display mesh until the document build supplies topology. */
+  confirmedMesh?: KernelMesh
   /** The id of the feature that made the body. */
   id: number
   name: string
@@ -463,7 +466,7 @@ export type FeatureDraft = { exprs?: ExprMap } & (
    *  and makes the offset a body of its own. */
   | { kind: 'offsetBody'; featureId?: number; name?: string; body: number | null; distance: number; keep: boolean }
   /** A STEP file brought in: the file chosen, its text in stepFiles. */
-  | { kind: 'import'; featureId?: number; name?: string; file: StepFileRef | null }
+  | { kind: 'import'; featureId?: number; name?: string; alignment?:import('../core/features').ImportFeature['alignment']; file: StepFileRef | null }
   /** Bodies moved and turned, or copies of them (MoveBodyFeature): clicks
    *  on the part pick the bodies, the pivot following them to their
    *  middle; the gizmo or the box's six numbers place them. */

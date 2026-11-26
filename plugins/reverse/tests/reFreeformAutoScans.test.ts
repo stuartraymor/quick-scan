@@ -15,9 +15,10 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import { fixture } from '../../../tests/fixtures'
+import { featureDetailWeight } from '../core/freeform/autoFeatures'
 import { loadAutoTools } from '../core/freeform/autoTools'
 import { runAutoFreeform, type AutoOutcome, type AutoSettings } from '../core/freeform/autoFreeform'
-import { welded } from '../core/freeform/autoPrepare'
+import { mainPieces, meshArea, welded, withoutSlivers } from '../core/freeform/autoPrepare'
 
 vi.setConfig({ testTimeout: 600_000 })
 
@@ -98,7 +99,8 @@ for (const name of ['basic_part', 'aerosol_knob', 'bearinghousing', 'machine_par
       const mesh = readStl(f.path)
       for (const settings of [{ algorithm: 'basic', quads: 2000 }, { algorithm: 'feature', quads: 2000 }] as AutoSettings[]) {
         const { r } = await run(name, mesh, settings)
-        const want = settings.algorithm === 'basic' ? 2000 : 2000 * 2.19
+        const kept = mainPieces(withoutSlivers(mesh)).mesh
+        const want = settings.algorithm === 'basic' ? 2000 : 2000 * (1 + 1.19 * featureDetailWeight(kept, meshArea(kept)))
         expect(Math.abs(r.quads - want) / want, `${name} ${settings.algorithm}`).toBeLessThan(0.08)
         expect(r.cage.faces.every((q) => q.length === 4 && new Set(q).size === 4)).toBe(true)
         const edges = new Map<string, number>()

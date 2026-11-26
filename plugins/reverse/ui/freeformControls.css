@@ -182,3 +182,22 @@
   min-width: 0;
   white-space: normal;
 }
+
+.ff-viewport-ramp.ff-viewport-pass-fail { background: linear-gradient(to bottom, #820000 35%, #00d900 35%, #00d900 65%, #820000 65%); }
+.ff-auto .ff-viewport-legend { width: max-content; max-width: 45vw; top: clamp(115px, 33vh, 330px); color: var(--ink); text-shadow: 0 0 3px var(--panel); }
+.ff-auto .ff-viewport-legend small { background: var(--panel); padding: 1px 4px; }
+.ff-viewport-deviation { position: fixed; bottom: 50px; right: 24px; display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 4px; }
+.ff-viewport-deviation[aria-pressed=true] { background: var(--accent-soft); border-color: var(--accent); }
+@media (max-height: 520px) { .ff-auto .ff-viewport-scale { height: 18vh; } }
+
+/* Align the preview action with the workspace Deviation key across display sizes. */
+[data-test="toggle-body-map"] { anchor-name: --ff-deviation-key; }
+@supports (position-anchor: --ff-deviation-key) {
+  .ff-viewport-deviation {
+    position-anchor: --ff-deviation-key;
+    right: anchor(right, 24px); bottom: anchor(bottom, 50px);
+    width: anchor-size(width, auto); height: anchor-size(height, auto);
+    justify-content: center;
+  }
+  body:has(.ff-viewport-deviation) [data-test="toggle-body-map"] { opacity: 0; }
+}

@@ -258,7 +258,7 @@ export function featureOfDraft(d: FeatureDraft, id: number, name: string): Featu
     case 'offsetBody':
       return { id, kind: 'offsetBody', name, body: d.body!, distance: d.distance, keep: d.keep, visible: true }
     case 'import':
-      return { id, kind: 'import', name, file: { ...d.file! }, visible: true }
+      return { id, kind: 'import', name, file: { ...d.file! }, ...(d.alignment?{alignment:d.alignment}:{}), visible: true }
     case 'moveBody':
       return { id, kind: 'moveBody', name, bodies: [...d.bodies], pivot: [...d.pivot], translate: [...d.translate], rotate: [...d.rotate], ...(d.scale !== undefined && d.scale !== 1 ? { scale: d.scale } : {}), copy: d.copy, visible: true }
   }

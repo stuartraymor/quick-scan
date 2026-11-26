@@ -85,7 +85,7 @@ else {
       if (url.host !== 'app' || !file.startsWith(root + path.sep)) return new Response('Forbidden', { status: 403 });
       return net.fetch(pathToFileURL(file).href);
     });
-    win = new BrowserWindow({ width: 1500, height: 960, minWidth: 1000, minHeight: 650, title: `Quick Scan v${app.getVersion()}`, show: smoke, backgroundColor: '#1b1d20', autoHideMenuBar: true, webPreferences: { preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true, backgroundThrottling: !smoke } });
+    win = new BrowserWindow({ width: 1500, height: 960, minWidth: 1000, minHeight: 650, title: `Quick Scan v${app.getVersion()}`, show: false, backgroundColor: '#1b1d20', autoHideMenuBar: true, webPreferences: { preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true, backgroundThrottling: !smoke } });
     win.setMenu(null);
     reveal = smoke ? null : createReveal({
       show: () => { if (win && !win.isDestroyed()) { win.show(); win.focus(); } },
@@ -175,13 +175,9 @@ else {
           return {mesh:document.querySelector('.file-info').textContent, kernel:document.querySelector('[data-test="kernel-status"]').textContent};
         })()`);
         result.errors = errors;
-        // Kernel readiness can precede the compositor's first frame after
-        // reload. Make the verification window visible and wait for paint
-        // before requesting screenshot evidence.
-        win.show();
-        win.focus();
+        // Render verification frames without activating a user-facing window.
         await win.webContents.executeJavaScript('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
-        const image = await win.webContents.capturePage();
+        const image = await win.webContents.capturePage(undefined, { stayHidden: true });
         fs.writeFileSync(path.join(app.getPath('userData'), 'desktop-smoke.png'), image.toPNG());
         fs.writeFileSync(path.join(app.getPath('userData'), 'desktop-smoke.json'), JSON.stringify(result,null,2));
         app.exit(0);

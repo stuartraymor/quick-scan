@@ -6,6 +6,7 @@
 // boundaries on OXY plane, Defeature selected area (Ctrl + D) — and Show
 // mesh wireframe.
 
+import { ExtractIcon, type ExtractIconName } from '../../../src/ui/ExtractIcon'
 import { useState } from 'react'
 import { useStore } from '../../../src/state/store'
 import { useMark } from '../../../src/state/markStore'
@@ -13,7 +14,7 @@ import { useMeshTools } from '../state/meshStore'
 import { meshHotkeys } from '../app/meshHotkeys'
 import { ClippingBox } from './ClippingBox'
 
-export function EditScanExtras({ busy }: { busy: boolean }) {
+export function EditScanExtras({ busy, createMesh, split }: { busy: boolean; createMesh?: (cut: boolean) => void; split?: () => void }) {
   const marked = useMark((s) => s.count)
   const wireframe = useStore((s) => s.wireframe)
   const quickTools = useMark((s) => s.quickTools)
@@ -64,12 +65,24 @@ export function EditScanExtras({ busy }: { busy: boolean }) {
           </span>
         </div>
       ))}
-      <div className="sec-head">Additional tools</div>
+      {createMesh && <fieldset className="scan-new"><legend>New mesh from selection</legend>
+        <button disabled={none} onClick={() => createMesh(true)}>Cut &amp; Create</button>
+        <button disabled={none} onClick={() => createMesh(false)}>Copy &amp; Create</button>
+      </fieldset>}
+      {createMesh ? <fieldset className="scan-additional"><legend>Additional tools</legend>
+        {([
+          ['split', 'Split mesh with other solid, surface or mesh', split, busy],
+          ['smooth', 'Smooth selected area (Ctrl + M)', meshHotkeys.smooth, none],
+          ['project', 'Project the mesh boundaries on OXY plane', meshHotkeys.projectBoundaries, busy],
+          ['erase', 'Defeature selected area (Ctrl + D)', meshHotkeys.defeature, none],
+        ] as const).map(([icon, title, run, disabled]) => <button key={icon} title={title} aria-label={title} disabled={disabled} onClick={() => run?.()}><ExtractIcon name={icon satisfies ExtractIconName} size={24}/></button>)}
+      </fieldset> : <><div className="sec-head">Additional tools</div>
       <div className="toolrow">
         <button data-test="smooth-selected" disabled={none} title="Smooth selected area (Ctrl + M)" onClick={() => meshHotkeys.smooth?.()}>Smooth selected</button>
         <button data-test="project-boundaries" disabled={busy} title="Project the mesh boundaries on OXY plane" onClick={() => meshHotkeys.projectBoundaries?.()}>Project boundaries</button>
         <button data-test="defeature-selected" disabled={none} title="Defeature selected area (Ctrl + D)" onClick={() => meshHotkeys.defeature?.()}>Defeature</button>
       </div>
+      </>}
       <label className="checkrow">
         <input type="checkbox" data-test="edit-scan-quick-tools" checked={quickTools} onChange={(e) => useMark.getState().setQuickTools(e.target.checked)} />
         <span>Show quick tools dialog</span>

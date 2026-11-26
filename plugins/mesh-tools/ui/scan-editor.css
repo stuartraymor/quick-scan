@@ -1,0 +1,241 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+.desktop-mid .tool-inspector[data-scan-panel] {
+  --panel:#f0f0f0; --ink:#171717; --dim:#555; --well:#fff;
+  --ui:Tahoma,"Segoe UI",sans-serif; background:var(--panel); color:var(--ink);
+  border:1px solid #bababa; border-radius:5px; font:11px/1.25 var(--ui);
+  box-sizing:border-box; max-height:calc(100% - 16px); overflow:hidden;
+}
+.desktop-mid .tool-inspector[data-scan-panel][data-mode=floating] { left:223px; top:11px; }
+.desktop-mid > .object-explorer { anchor-name: --scan-objects; }
+.desktop-mid .tool-inspector:is([data-scan-panel=edit],[data-scan-panel="0"]) { width:304px; height:531px; }
+.desktop-mid .tool-inspector[data-scan-panel="1"] {width:301px;height:459px}
+.desktop-mid .tool-inspector[data-scan-panel="2"] {width:308px;height:591px}
+.desktop-mid .tool-inspector[data-scan-panel="3"] {width:394px;height:539px}
+.desktop-mid .tool-inspector[data-scan-panel] .inspector-titlebar { height:30px; min-height:30px; flex:none; padding-left:8px; background:#f0f0f0; }
+.desktop-mid .tool-inspector[data-scan-panel] .inspector-body {flex:1;min-height:0;overflow:auto}
+.desktop-mid .tool-inspector[data-scan-panel] .inspector-titlebar strong {font:12px var(--ui);color:#565656}
+.desktop-mid .tool-inspector[data-scan-panel] .inspector-titlebar button:last-child {width:20px;min-height:18px;height:18px;padding:0;margin-right:4px}
+.scan-editor,.scan-quick {--extract-blue:#b31116;--extract-pale:#d9c9bd;--extract-edge:#48392e;--extract-well:#eeeeec;--extract-muted:#cbbcb2}
+.desktop-mid .tool-inspector[data-scan-panel] .scan-editor {position:relative;height:450px;min-width:288px;color:#161616;font:11px Tahoma,"Segoe UI",sans-serif}
+.scan-editor .scan-diagnostics {position:absolute;left:11px;right:10px;top:10px}
+.scan-diagnostics > div {display:grid;grid-template-columns:1fr 50px 75px;column-gap:22px;align-items:center;height:28.5px}
+.scan-diagnostics output {text-align:center;line-height:16px}
+.scan-warning {background:#ffda67}
+.desktop-mid .tool-inspector[data-scan-panel] :is(.scan-diagnostics,.scan-editor,.scan-footer,.scan-symmetry,.scan-detail) button {font:11px Tahoma,"Segoe UI",sans-serif;border-radius:3px;border:1px solid #c6c6c6;min-height:21px;box-sizing:border-box;padding:1px 6px;color:#151515}
+.desktop-mid .tool-inspector[data-scan-panel] .scan-editor .group {border:0;padding:0;margin:0;display:block}
+.desktop-mid .tool-inspector[data-scan-panel] .scan-editor .edit-scan-selection {position:absolute;inset:127px 0 auto 11px;--extract-blue:#b31116;--extract-pale:#d9c9bd;--extract-edge:#48392e;--extract-well:#eeeeec;--extract-muted:#cbbcb2}
+.desktop-mid .tool-inspector[data-scan-panel] .scan-editor .qs-iconrow {display:flex;gap:1px;flex-wrap:nowrap}
+.desktop-mid .tool-inspector[data-scan-panel] .scan-editor :is(.qs-iconrow,.scan-additional) button {display:inline-grid;place-items:center;width:29px;height:28px;min-width:0;min-height:0;padding:0;border:1px solid transparent;border-radius:0;background:transparent}
+.desktop-mid .tool-inspector[data-scan-panel] .scan-editor :is(.qs-iconrow,.scan-additional) button:hover:not(:disabled) {background:#dcecf8;border-color:#8cb2cc}
+.desktop-mid .tool-inspector[data-scan-panel] .scan-editor .qs-iconrow button.on {border-color:#231f20;background:#fff}
+.desktop-mid .tool-inspector[data-scan-panel] .scan-editor :is(.qs-iconrow,.scan-additional) svg {width:23px;height:23px}
+.desktop-mid .tool-inspector[data-scan-panel] .scan-editor .qs-degrees {position:absolute;top:37px;left:0;display:flex;align-items:center;gap:6px}
+.scan-editor .qs-degrees input[type=range] {width:147px;margin:0 3px 0 0}
+.desktop-mid .tool-inspector[data-scan-panel] .scan-editor .qs-degrees input[type=number] {width:42px;height:23px;padding:1px 4px}
+.scan-editor .checkrow {display:flex;align-items:center;gap:3px;font:11px Tahoma,sans-serif;height:16px}
+.scan-editor input[type=checkbox],.scan-symmetry input[type=checkbox] {width:13px;height:13px;margin:0;accent-color:#1469ae}
+.scan-editor .edit-scan-selection .checkrow {position:absolute;left:0;top:70px}
+.scan-editor .edit-scan-selection .qs-iconrow:last-of-type {position:absolute;left:0;top:92px}
+.scan-editor [data-test=edit-scan-extras] {position:absolute;left:0;right:0;top:250px}
+.scan-editor [data-test=edit-scan-extras] > .toolrow {margin:0 0 0 20px;display:flex;gap:7px}
+.scan-editor [data-test=edit-scan-extras] > .toolrow button:first-child,.scan-editor .scan-new button:first-of-type {width:108px}
+.scan-editor [data-test=edit-scan-extras] > .toolrow button:last-child,.scan-editor .scan-new button:last-of-type {width:143px}
+.scan-editor fieldset {min-width:0;box-sizing:border-box;border:1px solid #d6d6d6;padding:4px 8px 6px;margin:0}
+.scan-editor legend {padding:0 3px;font:11px Tahoma,sans-serif}
+.scan-editor .scan-new {position:absolute;left:11px;right:10px;top:30px;height:49px}
+.scan-editor .scan-new button + button {margin-left:7px}
+.scan-editor .scan-additional {position:absolute;left:14px;right:10px;top:85px;height:59px}
+.scan-editor .scan-additional button {margin-right:2px}
+.scan-editor [data-test=edit-scan-extras] > .checkrow {position:absolute;left:14px;top:153px}
+.scan-editor [data-test=edit-scan-extras] > .checkrow:last-child {top:177px}
+.scan-editor :is([data-test=selection-status-name],[data-test=selection-status]) {position:relative;z-index:3;padding:6px;background:var(--panel)}
+.scan-editor [data-test=selection-status-name] {border:1px solid #a5a5a5;box-shadow:0 4px 12px #0002}
+.scan-editor:has([data-test=selection-status]) {height:auto;min-height:450px;padding-top:460px}
+.scan-editor:has([data-test=selection-status]) [data-test=edit-scan-extras] {position:static}
+.scan-editor:has([data-test=selection-status]) [data-test=edit-scan-extras] > .toolrow:first-of-type {position:absolute;top:250px}
+.scan-editor:has([data-test=selection-status]) .scan-new {top:280px}
+.scan-editor:has([data-test=selection-status]) .scan-additional {top:335px}
+.scan-editor:has([data-test=selection-status]) [data-test=edit-scan-extras] > .checkrow {top:403px}
+.scan-editor:has([data-test=selection-status]) [data-test=edit-scan-extras] > .checkrow:last-child {top:427px}
+.scan-quick {position:fixed;z-index:180;display:flex;align-items:center;width:252px;height:38px;transform-origin:0 0;background:#f2f1ee;box-sizing:border-box}
+.scan-quick > span {box-sizing:border-box;width:18px;height:100%;border:2px solid #f2f1ee;background:#cb6663}
+.scan-quick button {display:grid;place-items:center;width:39px;height:38px;min-width:0;padding:0;border:1px solid transparent;border-radius:0;background:transparent;box-shadow:none}
+.scan-quick button:hover {background:#d5e8fb;border-color:#8cafc8}
+.scan-footer {position:relative;margin:0 7px 0 11px;padding:10px 4px 10px 0;display:flex;align-items:center;justify-content:flex-end;gap:7px;flex:none;border-top:2px solid #777}
+.tool-inspector .scan-footer button {width:75px;height:23px}
+.tool-inspector .scan-footer .scan-help {border:1px solid #aaa;border-radius:50%;width:22px;height:22px;padding:0;background:transparent;font:16px Tahoma,sans-serif;margin-right:auto}
+.scan-help-text {position:absolute;bottom:100%;left:0;right:0;background:#fffdd4;border:1px solid #ccc;padding:9px;z-index:3}
+.stage > .scan-guide {position:absolute;z-index:5;pointer-events:none;top:11px;left:50%;transform:translateX(-50%);width:max-content;max-width:85%;border:1px solid #c3bb8a;border-radius:10px;background:#f5efab;color:#262618;font:14px/1.24 Tahoma,sans-serif;padding:8px 10px}
+.scan-guide strong {font-weight:400}
+.scan-guide p {margin:0}.scan-guide p:first-of-type {margin-top:12px}
+.tool-inspector:has(.scan-detail) .scan-footer {display:none}
+.scan-detail,.scan-symmetry {padding:8px 11px;font:11px Tahoma,sans-serif}
+.scan-detail h3 {font-size:13px;margin:0 0 10px}.scan-detail footer {text-align:right;margin-top:10px}
+.scan-symmetry {display:flex;flex-direction:column;gap:7px}
+.scan-planes {display:flex;gap:3px;height:58px;align-items:center}
+.scan-symmetry .scan-planes button {border-color:transparent;background:transparent;display:flex;align-items:center;gap:8px;flex:1;padding:0;height:45px}
+.scan-symmetry>button {height:29px}
+.scan-symmetry>label:not(.scan-axis) {display:grid;gap:7px;margin:3px 0}
+.scan-axis {display:grid;grid-template-columns:91px 85px auto;gap:6px;align-items:center}
+.scan-axis span {border:1px solid #aaa;text-align:center;padding:4px}
+.scan-axis input {width:85px}
+.scan-sym-analysis {display:flex;align-items:center;gap:6px;border-top:2px solid #888;padding-top:10px}
+.scan-sym-analysis label {display:flex;align-items:center;gap:3px;margin-right:auto}
+.scan-sym-analysis input[type=number] {width:64px}
+.scan-sym-analysis button {margin-left:auto}
+.desktop-mid .tool-inspector[data-scan-panel="2"] .extract-dialog footer :is(.qs-help,[data-test=extract-close]) {display:none}
+.desktop-mid .tool-inspector[data-scan-panel="2"] .extract-dialog {min-height:0}
+.desktop-mid .tool-inspector[data-scan-panel="2"] .extract-dialog footer:not(:has([data-test=extract-create])) {display:none}
+.desktop-mid .tool-inspector[data-scan-panel="2"] .extract-dialog .qs-typerow {margin-bottom:auto}
+.desktop-mid .tool-inspector[data-scan-panel="3"] :is([data-test=cancel-alignment],[data-test=align-symmetry],.draftbox>.sec-head,.draftbox>.g-label) {display:none}
+.desktop-mid .tool-inspector[data-scan-panel="3"] .draftbox {padding:0;margin:0;border:none;background:transparent}
+.desktop-mid .tool-inspector[data-scan-panel="3"] .draftbox .field:has(select) {display:grid;grid-template-columns:1fr 98px;gap:5px}
+.desktop-mid .tool-inspector[data-scan-panel="3"] .draftbox .field:has(select)>span {display:none}
+.desktop-mid .tool-inspector[data-scan-panel="3"] .draftbox .field:has(select)>button:last-child {grid-column:2}
+.desktop-mid .tool-inspector[data-scan-panel="3"] .stephead {border-top:2px solid #777;padding-top:6px}
+.desktop-mid .tool-inspector[data-scan-panel="3"] [data-test=align-translate] input {max-width:36px}
+@media(max-width:720px){.desktop-mid .tool-inspector[data-scan-panel][data-mode=floating]{left:min(18vw,100px);max-width:calc(100% - 18vw)}}
+
+.desktop-mid .tool-inspector[data-scan-panel] {background:#f0f0f0;color:#171717;color-scheme:light}
+.desktop-mid .tool-inspector[data-scan-panel] button {font-weight:400}
+.desktop-mid .tool-inspector[data-scan-panel] .scan-editor .scan-new {display:flex;gap:7px;align-items:center}
+.desktop-mid .tool-inspector[data-scan-panel] .scan-editor .scan-new button {margin:0;flex:none}
+.desktop-mid .tool-inspector[data-scan-panel] .scan-editor [data-test=edit-scan-extras]>.toolrow:first-of-type {padding:0;gap:7px;justify-content:flex-start}
+.desktop-mid .tool-inspector[data-scan-panel] .scan-editor [data-test=edit-scan-extras]>.toolrow:first-of-type button {flex:none}
+.desktop-mid .tool-inspector[data-scan-panel] .scan-editor .qs-iconrow button:not(:disabled):not(.on):not(:hover),
+.desktop-mid .tool-inspector[data-scan-panel] .scan-editor .scan-additional button:not(:disabled):not(:hover) {background:transparent;border-color:transparent}
+.desktop-mid .tool-inspector[data-scan-panel] .scan-editor .qs-iconrow button:disabled {background:transparent;border-color:transparent;opacity:.72}
+.desktop-mid .tool-inspector[data-scan-panel] .scan-editor .qs-iconrow button {padding:0}
+.desktop-mid .tool-inspector[data-scan-panel] .scan-editor .qs-degrees input[type=range] {appearance:none;height:4px;background:#ddd;border:1px solid #d3d3d3;accent-color:#1677b8}
+.scan-editor .qs-degrees input[type=range]::-webkit-slider-thumb {appearance:none;width:10px;height:21px;background:#087aba}
+.scan-editor .qs-degrees input[type=range]:disabled::-webkit-slider-thumb {background:#aaa}
+
+/* Secondary mesh dialogs share the command anchor and their own Back button. */
+.desktop-mid .tool-inspector[data-scan-panel]:has(.diagnostic-islands) {width:389px;height:329px}
+.desktop-mid .tool-inspector[data-scan-panel]:has(.diagnostic-holes) {width:292px;height:401px}
+.desktop-mid .tool-inspector[data-scan-panel]:has(.diagnostic-boundaries) {width:307px;height:435px}
+.scan-detail {display:flex;flex-direction:column;align-items:stretch;gap:8px;height:100%;box-sizing:border-box}
+.scan-detail label {display:flex;align-items:center;gap:6px}
+.scan-detail select,.scan-detail input[type=range] {margin-left:auto}
+.scan-detail input[type=number] {max-width:62px}
+.scan-detail fieldset {border:1px solid #d0d0d0;padding:8px;display:flex;flex-direction:column;gap:8px}
+.scan-detail legend {padding:0 4px}
+.scan-pair {display:flex;gap:7px}
+.scan-pair button {flex:1}
+.scan-piece-nav,.scan-hole-line {display:flex;align-items:center;justify-content:space-between;gap:10px}
+.scan-piece-nav .scan-pair {width:51%}
+.scan-hole-glyphs {display:flex;gap:4px;font:24px Tahoma,sans-serif;color:#695241}
+.scan-hole-glyphs b {width:24px;height:25px;line-height:25px;text-align:center}
+.scan-hole-glyphs b:first-child {border:1px solid #333}
+.scan-detail footer {margin-top:auto;padding-top:9px;border-top:2px solid #777}
+.scan-detail footer button {width:91px}
+.desktop-mid .tool-inspector[data-scan-panel] [data-test=toggle-inspector-dock] {visibility:hidden}
+.desktop-mid .tool-inspector[data-scan-panel] .scan-footer .scan-help {width:22px;height:22px;border-radius:50%;padding:0;background:transparent}
+.desktop-mid .tool-inspector[data-scan-panel="2"] .extract-dialog .qs-count:not([data-test]) {display:none}
+.desktop-mid .tool-inspector[data-scan-panel="2"] .extract-dialog .qs-iconrow button {width:29px;height:28px}
+.desktop-mid .tool-inspector[data-scan-panel="2"] .extract-dialog .qs-step {margin:10px 0 3px}
+.desktop-mid .tool-inspector[data-scan-panel="2"] .extract-dialog .qs-typerow button {width:37px}
+.desktop-mid .tool-inspector[data-scan-panel="2"] .extract-dialog>hr:last-of-type {visibility:hidden}
+.desktop-mid .tool-inspector[data-scan-panel="3"] .core-command-align>.group>.sec-head,
+.desktop-mid .tool-inspector[data-scan-panel="3"] .core-command-align>.sec-head {display:none}
+.desktop-mid .tool-inspector[data-scan-panel="3"] .draftbox>div:has(>[data-test=align-reset]) {display:flex;justify-content:flex-end;border:none;margin:0}
+.desktop-mid .tool-inspector[data-scan-panel="3"] [data-test=align-reset] {width:98px;flex:none}
+.desktop-mid .tool-inspector[data-scan-panel="3"] .draftbox select {width:100%;max-width:none}
+.desktop-mid .tool-inspector[data-scan-panel="3"] [data-test=align-translate] {display:grid;grid-template-columns:1fr repeat(3,48px) 96px;align-items:center;gap:5px!important;border-top:2px solid #777;padding:7px 0 3px}
+.desktop-mid .tool-inspector[data-scan-panel="3"] [data-test=align-translate] input[type=number] {width:31px!important;min-width:0;max-width:31px}
+.desktop-mid .tool-inspector[data-scan-panel="3"] [data-test=align-translate] label {min-width:0}
+.scan-align-scopes {display:flex;flex-direction:column;gap:8px;border-top:2px solid #777;padding-top:7px}
+.scan-align-scopes label {display:flex;align-items:center;gap:4px}
+.desktop-mid .tool-inspector[data-scan-panel="3"] [data-test=apply-alignment] {width:98px;min-height:43px;align-self:flex-end;margin:-45px 0 0 auto}
+
+.desktop-mid .tool-inspector[data-scan-panel][data-mode=floating]:has(.scan-detail) {left:213px;top:1px}
+.scan-hole-glyphs b {color:#47392e;background:#ded5c8}
+
+/* Fine placement in the reference wizard. Preserve scrolling for expanded fits. */
+.desktop-mid .tool-inspector[data-scan-panel="3"] .draftbox .field:has(select) {position:relative;top:-9px}
+.desktop-mid .tool-inspector[data-scan-panel="3"] .draftbox .stephead:has(+.field [data-test=align-secondary]),
+.desktop-mid .tool-inspector[data-scan-panel="3"] .draftbox .stephead:has(+.field [data-test=align-origin]) {margin-top:-3px}
+.desktop-mid .tool-inspector[data-scan-panel="3"] .draftbox>.scan-align-scopes {margin-top:-7px;gap:10px}
+.desktop-mid .tool-inspector[data-scan-panel="3"] .draftbox button[data-test=apply-alignment] {
+  display:block;box-sizing:border-box;width:103px;height:44px;min-height:44px;
+  margin:-46px 0 0 auto;
+}
+.desktop-mid .tool-inspector[data-scan-panel="3"] .scan-footer [data-test=prepare-finish] {width:103px}
+.desktop-mid .tool-inspector[data-scan-panel="2"] .extract-dialog {padding-left:11px;padding-right:11px}
+.desktop-mid .tool-inspector[data-scan-panel="2"] .extract-dialog .qs-iconrow:first-of-type {margin-top:3px}
+.desktop-mid .tool-inspector[data-scan-panel="2"] .extract-dialog .qs-degrees {margin-top:4px}
+.desktop-mid .tool-inspector[data-scan-panel="2"] .extract-dialog .qs-count[data-test=extract-count] {
+  position:absolute;clip-path:inset(50%);width:1px;height:1px;overflow:hidden;white-space:nowrap;
+}
+.desktop-mid .tool-inspector[data-scan-panel="2"] .extract-dialog .qs-typerow button {opacity:1}
+.desktop-mid .tool-inspector[data-scan-panel="2"] .extract-dialog .qs-typerow button:disabled {opacity:.8}
+
+.desktop-mid .tool-inspector[data-scan-panel="3"] .scan-footer {padding-top:5px;border-top:0}
+
+/* The preference on the document root also covers portaled quick tools. */
+:root[data-theme='dark'] :is(.desktop-mid .tool-inspector[data-scan-panel], .qs-quick, .qs-overlay, .scan-quick, [data-test=ai-wizard]>.modal) {
+  --chassis:inherit; --panel:inherit; --well:inherit; --well-deep:inherit;
+  --line:inherit; --line-strong:inherit; --ink:inherit; --dim:inherit; --faint:inherit;
+  --accent:inherit; --accent-d:inherit; --accent-soft:inherit;
+  color-scheme:dark;color:var(--ink);background:var(--panel);border-color:var(--line-strong);
+}
+:root[data-theme='dark'] .tool-inspector[data-scan-panel] :is(.inspector-body,.extract-dialog,.scan-editor,.group) {
+  background-color:var(--panel);color:var(--ink);
+}
+:root[data-theme='dark'] .tool-inspector[data-scan-panel] :is(.inspector-titlebar strong,.sec-head,.stephead,.qs-step,legend,label,.field>span) {color:var(--ink)}
+:root[data-theme='dark'] .tool-inspector[data-scan-panel] :is(.hint,.qs-count,small) {color:var(--dim)}
+:root[data-theme='dark'] .desktop-mid .tool-inspector[data-scan-panel] :is(button,select,input:not([type=checkbox],[type=radio],[type=range]),textarea),
+:root[data-theme='dark'] .qs-quick button {
+  background:var(--well);color:var(--ink);border-color:var(--line-strong);
+}
+:root[data-theme='dark'] .desktop-mid .tool-inspector[data-scan-panel] button:disabled {color:var(--faint);background:var(--chassis);border-color:var(--line)}
+:root[data-theme='dark'] .desktop-mid .tool-inspector[data-scan-panel] button:is(:hover,.on,[aria-pressed=true]):not(:disabled),
+:root[data-theme='dark'] .scan-quick button:hover {color:var(--ink);background:var(--accent-soft);border-color:var(--accent)}
+:root[data-theme='dark'] .tool-inspector[data-scan-panel] :is(fieldset,hr,.stephead,.scan-footer,.scan-align-scopes,.scan-axis span) {border-color:var(--line-strong)}
+:root[data-theme='dark'] :is(.scan-quick,.scan-editor),
+:root[data-theme='dark'] .desktop-mid .tool-inspector[data-scan-panel] .scan-editor .edit-scan-selection {
+  --extract-blue:#ff7770; --extract-pale:#d6bca8; --extract-edge:#ede2d9; --extract-well:#34383c; --extract-muted:#948980;
+}
+:root[data-theme='dark'] .scan-quick>span {border-color:var(--panel)}
+:root[data-theme='dark'] .scan-warning {background:#705326;color:#fff1c6}
+:root[data-theme='dark'] .stage>.scan-guide,:root[data-theme='dark'] .scan-help-text {background:#363224;color:#f7edc7;border-color:#726448}
+:root[data-theme='dark'] .desktop-mid .tool-inspector[data-scan-panel] input[type=range] {background:var(--well);border-color:var(--line-strong)}
+
+/* Native selects and checkboxes round differently at desktop display scales. */
+@media (min-resolution:1.25dppx) {
+  .desktop-mid .tool-inspector[data-scan-panel="3"] .draftbox .stephead {padding-top:2px}
+  .desktop-mid .tool-inspector[data-scan-panel="3"] .draftbox>.scan-align-scopes {margin-top:-11px}
+}
+
+:root[data-theme='dark'] .desktop-mid .tool-inspector[data-scan-panel] .inspector-titlebar {background:var(--chassis);color:var(--ink)}
+:root[data-theme='dark'] .desktop-mid .tool-inspector[data-scan-panel] button:not(:disabled):not(.on):not([aria-pressed=true]):not(:hover) {background:var(--command-button-face)}
+:root[data-theme='dark'] .desktop-mid .tool-inspector[data-scan-panel] button:is(.on,[aria-pressed=true]):not(:disabled) {background:var(--command-selected);border-color:var(--command-selected-border);color:#fff}
+
+@media (min-width:721px) {
+  .desktop-mid .tool-inspector[data-scan-panel][data-mode=floating] {left:calc(anchor(--scan-objects right, 200px) + 23px)}
+  .desktop-mid .tool-inspector[data-scan-panel][data-mode=floating]:has(.scan-detail) {left:calc(anchor(--scan-objects right, 200px) + 13px)}
+}
+
+.rim-mode-icons,.rim-quick {display:inline-flex;align-items:center;gap:2px}
+.tool-inspector[data-scan-panel] .rim-mode-icons button {height:26px;width:28px;padding:0;font-size:19px;line-height:1}
+.rim-quick {position:fixed;z-index:180;padding:3px;border:1px solid var(--line-strong);background:var(--panel);color:var(--ink);box-shadow:0 2px 6px #0004}
+.rim-quick button {font-size:11px;padding:3px 5px;color:var(--ink);background:var(--well);border:1px solid var(--line-strong)}
+.scan-rim-drag {position:fixed;display:none;z-index:130;pointer-events:none;transform-origin:0 0;border:solid var(--accent)}
+.scan-detail small[role=status] {color:var(--dim)}
+
+.scan-detail:is(.diagnostic-holes,.diagnostic-boundaries) footer {display:flex;align-items:center;gap:7px}
+.scan-detail:is(.diagnostic-holes,.diagnostic-boundaries) footer button:first-child {margin-right:auto;width:23px;border-radius:50%;padding:0}
+.scan-detail.diagnostic-boundaries footer button:nth-child(2) {width:72px}
+.rim-measure-label {display:grid;grid-template-columns:1fr 78px}
+.rim-measure-button {margin-left:auto;width:78px}
+.scan-detail .rim-mode-icons button {display:grid;place-items:center}
+
+.desktop-mid .tool-inspector[data-scan-panel]:has(.diagnostic-split){width:303px;height:304px}
+.diagnostic-split>label{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:5px}
+.diagnostic-split select{width:100%}
+.diagnostic-split .split-envelope{display:flex;align-items:center;gap:6px;margin-top:22px}
+.diagnostic-split .split-envelope label{display:flex;margin-right:auto}
+.desktop-mid .tool-inspector[data-scan-panel] .diagnostic-split [data-test=split-preview]{margin-top:auto;min-height:31px}
+.diagnostic-split footer{margin-top:0;display:flex;gap:6px;padding-top:0;border-top:0}
+.diagnostic-split footer button{width:74px}
+.diagnostic-split footer button:first-child{width:24px;margin-right:auto}

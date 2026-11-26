@@ -22,6 +22,13 @@ export const MAX_STEPS = 4
 /** The most refined quads sampled: a cage's faces × 4^steps. */
 export const MAX_SAMPLED_QUADS = 600_000
 
+/** Default CAD sampling for a fitted cage. Each dyadic level quadruples its face count. */
+export function boundedBuildSteps(quads: number, requested: number): number {
+  let steps = requested
+  while (steps > 1 && quads * 4 ** steps > MAX_SAMPLED_QUADS) steps--
+  return steps
+}
+
 /** The refinement a control surface with an irregular point is sampled at,
  *  and the most refined quads that is done for: a larger cage keeps the
  *  refinement it asked for. */
@@ -106,7 +113,7 @@ export function freeformBody(k: ReKernel, cage: Cage, opts: { steps: number; sna
         positions = r.positions
       }
       return shift === 0 ? positions : displacedAlongNormals(positions, fine.faces, shift)
-    }, maxSide)
+    }, maxSide, !snap && !ask && shift === 0)
   let used = Math.max(1, Math.min(MAX_STEPS, Math.round(opts.steps)))
   // A control surface is made the surface the editor shows. Where the cage
   // is regular that surface is a bicubic one and a face through a few
@@ -128,7 +135,7 @@ export function freeformBody(k: ReKernel, cage: Cage, opts: { steps: number; sna
       // snapped grid locally while retaining the requested sample resolution.
       // An open control surface is one sheet: its faces sew along every
       // edge two blocks share, leaving only the cage's own boundary open.
-      made = patchesBody(k, patchSet(patches), snap || last, false, !snap && !patches.closed ? expectedBoundary(patches) * 1.03 + .05 : undefined)
+      made = patchesBody(k, { ...patchSet(patches), subdivisionParameters: !snap && !ask }, snap || last, false, !snap && !patches.closed ? expectedBoundary(patches) * 1.03 + .05 : undefined)
       // Independently interpolated CAD faces can leave open edges along
       // what should be shared by adjacent grids. A bounded fallback uses
       // the same straight boundary on both sides of every sample cell.
@@ -155,7 +162,7 @@ export function freeformBody(k: ReKernel, cage: Cage, opts: { steps: number; sna
       // A closed cage that would not sew shut in blocks: each quad its own face, the neighbours meeting edge to edge, none side to side.
       if (patches.closed && !made.report.solid) {
         const each = patchesAt(used, 0, 1)
-        const again = patchesBody(k, patchSet(each), snap || last)
+        const again = patchesBody(k, { ...patchSet(each), subdivisionParameters: !snap && !ask }, snap || last)
         if (again.report.solid) {
           k.release(made.shape)
           patches = each

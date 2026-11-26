@@ -372,7 +372,9 @@ export function resolveFeatures(
     }
     if (f.kind === 'import') {
       if (f.freeformSource === undefined) {
-        steps.push({ kind: 'import', id: f.id, name: f.name, file: f.file.key })
+        const m=f.alignment
+        const matrix=m&&[m.r[0],m.r[1],m.r[2],m.t[0],m.r[3],m.r[4],m.r[5],m.t[1],m.r[6],m.r[7],m.r[8],m.t[2]]
+        steps.push({ kind:'import',id:f.id,name:f.name,file:f.file.key,...(matrix?{matrix}:{}) })
       } else {
         const source = cages.get(f.freeformSource)
         if (source) {

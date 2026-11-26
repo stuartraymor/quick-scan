@@ -37,7 +37,7 @@ scope.onmessage = async (ev) => {
       lastStage = stage
       scope.postMessage({ type: 'progress', stage, overall })
     }, tools)
-    const transfer: Transferable[] = [outcome.cage.positions.buffer, outcome.surface.positions.buffer, outcome.surface.normals.buffer, outcome.surface.indices.buffer]
+    const transfer: Transferable[] = [outcome.cage.positions.buffer, outcome.surface.positions.buffer, outcome.surface.normals.buffer, outcome.surface.indices.buffer, outcome.surface.signed.buffer, outcome.surface.edgeSegments.buffer]
     if (outcome.mirror) transfer.push(outcome.mirror.partner.buffer)
     scope.postMessage({ type: 'done', outcome }, transfer)
   } catch (e) {

@@ -23,7 +23,7 @@ import { useLength } from '../app/useUnits'
 
 export type Tool = { id: MarkGesture | null | 'through'; icon: IconName; title: string }
 /** Keep partial decimals editable; valid angles still regrow the wand live. */
-export function WandDegreesField({ testId = 'extract-degrees' }: { testId?: string } = {}) {
+export function WandDegreesField({ testId = 'extract-degrees', inactive = false }: { testId?: string; inactive?: boolean } = {}) {
   const degrees = useMark(s => s.wandDegrees), disabled = useMark(s => s.wandConnected)
   const [text, setText] = useState(String(Number(degrees.toFixed(2))))
   const [focused, setFocused] = useState(false)
@@ -35,7 +35,7 @@ export function WandDegreesField({ testId = 'extract-degrees' }: { testId?: stri
     setText(String(Number(useMark.getState().wandDegrees.toFixed(2))))
     setFocused(false)
   }
-  return <input type="number" min={WAND_MIN_DEG} max={WAND_MAX_DEG} step="0.01" value={text} disabled={disabled}
+  return <input type="number" min={WAND_MIN_DEG} max={WAND_MAX_DEG} step="0.01" value={text} disabled={disabled || inactive}
     aria-label="Sensitivity in degrees" data-test={testId} onFocus={() => setFocused(true)} onBlur={commit}
     onChange={e => { const value = e.target.value; setText(value); const n = Number(value); if (value !== '' && Number.isFinite(n) && n >= WAND_MIN_DEG && n <= WAND_MAX_DEG) useMark.getState().setWandDegrees(n) }}
     onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); e.currentTarget.blur() } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); canceled.current = true; e.currentTarget.blur() } }} />
@@ -78,7 +78,10 @@ export function ExtractSelection({ count, onHide, onIsolate, onShowAll, onClear 
 }) {
   const m = useMark()
   const hidden = useShell(s => s.hiddenTriangles)
-  const toolOn = (t: Tool) => (t.id === 'through' ? m.backfaces : m.gesture === t.id)
+  const canSelectThrough = m.gesture !== null && m.gesture !== 'wand'
+  const throughTitle = m.gesture === 'wand' ? 'Magic Wand grows from the clicked sheet'
+    : m.gesture === null ? 'Choose a marking tool to select through the mesh' : 'Select through all mesh layers'
+  const toolOn = (t: Tool) => t.id === 'through' ? canSelectThrough && m.backfaces : m.gesture === t.id
   const pick = (t: Tool) => {
     if (t.id === 'through') m.setBackfaces(!m.backfaces)
     else m.setGesture(t.id)
@@ -88,7 +91,8 @@ export function ExtractSelection({ count, onHide, onIsolate, onShowAll, onClear 
       <div className="qs-iconrow" role="toolbar" aria-label="Selection tools">
         {SELECTION_TOOLS.map((t) => (
           <button key={String(t.id)} className={toolOn(t) ? 'on' : undefined} aria-pressed={toolOn(t)}
-            data-test={`extract-tool-${t.id ?? 'navigate'}`} title={t.title} onClick={() => pick(t)}>
+            data-test={`extract-tool-${t.id ?? 'navigate'}`} disabled={t.id === 'through' && !canSelectThrough}
+            title={t.id === 'through' ? throughTitle : t.title} aria-label={t.title} onClick={() => pick(t)}>
             <Icon name={t.icon} size={20} />
           </button>
         ))}

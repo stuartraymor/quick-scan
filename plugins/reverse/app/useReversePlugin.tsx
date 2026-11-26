@@ -114,19 +114,17 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
   const sketchSceneRef = useRef<FlatScene | null>(null)
   const fitting = useReverse(s => s.featureDraft?.kind === 'surface')
   const savedScanHidden = useReverse(s => s.scanHidden)
-  const savedBodiesHidden = useReverse(s => s.bodiesHidden)
+  const bodiesHidden = useReverse(s => s.bodiesHidden)
   const [edgeOptions, setEdgeOptions] = useState<PickedEdgeOptions | null>(null)
   const dismissEdgeOptions = useCallback(() => setEdgeOptions(null), [])
   const [fitScanHidden, setFitScanHidden] = useState(false)
-  const [fitBodiesHidden, setFitBodiesHidden] = useState(true)
   useEffect(() => {
-    if (!fitting) { setFitScanHidden(false); setFitBodiesHidden(true) }
+    if (!fitting) setFitScanHidden(false)
   }, [fitting])
   const editingEdge = useReverse(s => s.featureDraft?.kind === 'fillet' || s.featureDraft?.kind === 'chamfer')
   const finishingAnalysis = useFinishingAnalysis(s => s.enabled)
   const showEdgeMap = editingEdge && finishingAnalysis
   const scanHidden = fitting ? fitScanHidden : !showEdgeMap && savedScanHidden
-  const bodiesHidden = fitting ? fitBodiesHidden : savedBodiesHidden
   const reverse = useReverseWorkspace({ sceneRef, clientRef, sheetRef: sketchSceneRef, scanHidden, bodiesHidden, showEdgeMap })
   const ribbonActions = useReverseRibbonActions(() => void reverse.exportStep())
   // Analysis → Measure's Sketch way: clicks on a sketch read it, read only.
@@ -635,7 +633,7 @@ export function useReversePlugin(host: PluginHost): PluginRuntime {
         testId="toggle-bodies"
         shown={{
           on: !bodiesHidden,
-          set: (on) => fitting ? setFitBodiesHidden(!on) : re().setBodiesHidden(!on),
+          set: (on) => re().setBodiesHidden(!on),
           disabled: hasBodies ? undefined : 'Build a body first',
         }}
         title="Show the bodies, or put them away as a whole and leave the scan to stand alone — with the deviation map still on it, read against the bodies as they are. Each body's own eye in the panel takes it out of the model and the map instead"

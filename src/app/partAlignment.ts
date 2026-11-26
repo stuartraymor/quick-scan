@@ -5,6 +5,7 @@
 // coordinates. The Alignment group of the 3D Measure panel and the align.*
 // commands both work through these.
 
+import { defaultAlignmentScope, withAlignmentScope, type AlignmentScope } from '../core/alignmentScope'
 import type { RefObject } from 'react'
 import { describeRigid } from '../core/alignment'
 import { ALIGN_SYMMETRY_MAX_RMS_MM, poseOfRigid, poseOnSymmetry } from '../core/alignSymmetry'
@@ -53,7 +54,7 @@ export function partAlignment({ clientRef, sceneRef, imports, maps, clearPreview
    *  changes, so painted regions and fit seeds stay valid. A scan→reference
    *  best fit was measured in the old frame and is invalidated along with the
    *  deviation map on it. True when it went through. */
-  const applyRigidToPart = (m: Rigid, reset = false) => imports.run(() => historyAsync('Align part', async () => {
+  const applyRigidToPart = (m: Rigid, reset = false, scope=defaultAlignmentScope) => imports.run(() => historyAsync('Align part', async () => {
     useStore.setState({ busy: true })
     try {
       clearPreview()
@@ -64,7 +65,7 @@ export function partAlignment({ clientRef, sceneRef, imports, maps, clearPreview
       // The real transform goes on and the preview of it comes off together.
       sceneRef.current?.applyTransform(m)
       sceneRef.current?.setAlignPreview(null)
-      useStore.getState().applyAlignment(m)
+      withAlignmentScope(scope,()=>useStore.getState().applyAlignment(m,scope.features))
       if (reset) useStore.getState().clearAppliedAlignment()
       // Thickness is invariant under a rigid move; its pins move with the scan.
       const moved = new Float64Array(3)
@@ -87,13 +88,13 @@ export function partAlignment({ clientRef, sceneRef, imports, maps, clearPreview
   })
 
   /** Confirm alignment: the pose the editor holds, applied. */
-  const applyAlignment = async (m: Rigid): Promise<boolean> => {
+  const applyAlignment = async (m: Rigid, scope?:AlignmentScope): Promise<boolean> => {
     const { rotationDeg, translation } = describeRigid(m)
-    if (!await applyRigidToPart(m)) return false
+    if (!await applyRigidToPart(m,false,scope)) return false
     useStore
       .getState()
       .setStatus(
-        `Part aligned — rotated ${rotationDeg.toFixed(2)}°, moved ${shownLength().fmt(translation, 3)}. Elements and dimensions moved with it.`,
+        `Part aligned — rotated ${rotationDeg.toFixed(2)}°, moved ${shownLength().fmt(translation, 3)}. ${scope?.features===false?'Features retained their coordinates.':'Elements and dimensions moved with it.'}`,
       )
     return true
   }

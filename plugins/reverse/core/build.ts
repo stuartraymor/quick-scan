@@ -2299,7 +2299,8 @@ export class Builder {
     let volume = 0
     let closed = true
     for (const p of this.partsOf(step.file)) {
-      meshes.push(k.mesh(p.shape, meshDeflection(diagonalOf(this.kernel, p.shape))))
+      const mesh=k.mesh(p.shape,meshDeflection(diagonalOf(k,p.shape)))
+      meshes.push(step.matrix?movedMesh(mesh,step.matrix):mesh)
       if (k.solidCount(p.shape) > 0) volume += k.volume(p.shape)
       else closed = false
     }
@@ -4128,7 +4129,9 @@ export class Builder {
         for (const part of this.partsOf(step.file)) {
           const solids = k.solids(part.shape)
           const pieces = solids.length > 0 ? solids : k.faceCount(part.shape) > 0 ? [k.copy(part.shape)] : []
-          for (const shape of pieces) {
+          for (const original of pieces) {
+            let shape=original
+            if(step.matrix){try{shape=k.transformTracked(original,step.matrix).shape}finally{k.release(original)}}
             const ids = this.settle(this.freshId(step.id), step.name, shape, new Map(k.faceHashes(shape).map((h) => [h, step.id])), step.id, solids.length === 0)
             if (part.name) for (const id of ids) this.looks.set(id, { label: part.name })
             made.push(...ids)

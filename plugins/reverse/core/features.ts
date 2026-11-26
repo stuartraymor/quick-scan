@@ -725,6 +725,7 @@ export interface ImportFeature extends FeatureFlags {
   kind: 'import'
   name: string
   file: StepFileRef
+  alignment?: import('../../../src/core/project/manifest').RigidJson
   /** A converted Freeform rebuilds from this preceding cage. The embedded
    *  STEP preserves the initial result for older project readers. */
   freeformSource?: number

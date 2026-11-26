@@ -1,3 +1,4 @@
+import { boundarySketchSection,installBoundarySketches } from './app/boundarySketches'
 // SPDX-License-Identifier: AGPL-3.0-only
 // The Mesh Tools workspace, as the app finds it: see src/plugins/api.ts for
 // what each part of this is to the app.
@@ -7,6 +8,7 @@ import type { HintStep } from '../../src/core/hints'
 import { registerBusy, registerCommands, registerStateSection, type ScanRulerPlugin } from '../../src/plugins/api'
 import { pick, registerHistory } from '../../src/state/historyStore'
 import { registerProjectSection } from '../../src/app/projectSections'
+import { selectionMeshSection, installSelectionMeshes } from './app/selectionMeshes'
 import { meshSection } from './app/projectSection'
 import { MESH_SETTINGS, useMeshTools } from './state/meshStore'
 import { useMark } from '../../src/state/markStore'
@@ -77,6 +79,10 @@ const plugin: ScanRulerPlugin = {
   usePlugin: useMeshPlugin,
   install() {
     registerProjectSection(meshSection)
+    registerProjectSection(boundarySketchSection)
+    installBoundarySketches()
+    registerProjectSection(selectionMeshSection)
+    installSelectionMeshes()
     // What an agent works through: the commands under the workspace's id —
     // the plugin's has a hyphen, which a command's name does not take — its
     // part of the readout, and what it is busy with.

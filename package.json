@@ -1,7 +1,7 @@
 {
   "name": "quick-scan",
   "private": true,
-  "version": "1.2.72",
+  "version": "1.2.93",
   "type": "module",
   "license": "AGPL-3.0-only",
   "author": "Stefan Hermann (CNC Kitchen) <stefan@cnckitchen.com>",
@@ -74,6 +74,7 @@
     "e2e:reverse-save": "node plugins/reverse/scripts/e2e-reverse-save.mjs"
   },
   "dependencies": {
+    "cdt2d": "1.0.0",
     "fflate": "^0.8.3",
     "manifold-3d": "3.2.1",
     "meshoptimizer": "1.2.0",

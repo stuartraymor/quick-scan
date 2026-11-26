@@ -14,7 +14,8 @@ import { findRegions } from '../core/regions'
 import { DEFAULT_SURFACE_FIT } from '../core/surfaceFit'
 import { emptyNetworkDraft, networkDraftOf } from './reNetworkDraft'
 import { DEFAULT_DRAFT_DEG, DEFAULT_FILLET_MM, DEFAULT_SPLIT_OVERLAP, DEFAULT_SPLIT_TOLERANCE_MM, DEFAULT_WALL_MM, featureDraftReady, featureOfDraft, historyEditOf, movePivot, reEditorOpen, roundFaceLength, trimToleranceFor, withMoveBodies } from './reDrafts'
-import { CLOSE_OTHERS, eyesSet, hideElement, hideSection, hideSketches, KIND_LABELS, lastSolid, leanAfterSnap, nameFor, remember, sketchesUsedBy, withExprs } from './reFeatureHelpers'
+import { CLOSE_OTHERS, eyesSet, hideElement, hideSection, hideSketches, KIND_LABELS, lastSolid, leanAfterSnap, nameBodies, nameFor, remember, sketchesUsedBy, withExprs } from './reFeatureHelpers'
+import { previewAfterTrimEdit } from './trimDisplay'
 import { unplacedEdge } from './reSketchDraft'
 import type { ReState } from './reStore'
 import { bodiesOfPick } from '../core/bodyFolders'
@@ -243,7 +244,7 @@ export const featureSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'featu
           draft = { kind: 'offsetBody', ...head, body: f.body, distance: f.distance, keep: f.keep }
           break
         case 'import':
-          draft = { kind: 'import', ...head, file: { ...f.file } }
+          draft = { kind: 'import', ...head, file: { ...f.file },alignment:f.alignment }
           break
         case 'moveBody':
           draft = { kind: 'moveBody', ...head, bodies: [...f.bodies], pivot: [...f.pivot], translate: [...f.translate], rotate: [...f.rotate], ...(f.scale !== undefined ? { scale: f.scale } : {}), copy: f.copy }
@@ -265,7 +266,7 @@ export const featureSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'featu
       const d = s.featureDraft
       if (!d) return {}
       const changedFit = d.kind === 'surface' && ('fit' in patch || 'region' in patch || ('shape' in patch && patch.shape !== d.shape))
-      return { ...(d.kind === 'trim' ? { preview: { status: 'idle' as const } } : d.kind === 'fillet' || d.kind === 'chamfer' ? { preview: { status: 'building' as const } } : {}), featureDraft: { ...d, ...(changedFit ? { controlSurface: undefined } : {}), ...(d.kind === 'surface' && 'shape' in patch ? { awaitingType: false } : {}), ...(patch as object) } as FeatureDraft }
+      return { ...(d.kind === 'trim' ? { preview: previewAfterTrimEdit(d, patch, s.preview) } : d.kind === 'fillet' || d.kind === 'chamfer' ? { preview: { status: 'building' as const } } : {}), featureDraft: { ...d, ...(changedFit ? { controlSurface: undefined } : {}), ...(d.kind === 'surface' && 'shape' in patch ? { awaitingType: false } : {}), ...(patch as object) } as FeatureDraft }
     }),
   cancelFeature: () => set((s) => ({ featureDraft: null, preview: { status: 'idle' }, gripField: null, bodyPick: null, hint: null, ...(s.featureDraft?.featureId !== undefined ? { buildVersion: s.buildVersion + 1 } : {}) })),
   commitFeature: (after) => {
@@ -275,7 +276,7 @@ export const featureSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'featu
     if ((d.kind === 'fillet' || d.kind === 'chamfer') && s.preview.status === 'failed') return null
     if (after === 'nextSurface' && (d.kind !== 'surface' || d.featureId !== undefined || s.preview.status !== 'ok' || !s.preview.surface)) return null
     if (after === 'nextFillet' && ((d.kind !== 'fillet' && d.kind !== 'chamfer') || d.featureId !== undefined || s.building || s.preview.status !== 'ok')) return null
-    if (d.kind === 'trim' && (s.preview.status === 'failed' || d.removed?.length === 0)) return null
+    if (d.kind === 'trim' && (s.preview.status === 'failed' || (s.preview.status === 'building' && s.preview.trimDisplay) || d.removed?.length === 0)) return null
     // A moved face goes into what made it where the box was ticked to:
     // the extrude's distance, the sketch's line or circle. No feature is
     // added — the list is edited, as the operator would have edited it by
@@ -310,9 +311,20 @@ export const featureSlice = (set: StoreSet, get: StoreGet): Pick<ReState, 'featu
     const trimInputs = next.kind === 'trim'
       ? s.bodies.filter(b => b.surface && b.visible && next.tools.some(t => t.kind === 'body' && t.id === b.id)).map(b => b.id)
       : []
+    const visibility = trimInputs.length ? eyesSet(s, trimInputs, false) : {}
+    // Publish the accepted shape and hide its inputs in one document update.
+    // finishBuild supplies the exact topology and any separate component bodies.
+    const preview = s.preview.status === 'ok' ? s.preview : undefined
+    const accepted = preview?.confirmedMesh
+    const mesh = accepted?.draft === d && accepted.buildVersion === s.buildVersion ? accepted.mesh : undefined
+    const confirmedBodies = mesh && preview && nameBodies([...(visibility.bodies ?? s.bodies), {
+      id, name: next.name, visible: !s.hiddenBodies.includes(id), surface: !preview.closed, closed: preview.closed,
+      faces: preview.trim?.kept ?? 1, volume: preview.volume, triangles: mesh.indices.length / 3, confirmedMesh: mesh,
+    }], [...s.features, next], s.bodyStyles)
     set({
       ...remember(s, trimInputs),
-      ...(trimInputs.length ? eyesSet(s, trimInputs, false) : {}),
+      ...visibility,
+      ...(confirmedBodies ? { bodies: confirmedBodies } : {}),
       ...leanAfterSnap({ nextFeatureId: id + 1, nextOfKind }, [...hideSketches(s.features, sketchesUsedBy(next)), next], d),
       featureDraft: after === 'nextSurface' && d.kind === 'surface' ? {
         kind: 'surface', createdSheets: [...(d.createdSheets ?? []), id], awaitingType: true, shape: d.shape, fit: d.fit, constrain: d.constrain,

@@ -154,7 +154,7 @@ export function AlignmentSection({
   onAlignSymmetry: () => void
   onStartAlignment: () => void
   /** Bake the computed datum alignment into the part. */
-  onApplyAlignment: (m: Rigid) => Promise<boolean>
+  onApplyAlignment: (m: Rigid, scope?:import('../core/alignmentScope').AlignmentScope) => Promise<boolean>
   /** Bake a typed-in move / rotate into the part. */
   onApplyManual: (m: Rigid) => void
   onResetAlignment: () => void
@@ -165,6 +165,7 @@ export function AlignmentSection({
   const modelSize = useStore((s) => s.modelSize)
   const alignDraft = useStore((s) => s.alignDraft)
   const appliedAlignment = useStore((s) => s.appliedAlignment)
+  const preparing = useShell(s => s.prepareStep === 3)
   const cancelAlignment = useStore((s) => s.cancelAlignment)
   const setAlignmentRef = useStore((s) => s.setAlignmentRef)
   const setAlignmentAxis = useStore((s) => s.setAlignmentAxis)
@@ -175,6 +176,8 @@ export function AlignmentSection({
   // empty. Purely local — it needs no viewport interaction.
   // Held as typed — the moves in the units shown — and turned into
   // millimetres when applied.
+  const [scope,setScope]=useState({features:true,importedCad:false})
+  useEffect(()=>{if(!preparing)setScope({features:true,importedCad:false})},[preparing])
   const [manual, setManual] = useState<number[] | null>(null)
   // Translate X / Y / Z, typed in the units shown, added after the alignment.
   const [shift, setShift] = useState(['0', '0', '0'])
@@ -578,6 +581,10 @@ export function AlignmentSection({
           >
             Use symmetry
           </button>
+          {preparing && <div className="scan-align-scopes">
+            <label><input type="checkbox" data-test="align-imported-cad" checked={scope.importedCad} onChange={e=>setScope(s=>({...s,importedCad:e.target.checked}))}/>Apply on imported CAD</label>
+            <label><input type="checkbox" data-test="align-all-features" checked={scope.features} onChange={e=>setScope(s=>({...s,features:e.target.checked}))}/>Apply on all features</label>
+          </div>}
           <button
             className="primary block"
             data-test="apply-alignment"
@@ -588,7 +595,7 @@ export function AlignmentSection({
               const m = { r: alignReady.rigid.r.slice(), t: alignReady.rigid.t.slice() }
               shift.forEach((v, i) => { const n = Number(v); if (Number.isFinite(n)) m.t[i] += len.fromDisplay(n) })
               const draft = alignDraft
-              if (!await onApplyAlignment(m)) return
+              if (!await onApplyAlignment(m,preparing?scope:undefined)) return
               // Retain choices in the committed frame; never reuse a stale
               // transform or the translation typed for the previous Apply.
               reopenedByApply.current = performance.now()

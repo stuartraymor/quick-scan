@@ -5,12 +5,8 @@
 // keys are drawn again when a computation or an editor starts or finishes,
 // the things that block a step.
 
-import { useRef } from 'react'
-import { activeLocalHistory, historyBlocked, historyWatchers, redo, undo, useHistory } from '../state/historyStore'
-import { useStore } from '../state/store'
-import { useFlat } from '../state/flatStore'
-import { useDeviation } from '../state/deviationStore'
-import { useThickness } from '../state/thicknessStore'
+import { activeLocalHistory, redo, undo, useHistory } from '../state/historyStore'
+import { useHistoryBlocked } from './useHistoryBlocked'
 import { Icon } from './icons'
 import { modLabel } from './platform'
 
@@ -18,17 +14,8 @@ import { modLabel } from './platform'
  *  a 16 px icon and the name, stacked above Rebuild. */
 export function UndoRedo({ ribbon = false, text = false }: { ribbon?: boolean; text?: boolean } = {}) {
   const history = useHistory()
-  // Re-evaluate availability as computations and editors start or finish.
-  useStore((s) => !!(s.busy || s.draft || s.dimDraft || s.alignDraft || s.sectionDraft))
-  useFlat((s) => !!(s.imageBusy || s.draft || s.dimDraft || s.tool.kind !== 'none'))
-  useDeviation((s) => s.alignStatus === 'running' || s.mapStatus === 'running' || s.nominalBusy)
-  useThickness((s) => s.status === 'running')
-  // What the plugins' histories hang on — the same hooks on every render,
-  // those registered before the keys were first drawn.
-  const watchers = useRef(historyWatchers()).current
-  for (const watch of watchers) watch()
   const local = activeLocalHistory()
-  const blocked = historyBlocked()
+  const blocked = useHistoryBlocked()
   const canUndo = !blocked && (local ? local.canUndo() : history.past.length > 0)
   const canRedo = !blocked && (local ? local.canRedo() : history.future.length > 0)
   const hint = blocked ? 'Finish the active operation or close its editor first' : null

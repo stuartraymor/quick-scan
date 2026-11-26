@@ -384,6 +384,8 @@ export class RegionColors {
    *  and the count move together — every gesture goes through here. The colour
    *  buffer is never touched: the tint is the shader's, so rubbing out has
    *  nothing to restore. */
+  isMarked(v: number): boolean { return this.paintMask?.[v] === 1 }
+
   markVertex(v: number, erase: boolean): void {
     const mask = this.paintMask
     if (!mask || mask[v] === (erase ? 0 : 1)) return

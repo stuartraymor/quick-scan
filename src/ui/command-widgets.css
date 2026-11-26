@@ -135,21 +135,24 @@
 .interactive-align footer > span { flex: 1; }
 .interactive-align footer > button { width: 78px; }
 
-/* User's charcoal/black presentation keeps the reference control geometry. */
+/* Shared command surfaces use the application's theme and input states. */
+:root[data-theme='dark'] {
+  --command-button-face:linear-gradient(#343a42,#292e35);
+  --command-selected:#205f91;
+  --command-selected-border:#a4d9ff;
+}
 :root[data-theme='dark'] :is(.tool-inspector,.qs-quick,.qs-overlay,.modalback > .modal,.ribbon-menu,.re-menu,.picklist,.partmenu,.appmenu) {
-  --chassis: #1b1d20; --panel: #25282c; --well: #17191c; --well-deep: #121416;
-  --ink: #f4f5f6; --dim: #b5bbc2; --faint: #8c949e;
-  --line: #414750; --line-strong: #69737f;
-  --accent: #3f9ee8; --accent-d: #79c5ff; --accent-soft: #223e58;
-  --glass: 37,40,44; --strip: #121416;
+  --chassis: inherit; --panel: inherit; --well: inherit; --well-deep: inherit;
+  --ink: inherit; --dim: inherit; --faint: inherit; --line: inherit; --line-strong: inherit;
+  --accent: inherit; --accent-d: inherit; --accent-soft: inherit; --glass: inherit; --strip: inherit;
   color-scheme: dark; color: var(--ink); background: var(--panel);
 }
-:root[data-theme='dark'] .tool-inspector .inspector-titlebar { background: #1b1d20; color: #fff; }
-:root[data-theme='dark'] .tool-inspector button:not(.on):not(:disabled):not(.infodot):not(.qs-x) { color: var(--ink); background: linear-gradient(#343a42,#292e35); border-color: #69737f; }
+:root[data-theme='dark'] .tool-inspector .inspector-titlebar { background: var(--chassis); color: var(--ink); }
+:root[data-theme='dark'] .tool-inspector button:not(.on):not(:disabled):not(.infodot):not(.qs-x) { color: var(--ink); background: var(--command-button-face); border-color: #69737f; }
 :root[data-theme='dark'] .tool-inspector button.primary:not(:disabled) { color: #fff; background: #205f91; border-color: #69baff; }
 :root[data-theme='dark'] .tool-inspector button:hover:not(:disabled):not(.infodot) { background: #284e6c; border-color: #79c5ff; }
 :root[data-theme='dark'] .tool-inspector button.on,
-:root[data-theme='dark'] .tool-inspector button[aria-pressed='true'] { color: #fff; background: #205f91; border-color: #a4d9ff; }
+:root[data-theme='dark'] .tool-inspector button[aria-pressed='true'] { color: #fff; background: var(--command-selected); border-color: var(--command-selected-border); }
 :root[data-theme='dark'] .tool-inspector button:disabled { color: #969fa9; background: #25292e; border-color: #444a52; }
 :root[data-theme='dark'] .tool-inspector :is(input:not([type='checkbox']):not([type='radio']):not([type='range']),select,textarea) { background: #17191c; color: #fff; border-color: #69737f; }
 :root[data-theme='dark'] .tool-inspector :is(input,select):disabled { color: #969fa9; background: #25292e; border-color: #444a52; }

@@ -240,7 +240,7 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
     <hr />
     {moreMethods.map((m) => constructItem(m.label, method(m.id), m.hint))}
   </div></details>
-  const editScan = () => { if (mesh) go(mesh.id) }
+  const editScan = () => { if (mesh) useShell.getState().openEditScan() }
   const alignCoordinates = () => { go('elements'); onAlign() }
   const alignMenu = <details className="ribbon-dropdown" data-test="align-menu"><summary className="desktop-ribbon-tool" title="Choose an alignment method"><Icon name="coordinateSystem" size={25}/><span>Align ▾</span></summary><div className="ribbon-menu">
     {tool('Align by Coordinate System …', 'coordinateSystem', alignCoordinates, needsScan, 'Pick primary, secondary and tertiary features, preview, then Apply')}
@@ -296,7 +296,7 @@ export function DesktopRibbon({ onFit, onAlign, onFineAlign, onPointAlign, onExp
   const fileGroup = <Group label="File">{tool('Open', 'load', onOpen, busy || picking, 'Open a scan or project')}{tool('Save', 'save', onSave, busy || !savable, 'Save the entire Quick Scan project')}</Group>
   const analysis = <Group label="Analysis">{tool('Compare', 'compare', () => go('deviation'), locked, 'Compare scan data with CAD or fitted geometry')}</Group>
   const exportGroup = <Group label="Export Model">{cadActions ? cad('export', 'Export', 'exportStep', false, false, 'Export Model') : tool('Export', 'exportStep', onExport, needsScan, 'Export', false, 'Export Model')}</Group>
-  const scanGroup = <Group label="Scan Data">{tool('Prepare Scan', 'prepareScan', () => { useShell.getState().setPrepareStep(0); if (mesh) go(mesh.id) }, needsScan, 'Prepare Scan: a four-step guide — mesh quality, symmetry, alignment primitives, alignment')}{tool('Edit Scan', 'wsMesh', editScan, needsScan || !mesh, 'Open mesh selection, repair and editing')}{tool('Deselect All', 'select', onDeselect, needsScan || marked === 0, 'Clear the painted scan selection')}</Group>
+  const scanGroup = <Group label="Scan Data">{tool('Prepare Scan', 'prepareScan', () => { if (mesh) useShell.getState().openEditScan(true) }, needsScan, 'Prepare Scan: a four-step guide — mesh quality, symmetry, alignment primitives, alignment')}{tool('Edit Scan', 'wsMesh', editScan, needsScan || !mesh, 'Open mesh selection, repair and editing')}{tool('Deselect All', 'select', onDeselect, needsScan || marked === 0, 'Clear the painted scan selection')}</Group>
   // QUICKSURFACE's small key with a visible label: a 16 px icon and the name,
   // three to a column (Scan Data's Tools, Align and Colors groups).
   const smallText = (label: string, icon: IconName, action: () => void, disabled = false, hint = label, tipKey = label) => (

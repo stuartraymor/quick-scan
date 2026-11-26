@@ -12,9 +12,11 @@ import type { ReKernel, Shape } from '../kernel'
 import { GRID_AREA_SLACK, gridArea } from '../surfaceFit'
 import type { PatchGrid } from './patches'
 import { compactRepeatedGrid } from './compactGrid'
+import { matchedTangents, subdivisionNet } from './subdivisionNet'
 
 /** What the kernel needs of the patches: their grids and, for the report, the shape of each block. */
 export interface PatchSet {
+  subdivisionParameters?: boolean
   grids: PatchGrid[]
   closed: boolean
   blocks: { rows: number; cols: number; faces: number[] }[]
@@ -113,16 +115,18 @@ function facesThrough(k: ReKernel, g: PatchGrid, out: Shape[], index: number, ce
  *  instead of fitted and checked again. Per kernel: a kernel started anew
  *  holds none of the old one's shapes. The faces are the cache's; a build
  *  sews copies of them in and never releases them. */
-interface FittedGrid { rows: number; cols: number; points: Float64Array; cells: boolean; faces: Shape[]; areas: (number | undefined)[] }
+interface FittedGrid { tangents?: Float64Array; rows: number; cols: number; points: Float64Array; cells: boolean; faces: Shape[]; areas: (number | undefined)[] }
 const fittedGrids = new WeakMap<ReKernel, Map<string, FittedGrid>>()
 /** Grids remembered per kernel: a few cages' blocks. */
 const FITTED_GRIDS_KEPT = 256
 
-function gridKey(g: PatchGrid, cells: boolean): string {
+function gridKey(g: PatchGrid, cells: boolean, tangents?: Float64Array): string {
   // FNV-1a over the samples' bits; a hit is confirmed sample for sample.
-  const words = new Uint32Array(g.points.buffer, g.points.byteOffset, g.points.length * 2)
   let h = 0x811c9dc5
-  for (let i = 0; i < words.length; i++) h = Math.imul(h ^ words[i], 0x01000193)
+  for (const values of tangents ? [g.points, tangents] : [g.points]) {
+    const words = new Uint32Array(values.buffer, values.byteOffset, values.length * 2)
+    for (let i = 0; i < words.length; i++) h = Math.imul(h ^ words[i], 0x01000193)
+  }
   return `${g.rows}x${g.cols}${cells ? 'c' : ''}:${(h >>> 0).toString(36)}`
 }
 
@@ -134,12 +138,13 @@ function sameSamples(a: Float64Array, b: Float64Array): boolean {
 
 /** The faces through a grid, from the cache where the same samples were
  *  fitted before; pushed to `out`, and the ones the cache holds to `held`. */
-function cachedFacesThrough(k: ReKernel, g: PatchGrid, out: Shape[], held: Set<Shape>, areas: Map<Shape, number>, index: number, cells: boolean): void {
+function cachedFacesThrough(k: ReKernel, g: PatchGrid, out: Shape[], held: Set<Shape>, areas: Map<Shape, number>, index: number, cells: boolean, subdivisionParameters: boolean, tangents?: Float64Array): void {
   let cache = fittedGrids.get(k)
   if (!cache) fittedGrids.set(k, (cache = new Map()))
-  const key = gridKey(g, cells)
+  const key = (subdivisionParameters ? 'subdivision:' : '') + gridKey(g, cells, tangents)
   const hit = cache.get(key)
-  if (hit && hit.rows === g.rows && hit.cols === g.cols && hit.cells === cells && sameSamples(hit.points, g.points)) {
+  if (hit && hit.rows === g.rows && hit.cols === g.cols && hit.cells === cells && sameSamples(hit.points, g.points) &&
+      (hit.tangents === tangents || (hit.tangents && tangents && sameSamples(hit.tangents, tangents)))) {
     // Most recently used last.
     cache.delete(key)
     cache.set(key, hit)
@@ -153,14 +158,30 @@ function cachedFacesThrough(k: ReKernel, g: PatchGrid, out: Shape[], held: Set<S
   }
   const made: Shape[] = []
   try {
-    facesThrough(k, g, made, index, cells, false, areas)
+    const net = subdivisionParameters ? subdivisionNet(g, tangents) : undefined
+    if (net) {
+      let face: Shape | undefined
+      try {
+        face = k.surfaceFromControlNet(net)
+        const area = k.surfaceArea(face)
+        if (area > 0 && area <= GRID_AREA_SLACK * gridArea(g)) {
+          areas.set(face, area)
+          made.push(face)
+          face = undefined
+        }
+      } catch (error) {
+        if (k.trapped) throw error
+        // A degenerate control net can still admit the existing sampled fit.
+      } finally { if (face !== undefined) k.release(face) }
+    }
+    if (!made.length) facesThrough(k, g, made, index, cells, false, areas)
   } catch (e) {
     k.release(...made)
     throw e
   }
   out.push(...made)
   if (hit) cache.delete(key)
-  cache.set(key, { rows: g.rows, cols: g.cols, points: Float64Array.from(g.points), cells, faces: made, areas: made.map((f) => areas.get(f)) })
+  cache.set(key, { tangents, rows: g.rows, cols: g.cols, points: Float64Array.from(g.points), cells, faces: made, areas: made.map((f) => areas.get(f)) })
   for (const f of made) held.add(f)
 }
 
@@ -194,6 +215,7 @@ export function patchesBody(k: ReKernel, patches: PatchSet, cells = false, share
   // Each face's area, where its check measured it.
   const areas = new Map<Shape, number>()
   try {
+    const tangents = patches.subdivisionParameters && !sharedCellEdges ? matchedTangents(patches.grids) : undefined
     for (const [index, grid] of patches.grids.entries()) {
       if (sharedCellEdges) {
         for (let row = 0; row < grid.rows - 1; row++) {
@@ -201,7 +223,7 @@ export function patchesBody(k: ReKernel, patches: PatchSet, cells = false, share
             facesThrough(k, piece(grid, row, row + 1, col, col + 1), faces, index, true, true, areas)
           }
         }
-      } else cachedFacesThrough(k, grid, faces, held, areas, index, cells)
+      } else cachedFacesThrough(k, grid, faces, held, areas, index, cells, patches.subdivisionParameters === true, tangents?.get(grid))
     }
     if (faces.length === 0) throw new Error('The cage has no faces to convert.')
     let shape = faces.length === 1 ? k.copy(faces[0]) : k.sewPatches(faces, SEW_TOLERANCE, patches.closed)

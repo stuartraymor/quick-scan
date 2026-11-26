@@ -1,3 +1,5 @@
+import { SplitDialog,type SplitActions } from './SplitDialog'
+import { RimDiagnostic, type RimActions } from './RimDiagnostic'
 // SPDX-License-Identifier: AGPL-3.0-only
 // The Mesh Tools faceplate: the scan, the tools, the tool in hand — or with
 // none, the parts in the viewport — and the edited copy. The tools are of the two kinds the workspace has — the edits,
@@ -20,6 +22,10 @@ import {
 import { useStore } from '../../../src/state/store'
 import { useUnits } from '../../../src/app/useUnits'
 import { Icon } from '../../../src/ui/icons'
+import { ScanDiagnostic } from './ScanDiagnostic'
+import type { SceneManager } from '../../../src/viewer/SceneManager'
+import { ScanEditor } from './ScanEditor'
+import { useShell } from '../../../src/state/shellStore'
 import { MeshIcon } from './meshIcons'
 import { InfoDot } from '../../../src/ui/InfoDot'
 import { ModelSlot } from '../../../src/ui/ModelSlot'
@@ -111,8 +117,10 @@ const TOOLS: { id: MeshTool; icon: ReactNode; label: string; title: string }[] =
   },
 ]
 
+export type ScanDetail = 'islands' | 'holes' | 'boundaries' | 'boolean' | null
+
 export function MeshPanel({
-  onOpenScan,
+  detail, setDetail, scene, removeRegion, rimActions, splitActions, onBoundaries, onCreateSelection, onOpenScan,
   onReduce,
   onExport,
   onRemoveIslands,
@@ -131,6 +139,14 @@ export function MeshPanel({
   onUseEdited,
   onDiscardEdited,
 }: {
+  detail: ScanDetail
+  setDetail: (detail: ScanDetail) => void
+  scene: SceneManager | null
+  removeRegion: (v: Uint32Array) => void
+  splitActions:SplitActions
+  rimActions: RimActions
+  onBoundaries: () => void
+  onCreateSelection: (cut: boolean) => void
   onOpenScan: (file: File) => void
   onReduce: () => void
   onExport: (format: MeshFormat) => void
@@ -166,6 +182,14 @@ export function MeshPanel({
 
   const busy = scanBusy || running
 
+  const edit = useShell(s => s.editScanOpen)
+  if (scanName && edit && !detail) return <ScanEditor busy={busy} boundaries={onBoundaries} createMesh={onCreateSelection} remove={onDeleteMarked}
+    inspect={name=>{setDetail(name);setTool(name === 'boolean' ? null : name === 'boundaries' ? 'holes' : name)}}/>
+  const back=()=>{setDetail(null);setTool(null)}
+  if(edit && (detail==='holes'||detail==='boundaries'))return <RimDiagnostic key={detail} kind={detail} scene={scene} busy={busy} back={back} actions={rimActions}/>
+  if (edit && detail==='islands') return <ScanDiagnostic key={detail} kind={detail} scene={scene} busy={busy} back={back} remove={removeRegion}
+    flip={()=>onFlip('marked')} create={()=>onCreateSelection(false)}/>
+  if(edit&&detail==='boolean')return <SplitDialog scene={scene} actions={splitActions} back={back} busy={busy}/>
   return (
     <aside className="panel" data-mesh-widget={scanName ? 'loaded' : undefined}>
       <div className="group">

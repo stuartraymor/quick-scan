@@ -50,6 +50,11 @@ export interface UnpackedProject {
 const PROJECT_LIMITS = { members: 16, manifestBytes: 64 * 1024 * 1024, totalBytes: 1024 * 1024 * 1024 }
 class ArchiveLimitError extends Error {}
 
+// Two local scan-editor builds wrote selection geometry under a directory.
+function memberName(name: string): string {
+  return name.replace(/^selection-meshes\/(\d+)-(points|triangles)\.bin$/, 'selection-mesh-$1-$2.bin')
+}
+
 /** Read the archive back and check it is a project this build can open. */
 export function unpackProject(bytes: Uint8Array, limits = PROJECT_LIMITS): UnpackedProject {
   let files: Record<string, Uint8Array>
@@ -57,10 +62,11 @@ export function unpackProject(bytes: Uint8Array, limits = PROJECT_LIMITS): Unpac
     let total = 0
     const names = new Set<string>()
     files = unzipSync(bytes, { filter: ({ name, originalSize }) => {
-      if (names.has(name) || name.includes('/') || name.includes('\\') || name === '__proto__') {
+      const key = memberName(name)
+      if (names.has(key) || key.includes('/') || name.includes('\\') || name === '__proto__') {
         throw new ArchiveLimitError('Malformed project: duplicate or invalid archive member.')
       }
-      names.add(name)
+      names.add(key)
       total += originalSize
       if (names.size > limits.members || total > limits.totalBytes ||
           (name === MANIFEST_NAME && originalSize > limits.manifestBytes)) {
@@ -85,6 +91,6 @@ export function unpackProject(bytes: Uint8Array, limits = PROJECT_LIMITS): Unpac
     if (entry && !Object.hasOwn(files, entry.member)) throw new Error(`Project is missing ${entry.member}.`)
   }
   const members = new Map<string, Uint8Array>()
-  for (const [name, data] of Object.entries(files)) if (name !== MANIFEST_NAME) members.set(name, data)
+  for (const [name, data] of Object.entries(files)) if (name !== MANIFEST_NAME) members.set(memberName(name), data)
   return { manifest, members }
 }
